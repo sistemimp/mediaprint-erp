@@ -1,0 +1,41 @@
+diff --git a/node_modules/@coreui/react/dist/cjs/components/focus-trap/CFocusTrap.js b/node_modules/@coreui/react/dist/cjs/components/focus-trap/CFocusTrap.js
+index f7faae6..abca6f3 100644
+--- a/node_modules/@coreui/react/dist/cjs/components/focus-trap/CFocusTrap.js
++++ b/node_modules/@coreui/react/dist/cjs/components/focus-trap/CFocusTrap.js
+@@ -151,7 +151,7 @@ const CFocusTrap = ({ active = true, additionalContainer, children, focusFirstEl
+     }, [active, additionalContainer, focusFirstElement, onActivate, onDeactivate, restoreFocus]);
+     // Attach our ref to the ONLY child — no extra wrappers
+     const onlyChild = React.Children.only(children);
+-    const childRef = onlyChild.ref;
++    const childRef = onlyChild.props?.ref;
+     const mergedRef = utils.mergeRefs(childRef, (node) => {
+         containerRef.current = node;
+     });
+diff --git a/node_modules/@coreui/react/dist/esm/components/focus-trap/CFocusTrap.js b/node_modules/@coreui/react/dist/esm/components/focus-trap/CFocusTrap.js
+index a442d64..4baf8c7 100644
+--- a/node_modules/@coreui/react/dist/esm/components/focus-trap/CFocusTrap.js
++++ b/node_modules/@coreui/react/dist/esm/components/focus-trap/CFocusTrap.js
+@@ -149,7 +149,7 @@ const CFocusTrap = ({ active = true, additionalContainer, children, focusFirstEl
+     }, [active, additionalContainer, focusFirstElement, onActivate, onDeactivate, restoreFocus]);
+     // Attach our ref to the ONLY child — no extra wrappers
+     const onlyChild = React.Children.only(children);
+-    const childRef = onlyChild.ref;
++    const childRef = onlyChild.props?.ref;
+     const mergedRef = mergeRefs(childRef, (node) => {
+         containerRef.current = node;
+     });
+diff --git a/node_modules/@coreui/react/src/components/focus-trap/CFocusTrap.tsx b/node_modules/@coreui/react/src/components/focus-trap/CFocusTrap.tsx
+index 5fcced8..3c64241 100644
+--- a/node_modules/@coreui/react/src/components/focus-trap/CFocusTrap.tsx
++++ b/node_modules/@coreui/react/src/components/focus-trap/CFocusTrap.tsx
+@@ -244,8 +244,8 @@ export const CFocusTrap: FC<CFocusTrapProps> = ({
+   }, [active, additionalContainer, focusFirstElement, onActivate, onDeactivate, restoreFocus])
+ 
+   // Attach our ref to the ONLY child — no extra wrappers
+-  const onlyChild = React.Children.only(children)
+-  const childRef = (onlyChild as React.ReactElement & { ref?: React.Ref<HTMLElement> }).ref
++  const onlyChild = React.Children.only(children) as React.ReactElement<{ ref?: React.Ref<HTMLElement> }>
++  const childRef = onlyChild.props.ref
+   const mergedRef = mergeRefs(childRef, (node: HTMLElement | null) => {
+     containerRef.current = node
+   })
