@@ -1,15 +1,16 @@
 <?php
+declare(strict_types=1);
 
 require __DIR__ . '/../bootstrap.php';
 
-use MediaPrint\Backend\Cors;
-use MediaPrint\Repo\AnagraficheRepository;
-use MediaPrint\Service\AnagraficheService;
+use MediaPrint\Repo\PreventiviRepository;
+use MediaPrint\Service\PreventiviService;
 use MediaPrint\Backend\Database;
 use MediaPrint\Backend\HttpResponse;
 
-$method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
+header('Content-Type: application/json');
 
+$method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 if ($method === 'OPTIONS') {
     HttpResponse::json(['message' => 'OK']);
 }
@@ -20,14 +21,14 @@ if ($method !== 'GET') {
 }
 
 try {
-    $service = new AnagraficheService(
-        new AnagraficheRepository(Database::getConnection())
+    $service = new PreventiviService(
+        new PreventiviRepository(Database::getConnection())
     );
 
-    $result = $service->detail($_GET);
+    $result = $service->listLatest($_GET);
     HttpResponse::json($result, 200);
 } catch (RuntimeException $exception) {
-    $code = (int) $exception->getCode();
+    $code = $exception->getCode();
     if ($code < 400 || $code >= 600) {
         $code = 422;
     }

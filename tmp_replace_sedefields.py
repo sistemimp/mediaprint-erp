@@ -1,0 +1,14 @@
+﻿from pathlib import Path
+path = Path("backend/src/Service/AnagraficheService.php")
+text = path.read_text()
+start_marker = "    /**\n     * @return array<string, mixed>\n     */\n    private function normaliseSedeFields"
+start = text.find(start_marker)
+if start == -1:
+    raise SystemExit('start not found')
+end_marker = "\n\n/**\n     * @param array<int, mixed> $payload"
+end = text.find(end_marker, start)
+if end == -1:
+    raise SystemExit('end not found')
+new_block = "    /**\n     * @return array<string, mixed>\n     */\n    private function normaliseSedeFields(array $input, bool $isCreate): array\n    {\n        $output = [];\n\n        if (array_key_exists('id_tipo', $input)) {\n            $value = $this->asNullableInt($input['id_tipo']);\n            if ($value === null) {\n                throw new RuntimeException('Il campo id_tipo della sede non puo essere nullo.', 422);\n            }\n            $output['id_tipo'] = $value;\n        } elseif ($isCreate) {\n            throw new RuntimeException('Il campo id_tipo e obbligatorio per la creazione della sede.', 422);\n        }\n\n        foreach (['denominazione', 'civico', 'cap', 'provincia', 'telefono', 'email', 'note'] as $key) {\n            if (!array_key_exists($key, $input)) {\n                continue;\n            }\n            $value = trim((string) $input[$key]);\n            $output[$key] = $value === '' ? null : $value;\n        }\n\n        foreach (['indirizzo', 'comune'] as $requiredKey) {\n            if (!array_key_exists($requiredKey, $input)) {\n                continue;\n            }\n            $value = trim((string) $input[$requiredKey]);\n            if ($value === '') {\n                throw new RuntimeException('Il campo ' . $requiredKey . ' della sede non puo essere vuoto.', 422);\n            }\n            $output[$requiredKey] = $value;\n        }\n\n        if ($isCreate) {\n            foreach (['id_tipo', 'indirizzo', 'comune'] as $requiredKey) {\n                if (!array_key_exists($requiredKey, $output)) {\n                    throw new RuntimeException('Il campo ' . $requiredKey . ' e obbligatorio per la creazione della sede.', 422);\n                }\n            }\n        }\n\n        if (array_key_exists('nazione_iso2', $input)) {\n            $value = strtoupper(trim((string) $input['nazione_iso2']));\n            if ($value !== '') {\n                $output['nazione_iso2'] = substr($value, 0, 2);\n            }\n        }\n\n        foreach (['is_legale', 'is_predefinita'] as $booleanKey) {\n            if (!array_key_exists($booleanKey, $input)) {\n                continue;\n            }\n            $output[$booleanKey] = $this->asBoolInt($input[$booleanKey]);\n        }\n\n        return $output;\n    }\n\n";
+text = text[:start] + new_block + text[end:]
+path.write_text(text)

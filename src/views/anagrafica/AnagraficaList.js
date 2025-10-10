@@ -27,7 +27,11 @@ import {
 import CIcon from '@coreui/icons-react'
 import { cilArrowBottom, cilArrowTop, cilPlus, cilReload, cilSearch } from '@coreui/icons'
 
-import { fetchAnagrafiche } from '../../services/anagrafiche'
+import {
+  fetchAnagrafiche,
+  fetchAnagraficheArchiviate,
+  reactivateAnagrafica,
+} from '../../services/anagrafiche'
 import { useAuth } from '../../context/AuthContext'
 
 const DEFAULT_FETCH_PAGE_SIZE = 100
@@ -43,6 +47,16 @@ const columns = [
   { key: 'provincia', label: 'Provincia', sortable: true },
   { key: 'stato', label: 'Stato', sortable: true },
 ]
+
+const formatIndirizzo = (anagrafica) => {
+  if (!anagrafica || typeof anagrafica !== 'object') return '-'
+  const addr = [anagrafica.indirizzo].filter(Boolean).join(' ')
+  const loc = [anagrafica.cap, anagrafica.citta, anagrafica.provincia].filter(Boolean).join(' ')
+  const parts = []
+  if (addr) parts.push(addr)
+  if (loc) parts.push(loc)
+  return parts.length > 0 ? parts.join(', ') : '-'
+}
 
 const renderCell = (anagrafica, column) => {
   if (column.key === 'id_anagrafica') {
@@ -195,6 +209,9 @@ const AnagraficaList = () => {
   const [sortKey, setSortKey] = useState('id_anagrafica')
   const [sortDirection, setSortDirection] = useState('asc')
   const [refreshIndex, setRefreshIndex] = useState(0)
+  const [groupBy, setGroupBy] = useState('none') // none | comune | provincia
+  const [exporting, setExporting] = useState(false)
+  const [viewMode, setViewMode] = useState('attive') // attive | archiviate
 
   useEffect(() => {
     if (!token) {
@@ -208,7 +225,8 @@ const AnagraficaList = () => {
       setError(null)
 
       try {
-        const { items: firstItems = [], meta } = await fetchAnagrafiche({
+        const fetcher = viewMode === 'archiviate' ? fetchAnagraficheArchiviate : fetchAnagrafiche
+        const { items: firstItems = [], meta } = await fetcher({
           token,
           signal: controller.signal,
           page: 1,
@@ -223,20 +241,38 @@ const AnagraficaList = () => {
             : DEFAULT_FETCH_PAGE_SIZE
         const perPage = meta?.per_page ?? fallbackPerPage
 
-        for (let nextPage = 2; nextPage <= totalPages; nextPage += 1) {
-          if (controller.signal.aborted) {
-            return
+        if (totalPages > 1) {
+          for (let nextPage = 2; nextPage <= totalPages; nextPage += 1) {
+            if (controller.signal.aborted) return
+            const { items: pageItems = [] } = await fetcher({
+              token,
+              signal: controller.signal,
+              page: nextPage,
+              pageSize: perPage,
+            })
+            if (Array.isArray(pageItems) && pageItems.length > 0) {
+              allItems = allItems.concat(pageItems)
+            }
           }
-
-          const { items: pageItems = [] } = await fetchAnagrafiche({
-            token,
-            signal: controller.signal,
-            page: nextPage,
-            pageSize: perPage,
-          })
-
-          if (Array.isArray(pageItems) && pageItems.length > 0) {
+        } else {
+          // Fallback robusto: se meta non indica più pagine ma sembra esserci ancora paginazione,
+          // continua a richiamare finché arrivano risultati (< perPage) o max 100 pagine
+          let nextPage = 2
+          let safety = 0
+          // Se la prima pagina è piena, prova a continuare
+          while (firstItems.length === perPage && safety < 100) {
+            if (controller.signal.aborted) break
+            const { items: pageItems = [] } = await fetcher({
+              token,
+              signal: controller.signal,
+              page: nextPage,
+              pageSize: perPage,
+            })
+            if (!Array.isArray(pageItems) || pageItems.length === 0) break
             allItems = allItems.concat(pageItems)
+            nextPage += 1
+            safety += 1
+            if (pageItems.length < perPage) break
           }
         }
 
@@ -264,7 +300,7 @@ const AnagraficaList = () => {
     return () => {
       controller.abort()
     }
-  }, [token, logout, refreshIndex])
+  }, [token, logout, refreshIndex, viewMode])
 
   const filteredAnagrafiche = useMemo(() => {
     const term = search.trim().toLowerCase()
@@ -313,15 +349,51 @@ const AnagraficaList = () => {
     })
   }, [totalFiltered, rowsPerPage])
 
-  const paginatedAnagrafiche = useMemo(() => {
-    const start = page * rowsPerPage
-    return filteredAnagrafiche.slice(start, start + rowsPerPage)
-  }, [filteredAnagrafiche, page, rowsPerPage])
+  // Raggruppamento
+  const groupedFlat = useMemo(() => {
+    if (groupBy === 'none') return filteredAnagrafiche.map((d) => ({ type: 'item', data: d }))
+    const groups = []
+    const index = new Map()
+    const getKey = (row) => {
+      if (groupBy === 'comune') return String(row.citta || '-').trim() || '-'
+      if (groupBy === 'provincia') return String(row.provincia || '-').trim() || '-'
+      return '-'
+    }
+    for (const row of filteredAnagrafiche) {
+      const key = getKey(row)
+      let g = index.get(key)
+      if (!g) {
+        g = { label: key, rows: [] }
+        index.set(key, g)
+        groups.push(g)
+      }
+      g.rows.push({ type: 'item', data: row })
+    }
+    const flat = []
+    for (const g of groups) {
+      flat.push({ type: 'group', label: g.label, count: g.rows.length })
+      flat.push(...g.rows)
+    }
+    return flat
+  }, [filteredAnagrafiche, groupBy])
 
-  const totalPages = Math.max(1, Math.ceil(totalFiltered / rowsPerPage) || 1)
+  const pageItems = useMemo(() => {
+    if (rowsPerPage === 0) return groupedFlat
+    const start = page * rowsPerPage
+    return groupedFlat.slice(start, start + rowsPerPage)
+  }, [groupedFlat, page, rowsPerPage])
+
+  const totalFlat = groupedFlat.length
+  const totalPages = rowsPerPage === 0 ? 1 : Math.max(1, Math.ceil(totalFlat / rowsPerPage) || 1)
   const paginationItems = useMemo(() => getPageItems(page + 1, totalPages), [page, totalPages])
-  const pageFrom = totalFiltered === 0 ? 0 : page * rowsPerPage + 1
-  const pageTo = totalFiltered === 0 ? 0 : page * rowsPerPage + paginatedAnagrafiche.length
+  // Calcolo range visualizzato considerando solo righe item
+  const itemsBefore = useMemo(
+    () => groupedFlat.slice(0, page * rowsPerPage).filter((x) => x.type === 'item').length,
+    [groupedFlat, page, rowsPerPage],
+  )
+  const visibleItems = pageItems.filter((x) => x.type === 'item').length
+  const pageFrom = totalFiltered === 0 ? 0 : visibleItems > 0 ? itemsBefore + 1 : 0
+  const pageTo = totalFiltered === 0 ? 0 : itemsBefore + visibleItems
 
   const handleSearchChange = (event) => {
     setSearch(event.target.value)
@@ -333,8 +405,14 @@ const AnagraficaList = () => {
   }
 
   const handleRowsPerPageChange = (event) => {
-    setRowsPerPage(Number(event.target.value))
-    setPage(0)
+    const val = event.target.value
+    if (val === 'all') {
+      setRowsPerPage(0)
+      setPage(0)
+    } else {
+      setRowsPerPage(Number(val))
+      setPage(0)
+    }
   }
 
   const handleSort = (columnKey) => {
@@ -346,6 +424,83 @@ const AnagraficaList = () => {
     }
 
     setPage(0)
+  }
+
+  const getExportValue = (row, key) => {
+    if (key === 'id_anagrafica') return row.id_anagrafica ?? row.id ?? ''
+    if (key === 'stato') return row.stato ?? ''
+    if (key === 'indirizzo') return row.indirizzo ?? ''
+    return row?.[key] ?? ''
+  }
+
+  const toCSV = (rows, cols, delimiter = ';') => {
+    const escape = (val) => {
+      const s = String(val ?? '')
+      if (s.includes('"') || s.includes('\n') || s.includes('\r') || s.includes(delimiter)) {
+        return '"' + s.replace(/"/g, '""') + '"'
+      }
+      return s
+    }
+    const header = cols.map((c) => escape(c.label)).join(delimiter)
+    const body = rows
+      .map((r) => cols.map((c) => escape(getExportValue(r, c.key))).join(delimiter))
+      .join('\n')
+    return header + '\n' + body
+  }
+
+  const downloadBlob = (content, mime, filename) => {
+    const blob = new Blob([content], { type: mime })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
+
+  const handleExport = (type) => {
+    if (filteredAnagrafiche.length === 0) return
+    if (type === 'csv') {
+      const csv = toCSV(filteredAnagrafiche, columns)
+      downloadBlob(csv, 'text/csv;charset=utf-8;', 'anagrafiche.csv')
+      return
+    }
+    if (type === 'excel') {
+      const csv = toCSV(filteredAnagrafiche, columns, '\t')
+      downloadBlob(csv, 'application/vnd.ms-excel;charset=utf-8;', 'anagrafiche.xls')
+      return
+    }
+    if (type === 'pdf') {
+      const htmlRows = filteredAnagrafiche
+        .map(
+          (r) =>
+            '<tr>' +
+            columns
+              .map(
+                (c) =>
+                  `<td style="padding:4px 8px;border:1px solid #ddd;">${String(getExportValue(r, c.key) ?? '')}</td>`,
+              )
+              .join('') +
+            '</tr>',
+        )
+        .join('')
+      const html = `<!doctype html><html><head><meta charset="utf-8"><title>Anagrafiche</title>
+        <style>table{border-collapse:collapse;width:100%;font:12px Arial;} th{background:#f0f0f0;border:1px solid #ddd;padding:6px 8px;text-align:left;} td{border:1px solid #ddd;padding:4px 8px;}</style>
+        </head><body>
+        <h3>Anagrafiche</h3>
+        <table><thead><tr>${columns.map((c) => `<th>${c.label}</th>`).join('')}</tr></thead><tbody>${htmlRows}</tbody></table>
+        <script>window.onload=()=>{window.print();}</script>
+        </body></html>`
+      const win = window.open('', '_blank')
+      if (win) {
+        win.document.open()
+        win.document.write(html)
+        win.document.close()
+        win.focus()
+      }
+    }
   }
 
   const handlePageChange = (nextPage) => {
@@ -365,16 +520,53 @@ const AnagraficaList = () => {
     navigate(`/anagrafica/dettagli?id=${recordId}`, { state: { id: recordId } })
   }
 
+  const handleRestore = async (anagrafica) => {
+    const recordId = anagrafica.id_anagrafica ?? anagrafica.id
+    if (!recordId || !token) return
+    const confirmed = window.confirm(`Confermi il ripristino dell'anagrafica ${recordId}?`)
+    if (!confirmed) return
+    try {
+      await reactivateAnagrafica({ token, id: recordId })
+      // Torna su elenco attive e aggiorna
+      setViewMode('attive')
+      setRefreshIndex((v) => v + 1)
+    } catch (err) {
+      if (err?.status === 401 && logout) {
+        logout()
+        return
+      }
+      alert(err?.payload?.message || err?.message || 'Ripristino non riuscito')
+    }
+  }
+
   return (
     <CCard>
       <CCardHeader className="d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-3">
         <div>
-          <h2 className="h5 mb-1">Anagrafiche</h2>
+          <h2 className="h5 mb-1">Anagrafiche {viewMode === 'archiviate' ? '(archiviate)' : ''}</h2>
           <p className="text-body-secondary mb-0">
-            Visualizza, cerca e consulta i dettagli delle anagrafiche registrate nel sistema.
+            Visualizza, cerca e consulta i dettagli delle anagrafiche {viewMode === 'archiviate' ? 'archiviate' : 'attive'} nel sistema.
           </p>
         </div>
         <div className="d-flex flex-column flex-sm-row align-items-stretch align-items-sm-center gap-2">
+          <div className="btn-group" role="group" aria-label="Seleziona elenco">
+            <CButton
+              color={viewMode === 'attive' ? 'primary' : 'secondary'}
+              variant={viewMode === 'attive' ? 'solid' : 'outline'}
+              onClick={() => setViewMode('attive')}
+              disabled={loading || viewMode === 'attive'}
+            >
+              Attive
+            </CButton>
+            <CButton
+              color={viewMode === 'archiviate' ? 'primary' : 'secondary'}
+              variant={viewMode === 'archiviate' ? 'solid' : 'outline'}
+              onClick={() => setViewMode('archiviate')}
+              disabled={loading || viewMode === 'archiviate'}
+            >
+              Archiviate
+            </CButton>
+          </div>
           <CButton color="primary" component={Link} to="/anagrafica/crea" disabled={loading}>
             <CIcon icon={cilPlus} className="me-2" /> Nuova anagrafica
           </CButton>
@@ -425,6 +617,72 @@ const AnagraficaList = () => {
 
         {!loading && !error && filteredAnagrafiche.length > 0 && (
           <>
+            <div className="d-flex justify-content-end mb-2">
+              <div className="d-flex align-items-center gap-2">
+                <span className="text-body-secondary">Raggruppa per</span>
+                <CFormSelect
+                  size="sm"
+                  value={groupBy}
+                  onChange={(e) => {
+                    setGroupBy(e.target.value)
+                    setPage(0)
+                  }}
+                  style={{ width: 180 }}
+                >
+                  <option value="none">Nessuno</option>
+                  <option value="comune">Comune</option>
+                  <option value="provincia">Provincia</option>
+                </CFormSelect>
+              </div>
+            </div>
+            <div className="d-flex flex-wrap justify-content-between align-items-center mb-2 gap-2">
+              <div className="d-flex align-items-center gap-2">
+                <span className="text-body-secondary">Raggruppa per</span>
+                <CFormSelect
+                  size="sm"
+                  value={groupBy}
+                  onChange={(e) => {
+                    setGroupBy(e.target.value)
+                    setPage(0)
+                  }}
+                  style={{ width: 180 }}
+                >
+                  <option value="none">Nessuno</option>
+                  <option value="comune">Comune</option>
+                  <option value="provincia">Provincia</option>
+                </CFormSelect>
+              </div>
+              <div className="d-flex align-items-center gap-2">
+                <span className="text-body-secondary">Esporta</span>
+                <CButton
+                  size="sm"
+                  color="secondary"
+                  variant="outline"
+                  disabled={exporting || filteredAnagrafiche.length === 0}
+                  onClick={() => handleExport('csv')}
+                >
+                  CSV
+                </CButton>
+                <CButton
+                  size="sm"
+                  color="secondary"
+                  variant="outline"
+                  disabled={exporting || filteredAnagrafiche.length === 0}
+                  onClick={() => handleExport('excel')}
+                >
+                  Excel
+                </CButton>
+                <CButton
+                  size="sm"
+                  color="secondary"
+                  variant="outline"
+                  disabled={filteredAnagrafiche.length === 0}
+                  onClick={() => handleExport('pdf')}
+                >
+                  PDF
+                </CButton>
+              </div>
+            </div>
             <CTable hover responsive>
               <CTableHead color="light">
                 <CTableRow className="align-middle">
@@ -471,9 +729,18 @@ const AnagraficaList = () => {
                 </CTableRow>
               </CTableHead>
               <CTableBody>
-                {paginatedAnagrafiche.map((anagrafica, index) => {
+                {pageItems.map((row, index) => {
+                  if (row.type === 'group') {
+                    return (
+                      <CTableRow key={`g-${index}`} className="table-secondary">
+                        <CTableDataCell colSpan={columns.length + 1} className="fw-semibold">
+                          {row.label} — {row.count} elementi
+                        </CTableDataCell>
+                      </CTableRow>
+                    )
+                  }
+                  const anagrafica = row.data
                   const rowKey = anagrafica.id_anagrafica ?? anagrafica.id ?? index
-
                   return (
                     <CTableRow key={rowKey}>
                       {columns.map((column) => (
@@ -482,14 +749,26 @@ const AnagraficaList = () => {
                         </CTableDataCell>
                       ))}
                       <CTableDataCell className="text-center">
-                        <CButton
-                          color="link"
-                          size="sm"
-                          className="p-0"
-                          onClick={() => handleViewDetails(anagrafica)}
-                        >
-                          <CIcon icon={cilSearch} />
-                        </CButton>
+                        {viewMode === 'archiviate' ? (
+                          <CButton
+                            color="primary"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleRestore(anagrafica)}
+                            disabled={loading}
+                          >
+                            Ripristina
+                          </CButton>
+                        ) : (
+                          <CButton
+                            color="link"
+                            size="sm"
+                            className="p-0"
+                            onClick={() => handleViewDetails(anagrafica)}
+                          >
+                            <CIcon icon={cilSearch} />
+                          </CButton>
+                        )}
                       </CTableDataCell>
                     </CTableRow>
                   )
@@ -502,20 +781,54 @@ const AnagraficaList = () => {
                 {`Mostrando ${pageFrom} - ${pageTo} di ${totalFiltered} risultati`}
               </div>
               <div className="d-flex flex-column flex-sm-row align-items-stretch align-items-sm-center gap-2">
+                <div className="d-flex align-items-center gap-2">
+                  <span className="text-body-secondary">Esporta</span>
+                  <CButton
+                    size="sm"
+                    color="secondary"
+                    variant="outline"
+                    disabled={filteredAnagrafiche.length === 0}
+                    onClick={() => handleExport('csv')}
+                  >
+                    CSV
+                  </CButton>
+                  <CButton
+                    size="sm"
+                    color="secondary"
+                    variant="outline"
+                    disabled={filteredAnagrafiche.length === 0}
+                    onClick={() => handleExport('excel')}
+                  >
+                    Excel
+                  </CButton>
+                  <CButton
+                    size="sm"
+                    color="secondary"
+                    variant="outline"
+                    disabled={filteredAnagrafiche.length === 0}
+                    onClick={() => handleExport('pdf')}
+                  >
+                    PDF
+                  </CButton>
+                </div>
                 <CInputGroup size="sm" style={{ width: 'auto' }}>
                   <CInputGroupText>Righe per pagina</CInputGroupText>
-                  <CFormSelect value={rowsPerPage} onChange={handleRowsPerPageChange}>
+                  <CFormSelect
+                    value={rowsPerPage === 0 ? 'all' : String(rowsPerPage)}
+                    onChange={handleRowsPerPageChange}
+                  >
                     {ROWS_PER_PAGE_OPTIONS.map((option) => (
                       <option value={option} key={option}>
                         {option}
                       </option>
                     ))}
+                    <option value="all">Tutti</option>
                   </CFormSelect>
                 </CInputGroup>
                 <CPagination className="mb-0" size="sm">
                   <CPaginationItem
                     aria-label="Pagina precedente"
-                    disabled={page <= 0}
+                    disabled={page <= 0 || rowsPerPage === 0}
                     onClick={() => {
                       if (page > 0) {
                         handlePageChange(page - 1)
@@ -524,7 +837,7 @@ const AnagraficaList = () => {
                   >
                     &laquo;
                   </CPaginationItem>
-                  {paginationItems.map((item, index) =>
+                  {rowsPerPage !== 0 && paginationItems.map((item, index) =>
                     item === 'ellipsis' ? (
                       <CPaginationItem key={`ellipsis-${index}`} disabled>
                         &hellip;
@@ -541,7 +854,7 @@ const AnagraficaList = () => {
                   )}
                   <CPaginationItem
                     aria-label="Pagina successiva"
-                    disabled={page >= totalPages - 1 || totalFiltered === 0}
+                    disabled={rowsPerPage === 0 || page >= totalPages - 1 || totalFiltered === 0}
                     onClick={() => {
                       if (page < totalPages - 1) {
                         handlePageChange(page + 1)
@@ -561,4 +874,3 @@ const AnagraficaList = () => {
 }
 
 export default AnagraficaList
-

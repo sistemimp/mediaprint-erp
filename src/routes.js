@@ -20,6 +20,13 @@ const FattureCreate = React.lazy(() => import('./views/fatture/FattureCreate'))
 const FattureList = React.lazy(() => import('./views/fatture/FattureList'))
 const FattureDetail = React.lazy(() => import('./views/fatture/FattureDetail'))
 
+// Prodotti
+const ProdottiCreate = React.lazy(() => import('./views/prodotti/ProdottiCreate'))
+const ProdottiList = React.lazy(() => import('./views/prodotti/ProdottiList'))
+const ProdottiDetail = React.lazy(() => import('./views/prodotti/ProdottiDetail'))
+const ProdottiCategorie = React.lazy(() => import('./views/prodotti/CategorieList'))
+const ProdottiVariazioni = React.lazy(() => import('./views/prodotti/VariazioniList'))
+
 const routes = [
   { path: '/', exact: true, name: 'Home' },
   { path: '/dashboard', name: 'Dashboard', element: Dashboard },
@@ -37,6 +44,11 @@ const routes = [
   { path: '/fatture/crea', name: 'Fatture - Crea nuova', element: FattureCreate },
   { path: '/fatture/lista', name: 'Fatture - Lista', element: FattureList },
   { path: '/fatture/dettagli', name: 'Fatture - Dettagli', element: FattureDetail },
+  { path: '/prodotti/crea', name: 'Prodotti - Crea nuovo', element: ProdottiCreate },
+  { path: '/prodotti/lista', name: 'Prodotti - Lista', element: ProdottiList },
+  { path: '/prodotti/dettagli', name: 'Prodotti - Dettagli', element: ProdottiDetail },
+  { path: '/prodotti/categorie', name: 'Prodotti - Categorie', element: ProdottiCategorie },
+  { path: '/prodotti/variazioni', name: 'Prodotti - Variazioni', element: ProdottiVariazioni },
 ]
 
 export default routes

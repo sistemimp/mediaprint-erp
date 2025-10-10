@@ -1,10 +1,10 @@
 <?php
+declare(strict_types=1);
 
 require __DIR__ . '/../bootstrap.php';
 
-use MediaPrint\Backend\Cors;
-use MediaPrint\Repo\AnagraficheRepository;
-use MediaPrint\Service\AnagraficheService;
+use MediaPrint\Repo\PreventiviRepository;
+use MediaPrint\Service\PreventiviService;
 use MediaPrint\Backend\Database;
 use MediaPrint\Backend\HttpResponse;
 
@@ -20,10 +20,7 @@ if ($method !== 'GET') {
 }
 
 try {
-    $service = new AnagraficheService(
-        new AnagraficheRepository(Database::getConnection())
-    );
-
+    $service = new PreventiviService(new PreventiviRepository(Database::getConnection()));
     $result = $service->detail($_GET);
     HttpResponse::json($result, 200);
 } catch (RuntimeException $exception) {

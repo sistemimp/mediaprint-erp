@@ -1,12 +1,9 @@
 <?php
-// backend/src/Services/AnagraficheService.php
-
 declare(strict_types=1);
 
 namespace MediaPrint\Service;
 
 use MediaPrint\Repo\AnagraficheRepository;
-
 use RuntimeException;
 
 final class AnagraficheService
@@ -14,61 +11,217 @@ final class AnagraficheService
     public function __construct(private AnagraficheRepository $repository) {}
 
     /**
-     * @return array{data: list<array<string, mixed>>, meta: array<string, mixed>}
+     * @return array{data: list<array<string,mixed>>, meta: array<string,int>}
      */
     public function list(array $input): array
     {
         $filters = [
-            'search' => isset($input['search']) ? trim((string)$input['search']) : null,
-            'page' => (int)($input['page'] ?? 1),
-            'per_page' => (int)($input['per_page'] ?? 20),
-            'sort_by' => $input['sort_by'] ?? null,
-            'sort_direction' => $input['sort_direction'] ?? null,
+            'search' => isset($input['search']) ? (string) $input['search'] : null,
+            'sort_by' => isset($input['sort_by']) ? (string) $input['sort_by'] : 'ragione_sociale',
+            'sort_direction' => (isset($input['sort_direction']) && strtolower((string)$input['sort_direction']) === 'desc') ? 'desc' : 'asc',
+            'page' => isset($input['page']) ? max(1, (int) $input['page']) : 1,
+            'per_page' => isset($input['per_page']) ? max(1, (int) $input['per_page']) : 20,
         ];
 
-        if ($filters['per_page'] > 100) {
-            throw new RuntimeException('per_page non può superare 100.');
-        }
-
         $result = $this->repository->search($filters);
-
-        $total = $result['total'];
-        $page = max($filters['page'], 1);
-        $perPage = max(1, min($filters['per_page'], 100));
-        $lastPage = (int)ceil($total / $perPage);
+        $total = (int) $result['total'];
+        $perPage = (int) $filters['per_page'];
+        $page = (int) $filters['page'];
+        $pages = (int) max(1, (int) ceil($total / max($perPage, 1)));
 
         return [
             'data' => $result['data'],
             'meta' => [
                 'total' => $total,
+                'page' => $page,
                 'per_page' => $perPage,
-                'current_page' => $page,
-                'last_page' => max($lastPage, 1),
-                'from' => $total > 0 ? (($page - 1) * $perPage) + 1 : 0,
-                'to' => min($page * $perPage, $total),
-                'sort_by' => $filters['sort_by'] ?? 'ragione_sociale',
-                'sort_direction' => strtolower($filters['sort_direction'] ?? 'asc') === 'desc' ? 'desc' : 'asc',
+                'pages' => $pages,
             ],
         ];
     }
 
     /**
-     * @return array<string, mixed>
+     * @return array<string,mixed>
      */
     public function detail(array $input): array
     {
-        $id = isset($input['id']) ? (int)$input['id'] : 0;
-
+        $id = isset($input['id']) ? (int) $input['id'] : (isset($input['id_anagrafica']) ? (int) $input['id_anagrafica'] : 0);
         if ($id <= 0) {
-            throw new RuntimeException('ID anagrafica non valido.', 422);
+            throw new RuntimeException('ID anagrafica mancante o non valido.', 422);
         }
 
         $detail = $this->repository->findDetail($id);
-
         if ($detail === null) {
             throw new RuntimeException('Anagrafica non trovata.', 404);
         }
 
         return $detail;
+    }
+
+    /**
+     * Aggiorna anagrafica (base, fiscale, sedi, contatti) in transazione.
+     *
+     * Input:
+     * - id | id_anagrafica: int (obbligatorio)
+     * - anagrafica: array (campi base opzionali)
+     * - fiscale: array (campi fiscali opzionali)
+     * - sedi: list operazioni [{ action: create|update|delete, id_sede?, ...campi }]
+     * - contatti: list operazioni [{ action: create|update|delete, id_contatto?, ...campi }]
+     *
+     * @return array{ok: bool}
+     */
+    public function update(array $input): array
+    {
+        $id = isset($input['id']) ? (int) $input['id'] : (isset($input['id_anagrafica']) ? (int) $input['id_anagrafica'] : 0);
+        if ($id <= 0) {
+            throw new RuntimeException('ID anagrafica mancante o non valido.', 422);
+        }
+
+        return $this->repository->transactional(function () use ($id, $input): array {
+            if (isset($input['anagrafica']) && is_array($input['anagrafica'])) {
+                // Se is_active=0 richiesto, esegue archiviazione completa + delete
+                if (array_key_exists('is_active', $input['anagrafica']) && (int) $input['anagrafica']['is_active'] === 0) {
+                    $this->repository->archiveAndDeleteCascade($id);
+                    // Non proseguire con altre mutazioni (documenti/sedi/contatti) perché già archiviate/eliminate
+                    return ['ok' => true];
+                }
+
+                // Altrimenti normale update
+                $this->repository->updateAnagrafica($id, $input['anagrafica']);
+            }
+
+            if (isset($input['fiscale']) && is_array($input['fiscale'])) {
+                $this->repository->upsertFiscale($id, $input['fiscale']);
+            }
+
+            if (isset($input['sedi']) && is_array($input['sedi'])) {
+                foreach ($input['sedi'] as $op) {
+                    if (!is_array($op) || !isset($op['action'])) { continue; }
+                    $action = strtolower((string) $op['action']);
+                    if ($action === 'create') {
+                        $this->repository->insertSede($id, $op);
+                    } elseif ($action === 'update') {
+                        $sedeId = isset($op['id_sede']) ? (int) $op['id_sede'] : 0;
+                        if ($sedeId <= 0) { throw new RuntimeException('id_sede mancante per update sede.', 422); }
+                        $this->repository->updateSede($id, $sedeId, $op);
+                    } elseif ($action === 'delete') {
+                        $sedeId = isset($op['id_sede']) ? (int) $op['id_sede'] : 0;
+                        if ($sedeId <= 0) { throw new RuntimeException('id_sede mancante per delete sede.', 422); }
+                        $this->repository->deleteSede($id, $sedeId);
+                    }
+                }
+            }
+
+            if (isset($input['contatti']) && is_array($input['contatti'])) {
+                foreach ($input['contatti'] as $op) {
+                    if (!is_array($op) || !isset($op['action'])) { continue; }
+                    $action = strtolower((string) $op['action']);
+                    if ($action === 'create') {
+                        $this->repository->insertContatto($id, $op);
+                    } elseif ($action === 'update') {
+                        $contattoId = isset($op['id_contatto']) ? (int) $op['id_contatto'] : 0;
+                        if ($contattoId <= 0) { throw new RuntimeException('id_contatto mancante per update contatto.', 422); }
+                        $this->repository->updateContatto($id, $contattoId, $op);
+                    } elseif ($action === 'delete') {
+                        $contattoId = isset($op['id_contatto']) ? (int) $op['id_contatto'] : 0;
+                        if ($contattoId <= 0) { throw new RuntimeException('id_contatto mancante per delete contatto.', 422); }
+                        $this->repository->deleteContatto($id, $contattoId);
+                    }
+                }
+            }
+
+            return ['ok' => true];
+        });
+    }
+
+    /**
+     * @return array{data: list<array<string,mixed>>, meta: array<string,int>}
+     */
+    public function listArchived(array $input): array
+    {
+        $filters = [
+            'search' => isset($input['search']) ? (string) $input['search'] : null,
+            'sort_by' => isset($input['sort_by']) ? (string) $input['sort_by'] : 'archived_at',
+            'sort_direction' => (isset($input['sort_direction']) && strtolower((string)$input['sort_direction']) === 'asc') ? 'asc' : 'desc',
+            'page' => isset($input['page']) ? max(1, (int) $input['page']) : 1,
+            'per_page' => isset($input['per_page']) ? max(1, (int) $input['per_page']) : 20,
+        ];
+
+        $result = $this->repository->searchArchived($filters);
+        $total = (int) $result['total'];
+        $perPage = (int) $filters['per_page'];
+        $page = (int) $filters['page'];
+        $pages = (int) max(1, (int) ceil($total / max($perPage, 1)));
+
+        return [
+            'data' => $result['data'],
+            'meta' => [
+                'total' => $total,
+                'page' => $page,
+                'per_page' => $perPage,
+                'pages' => $pages,
+            ],
+        ];
+    }
+
+    /**
+     * Crea una nuova anagrafica di base e restituisce l'ID creato.
+     *
+     * Input accettati (tutti opzionali salvo ragione_sociale):
+     * - ragione_sociale: string (obbligatorio)
+     * - piva, codice_fiscale, email, telefono, indirizzo, cap, citta, provincia, nazione, note: string
+     * - id_tipologia, id_sdi_regime_fiscale: int
+     * - is_pa, is_active: int (0/1)
+     * - stato: string (default 'attiva')
+     *
+     * @return array{ id_anagrafica: int }
+     */
+    public function create(array $input): array
+    {
+        $ragioneSociale = isset($input['ragione_sociale']) ? trim((string) $input['ragione_sociale']) : '';
+        if ($ragioneSociale === '') {
+            throw new RuntimeException('Ragione sociale obbligatoria.', 422);
+        }
+
+        $data = [
+            'ragione_sociale' => $ragioneSociale,
+            'piva' => isset($input['piva']) ? (string) $input['piva'] : null,
+            'codice_fiscale' => isset($input['codice_fiscale']) ? (string) $input['codice_fiscale'] : null,
+            'indirizzo' => isset($input['indirizzo']) ? (string) $input['indirizzo'] : null,
+            'cap' => isset($input['cap']) ? (string) $input['cap'] : null,
+            'citta' => isset($input['citta']) ? (string) $input['citta'] : null,
+            'provincia' => isset($input['provincia']) ? (string) $input['provincia'] : null,
+            'nazione' => isset($input['nazione']) ? (string) $input['nazione'] : null,
+            'email' => isset($input['email']) ? (string) $input['email'] : null,
+            'telefono' => isset($input['telefono']) ? (string) $input['telefono'] : null,
+            'note' => isset($input['note']) ? (string) $input['note'] : null,
+            'id_tipologia' => isset($input['id_tipologia']) ? (int) $input['id_tipologia'] : 1,
+            'id_sdi_regime_fiscale' => isset($input['id_sdi_regime_fiscale']) ? (int) $input['id_sdi_regime_fiscale'] : null,
+            'is_pa' => isset($input['is_pa']) ? (int) $input['is_pa'] : 0,
+            'is_active' => isset($input['is_active']) ? (int) $input['is_active'] : 1,
+            'stato' => isset($input['stato']) && trim((string)$input['stato']) !== '' ? (string) $input['stato'] : 'attiva',
+        ];
+
+        $id = $this->repository->createAnagrafica($data);
+
+        return ['id_anagrafica' => $id];
+    }
+
+    /**
+     * Riattiva una anagrafica dall'archivio nelle tabelle principali.
+     * Input: id | id_anagrafica
+     * Output: { ok: true }
+     */
+    public function reactivate(array $input): array
+    {
+        $id = isset($input['id']) ? (int) $input['id'] : (isset($input['id_anagrafica']) ? (int) $input['id_anagrafica'] : 0);
+        if ($id <= 0) {
+            throw new RuntimeException('ID anagrafica mancante o non valido.', 422);
+        }
+
+        return $this->repository->transactional(function () use ($id): array {
+            $this->repository->reactivateFromArchive($id);
+            return ['ok' => true];
+        });
     }
 }

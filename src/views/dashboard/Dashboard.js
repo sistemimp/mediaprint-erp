@@ -1,4 +1,5 @@
-import React from 'react'
+/* eslint-disable prettier/prettier */
+import React, { useEffect, useState } from 'react'
 import classNames from 'classnames'
 
 import {
@@ -53,8 +54,32 @@ import avatar6 from 'src/assets/images/avatars/6.jpg'
 import WidgetsBrand from '../widgets/WidgetsBrand'
 import WidgetsDropdown from '../widgets/WidgetsDropdown'
 import MainChart from './MainChart'
+import UsersWidget from '../widgets/UsersWidget'
+
+import { fetchAnagraficheDash } from '../../services/dashboard'
 
 const Dashboard = () => {
+  const [statsJson, setStatsJson] = useState(null)
+  const [loadError, setLoadError] = useState(null)
+  const [seriesAnag, setSeriesAnag] = useState(null)
+  const [kpiAnag, setKpiAnag] = useState(null)
+
+  useEffect(() => {
+    const controller = new AbortController()
+      ; (async () => {
+        try {
+          const data = await fetchAnagraficheDash({ signal: controller.signal })
+          setStatsJson(data)
+          setSeriesAnag(data.series)
+          setKpiAnag(data.kpi)
+        } catch (err) {
+          console.error('Failed to load dashboard data:', err)
+          setLoadError(err?.message || 'Errore durante il caricamento dashboard')
+        }
+      })()
+    return () => controller.abort()
+  }, [])
+
   const progressExample = [
     { title: 'Visits', value: '29.703 Users', percent: 40, color: 'success' },
     { title: 'Unique', value: '24.093 Users', percent: 20, color: 'info' },
@@ -176,9 +201,60 @@ const Dashboard = () => {
     },
   ]
 
+
+
   return (
     <>
-      <WidgetsDropdown className="mb-4" />
+      {loadError ? (
+        <div className="alert alert-warning" role="alert">
+          {String(loadError)}
+        </div>
+      ) : null}
+
+      <CRow>
+        <CCol>
+          <UsersWidget
+            title="Anagrafiche"
+            color="success"
+            statsJson={
+              statsJson ?? {
+                kpi: kpiAnag,
+                series: seriesAnag,
+              }
+            }
+            showMenu={false}
+          />
+        </CCol>
+        <CCol>
+          <UsersWidget
+            title="Preventivi"
+            color="primary"
+            statsJson={
+              statsJson ?? {
+                kpi: kpiAnag,
+                series: seriesAnag,
+              }
+            }
+            showMenu={false}
+          />
+        </CCol>
+        <CCol>
+          <UsersWidget
+            title="Fatture"
+            color="secondary"
+            statsJson={
+              statsJson ?? {
+                kpi: kpiAnag,
+                series: seriesAnag,
+              }
+            }
+            showMenu={false}
+          />
+        </CCol>
+      </CRow>
+
+
+
       <CCard className="mb-4">
         <CCardBody>
           <CRow>
@@ -233,7 +309,6 @@ const Dashboard = () => {
           </CRow>
         </CCardFooter>
       </CCard>
-      <WidgetsBrand className="mb-4" withCharts />
       <CRow>
         <CCol xs>
           <CCard className="mb-4">

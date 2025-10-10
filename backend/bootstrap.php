@@ -53,18 +53,39 @@ function loadEnv(string $path): void
 }
 
 spl_autoload_register(static function (string $class): void {
-    $prefix = 'MediaPrint\\Backend\\';
     $baseDir = __DIR__ . '/src/';
 
-    if (strncmp($prefix, $class, strlen($prefix)) !== 0) {
+    // MediaPrint\\Backend\\ maps to src/ (classes directly under src)
+    $backendPrefix = 'MediaPrint\\Backend\\';
+    if (strncmp($backendPrefix, $class, strlen($backendPrefix)) === 0) {
+        $relative = substr($class, strlen($backendPrefix));
+        $path = $baseDir . str_replace('\\', '/', $relative) . '.php';
+        if (is_readable($path)) {
+            require_once $path;
+        }
         return;
     }
 
-    $relative = substr($class, strlen($prefix));
-    $path = $baseDir . str_replace('\\', '/', $relative) . '.php';
+    // MediaPrint\\Service\\ maps to src/Service/
+    $servicePrefix = 'MediaPrint\\Service\\';
+    if (strncmp($servicePrefix, $class, strlen($servicePrefix)) === 0) {
+        $relative = substr($class, strlen($servicePrefix));
+        $path = $baseDir . 'Service/' . str_replace('\\', '/', $relative) . '.php';
+        if (is_readable($path)) {
+            require_once $path;
+        }
+        return;
+    }
 
-    if (is_readable($path)) {
-        require_once $path;
+    // MediaPrint\\Repo\\ maps to src/Repositories/
+    $repoPrefix = 'MediaPrint\\Repo\\';
+    if (strncmp($repoPrefix, $class, strlen($repoPrefix)) === 0) {
+        $relative = substr($class, strlen($repoPrefix));
+        $path = $baseDir . 'Repositories/' . str_replace('\\', '/', $relative) . '.php';
+        if (is_readable($path)) {
+            require_once $path;
+        }
+        return;
     }
 });
 
