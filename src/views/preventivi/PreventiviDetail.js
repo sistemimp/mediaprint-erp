@@ -1,3 +1,4 @@
+/* eslint-disable prettier/prettier */
 import React, { useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import {
@@ -35,7 +36,14 @@ import { cilCheckCircle, cilSave } from '@coreui/icons'
 import { useAuth } from '../../context/AuthContext'
 import { fetchAnagrafiche, fetchAnagraficaDetail } from '../../services/anagrafiche'
 import { createPreventivo, fetchPreventivoDetail } from '../../services/preventivi'
-import { fetchCategorieProdotti, fetchProdotti, fetchNatureIva, fetchProdottoVariazioni, fetchProdottoPrezziCombinati, fetchProdottoDetail } from '../../services/prodotti'
+import {
+  fetchCategorieProdotti,
+  fetchProdotti,
+  fetchNatureIva,
+  fetchProdottoVariazioni,
+  fetchProdottoPrezziCombinati,
+  fetchProdottoDetail,
+} from '../../services/prodotti'
 import { fetchPacchetti, fetchPacchettoDetail } from '../../services/pacchetti'
 
 const currencyFormatter = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' })
@@ -132,15 +140,25 @@ const PreventiviDetail = () => {
         // Righe dal server -> mappa a forma UI (nessun fallback sintetico)
         if (Array.isArray(righeSrv)) {
           setRighe(
-            righeSrv.map((r) => ({
-              descrizione: r.descrizione ?? '',
-              quantita: r.quantita ?? 1,
-              prezzo: r.prezzo_unitario ?? 0,
-              iva: r.iva ?? 22,
-              sconto: r.sconto ?? 0,
-              id_prodotto: r.id_prodotto ?? null,
-              id_sdi_natura_iva: r.id_sdi_natura_iva ?? null,
-            })),
+
+            righeSrv.map((r) => {
+              const idCategoria =
+                r.id_categoria ?? r.id_categoria_prodotto ?? r.id_categoria_prodotto_default ?? null
+              const categoriaNome =
+                r.categoria_nome ?? r.categoria ?? r.nome_categoria ?? r.nome_categoria_prodotto ?? null
+              return {
+                descrizione: r.descrizione ?? '',
+                quantita: r.quantita ?? 1,
+                prezzo: r.prezzo_unitario ?? 0,
+                iva: r.iva ?? 22,
+                sconto: r.sconto ?? 0,
+                id_prodotto: r.id_prodotto ?? null,
+                id_sdi_natura_iva: r.id_sdi_natura_iva ?? null,
+                id_categoria: idCategoria != null ? Number(idCategoria) : null,
+                categoria_nome: categoriaNome != null ? String(categoriaNome) : undefined,
+              }
+            }),
+
           )
         } else {
           setRighe([])
@@ -285,7 +303,7 @@ const PreventiviDetail = () => {
         ])
         setCatOptions(cats)
         setNaturaOptions(nats)
-      } catch (_e) {}
+      } catch (_e) { }
     }
     load()
     return () => controller.abort()
@@ -336,9 +354,12 @@ const PreventiviDetail = () => {
         for (const idp of missing) {
           try {
             const resp = await fetchProdottoDetail({ token, id_prodotto: idp, signal: controller.signal })
-            const idcat = Number(resp?.data?.id_categoria) || 0
-            const name = idcat && catNameById[idcat] ? catNameById[idcat] : 'Altro'
-            updates[idp] = name
+            const detail = resp?.item ?? resp?.data ?? resp ?? {}
+            const idcat = Number(detail?.id_categoria) || 0
+            const nameFromDetail = detail?.categoria_nome ?? detail?.categoria ?? detail?.nome_categoria
+            const name =
+              (nameFromDetail && String(nameFromDetail)) || (idcat && catNameById[idcat] ? catNameById[idcat] : 'Altro')
+            updates[idp] = name || 'Altro'
           } catch (_e) {
             updates[idp] = 'Altro'
           }
@@ -346,7 +367,7 @@ const PreventiviDetail = () => {
         if (Object.keys(updates).length > 0) {
           setProdCategoryMap((prev) => ({ ...prev, ...updates }))
         }
-      } catch (_e) {}
+      } catch (_e) { }
     }
     run()
     return () => controller.abort()
@@ -394,10 +415,10 @@ const PreventiviDetail = () => {
     const comboKey = selectedComboKey && String(selectedComboKey).trim() !== ''
       ? selectedComboKey
       : (selectedVarIds
-          .map((id) => Number(id) || 0)
-          .filter((n) => n > 0)
-          .sort((a, b) => a - b)
-          .join('+'))
+        .map((id) => Number(id) || 0)
+        .filter((n) => n > 0)
+        .sort((a, b) => a - b)
+        .join('+'))
     const comboPrice = comboKey && prodComboMap[comboKey] != null ? Number(prodComboMap[comboKey]) : null
     const delta = prodVarOptions
       .filter((v) => selectedVarIds.includes(v.id_variazione))
@@ -653,293 +674,138 @@ const PreventiviDetail = () => {
             </section>
 
             <section className="mb-4">
-            <div className="d-flex align-items-center justify-content-between">
-              <h6 className="mb-0 text-body-secondary">Righe preventivo</h6>
-              <div className="d-flex gap-2">
-                <CButton color="secondary" variant="outline" size="sm" onClick={handleAddRiga} disabled={uiDisabled}>
-                  Aggiungi riga
-                </CButton>
-                <CButton color="primary" variant="outline" size="sm" onClick={() => { resetProductModal(); setStepperOpen(true) }} disabled={uiDisabled}>
-                  Selettore prodotti
-                </CButton>
-                <CButton color="primary" size="sm" type="button" onClick={() => { resetPkgModal(); setPkgOpen(true) }} disabled={uiDisabled}>
-                  Inserisci pacchetto
-                </CButton>
-              </div>
-            </div>
-            {/* Modal selezione pacchetto */}
-            <CModal visible={pkgOpen} onClose={() => setPkgOpen(false)} size="lg" backdrop="static">
-              <CModalHeader>
-                <CModalTitle>Seleziona pacchetto</CModalTitle>
-              </CModalHeader>
-              <CModalBody>
-                <CRow className="g-3 mb-3 align-items-end">
-                  <CCol md={7}>
-                    <CFormLabel>Ricerca</CFormLabel>
-                    <CFormInput placeholder="Nome o codice pacchetto" value={pkgSearch} onChange={(e) => setPkgSearch(e.target.value)} disabled={uiDisabled} />
-                  </CCol>
-                  <CCol md={5}>
-                    <CFormLabel>Pacchetto</CFormLabel>
-                    <CFormSelect value={selPacchetto} onChange={(e) => setSelPacchetto(e.target.value)} disabled={uiDisabled}>
-                      <option value="">Seleziona…</option>
-                      {pkgOptions.map((p) => (
-                        <option key={p.id_pacchetto} value={p.id_pacchetto}>
-                          {p.codice ? `${p.codice} - ${p.nome}` : p.nome}
-                        </option>
-                      ))}
-                    </CFormSelect>
-                  </CCol>
-                  <CCol md={12}>
-                    <div className="form-check mt-2">
-                      <input id="pkgOnlyActive" type="checkbox" className="form-check-input" checked={pkgOnlyActive} onChange={(e) => setPkgOnlyActive(e.target.checked)} />
-                      <label htmlFor="pkgOnlyActive" className="form-check-label">Solo attivi</label>
-                    </div>
-                  </CCol>
-                </CRow>
-                {pkgPreview.length > 0 && (
-                  <div className="border rounded p-2">
-                    <div className="fw-semibold mb-2">Righe del pacchetto</div>
-                    <CTable compact hover responsive>
-                      <CTableHead color="light">
-                        <CTableRow>
-                          <CTableHeaderCell>Descrizione</CTableHeaderCell>
-                          <CTableHeaderCell className="text-end">Q.tà</CTableHeaderCell>
-                          <CTableHeaderCell className="text-end">Prezzo</CTableHeaderCell>
-                          <CTableHeaderCell className="text-end">IVA %</CTableHeaderCell>
-                          <CTableHeaderCell className="text-end">Sconto %</CTableHeaderCell>
-                        </CTableRow>
-                      </CTableHead>
-                      <CTableBody>
-                        {pkgPreview.map((r, idx) => (
-                          <CTableRow key={idx}>
-                            <CTableDataCell>{r.descrizione}</CTableDataCell>
-                            <CTableDataCell className="text-end">{Number(r.quantita) || 1}</CTableDataCell>
-                            <CTableDataCell className="text-end">{(Number(r.prezzo_unitario) || 0).toFixed(2)}</CTableDataCell>
-                            <CTableDataCell className="text-end">{r.iva ?? '-'}</CTableDataCell>
-                            <CTableDataCell className="text-end">{r.sconto ?? 0}</CTableDataCell>
-                          </CTableRow>
-                        ))}
-                      </CTableBody>
-                    </CTable>
-                  </div>
-                )}
-              </CModalBody>
-              <CModalFooter className="d-flex justify-content-between">
-                <div />
+              <div className="d-flex align-items-center justify-content-between">
+                <h6 className="mb-0 text-body-secondary">Righe preventivo</h6>
                 <div className="d-flex gap-2">
-                  <CButton color="link" onClick={() => setPkgOpen(false)}>Annulla</CButton>
-                  <CButton
-                    color="primary"
-                    disabled={!selPacchetto || pkgPreview.length === 0 || uiDisabled}
-                    onClick={() => {
-                      if (!selPacchetto || pkgPreview.length === 0) return
-                      const newLines = pkgPreview.map((r) => ({
-                        descrizione: r.descrizione ?? '',
-                        quantita: Number(r.quantita) || 1,
-                        prezzo: Number(r.prezzo_unitario) || 0,
-                        iva: r.iva != null ? Number(r.iva) : 22,
-                        sconto: r.sconto != null ? Number(r.sconto) : 0,
-                        id_prodotto: r.id_prodotto ?? null,
-                        id_sdi_natura_iva: r.id_sdi_natura_iva ?? null,
-                      }))
-                      setRighe((rows) => rows.concat(newLines))
-                      setPkgOpen(false)
-                    }}
-                  >
-                    Inserisci in preventivo
+                  <CButton color="secondary" variant="outline" size="sm" onClick={handleAddRiga} disabled={uiDisabled}>
+                    Aggiungi riga
+                  </CButton>
+                  <CButton color="primary" variant="outline" size="sm" onClick={() => { resetProductModal(); setStepperOpen(true) }} disabled={uiDisabled}>
+                    Selettore prodotti
+                  </CButton>
+                  <CButton color="primary" size="sm" type="button" onClick={() => { resetPkgModal(); setPkgOpen(true) }} disabled={uiDisabled}>
+                    Inserisci pacchetto
                   </CButton>
                 </div>
-              </CModalFooter>
-            </CModal>
-            {false && (
-              <div className="border rounded p-3 mt-3">
-                <CRow className="g-3 align-items-end">
-                  <CCol md={3}>
-                    <CFormLabel>Categoria</CFormLabel>
-                    <CFormSelect value={selCat} onChange={(e) => setSelCat(e.target.value)} disabled={uiDisabled}>
-                      <option value="">Tutte</option>
-                      {catOptions.map((c) => (
-                        <option key={c.id_categoria} value={c.id_categoria}>{c.nome}</option>
-                      ))}
-                    </CFormSelect>
-                  </CCol>
-                  <CCol md={4}>
-                    <CFormLabel>Prodotto</CFormLabel>
-                    <CFormSelect
-                      value={selProd}
-                      onChange={(e) => {
-                        const pid = e.target.value
-                        setSelProd(pid)
-                        const prod = prodOptions.find((p) => String(p.id_prodotto) === String(pid))
-                        if (prod && prod.iva_percento != null) setSelIva(String(prod.iva_percento))
-                      }}
-                      disabled={uiDisabled}
-                    >
-                      <option value="">Seleziona...</option>
-                      {prodOptions.map((p) => (
-                        <option key={p.id_prodotto} value={p.id_prodotto}>
-                          {p.codice ? `${p.codice} - ${p.nome}` : p.nome}
-                        </option>
-                      ))}
-                    </CFormSelect>
-                  </CCol>
-                  <CCol md={2}>
-                    <CFormLabel>IVA %</CFormLabel>
-                    <CFormInput type="number" min="0" max="100" step="1" value={selIva} onChange={(e) => setSelIva(e.target.value)} disabled={uiDisabled} />
-                  </CCol>
-                  {/* Rimosso: selettore manuale variazioni. Si usano direttamente le combinazioni */}
-                  {prodComboList.length > 0 && (
-                  <CCol md={4}>
-                    <CFormLabel>Combinazioni disponibili</CFormLabel>
-                    <CFormSelect
-                      value={(() => {
-                        const key = selectedVarIds
-                          .map((id) => Number(id) || 0)
-                          .filter((n) => n > 0)
-                          .sort((a, b) => a - b)
-                          .join('+')
-                        return key
-                      })()}
-                      onChange={(e) => {
-                        const opt = prodComboList.find((r) => String(r.combo_key) === String(e.target.value))
-                        if (!opt) return
-                        const ids = Array.isArray(opt.var_ids) ? opt.var_ids.map(Number) : []
-                        setSelectedVarIds(ids)
-                        const prezzo = Number(opt.prezzo) || 0
-                        const prezzoInput = document.getElementById('step-prezzo')
-                        if (prezzoInput) prezzoInput.value = String(prezzo)
-                      }}
-                      disabled={uiDisabled || prodComboList.length === 0}
-                    >
-                      <option value="">--</option>
-                      {prodComboList.map((r, idx) => {
-                        const labels = Array.isArray(r.var_ids)
-                          ? r.var_ids.map((idv) => {
-                              const vv = prodVarOptions.find((x) => Number(x.id_variazione) === Number(idv))
-                              return vv ? (vv.categoria ? `${vv.categoria} - ${vv.nome}` : vv.nome) : String(idv)
-                            })
-                          : []
-                        return (
-                          <option key={r.combo_key || idx} value={r.combo_key}>
-                            {labels.join(', ')} — {Number(r.prezzo) ?? 0}
-                          </option>
-                        )
-                      })}
-                    </CFormSelect>
-                    <div className="mt-2">
-                      <CButton color="secondary" variant="outline" size="sm" onClick={() => setSelectedVarIds([])} disabled={uiDisabled || selectedVarIds.length === 0}>Annulla selezione</CButton>
-                    </div>
-                  </CCol>
-                  )}
-                </CRow>
-                <CRow className="g-3 mt-2 align-items-end">
-                  <CCol md={3}>
-                    <CFormLabel>Ricerca prodotto</CFormLabel>
-                    <CFormInput placeholder="Cerca per nome o codice" value={prodSearch} onChange={(e) => setProdSearch(e.target.value)} disabled={uiDisabled} />
-                  </CCol>
-                  <CCol md={3}>
-                    <CFormLabel>Quantità</CFormLabel>
-                    <CFormInput id="step-qta" type="number" min="1" step="1" defaultValue={1} disabled={uiDisabled} />
-                  </CCol>
-                  <CCol md={3}>
-                    <CFormLabel>Prezzo</CFormLabel>
-                    <CFormInput id="step-prezzo" type="number" min="0" step="0.01" defaultValue={(() => {
-                      const prod = prodOptions.find((p) => String(p.id_prodotto) === String(selProd))
-                      return prod?.prezzo_listino ?? 0
-                    })()} disabled={uiDisabled} />
-                  </CCol>
-                  <CCol md={3} className="d-flex gap-2">
-                    <CButton color="primary" type="button" disabled={uiDisabled}
-                      onClick={() => {
-                        const prod = prodOptions.find((p) => String(p.id_prodotto) === String(selProd))
-                        if (!prod) return
-                        const q = Number(document.getElementById('step-qta')?.value || 1)
-                        const prezzoBase = Number(document.getElementById('step-prezzo')?.value || prod.prezzo_listino || 0)
-                        const ivaPerc = Number(selIva || prod.iva_percento || 22)
-                        const selectedVars = prodVarOptions.filter((v) => selectedVarIds.includes(v.id_variazione))
-                        const delta = selectedVars.reduce((acc, v) => acc + (Number(v.delta_prezzo) || 0), 0)
-                        const comboKey = selectedVars
-                          .map((v) => Number(v.id_variazione) || 0)
-                          .filter((n) => n > 0)
-                          .sort((a, b) => a - b)
-                          .join('+')
-                        const comboPrice = comboKey && prodComboMap[comboKey] != null ? Number(prodComboMap[comboKey]) : null
-                        const descr = selectedVars.length > 0
-                          ? `${prod.nome} - ${selectedVars.map((v) => `${v.nome}${v.codice ? ' [' + v.codice + ']' : ''}`).join(', ')}`
-                          : prod.nome
-                        const prezzoFinale = comboPrice != null ? comboPrice : (prezzoBase + delta)
-                        const riga = { descrizione: descr, quantita: q, prezzo: prezzoFinale, iva: ivaPerc, sconto: 0, id_prodotto: prod.id_prodotto }
-                        // Aggiungi categoria del prodotto alla riga per raggruppamento immediato
-                        if (prod.id_categoria != null) {
-                          riga.id_categoria = Number(prod.id_categoria)
-                          const c = (catOptions || []).find((x) => Number(x.id_categoria) === Number(prod.id_categoria))
-                          if (c && c.nome) riga.categoria_nome = String(c.nome)
-                        }
-                        if (ivaPerc === 0) {
-                          const natId = Number(prod.id_sdi_natura_iva) || 0
-                          if (natId > 0) {
-                            riga.id_sdi_natura_iva = natId
-                          } else {
-                            const nat = naturaOptions[0]
-                            if (nat) riga.id_sdi_natura_iva = nat.id_natura
-                          }
-                        }
-                        setRighe((rows) => rows.concat(riga))
-                        setSelectedVarIds([])
-                      }}
-                    >
-                      Inserisci riga
-                    </CButton>
-                    <CButton color="link" type="button" onClick={() => setStepperOpen(false)}>
-                      Chiudi
-                    </CButton>
-                  </CCol>
-                </CRow>
               </div>
-            )}
-
-            <CModal visible={stepperOpen} onClose={() => setStepperOpen(false)} size="lg" backdrop="static">
-              <CModalHeader>
-                <CModalTitle>Selettore prodotti</CModalTitle>
-              </CModalHeader>
-              <CModalBody>
-                <CStepper
-                  activeStepNumber={prodStep}
-                  steps={[ 'Categoria', 'Prodotto', 'Variazioni', 'Riepilogo' ]}
-                  linear={false}
-                  validation={false}
-                  onStepChange={(n) => {
-                    if (uiDisabled) return
-                    // Always allow going back
-                    if (n <= prodStep) {
-                      setProdStep(n)
-                      return
-                    }
-                    // Forward navigation with prerequisites
-                    if (n === 2) {
-                      setProdStep(2)
-                      return
-                    }
-                    if (n === 3) {
-                      if (!selProd) return
-                      if (Array.isArray(prodComboList) && prodComboList.length > 0) {
-                        setProdStep(3)
-                      } else {
-                        setProdStep(4)
-                      }
-                      return
-                    }
-                    if (n === 4) {
-                      if (!selProd) return
-                      setProdStep(4)
-                      return
-                    }
-                  }}
-                />
-                {prodStep === 1 && (
-                  <CRow className="g-3">
+              {/* Modal selezione pacchetto */}
+              <CModal visible={pkgOpen} onClose={() => setPkgOpen(false)} size="lg" backdrop="static">
+                <CModalHeader>
+                  <CModalTitle>Seleziona pacchetto</CModalTitle>
+                </CModalHeader>
+                <CModalBody>
+                  <CRow className="g-3 mb-3 align-items-end">
+                    <CCol md={7}>
+                      <CFormLabel>Ricerca</CFormLabel>
+                      <CFormInput placeholder="Nome o codice pacchetto" value={pkgSearch} onChange={(e) => setPkgSearch(e.target.value)} disabled={uiDisabled} />
+                    </CCol>
+                    <CCol md={5}>
+                      <CFormLabel>Pacchetto</CFormLabel>
+                      <CFormSelect value={selPacchetto} onChange={(e) => setSelPacchetto(e.target.value)} disabled={uiDisabled}>
+                        <option value="">Seleziona…</option>
+                        {pkgOptions.map((p) => (
+                          <option key={p.id_pacchetto} value={p.id_pacchetto}>
+                            {p.codice ? `${p.codice} - ${p.nome}` : p.nome}
+                          </option>
+                        ))}
+                      </CFormSelect>
+                    </CCol>
                     <CCol md={12}>
-                      <CFormLabel>Categoria prodotto</CFormLabel>
+                      <div className="form-check mt-2">
+                        <input id="pkgOnlyActive" type="checkbox" className="form-check-input" checked={pkgOnlyActive} onChange={(e) => setPkgOnlyActive(e.target.checked)} />
+                        <label htmlFor="pkgOnlyActive" className="form-check-label">Solo attivi</label>
+                      </div>
+                    </CCol>
+                  </CRow>
+                  {pkgPreview.length > 0 && (
+                    <div className="border rounded p-2">
+                      <div className="fw-semibold mb-2">Righe del pacchetto</div>
+                      <CTable compact hover responsive>
+                        <CTableHead color="light">
+                          <CTableRow>
+                            <CTableHeaderCell>Descrizione</CTableHeaderCell>
+                            <CTableHeaderCell className="text-end">Q.tà</CTableHeaderCell>
+                            <CTableHeaderCell className="text-end">Prezzo</CTableHeaderCell>
+                            <CTableHeaderCell className="text-end">IVA %</CTableHeaderCell>
+                            <CTableHeaderCell className="text-end">Sconto %</CTableHeaderCell>
+                          </CTableRow>
+                        </CTableHead>
+                        <CTableBody>
+                          {pkgPreview.map((r, idx) => (
+                            <CTableRow key={idx}>
+                              <CTableDataCell>{r.descrizione}</CTableDataCell>
+                              <CTableDataCell className="text-end">{Number(r.quantita) || 1}</CTableDataCell>
+                              <CTableDataCell className="text-end">{(Number(r.prezzo_unitario) || 0).toFixed(2)}</CTableDataCell>
+                              <CTableDataCell className="text-end">{r.iva ?? '-'}</CTableDataCell>
+                              <CTableDataCell className="text-end">{r.sconto ?? 0}</CTableDataCell>
+                            </CTableRow>
+                          ))}
+                        </CTableBody>
+                      </CTable>
+                    </div>
+                  )}
+                </CModalBody>
+                <CModalFooter className="d-flex justify-content-between">
+                  <div />
+                  <div className="d-flex gap-2">
+                    <CButton color="link" onClick={() => setPkgOpen(false)}>Annulla</CButton>
+                    <CButton
+                      color="primary"
+                      disabled={!selPacchetto || pkgPreview.length === 0 || uiDisabled}
+                      onClick={() => {
+                        if (!selPacchetto || pkgPreview.length === 0) return
+                        const newLines = pkgPreview.map((r) => {
+                          const line = {
+                            descrizione: r.descrizione ?? '',
+                            quantita: Number(r.quantita) || 1,
+                            prezzo: Number(r.prezzo_unitario) || 0,
+                            iva: r.iva != null ? Number(r.iva) : 22,
+                            sconto: r.sconto != null ? Number(r.sconto) : 0,
+                            id_prodotto: r.id_prodotto ?? null,
+                            id_sdi_natura_iva: r.id_sdi_natura_iva ?? null,
+                          }
+
+                          const catId = r.id_categoria != null ? Number(r.id_categoria) : null
+                          if (catId && !Number.isNaN(catId)) {
+                            line.id_categoria = catId
+                          }
+
+                          if (r.categoria_nome) {
+                            line.categoria_nome = String(r.categoria_nome)
+                          }
+
+                          if (line.id_categoria != null && line.categoria_nome == null) {
+                            const cat = (catOptions || []).find(
+                              (c) => Number(c.id_categoria) === Number(line.id_categoria),
+                            )
+                            if (cat && cat.nome) {
+                              line.categoria_nome = String(cat.nome)
+                            }
+                          }
+
+                          if (!line.categoria_nome) {
+                            const idp = Number(r.id_prodotto) || 0
+                            if (idp > 0 && prodCategoryMap[idp]) {
+                              line.categoria_nome = String(prodCategoryMap[idp])
+                            }
+                          }
+
+                          return line
+                        })
+                        setRighe((rows) => rows.concat(newLines))
+                        setPkgOpen(false)
+                      }}
+                    >
+                      Inserisci in preventivo
+                    </CButton>
+                  </div>
+                </CModalFooter>
+              </CModal>
+              {false && (
+                <div className="border rounded p-3 mt-3">
+                  <CRow className="g-3 align-items-end">
+                    <CCol md={3}>
+                      <CFormLabel>Categoria</CFormLabel>
                       <CFormSelect value={selCat} onChange={(e) => setSelCat(e.target.value)} disabled={uiDisabled}>
                         <option value="">Tutte</option>
                         {catOptions.map((c) => (
@@ -947,11 +813,7 @@ const PreventiviDetail = () => {
                         ))}
                       </CFormSelect>
                     </CCol>
-                  </CRow>
-                )}
-                {prodStep === 2 && (
-                  <CRow className="g-3">
-                    <CCol md={6}>
+                    <CCol md={4}>
                       <CFormLabel>Prodotto</CFormLabel>
                       <CFormSelect
                         value={selProd}
@@ -971,137 +833,255 @@ const PreventiviDetail = () => {
                         ))}
                       </CFormSelect>
                     </CCol>
-                    <CCol md={6}>
-                      <CFormLabel>Ricerca</CFormLabel>
-                      <CFormInput placeholder="Cerca per nome o codice" value={prodSearch} onChange={(e) => setProdSearch(e.target.value)} disabled={uiDisabled} />
+                    <CCol md={2}>
+                      <CFormLabel>IVA %</CFormLabel>
+                      <CFormInput type="number" min="0" max="100" step="1" value={selIva} onChange={(e) => setSelIva(e.target.value)} disabled={uiDisabled} />
                     </CCol>
-                  </CRow>
-                )}
-                {prodStep === 3 && (
-                  <CRow className="g-3">
-                    {prodComboList.length > 0 ? (
-                      <CCol md={12}>
-                        <CFormLabel>Combinazioni</CFormLabel>
+                    {/* Rimosso: selettore manuale variazioni. Si usano direttamente le combinazioni */}
+                    {prodComboList.length > 0 && (
+                      <CCol md={4}>
+                        <CFormLabel>Combinazioni disponibili</CFormLabel>
                         <CFormSelect
-                          value={selectedComboKey}
+                          value={(() => {
+                            const key = selectedVarIds
+                              .map((id) => Number(id) || 0)
+                              .filter((n) => n > 0)
+                              .sort((a, b) => a - b)
+                              .join('+')
+                            return key
+                          })()}
                           onChange={(e) => {
-                            const key = e.target.value
-                            setSelectedComboKey(key)
-                            const opt = prodComboList.find((r) => String(r.combo_key) === String(key))
-                            if (!opt) { setSelectedVarIds([]); return }
+                            const opt = prodComboList.find((r) => String(r.combo_key) === String(e.target.value))
+                            if (!opt) return
                             const ids = Array.isArray(opt.var_ids) ? opt.var_ids.map(Number) : []
                             setSelectedVarIds(ids)
+                            const prezzo = Number(opt.prezzo) || 0
+                            const prezzoInput = document.getElementById('step-prezzo')
+                            if (prezzoInput) prezzoInput.value = String(prezzo)
                           }}
                           disabled={uiDisabled || prodComboList.length === 0}
                         >
-                          <option value="">Seleziona una combinazione…</option>
+                          <option value="">--</option>
                           {prodComboList.map((r, idx) => {
-                            const ids = Array.isArray(r.var_ids) ? r.var_ids : String(r.combo_key).split('+').map((x) => Number(x) || 0)
-                            const groups = {}
-                            ids.forEach((idv) => {
-                              const vv = prodVarOptions.find((x) => Number(x.id_variazione) === Number(idv))
-                              const cat = (vv && vv.categoria) ? String(vv.categoria) : 'Altro'
-                              const nm = vv ? String(vv.nome) : String(idv)
-                              if (!groups[cat]) groups[cat] = []
-                              groups[cat].push(nm)
-                            })
-                            const label = Object.entries(groups).map(([cat, names]) => `${cat}: ${names.join(', ')}`).join(' ; ')
+                            const labels = Array.isArray(r.var_ids)
+                              ? r.var_ids.map((idv) => {
+                                const vv = prodVarOptions.find((x) => Number(x.id_variazione) === Number(idv))
+                                return vv ? (vv.categoria ? `${vv.categoria} - ${vv.nome}` : vv.nome) : String(idv)
+                              })
+                              : []
                             return (
                               <option key={r.combo_key || idx} value={r.combo_key}>
-                                {label || r.combo_key}
+                                {labels.join(', ')} — {Number(r.prezzo) ?? 0}
                               </option>
                             )
                           })}
                         </CFormSelect>
-                      </CCol>
-                    ) : (
-                      <CCol md={12}>
-                        <CAlert color="info" className="mb-0">Nessuna variazione combinata definita per il prodotto selezionato.</CAlert>
+                        <div className="mt-2">
+                          <CButton color="secondary" variant="outline" size="sm" onClick={() => setSelectedVarIds([])} disabled={uiDisabled || selectedVarIds.length === 0}>Annulla selezione</CButton>
+                        </div>
                       </CCol>
                     )}
                   </CRow>
-                )}
-                {prodStep === 4 && (
-                  <CRow className="g-3">
-                    <CCol md={12}>
-                      <div className="mb-2"><strong>Prodotto:</strong> {(() => { const p = prodOptions.find((x) => String(x.id_prodotto) === String(selProd)); return p ? (p.codice ? `${p.codice} - ${p.nome}` : p.nome) : '-' })()}</div>
-                      {(() => {
-                        const ids = selectedComboKey
-                          ? selectedComboKey.split('+').map((x) => Number(x) || 0).filter((n) => n > 0)
-                          : selectedVarIds
-                        if (!ids || ids.length === 0) return null
-                        const groups = {}
-                        ids.forEach((idv) => {
-                          const vv = prodVarOptions.find((x) => Number(x.id_variazione) === Number(idv))
-                          const cat = (vv && vv.categoria) ? String(vv.categoria) : 'Altro'
-                          const nm = vv ? String(vv.nome) : String(idv)
-                          if (!groups[cat]) groups[cat] = []
-                          groups[cat].push(nm)
-                        })
-                        const label = Object.entries(groups).map(([cat, names]) => `${cat}: ${names.join(', ')}`).join(' ; ')
-                        return (<div className="mb-2"><strong>Variazioni:</strong> {label}</div>)
-                      })()}
+                  <CRow className="g-3 mt-2 align-items-end">
+                    <CCol md={3}>
+                      <CFormLabel>Ricerca prodotto</CFormLabel>
+                      <CFormInput placeholder="Cerca per nome o codice" value={prodSearch} onChange={(e) => setProdSearch(e.target.value)} disabled={uiDisabled} />
                     </CCol>
-                    <CCol md={4}>
+                    <CCol md={3}>
                       <CFormLabel>Quantità</CFormLabel>
-                      <CFormInput type="number" min="1" step="1" value={modalQty} onChange={(e) => setModalQty(Number(e.target.value) || 1)} disabled={uiDisabled} />
+                      <CFormInput id="step-qta" type="number" min="1" step="1" defaultValue={1} disabled={uiDisabled} />
                     </CCol>
-                    <CCol md={4}>
+                    <CCol md={3}>
                       <CFormLabel>Prezzo</CFormLabel>
-                      <CFormInput type="number" min="0" step="0.01" value={modalPrice} onChange={(e) => setModalPrice(Number(e.target.value) || 0)} disabled={uiDisabled} />
+                      <CFormInput id="step-prezzo" type="number" min="0" step="0.01" defaultValue={(() => {
+                        const prod = prodOptions.find((p) => String(p.id_prodotto) === String(selProd))
+                        return prod?.prezzo_listino ?? 0
+                      })()} disabled={uiDisabled} />
                     </CCol>
-                    <CCol md={4}>
-                      <CFormLabel>IVA %</CFormLabel>
-                      <CFormInput type="number" min="0" max="100" step="1" value={selIva} onChange={(e) => setSelIva(e.target.value)} disabled={uiDisabled} />
-                    </CCol>
-                    <CCol md={6}>
-                      <CFormLabel>Natura IVA</CFormLabel>
-                      <CFormSelect value={(() => '')()} onChange={() => {}} disabled={true}>
-                        <option value="">Selezione natura disponibile nella riga dopo inserimento</option>
-                      </CFormSelect>
+                    <CCol md={3} className="d-flex gap-2">
+                      <CButton color="primary" type="button" disabled={uiDisabled}
+                        onClick={() => {
+                          const prod = prodOptions.find((p) => String(p.id_prodotto) === String(selProd))
+                          if (!prod) return
+                          const q = Number(document.getElementById('step-qta')?.value || 1)
+                          const prezzoBase = Number(document.getElementById('step-prezzo')?.value || prod.prezzo_listino || 0)
+                          const ivaPerc = Number(selIva || prod.iva_percento || 22)
+                          const selectedVars = prodVarOptions.filter((v) => selectedVarIds.includes(v.id_variazione))
+                          const delta = selectedVars.reduce((acc, v) => acc + (Number(v.delta_prezzo) || 0), 0)
+                          const comboKey = selectedVars
+                            .map((v) => Number(v.id_variazione) || 0)
+                            .filter((n) => n > 0)
+                            .sort((a, b) => a - b)
+                            .join('+')
+                          const comboPrice = comboKey && prodComboMap[comboKey] != null ? Number(prodComboMap[comboKey]) : null
+                          const descr = selectedVars.length > 0
+                            ? `${prod.nome} - ${selectedVars.map((v) => `${v.nome}${v.codice ? ' [' + v.codice + ']' : ''}`).join(', ')}`
+                            : prod.nome
+                          const prezzoFinale = comboPrice != null ? comboPrice : (prezzoBase + delta)
+                          const riga = { descrizione: descr, quantita: q, prezzo: prezzoFinale, iva: ivaPerc, sconto: 0, id_prodotto: prod.id_prodotto }
+                          // Aggiungi categoria del prodotto alla riga per raggruppamento immediato
+                          if (prod.id_categoria != null) {
+                            riga.id_categoria = Number(prod.id_categoria)
+                            const c = (catOptions || []).find((x) => Number(x.id_categoria) === Number(prod.id_categoria))
+                            if (c && c.nome) riga.categoria_nome = String(c.nome)
+                          }
+                          if (ivaPerc === 0) {
+                            const natId = Number(prod.id_sdi_natura_iva) || 0
+                            if (natId > 0) {
+                              riga.id_sdi_natura_iva = natId
+                            } else {
+                              const nat = naturaOptions[0]
+                              if (nat) riga.id_sdi_natura_iva = nat.id_natura
+                            }
+                          }
+                          setRighe((rows) => rows.concat(riga))
+                          setSelectedVarIds([])
+                        }}
+                      >
+                        Inserisci riga
+                      </CButton>
+                      <CButton color="link" type="button" onClick={() => setStepperOpen(false)}>
+                        Chiudi
+                      </CButton>
                     </CCol>
                   </CRow>
-                )}
-              </CModalBody>
-              <CModalFooter className="d-flex justify-content-between">
-                <div>
-                  {prodStep > 1 && (
-                    <CButton color="secondary" variant="outline" onClick={() => setProdStep((s) => Math.max(1, s - 1))} disabled={uiDisabled}>Indietro</CButton>
-                  )}
                 </div>
-                <div className="d-flex gap-2">
-                  <CButton color="link" onClick={() => setStepperOpen(false)}>Annulla</CButton>
-                  {prodStep < 4 && (
-                    <CButton
-                      color="primary"
-                      onClick={() => {
-                        if (prodStep === 1) { setProdStep(2); return }
-                        if (prodStep === 2) {
-                          if (!selProd) return
-                          if (prodComboList.length === 0) { setProdStep(4); return }
-                          setProdStep(3); return
+              )}
+
+              <CModal visible={stepperOpen} onClose={() => setStepperOpen(false)} size="lg" backdrop="static">
+                <CModalHeader>
+                  <CModalTitle>Selettore prodotti</CModalTitle>
+                </CModalHeader>
+                <CModalBody>
+                  <CStepper
+                    activeStepNumber={prodStep}
+                    steps={['Categoria', 'Prodotto', 'Variazioni', 'Riepilogo']}
+                    linear={false}
+                    validation={false}
+                    onStepChange={(n) => {
+                      if (uiDisabled) return
+                      // Always allow going back
+                      if (n <= prodStep) {
+                        setProdStep(n)
+                        return
+                      }
+                      // Forward navigation with prerequisites
+                      if (n === 2) {
+                        setProdStep(2)
+                        return
+                      }
+                      if (n === 3) {
+                        if (!selProd) return
+                        if (Array.isArray(prodComboList) && prodComboList.length > 0) {
+                          setProdStep(3)
+                        } else {
+                          setProdStep(4)
                         }
-                        if (prodStep === 3) { setProdStep(4); return }
-                      }}
-                      disabled={(prodStep === 2 && !selProd) || uiDisabled}
-                    >
-                      Avanti
-                    </CButton>
+                        return
+                      }
+                      if (n === 4) {
+                        if (!selProd) return
+                        setProdStep(4)
+                        return
+                      }
+                    }}
+                  />
+                  {prodStep === 1 && (
+                    <CRow className="g-3">
+                      <CCol md={12}>
+                        <CFormLabel>Categoria prodotto</CFormLabel>
+                        <CFormSelect value={selCat} onChange={(e) => setSelCat(e.target.value)} disabled={uiDisabled}>
+                          <option value="">Tutte</option>
+                          {catOptions.map((c) => (
+                            <option key={c.id_categoria} value={c.id_categoria}>{c.nome}</option>
+                          ))}
+                        </CFormSelect>
+                      </CCol>
+                    </CRow>
+                  )}
+                  {prodStep === 2 && (
+                    <CRow className="g-3">
+                      <CCol md={6}>
+                        <CFormLabel>Prodotto</CFormLabel>
+                        <CFormSelect
+                          value={selProd}
+                          onChange={(e) => {
+                            const pid = e.target.value
+                            setSelProd(pid)
+                            const prod = prodOptions.find((p) => String(p.id_prodotto) === String(pid))
+                            if (prod && prod.iva_percento != null) setSelIva(String(prod.iva_percento))
+                          }}
+                          disabled={uiDisabled}
+                        >
+                          <option value="">Seleziona...</option>
+                          {prodOptions.map((p) => (
+                            <option key={p.id_prodotto} value={p.id_prodotto}>
+                              {p.codice ? `${p.codice} - ${p.nome}` : p.nome}
+                            </option>
+                          ))}
+                        </CFormSelect>
+                      </CCol>
+                      <CCol md={6}>
+                        <CFormLabel>Ricerca</CFormLabel>
+                        <CFormInput placeholder="Cerca per nome o codice" value={prodSearch} onChange={(e) => setProdSearch(e.target.value)} disabled={uiDisabled} />
+                      </CCol>
+                    </CRow>
+                  )}
+                  {prodStep === 3 && (
+                    <CRow className="g-3">
+                      {prodComboList.length > 0 ? (
+                        <CCol md={12}>
+                          <CFormLabel>Combinazioni</CFormLabel>
+                          <CFormSelect
+                            value={selectedComboKey}
+                            onChange={(e) => {
+                              const key = e.target.value
+                              setSelectedComboKey(key)
+                              const opt = prodComboList.find((r) => String(r.combo_key) === String(key))
+                              if (!opt) { setSelectedVarIds([]); return }
+                              const ids = Array.isArray(opt.var_ids) ? opt.var_ids.map(Number) : []
+                              setSelectedVarIds(ids)
+                            }}
+                            disabled={uiDisabled || prodComboList.length === 0}
+                          >
+                            <option value="">Seleziona una combinazione…</option>
+                            {prodComboList.map((r, idx) => {
+                              const ids = Array.isArray(r.var_ids) ? r.var_ids : String(r.combo_key).split('+').map((x) => Number(x) || 0)
+                              const groups = {}
+                              ids.forEach((idv) => {
+                                const vv = prodVarOptions.find((x) => Number(x.id_variazione) === Number(idv))
+                                const cat = (vv && vv.categoria) ? String(vv.categoria) : 'Altro'
+                                const nm = vv ? String(vv.nome) : String(idv)
+                                if (!groups[cat]) groups[cat] = []
+                                groups[cat].push(nm)
+                              })
+                              const label = Object.entries(groups).map(([cat, names]) => `${cat}: ${names.join(', ')}`).join(' ; ')
+                              return (
+                                <option key={r.combo_key || idx} value={r.combo_key}>
+                                  {label || r.combo_key}
+                                </option>
+                              )
+                            })}
+                          </CFormSelect>
+                        </CCol>
+                      ) : (
+                        <CCol md={12}>
+                          <CAlert color="info" className="mb-0">Nessuna variazione combinata definita per il prodotto selezionato.</CAlert>
+                        </CCol>
+                      )}
+                    </CRow>
                   )}
                   {prodStep === 4 && (
-                    <CButton
-                      color="primary"
-                      onClick={() => {
-                        const prod = prodOptions.find((p) => String(p.id_prodotto) === String(selProd))
-                        if (!prod) return
-                        const ivaPerc = Number(selIva || prod.iva_percento || 22)
-                        const comboIds = selectedComboKey
-                          ? selectedComboKey.split('+').map((x) => Number(x) || 0).filter((n) => n > 0)
-                          : selectedVarIds
-                        let descr = prod.nome
-                        if (comboIds && comboIds.length > 0) {
+                    <CRow className="g-3">
+                      <CCol md={12}>
+                        <div className="mb-2"><strong>Prodotto:</strong> {(() => { const p = prodOptions.find((x) => String(x.id_prodotto) === String(selProd)); return p ? (p.codice ? `${p.codice} - ${p.nome}` : p.nome) : '-' })()}</div>
+                        {(() => {
+                          const ids = selectedComboKey
+                            ? selectedComboKey.split('+').map((x) => Number(x) || 0).filter((n) => n > 0)
+                            : selectedVarIds
+                          if (!ids || ids.length === 0) return null
                           const groups = {}
-                          comboIds.forEach((idv) => {
+                          ids.forEach((idv) => {
                             const vv = prodVarOptions.find((x) => Number(x.id_variazione) === Number(idv))
                             const cat = (vv && vv.categoria) ? String(vv.categoria) : 'Altro'
                             const nm = vv ? String(vv.nome) : String(idv)
@@ -1109,29 +1089,99 @@ const PreventiviDetail = () => {
                             groups[cat].push(nm)
                           })
                           const label = Object.entries(groups).map(([cat, names]) => `${cat}: ${names.join(', ')}`).join(' ; ')
-                          descr = `${prod.nome} - ${label}`
-                        }
-                        const riga = { descrizione: descr, quantita: modalQty, prezzo: modalPrice, iva: ivaPerc, sconto: 0, id_prodotto: prod.id_prodotto }
-                        // Aggiungi categoria del prodotto alla riga per raggruppamento immediato
-                        if (prod.id_categoria != null) {
-                          riga.id_categoria = Number(prod.id_categoria)
-                          const c = (catOptions || []).find((x) => Number(x.id_categoria) === Number(prod.id_categoria))
-                          if (c && c.nome) riga.categoria_nome = String(c.nome)
-                        }
-                        if (ivaPerc === 0) {
-                          // Se IVA 0, natura IVA modificabile in tabella dopo inserimento
-                        }
-                        setRighe((rows) => rows.concat(riga))
-                        setStepperOpen(false)
-                      }}
-                      disabled={uiDisabled}
-                    >
-                      Inserisci riga
-                    </CButton>
+                          return (<div className="mb-2"><strong>Variazioni:</strong> {label}</div>)
+                        })()}
+                      </CCol>
+                      <CCol md={4}>
+                        <CFormLabel>Quantità</CFormLabel>
+                        <CFormInput type="number" min="1" step="1" value={modalQty} onChange={(e) => setModalQty(Number(e.target.value) || 1)} disabled={uiDisabled} />
+                      </CCol>
+                      <CCol md={4}>
+                        <CFormLabel>Prezzo</CFormLabel>
+                        <CFormInput type="number" min="0" step="0.01" value={modalPrice} onChange={(e) => setModalPrice(Number(e.target.value) || 0)} disabled={uiDisabled} />
+                      </CCol>
+                      <CCol md={4}>
+                        <CFormLabel>IVA %</CFormLabel>
+                        <CFormInput type="number" min="0" max="100" step="1" value={selIva} onChange={(e) => setSelIva(e.target.value)} disabled={uiDisabled} />
+                      </CCol>
+                      <CCol md={6}>
+                        <CFormLabel>Natura IVA</CFormLabel>
+                        <CFormSelect value={(() => '')()} onChange={() => { }} disabled={true}>
+                          <option value="">Selezione natura disponibile nella riga dopo inserimento</option>
+                        </CFormSelect>
+                      </CCol>
+                    </CRow>
                   )}
-                </div>
-              </CModalFooter>
-            </CModal>
+                </CModalBody>
+                <CModalFooter className="d-flex justify-content-between">
+                  <div>
+                    {prodStep > 1 && (
+                      <CButton color="secondary" variant="outline" onClick={() => setProdStep((s) => Math.max(1, s - 1))} disabled={uiDisabled}>Indietro</CButton>
+                    )}
+                  </div>
+                  <div className="d-flex gap-2">
+                    <CButton color="link" onClick={() => setStepperOpen(false)}>Annulla</CButton>
+                    {prodStep < 4 && (
+                      <CButton
+                        color="primary"
+                        onClick={() => {
+                          if (prodStep === 1) { setProdStep(2); return }
+                          if (prodStep === 2) {
+                            if (!selProd) return
+                            if (prodComboList.length === 0) { setProdStep(4); return }
+                            setProdStep(3); return
+                          }
+                          if (prodStep === 3) { setProdStep(4); return }
+                        }}
+                        disabled={(prodStep === 2 && !selProd) || uiDisabled}
+                      >
+                        Avanti
+                      </CButton>
+                    )}
+                    {prodStep === 4 && (
+                      <CButton
+                        color="primary"
+                        onClick={() => {
+                          const prod = prodOptions.find((p) => String(p.id_prodotto) === String(selProd))
+                          if (!prod) return
+                          const ivaPerc = Number(selIva || prod.iva_percento || 22)
+                          const comboIds = selectedComboKey
+                            ? selectedComboKey.split('+').map((x) => Number(x) || 0).filter((n) => n > 0)
+                            : selectedVarIds
+                          let descr = prod.nome
+                          if (comboIds && comboIds.length > 0) {
+                            const groups = {}
+                            comboIds.forEach((idv) => {
+                              const vv = prodVarOptions.find((x) => Number(x.id_variazione) === Number(idv))
+                              const cat = (vv && vv.categoria) ? String(vv.categoria) : 'Altro'
+                              const nm = vv ? String(vv.nome) : String(idv)
+                              if (!groups[cat]) groups[cat] = []
+                              groups[cat].push(nm)
+                            })
+                            const label = Object.entries(groups).map(([cat, names]) => `${cat}: ${names.join(', ')}`).join(' ; ')
+                            descr = `${prod.nome} - ${label}`
+                          }
+                          const riga = { descrizione: descr, quantita: modalQty, prezzo: modalPrice, iva: ivaPerc, sconto: 0, id_prodotto: prod.id_prodotto }
+                          // Aggiungi categoria del prodotto alla riga per raggruppamento immediato
+                          if (prod.id_categoria != null) {
+                            riga.id_categoria = Number(prod.id_categoria)
+                            const c = (catOptions || []).find((x) => Number(x.id_categoria) === Number(prod.id_categoria))
+                            if (c && c.nome) riga.categoria_nome = String(c.nome)
+                          }
+                          if (ivaPerc === 0) {
+                            // Se IVA 0, natura IVA modificabile in tabella dopo inserimento
+                          }
+                          setRighe((rows) => rows.concat(riga))
+                          setStepperOpen(false)
+                        }}
+                        disabled={uiDisabled}
+                      >
+                        Inserisci riga
+                      </CButton>
+                    )}
+                  </div>
+                </CModalFooter>
+              </CModal>
 
               <CTable className="mt-3" responsive small>
                 <CTableHead color="light">

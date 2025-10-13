@@ -15,6 +15,8 @@ CREATE TABLE IF NOT EXISTS tb_pacchetti_righe (
   id_riga INT AUTO_INCREMENT PRIMARY KEY,
   id_pacchetto INT NOT NULL,
   id_prodotto INT NULL,
+  id_categoria INT NULL,
+  categoria_nome VARCHAR(191) NULL,
   descrizione VARCHAR(255) NOT NULL,
   quantita DECIMAL(10,2) NOT NULL DEFAULT 1.00,
   prezzo_unitario DECIMAL(12,4) NOT NULL DEFAULT 0.0000,
@@ -24,6 +26,7 @@ CREATE TABLE IF NOT EXISTS tb_pacchetti_righe (
   posizione INT NULL,
   CONSTRAINT fk_pacchetti_righe_pacchetto FOREIGN KEY (id_pacchetto) REFERENCES tb_pacchetti(id_pacchetto) ON DELETE CASCADE,
   INDEX idx_pacchetti_righe_pacchetto (id_pacchetto),
+  INDEX idx_pacchetti_righe_id_categoria (id_categoria),
   INDEX idx_pacchetti_righe_posizione (posizione)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 

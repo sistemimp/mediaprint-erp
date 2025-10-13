@@ -114,6 +114,11 @@ final class PreventiviService
             // normalizza righe
             foreach ($input['righe'] as $r) {
                 if (!is_array($r)) continue;
+                $idCategoria = isset($r['id_categoria']) ? (int) $r['id_categoria'] : null;
+                if ($idCategoria !== null && $idCategoria <= 0) {
+                    $idCategoria = null;
+                }
+
                 $lines[] = [
                     'descrizione' => (string) ($r['descrizione'] ?? ''),
                     'quantita' => isset($r['quantita']) ? (float) $r['quantita'] : 1.0,
@@ -121,6 +126,7 @@ final class PreventiviService
                     'sconto' => isset($r['sconto']) ? (float) $r['sconto'] : 0.0,
                     'iva' => isset($r['iva']) ? (float) $r['iva'] : 22.0,
                     'id_prodotto' => isset($r['id_prodotto']) ? (int) $r['id_prodotto'] : null,
+                    'id_categoria' => $idCategoria,
                     'id_sdi_natura_iva' => isset($r['id_sdi_natura_iva']) ? (int) $r['id_sdi_natura_iva'] : null,
                 ];
             }

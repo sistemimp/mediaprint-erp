@@ -2677,6 +2677,7 @@ CREATE TABLE `tb_preventivi_righe` (
   `id_riga` int(10) unsigned NOT NULL AUTO_INCREMENT,
   `id_preventivo` int(10) unsigned NOT NULL,
   `id_prodotto` int(10) unsigned DEFAULT NULL,
+  `id_categoria` int(10) unsigned DEFAULT NULL,
   `descrizione` varchar(255) NOT NULL,
   `quantita` decimal(12,3) NOT NULL DEFAULT 1.000,
   `prezzo_unitario` decimal(12,4) NOT NULL DEFAULT 0.0000,
@@ -2689,6 +2690,7 @@ CREATE TABLE `tb_preventivi_righe` (
   PRIMARY KEY (`id_riga`),
   KEY `idx_righeprev_prev` (`id_preventivo`),
   KEY `idx_righeprev_prod` (`id_prodotto`),
+  KEY `idx_righeprev_categoria` (`id_categoria`),
   KEY `fk_prev_righe_sdi_natura` (`id_sdi_natura_iva`),
   CONSTRAINT `fk_prev_righe_sdi_natura` FOREIGN KEY (`id_sdi_natura_iva`) REFERENCES `cfg_sdi_natura_iva` (`id_natura`) ON DELETE SET NULL,
   CONSTRAINT `fk_righeprev_prev` FOREIGN KEY (`id_preventivo`) REFERENCES `tb_preventivi` (`id_preventivo`) ON DELETE CASCADE,
@@ -2703,12 +2705,12 @@ CREATE TABLE `tb_preventivi_righe` (
 LOCK TABLES `tb_preventivi_righe` WRITE;
 /*!40000 ALTER TABLE `tb_preventivi_righe` DISABLE KEYS */;
 INSERT INTO `tb_preventivi_righe` VALUES
-(14,3,6,'Centro Elaborazione Dati',1.000,50.0000,50.00,25.00,22.00,NULL,30.50,1),
-(15,3,7,'PDF Digitale',1.000,250.0000,0.00,250.00,22.00,NULL,305.00,2),
-(16,3,11,'Posta Massiva - AM [D-01], Fino a 20 gr [P-01]',1.000,0.0000,0.00,0.00,22.00,NULL,0.00,3),
-(17,3,11,'Posta Massiva - CP [D-02], Fino a 20 gr [P-01]',1.000,0.0000,0.00,0.00,22.00,NULL,0.00,4),
-(18,3,11,'Posta Massiva - EU [D-03], Fino a 20 gr [P-01]',1.000,0.0000,0.00,0.00,22.00,NULL,0.00,5),
-(19,3,19,'Posta Massiva - B&N [CS-01], Fronte/Retro [TS-02]',1.000,0.0000,0.00,0.00,22.00,NULL,0.00,6);
+(14,3,6,NULL,'Centro Elaborazione Dati',1.000,50.0000,50.00,25.00,22.00,NULL,30.50,1),
+(15,3,7,NULL,'PDF Digitale',1.000,250.0000,0.00,250.00,22.00,NULL,305.00,2),
+(16,3,11,NULL,'Posta Massiva - AM [D-01], Fino a 20 gr [P-01]',1.000,0.0000,0.00,0.00,22.00,NULL,0.00,3),
+(17,3,11,NULL,'Posta Massiva - CP [D-02], Fino a 20 gr [P-01]',1.000,0.0000,0.00,0.00,22.00,NULL,0.00,4),
+(18,3,11,NULL,'Posta Massiva - EU [D-03], Fino a 20 gr [P-01]',1.000,0.0000,0.00,0.00,22.00,NULL,0.00,5),
+(19,3,19,NULL,'Posta Massiva - B&N [CS-01], Fronte/Retro [TS-02]',1.000,0.0000,0.00,0.00,22.00,NULL,0.00,6);
 /*!40000 ALTER TABLE `tb_preventivi_righe` ENABLE KEYS */;
 UNLOCK TABLES;
 /*!50003 SET @saved_cs_client      = @@character_set_client */ ;

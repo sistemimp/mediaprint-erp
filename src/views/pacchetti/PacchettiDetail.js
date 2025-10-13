@@ -115,6 +115,8 @@ const PacchettiDetail = () => {
           sconto: r.sconto ?? 0,
           id_prodotto: r.id_prodotto ?? null,
           id_sdi_natura_iva: r.id_sdi_natura_iva ?? null,
+          id_categoria: r.id_categoria ?? null,
+          categoria_nome: r.categoria_nome ?? null,
         })) : [{ descrizione: '', quantita: 1, prezzo: 0, iva: 22, sconto: 0 }])
         setNaturaOptions(nature || [])
         setCatOptions(cats || [])
@@ -534,9 +536,12 @@ const PacchettiDetail = () => {
                         const riga = { descrizione: descr, quantita: modalQty, prezzo: modalPrice, iva: ivaPerc, sconto: 0, id_prodotto: prod.id_prodotto }
                         // Aggiungi categoria del prodotto per futuri raggruppamenti o usi
                         if (prod.id_categoria != null) {
-                          riga.id_categoria = Number(prod.id_categoria)
-                          const c = (catOptions || []).find((x) => Number(x.id_categoria) === Number(prod.id_categoria))
-                          if (c && c.nome) riga.categoria_nome = String(c.nome)
+                          const catId = Number(prod.id_categoria)
+                          if (Number.isFinite(catId) && catId > 0) {
+                            riga.id_categoria = catId
+                            const c = (catOptions || []).find((x) => Number(x.id_categoria) === catId)
+                            if (c && c.nome) riga.categoria_nome = String(c.nome)
+                          }
                         }
                         if (ivaPerc === 0) {
                           const natId = selNatura ? Number(selNatura) : 0

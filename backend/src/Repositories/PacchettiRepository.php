@@ -65,17 +65,19 @@ final class PacchettiRepository
     }
 
     /**
-     * @return list<array{id_riga:int,descrizione:string,quantita:float,prezzo_unitario:float,sconto:float|null,iva:float|null,id_prodotto:int|null,id_sdi_natura_iva:int|null,posizione:int|null}>
+     * @return list<array{id_riga:int,descrizione:string,quantita:float,prezzo_unitario:float,sconto:float|null,iva:float|null,id_prodotto:int|null,id_categoria:int|null,categoria_nome:?string,id_sdi_natura_iva:int|null,posizione:int|null}>
      */
     public function getLines(int $idPacchetto): array
     {
-        $sql = 'SELECT id_riga, id_prodotto, descrizione, quantita, prezzo_unitario, sconto, iva, id_sdi_natura_iva, posizione FROM tb_pacchetti_righe WHERE id_pacchetto = :id ORDER BY COALESCE(posizione, id_riga) ASC';
+        $sql = 'SELECT id_riga, id_prodotto, id_categoria, categoria_nome, descrizione, quantita, prezzo_unitario, sconto, iva, id_sdi_natura_iva, posizione FROM tb_pacchetti_righe WHERE id_pacchetto = :id ORDER BY COALESCE(posizione, id_riga) ASC';
         $stmt = $this->pdo->prepare($sql);
         $stmt->bindValue(':id', $idPacchetto, PDO::PARAM_INT);
         $stmt->execute();
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
         $out = [];
         foreach ($rows as $r) {
+            $idCategoria = isset($r['id_categoria']) ? (int) $r['id_categoria'] : null;
+            if ($idCategoria !== null && $idCategoria <= 0) { $idCategoria = null; }
             $out[] = [
                 'id_riga' => (int) $r['id_riga'],
                 'descrizione' => (string) ($r['descrizione'] ?? ''),
@@ -84,6 +86,8 @@ final class PacchettiRepository
                 'sconto' => isset($r['sconto']) ? (float) $r['sconto'] : null,
                 'iva' => isset($r['iva']) ? (float) $r['iva'] : null,
                 'id_prodotto' => isset($r['id_prodotto']) ? (int) $r['id_prodotto'] : null,
+                'id_categoria' => $idCategoria,
+                'categoria_nome' => isset($r['categoria_nome']) && $r['categoria_nome'] !== null ? (string) $r['categoria_nome'] : null,
                 'id_sdi_natura_iva' => isset($r['id_sdi_natura_iva']) ? (int) $r['id_sdi_natura_iva'] : null,
                 'posizione' => isset($r['posizione']) ? (int) $r['posizione'] : null,
             ];
@@ -136,9 +140,9 @@ final class PacchettiRepository
             if (!empty($lines)) {
                 $ins = $this->pdo->prepare(<<<'SQL'
                     INSERT INTO tb_pacchetti_righe (
-                        id_pacchetto, id_prodotto, descrizione, quantita, prezzo_unitario, sconto, iva, id_sdi_natura_iva, posizione
+                        id_pacchetto, id_prodotto, id_categoria, categoria_nome, descrizione, quantita, prezzo_unitario, sconto, iva, id_sdi_natura_iva, posizione
                     ) VALUES (
-                        :id_pacchetto, :id_prodotto, :descrizione, :quantita, :prezzo_unitario, :sconto, :iva, :id_sdi_natura_iva, :posizione
+                        :id_pacchetto, :id_prodotto, :id_categoria, :categoria_nome, :descrizione, :quantita, :prezzo_unitario, :sconto, :iva, :id_sdi_natura_iva, :posizione
                     )
                 SQL);
 
@@ -151,10 +155,16 @@ final class PacchettiRepository
                     $s = isset($line['sconto']) ? (float) $line['sconto'] : 0.0;
                     $iva = isset($line['iva']) ? (float) $line['iva'] : null;
                     $idProd = isset($line['id_prodotto']) ? (int) $line['id_prodotto'] : null;
+                    if ($idProd !== null && $idProd <= 0) { $idProd = null; }
+                    $idCategoria = isset($line['id_categoria']) ? (int) $line['id_categoria'] : null;
+                    if ($idCategoria !== null && $idCategoria <= 0) { $idCategoria = null; }
+                    $categoriaNome = isset($line['categoria_nome']) && trim((string)$line['categoria_nome']) !== '' ? (string) $line['categoria_nome'] : null;
                     $idNatura = isset($line['id_sdi_natura_iva']) ? (int) $line['id_sdi_natura_iva'] : null;
 
                     $ins->bindValue(':id_pacchetto', $idPacchetto, PDO::PARAM_INT);
                     $ins->bindValue(':id_prodotto', $idProd, $idProd === null ? PDO::PARAM_NULL : PDO::PARAM_INT);
+                    $ins->bindValue(':id_categoria', $idCategoria, $idCategoria === null ? PDO::PARAM_NULL : PDO::PARAM_INT);
+                    $ins->bindValue(':categoria_nome', $categoriaNome, $categoriaNome === null ? PDO::PARAM_NULL : PDO::PARAM_STR);
                     $ins->bindValue(':descrizione', $descr, PDO::PARAM_STR);
                     $ins->bindValue(':quantita', $q, PDO::PARAM_STR);
                     $ins->bindValue(':prezzo_unitario', $pu, PDO::PARAM_STR);

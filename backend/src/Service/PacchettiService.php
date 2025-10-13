@@ -19,7 +19,9 @@ final class PacchettiService
         $onlyActive = null;
         if (isset($input['only_active'])) {
             $val = $input['only_active'];
-            $onlyActive = (is_string($val) ? strtolower($val) : $val) in [1, '1', true, 'true'];
+            if (is_scalar($val)) {
+                $onlyActive = filter_var($val, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+            }
         }
         $rows = $this->repository->listPacchetti($q, $onlyActive);
         return ['items' => $rows];
@@ -65,6 +67,11 @@ final class PacchettiService
         if (isset($input['righe']) && is_array($input['righe'])) {
             foreach ($input['righe'] as $r) {
                 if (!is_array($r)) continue;
+                $idCategoria = isset($r['id_categoria']) ? (int) $r['id_categoria'] : null;
+                if ($idCategoria !== null && $idCategoria <= 0) { $idCategoria = null; }
+                $categoriaNome = isset($r['categoria_nome']) && trim((string)$r['categoria_nome']) !== ''
+                    ? (string) $r['categoria_nome']
+                    : null;
                 $lines[] = [
                     'descrizione' => (string) ($r['descrizione'] ?? ''),
                     'quantita' => isset($r['quantita']) ? (float) $r['quantita'] : 1.0,
@@ -73,6 +80,8 @@ final class PacchettiService
                     'iva' => isset($r['iva']) ? (float) $r['iva'] : null,
                     'id_prodotto' => isset($r['id_prodotto']) ? (int) $r['id_prodotto'] : null,
                     'id_sdi_natura_iva' => isset($r['id_sdi_natura_iva']) ? (int) $r['id_sdi_natura_iva'] : null,
+                    'id_categoria' => $idCategoria,
+                    'categoria_nome' => $categoriaNome,
                 ];
             }
         }

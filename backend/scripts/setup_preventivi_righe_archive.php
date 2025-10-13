@@ -27,6 +27,7 @@ CREATE TABLE tb_preventivi_righe_archive (
   id_riga INT NOT NULL,
   id_preventivo INT NOT NULL,
   id_prodotto INT NULL,
+  id_categoria INT NULL,
   descrizione VARCHAR(1024) NOT NULL,
   quantita DECIMAL(18,6) NOT NULL DEFAULT 1,
   prezzo_unitario DECIMAL(18,6) NOT NULL DEFAULT 0,
@@ -38,7 +39,8 @@ CREATE TABLE tb_preventivi_righe_archive (
   posizione INT NULL,
   archived_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (id_riga),
-  KEY idx_prev_arch_righe_idprev (id_preventivo)
+  KEY idx_prev_arch_righe_idprev (id_preventivo),
+  KEY idx_prev_arch_righe_idcat (id_categoria)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 SQL;
         $pdo->exec($sql);
@@ -56,11 +58,11 @@ AFTER DELETE ON tb_preventivi_righe
 FOR EACH ROW
 BEGIN
   INSERT INTO tb_preventivi_righe_archive (
-    id_riga, id_preventivo, id_prodotto, descrizione, quantita, prezzo_unitario,
+    id_riga, id_preventivo, id_prodotto, id_categoria, descrizione, quantita, prezzo_unitario,
     sconto, importo_scontato, iva, id_sdi_natura_iva, totale, posizione, archived_at
   )
   SELECT
-    OLD.id_riga, OLD.id_preventivo, OLD.id_prodotto, OLD.descrizione, OLD.quantita, OLD.prezzo_unitario,
+    OLD.id_riga, OLD.id_preventivo, OLD.id_prodotto, OLD.id_categoria, OLD.descrizione, OLD.quantita, OLD.prezzo_unitario,
     OLD.sconto, OLD.importo_scontato, OLD.iva, OLD.id_sdi_natura_iva, OLD.totale, OLD.posizione, NOW()
   FROM DUAL
   WHERE NOT EXISTS (

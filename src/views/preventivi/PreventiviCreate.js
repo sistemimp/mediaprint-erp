@@ -396,15 +396,23 @@ const PreventiviCreate = () => {
         try {
           const { righe: righeSrv } = await fetchPreventivoDetail({ token, id: result.id_preventivo, signal: controller.signal })
           if (Array.isArray(righeSrv) && righeSrv.length > 0) {
-            setRighe(righeSrv.map((r) => ({
-              descrizione: r.descrizione ?? '',
-              quantita: r.quantita ?? 1,
-              prezzo: r.prezzo_unitario ?? 0,
-              iva: r.iva ?? 22,
-              sconto: r.sconto ?? 0,
-              id_prodotto: r.id_prodotto ?? null,
-              id_sdi_natura_iva: r.id_sdi_natura_iva ?? null,
-            })))
+            setRighe(righeSrv.map((r) => {
+              const idCategoria =
+                r.id_categoria ?? r.id_categoria_prodotto ?? r.id_categoria_prodotto_default ?? null
+              const categoriaNome =
+                r.categoria_nome ?? r.categoria ?? r.nome_categoria ?? r.nome_categoria_prodotto ?? null
+              return {
+                descrizione: r.descrizione ?? '',
+                quantita: r.quantita ?? 1,
+                prezzo: r.prezzo_unitario ?? 0,
+                iva: r.iva ?? 22,
+                sconto: r.sconto ?? 0,
+                id_prodotto: r.id_prodotto ?? null,
+                id_sdi_natura_iva: r.id_sdi_natura_iva ?? null,
+                id_categoria: idCategoria != null ? Number(idCategoria) : null,
+                categoria_nome: categoriaNome != null ? String(categoriaNome) : undefined,
+              }
+            }))
           }
         } catch (_e) { }
       }
@@ -446,15 +454,23 @@ const PreventiviCreate = () => {
         try {
           const { righe: righeSrv } = await fetchPreventivoDetail({ token, id: result.id_preventivo, signal: controller.signal })
           if (Array.isArray(righeSrv) && righeSrv.length > 0) {
-            setRighe(righeSrv.map((r) => ({
-              descrizione: r.descrizione ?? '',
-              quantita: r.quantita ?? 1,
-              prezzo: r.prezzo_unitario ?? 0,
-              iva: r.iva ?? 22,
-              sconto: r.sconto ?? 0,
-              id_prodotto: r.id_prodotto ?? null,
-              id_sdi_natura_iva: r.id_sdi_natura_iva ?? null,
-            })))
+            setRighe(righeSrv.map((r) => {
+              const idCategoria =
+                r.id_categoria ?? r.id_categoria_prodotto ?? r.id_categoria_prodotto_default ?? null
+              const categoriaNome =
+                r.categoria_nome ?? r.categoria ?? r.nome_categoria ?? r.nome_categoria_prodotto ?? null
+              return {
+                descrizione: r.descrizione ?? '',
+                quantita: r.quantita ?? 1,
+                prezzo: r.prezzo_unitario ?? 0,
+                iva: r.iva ?? 22,
+                sconto: r.sconto ?? 0,
+                id_prodotto: r.id_prodotto ?? null,
+                id_sdi_natura_iva: r.id_sdi_natura_iva ?? null,
+                id_categoria: idCategoria != null ? Number(idCategoria) : null,
+                categoria_nome: categoriaNome != null ? String(categoriaNome) : undefined,
+              }
+            }))
           }
         } catch (_e) { }
       }
@@ -881,7 +897,19 @@ const PreventiviCreate = () => {
                         const prezzo = Number(document.getElementById('step-prezzo')?.value || prod.prezzo_listino || 0)
                         const ivaPerc = Number(selIva || prod.iva_percento || 22)
                         const descr = variazione && variazione.trim() !== '' ? `${prod.nome} - ${variazione.trim()}` : prod.nome
-                        const riga = { descrizione: descr, quantita: q, prezzo: prezzo, iva: ivaPerc, sconto: 0, id_prodotto: prod.id_prodotto }
+                        const riga = {
+                          descrizione: descr,
+                          quantita: q,
+                          prezzo: prezzo,
+                          iva: ivaPerc,
+                          sconto: 0,
+                          id_prodotto: prod.id_prodotto,
+                        }
+                        if (prod.id_categoria != null) {
+                          riga.id_categoria = Number(prod.id_categoria)
+                          const cat = (catOptions || []).find((c) => Number(c.id_categoria) === Number(prod.id_categoria))
+                          if (cat && cat.nome) riga.categoria_nome = String(cat.nome)
+                        }
                         if (ivaPerc === 0) {
                           const natId = Number(prod.id_sdi_natura_iva) || 0
                           if (natId > 0) {

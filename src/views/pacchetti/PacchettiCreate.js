@@ -457,6 +457,14 @@ const PacchettiCreate = () => {
                         descr = `${prod.nome} - ${label}`
                       }
                       const riga = { descrizione: descr, quantita: modalQty, prezzo: modalPrice, iva: ivaPerc, sconto: 0, id_prodotto: prod.id_prodotto }
+                      if (prod.id_categoria != null) {
+                        const catId = Number(prod.id_categoria)
+                        if (Number.isFinite(catId) && catId > 0) {
+                          riga.id_categoria = catId
+                          const c = (catOptions || []).find((x) => Number(x.id_categoria) === catId)
+                          if (c && c.nome) riga.categoria_nome = String(c.nome)
+                        }
+                      }
                       if (ivaPerc === 0) {
                         const natId = selNatura ? Number(selNatura) : 0
                         if (natId > 0) riga.id_sdi_natura_iva = natId
