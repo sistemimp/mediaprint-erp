@@ -26,6 +26,10 @@ const ProdottiList = React.lazy(() => import('./views/prodotti/ProdottiList'))
 const ProdottiDetail = React.lazy(() => import('./views/prodotti/ProdottiDetail'))
 const ProdottiCategorie = React.lazy(() => import('./views/prodotti/CategorieList'))
 const ProdottiVariazioni = React.lazy(() => import('./views/prodotti/VariazioniList'))
+// Pacchetti
+const PacchettiList = React.lazy(() => import('./views/pacchetti/PacchettiList'))
+const PacchettiCreate = React.lazy(() => import('./views/pacchetti/PacchettiCreate'))
+const PacchettiDetail = React.lazy(() => import('./views/pacchetti/PacchettiDetail'))
 
 const routes = [
   { path: '/', exact: true, name: 'Home' },
@@ -49,6 +53,9 @@ const routes = [
   { path: '/prodotti/dettagli', name: 'Prodotti - Dettagli', element: ProdottiDetail },
   { path: '/prodotti/categorie', name: 'Prodotti - Categorie', element: ProdottiCategorie },
   { path: '/prodotti/variazioni', name: 'Prodotti - Variazioni', element: ProdottiVariazioni },
+  { path: '/pacchetti/lista', name: 'Pacchetti - Lista', element: PacchettiList },
+  { path: '/pacchetti/crea', name: 'Pacchetti - Crea nuovo', element: PacchettiCreate },
+  { path: '/pacchetti/dettagli', name: 'Pacchetti - Dettagli', element: PacchettiDetail },
 ]
 
 export default routes

@@ -44,6 +44,28 @@ const _nav = [
   },
   {
     component: CNavGroup,
+    name: 'Pacchetti',
+    icon: <CIcon icon={cilLibraryAdd} customClassName="nav-icon" />,
+    items: [
+      {
+        component: CNavItem,
+        name: 'Crea nuovo',
+        to: '/pacchetti/crea',
+      },
+      {
+        component: CNavItem,
+        name: 'Lista',
+        to: '/pacchetti/lista',
+      },
+      {
+        component: CNavItem,
+        name: 'Dettagli',
+        to: '/pacchetti/dettagli',
+      },
+    ],
+  },
+  {
+    component: CNavGroup,
     name: 'Anagrafica',
     icon: <CIcon icon={cilUser} customClassName="nav-icon" />,
     items: [

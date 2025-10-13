@@ -28,6 +28,7 @@ import { useAuth } from '../../context/AuthContext'
 import { fetchAnagrafiche } from '../../services/anagrafiche'
 import { createPreventivo, fetchPreventivoDetail } from '../../services/preventivi'
 import { fetchCategorieProdotti, fetchProdotti, fetchNatureIva, fetchProdottoVariazioni, fetchProdottoPrezziCombinati } from '../../services/prodotti'
+import { fetchPacchetti, fetchPacchettoDetail } from '../../services/pacchetti'
 import { CModal, CModalHeader, CModalTitle, CModalBody, CModalFooter } from '@coreui/react'
 import { CStepper } from '@coreui/react-pro'
 
@@ -51,9 +52,7 @@ const PreventiviCreate = () => {
   const [idPreventivo, setIdPreventivo] = useState(null)
 
   // Sezione: Righe preventivo
-  const [righe, setRighe] = useState([
-    { descrizione: '', quantita: 1, prezzo: 0, iva: 22, sconto: 0 },
-  ])
+  const [righe, setRighe] = useState([])
 
   // Stepper prodotti (modal wizard)
   const [stepperOpen, setStepperOpen] = useState(false)
@@ -68,6 +67,7 @@ const PreventiviCreate = () => {
   // Variazioni/combos del prodotto selezionato
   const [prodVarOptions, setProdVarOptions] = useState([])
   const [selectedVarIds, setSelectedVarIds] = useState([])
+  const [selectedComboKey, setSelectedComboKey] = useState('')
   const [prodComboMap, setProdComboMap] = useState({})
   const [prodComboList, setProdComboList] = useState([])
   // Campi riepilogo
@@ -75,6 +75,13 @@ const PreventiviCreate = () => {
   const [modalPrice, setModalPrice] = useState(0)
   const [selIva, setSelIva] = useState('')
   const [selNatura, setSelNatura] = useState('')
+
+  // Pacchetti (modal selezione)
+  const [pkgOpen, setPkgOpen] = useState(false)
+  const [pkgSearch, setPkgSearch] = useState('')
+  const [pkgOptions, setPkgOptions] = useState([])
+  const [selPacchetto, setSelPacchetto] = useState('')
+  const [pkgPreview, setPkgPreview] = useState([])
 
   // Carica tutti i clienti attivi (tutte le pagine) una volta, poi filtra in locale
   useEffect(() => {
@@ -219,6 +226,7 @@ const PreventiviCreate = () => {
   useEffect(() => {
     setProdVarOptions([])
     setSelectedVarIds([])
+    setSelectedComboKey('')
     setProdComboMap({})
     setProdComboList([])
     if (!token) return
@@ -249,22 +257,58 @@ const PreventiviCreate = () => {
     return () => controller.abort()
   }, [token, selProd])
 
-  // Calcola prezzo suggerito in base a prodotto e variazioni selezionate
+  // Carica lista pacchetti quando apro modal o modifico ricerca
+  useEffect(() => {
+    if (!token) return
+    if (!pkgOpen) return
+    const controller = new AbortController()
+    const load = async () => {
+      try {
+        const { items } = await fetchPacchetti({ token, q: pkgSearch, signal: controller.signal })
+        setPkgOptions(items)
+      } catch (_e) {
+        setPkgOptions([])
+      }
+    }
+    load()
+    return () => controller.abort()
+  }, [token, pkgOpen, pkgSearch])
+
+  // Carica righe del pacchetto selezionato
+  useEffect(() => {
+    if (!token || !pkgOpen) return
+    if (!selPacchetto) { setPkgPreview([]); return }
+    const controller = new AbortController()
+    const loadDetail = async () => {
+      try {
+        const { righe } = await fetchPacchettoDetail({ token, id: Number(selPacchetto), signal: controller.signal })
+        setPkgPreview(righe)
+      } catch (_e) {
+        setPkgPreview([])
+      }
+    }
+    loadDetail()
+    return () => controller.abort()
+  }, [token, pkgOpen, selPacchetto])
+
+  // Calcola prezzo suggerito in base a prodotto e combinazione selezionata (o delta variazioni)
   useEffect(() => {
     const prod = prodOptions.find((p) => String(p.id_prodotto) === String(selProd))
     const base = Number(prod?.prezzo_listino) || 0
-    const comboKey = selectedVarIds
-      .map((id) => Number(id) || 0)
-      .filter((n) => n > 0)
-      .sort((a, b) => a - b)
-      .join('+')
+    const comboKey = selectedComboKey && String(selectedComboKey).trim() !== ''
+      ? selectedComboKey
+      : (selectedVarIds
+          .map((id) => Number(id) || 0)
+          .filter((n) => n > 0)
+          .sort((a, b) => a - b)
+          .join('+'))
     const comboPrice = comboKey && prodComboMap[comboKey] != null ? Number(prodComboMap[comboKey]) : null
     const delta = prodVarOptions
       .filter((v) => selectedVarIds.includes(v.id_variazione))
       .reduce((acc, v) => acc + (Number(v.delta_prezzo) || 0), 0)
     const suggested = comboPrice != null ? comboPrice : base + delta
     setModalPrice(suggested)
-  }, [selProd, prodOptions, selectedVarIds, prodVarOptions, prodComboMap])
+  }, [selProd, prodOptions, selectedComboKey, selectedVarIds, prodVarOptions, prodComboMap])
 
   const resetProductModal = () => {
     setProdStep(1)
@@ -272,10 +316,18 @@ const PreventiviCreate = () => {
     setProdSearch('')
     setSelProd('')
     setSelectedVarIds([])
+    setSelectedComboKey('')
     setSelIva('')
     setSelNatura('')
     setModalQty(1)
     setModalPrice(0)
+  }
+
+  const resetPkgModal = () => {
+    setPkgSearch('')
+    setSelPacchetto('')
+    setPkgOptions([])
+    setPkgPreview([])
   }
 
   const handleAddRiga = () => {
@@ -533,34 +585,33 @@ const PreventiviCreate = () => {
                   <CRow className="g-3">
                     {prodComboList.length > 0 ? (
                       <CCol md={12}>
-                        <CFormLabel>Variazioni combinate</CFormLabel>
+                        <CFormLabel>Combinazioni</CFormLabel>
                         <CFormSelect
-                          value={(() => {
-                            const key = selectedVarIds
-                              .map((id) => Number(id) || 0)
-                              .filter((n) => n > 0)
-                              .sort((a, b) => a - b)
-                              .join('+')
-                            return key
-                          })()}
+                          value={selectedComboKey}
                           onChange={(e) => {
-                            const opt = prodComboList.find((r) => String(r.combo_key) === String(e.target.value))
+                            const key = e.target.value
+                            setSelectedComboKey(key)
+                            const opt = prodComboList.find((r) => String(r.combo_key) === String(key))
                             if (!opt) { setSelectedVarIds([]); return }
                             const ids = Array.isArray(opt.var_ids) ? opt.var_ids.map(Number) : []
                             setSelectedVarIds(ids)
                           }}
                         >
-                          <option value="">--</option>
+                          <option value="">Seleziona una combinazione…</option>
                           {prodComboList.map((r, idx) => {
-                            const labels = Array.isArray(r.var_ids)
-                              ? r.var_ids.map((idv) => {
-                                  const vv = prodVarOptions.find((x) => Number(x.id_variazione) === Number(idv))
-                                  return vv ? (vv.categoria ? `${vv.categoria} - ${vv.nome}` : vv.nome) : String(idv)
-                                })
-                              : []
+                            const ids = Array.isArray(r.var_ids) ? r.var_ids : String(r.combo_key).split('+').map((x) => Number(x) || 0)
+                            const groups = {}
+                            ids.forEach((idv) => {
+                              const vv = prodVarOptions.find((x) => Number(x.id_variazione) === Number(idv))
+                              const cat = (vv && vv.categoria) ? String(vv.categoria) : 'Altro'
+                              const nm = vv ? String(vv.nome) : String(idv)
+                              if (!groups[cat]) groups[cat] = []
+                              groups[cat].push(nm)
+                            })
+                            const label = Object.entries(groups).map(([cat, names]) => `${cat}: ${names.join(', ')}`).join(' ; ')
                             return (
                               <option key={r.combo_key || idx} value={r.combo_key}>
-                                {labels.join(', ')}
+                                {label || r.combo_key}
                               </option>
                             )
                           })}
@@ -577,12 +628,22 @@ const PreventiviCreate = () => {
                   <CRow className="g-3">
                     <CCol md={12}>
                       <div className="mb-2"><strong>Prodotto:</strong> {(() => { const p = prodOptions.find((x) => String(x.id_prodotto) === String(selProd)); return p ? (p.codice ? `${p.codice} - ${p.nome}` : p.nome) : '-' })()}</div>
-                      {selectedVarIds.length > 0 && (
-                        <div className="mb-2"><strong>Variazioni:</strong> {selectedVarIds.map((idv) => {
-                          const vv = prodVarOptions.find((x) => Number(x.id_variazione) === Number(idv))
-                          return vv ? (vv.categoria ? `${vv.categoria} - ${vv.nome}` : vv.nome) : String(idv)
-                        }).join(', ')}</div>
-                      )}
+                    {(() => {
+                      const ids = selectedComboKey
+                        ? selectedComboKey.split('+').map((x) => Number(x) || 0).filter((n) => n > 0)
+                        : selectedVarIds
+                      if (!ids || ids.length === 0) return null
+                      const groups = {}
+                      ids.forEach((idv) => {
+                        const vv = prodVarOptions.find((x) => Number(x.id_variazione) === Number(idv))
+                        const cat = (vv && vv.categoria) ? String(vv.categoria) : 'Altro'
+                        const nm = vv ? String(vv.nome) : String(idv)
+                        if (!groups[cat]) groups[cat] = []
+                        groups[cat].push(nm)
+                      })
+                      const label = Object.entries(groups).map(([cat, names]) => `${cat}: ${names.join(', ')}`).join(' ; ')
+                      return (<div className="mb-2"><strong>Variazioni:</strong> {label}</div>)
+                    })()}
                     </CCol>
                     <CCol md={4}>
                       <CFormLabel>Quantità</CFormLabel>
@@ -640,12 +701,22 @@ const PreventiviCreate = () => {
                         const prod = prodOptions.find((p) => String(p.id_prodotto) === String(selProd))
                         if (!prod) return
                         const ivaPerc = Number(selIva || prod.iva_percento || 22)
-                        const descr = selectedVarIds.length > 0
-                          ? `${prod.nome} - ${selectedVarIds.map((idv) => {
-                              const vv = prodVarOptions.find((x) => Number(x.id_variazione) === Number(idv))
-                              return vv ? (vv.categoria ? `${vv.categoria} - ${vv.nome}` : vv.nome) : String(idv)
-                            }).join(', ')}`
-                          : prod.nome
+                        const comboIds = selectedComboKey
+                          ? selectedComboKey.split('+').map((x) => Number(x) || 0).filter((n) => n > 0)
+                          : selectedVarIds
+                        let descr = prod.nome
+                        if (comboIds && comboIds.length > 0) {
+                          const groups = {}
+                          comboIds.forEach((idv) => {
+                            const vv = prodVarOptions.find((x) => Number(x.id_variazione) === Number(idv))
+                            const cat = (vv && vv.categoria) ? String(vv.categoria) : 'Altro'
+                            const nm = vv ? String(vv.nome) : String(idv)
+                            if (!groups[cat]) groups[cat] = []
+                            groups[cat].push(nm)
+                          })
+                          const label = Object.entries(groups).map(([cat, names]) => `${cat}: ${names.join(', ')}`).join(' ; ')
+                          descr = `${prod.nome} - ${label}`
+                        }
                         const riga = { descrizione: descr, quantita: modalQty, prezzo: modalPrice, iva: ivaPerc, sconto: 0, id_prodotto: prod.id_prodotto }
                         if (ivaPerc === 0) {
                           const natId = selNatura ? Number(selNatura) : (Number(prod.id_sdi_natura_iva) || 0)
@@ -729,6 +800,9 @@ const PreventiviCreate = () => {
                 </CButton>
                 <CButton color="primary" variant="outline" size="sm" type="button" onClick={() => { resetProductModal(); setStepperOpen(true) }}>
                   Selettore prodotti
+                </CButton>
+                <CButton color="primary" size="sm" type="button" onClick={() => { resetPkgModal(); setPkgOpen(true) }}>
+                  Inserisci pacchetto
                 </CButton>
               </div>
             </div>
