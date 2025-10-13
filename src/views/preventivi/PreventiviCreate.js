@@ -718,6 +718,11 @@ const PreventiviCreate = () => {
                           descr = `${prod.nome} - ${label}`
                         }
                         const riga = { descrizione: descr, quantita: modalQty, prezzo: modalPrice, iva: ivaPerc, sconto: 0, id_prodotto: prod.id_prodotto }
+                        if (prod.id_categoria != null) {
+                          riga.id_categoria = Number(prod.id_categoria)
+                          const c = (catOptions || []).find((x) => Number(x.id_categoria) === Number(prod.id_categoria))
+                          if (c && c.nome) riga.categoria_nome = String(c.nome)
+                        }
                         if (ivaPerc === 0) {
                           const natId = selNatura ? Number(selNatura) : (Number(prod.id_sdi_natura_iva) || 0)
                           if (natId > 0) riga.id_sdi_natura_iva = natId
