@@ -22,9 +22,8 @@ if ($method !== 'GET') {
 
 try {
     $q = isset($_GET['q']) ? (string) $_GET['q'] : null;
-    $onlyActive = isset($_GET['only_active']) ? $_GET['only_active'] : null;
     $service = new PacchettiService(new PacchettiRepository(Database::getConnection()));
-    $result = $service->list(['q' => $q, 'only_active' => $onlyActive]);
+    $result = $service->list(['q' => $q]);
     HttpResponse::json($result, 200);
 } catch (RuntimeException $exception) {
     $code = $exception->getCode();

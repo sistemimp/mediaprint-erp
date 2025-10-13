@@ -8,7 +8,7 @@ use MediaPrint\Backend\Database;
 header('Content-Type: application/json; charset=utf-8');
 
 try {
-    require __DIR__ . '/backend/vendor/autoload.php';
+    require __DIR__ . '/../bootstrap.php';
 
     $raw = file_get_contents('php://input') ?: '';
     $data = json_decode($raw, true);

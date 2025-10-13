@@ -6,9 +6,9 @@ use MediaPrint\Service\PreventiviService;
 use MediaPrint\Backend\Database;
 
 header('Content-Type: application/json; charset=utf-8');
-
+require __DIR__ . '/../bootstrap.php';
 try {
-    require __DIR__ . '/backend/vendor/autoload.php';
+
 
     $raw = file_get_contents('php://input') ?: '';
     $data = json_decode($raw, true);

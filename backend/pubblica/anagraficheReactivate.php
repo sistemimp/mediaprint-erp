@@ -1,17 +1,14 @@
 <?php
 declare(strict_types=1);
 
-use MediaPrint\Repo\AnagraficheRepository;
 use MediaPrint\Service\AnagraficheService;
+use MediaPrint\Repo\AnagraficheRepository;
 use MediaPrint\Backend\Database;
-use MediaPrint\Backend\HttpResponse;
-use RuntimeException;
-use Throwable;
 
 header('Content-Type: application/json; charset=utf-8');
-
+    require __DIR__ . '/../bootstrap.php';
 try {
-    require __DIR__ . '/backend/vendor/autoload.php';
+
 
     // Parse JSON body
     $raw = file_get_contents('php://input') ?: '';
@@ -23,6 +20,7 @@ try {
     $service = new AnagraficheService(
         new AnagraficheRepository(Database::getConnection())
     );
+
     $result = $service->reactivate($data);
 
     http_response_code(200);

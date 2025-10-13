@@ -185,7 +185,6 @@ final class PreventiviRepository
      * Se non esiste, ritorna lista vuota.
      * @return list<array{
      *   id_prodotto:int|null,
-     *   id_categoria:int|null,
      *   descrizione:string,
      *   quantita:float,
      *   prezzo_unitario:float,
@@ -199,7 +198,7 @@ final class PreventiviRepository
     {
         try {
             $sql = <<<'SQL'
-                SELECT id_prodotto, id_categoria, descrizione, quantita, prezzo_unitario, sconto, iva, id_sdi_natura_iva, posizione, id_riga
+                SELECT id_prodotto, descrizione, quantita, prezzo_unitario, sconto, iva, id_sdi_natura_iva, posizione, id_riga
                 FROM tb_preventivi_righe_archive
                 WHERE id_preventivo = :id
                 ORDER BY COALESCE(posizione, id_riga) ASC
@@ -215,14 +214,8 @@ final class PreventiviRepository
 
         $out = [];
         foreach ($rows as $r) {
-            $idCategoria = isset($r['id_categoria']) ? (int) $r['id_categoria'] : null;
-            if ($idCategoria !== null && $idCategoria <= 0) {
-                $idCategoria = null;
-            }
-
             $out[] = [
                 'id_prodotto' => isset($r['id_prodotto']) ? (int) $r['id_prodotto'] : null,
-                'id_categoria' => $idCategoria,
                 'descrizione' => (string) ($r['descrizione'] ?? ''),
                 'quantita' => isset($r['quantita']) ? (float) $r['quantita'] : 1.0,
                 'prezzo_unitario' => isset($r['prezzo_unitario']) ? (float) $r['prezzo_unitario'] : 0.0,
@@ -285,10 +278,10 @@ final class PreventiviRepository
             try {
                 $this->pdo->prepare(
                     "INSERT INTO tb_preventivi_righe_archive (
-                        id_riga, id_preventivo, id_prodotto, id_categoria, descrizione, quantita, prezzo_unitario,
+                        id_riga, id_preventivo, id_prodotto, descrizione, quantita, prezzo_unitario,
                         sconto, importo_scontato, iva, id_sdi_natura_iva, totale, posizione
                     )
-                    SELECT r.id_riga, r.id_preventivo, r.id_prodotto, r.id_categoria, r.descrizione, r.quantita, r.prezzo_unitario,
+                    SELECT r.id_riga, r.id_preventivo, r.id_prodotto, r.descrizione, r.quantita, r.prezzo_unitario,
                            r.sconto, r.importo_scontato, r.iva, r.id_sdi_natura_iva, r.totale, r.posizione
                     FROM tb_preventivi_righe r
                     WHERE r.id_preventivo = :id
@@ -557,8 +550,6 @@ final class PreventiviRepository
      * @return list<array{
      *   id_riga:int,
      *   id_prodotto:int|null,
-     *   id_categoria:int|null,
-     *   categoria_nome:?string,
      *   descrizione:string,
      *   quantita:float,
      *   prezzo_unitario:float,
@@ -573,24 +564,11 @@ final class PreventiviRepository
     public function getLines(int $idPreventivo): array
     {
         $sql = <<<'SQL'
-            SELECT r.id_riga,
-                   r.id_prodotto,
-                   COALESCE(r.id_categoria, p.id_categoria) AS id_categoria,
-                   c.nome AS categoria_nome,
-                   r.descrizione,
-                   r.quantita,
-                   r.prezzo_unitario,
-                   r.sconto,
-                   r.importo_scontato,
-                   r.iva,
-                   r.id_sdi_natura_iva,
-                   r.totale,
-                   r.posizione
-            FROM tb_preventivi_righe r
-            LEFT JOIN tb_prodotti p ON p.id_prodotto = r.id_prodotto
-            LEFT JOIN tb_categorie c ON c.id_categoria = COALESCE(r.id_categoria, p.id_categoria)
-            WHERE r.id_preventivo = :id
-            ORDER BY COALESCE(r.posizione, r.id_riga) ASC
+            SELECT id_riga, id_prodotto, descrizione, quantita, prezzo_unitario, sconto, importo_scontato,
+                   iva, id_sdi_natura_iva, totale, posizione
+            FROM tb_preventivi_righe
+            WHERE id_preventivo = :id
+            ORDER BY COALESCE(posizione, id_riga) ASC
         SQL;
 
         $stmt = $this->pdo->prepare($sql);
@@ -600,18 +578,9 @@ final class PreventiviRepository
 
         $out = [];
         foreach ($rows as $r) {
-            $idCategoria = isset($r['id_categoria']) ? (int) $r['id_categoria'] : null;
-            if ($idCategoria !== null && $idCategoria <= 0) {
-                $idCategoria = null;
-            }
-
             $out[] = [
                 'id_riga' => (int) $r['id_riga'],
                 'id_prodotto' => isset($r['id_prodotto']) ? (int) $r['id_prodotto'] : null,
-                'id_categoria' => $idCategoria,
-                'categoria_nome' => isset($r['categoria_nome']) && $r['categoria_nome'] !== null
-                    ? (string) $r['categoria_nome']
-                    : null,
                 'descrizione' => (string) $r['descrizione'],
                 'quantita' => (float) $r['quantita'],
                 'prezzo_unitario' => (float) $r['prezzo_unitario'],
@@ -628,7 +597,7 @@ final class PreventiviRepository
 
     /**
      * Sostituisce le righe del preventivo con la lista fornita.
-     * Ogni riga accetta: descrizione, quantita, prezzo, iva, sconto, id_prodotto?, id_categoria?, id_sdi_natura_iva?
+     * Ogni riga accetta: descrizione, quantita, prezzo, iva, sconto, id_prodotto?, id_sdi_natura_iva?
      * I campi importo_scontato e totale vengono calcolati lato server per coerenza.
      * @param list<array<string,mixed>> $lines
      */
@@ -643,15 +612,13 @@ final class PreventiviRepository
             if (!empty($lines)) {
                 $ins = $this->pdo->prepare(<<<'SQL'
                     INSERT INTO tb_preventivi_righe (
-                        id_preventivo, id_prodotto, id_categoria, descrizione, quantita, prezzo_unitario,
+                        id_preventivo, id_prodotto, descrizione, quantita, prezzo_unitario,
                         sconto, importo_scontato, iva, id_sdi_natura_iva, totale, posizione
                     ) VALUES (
-                        :id_preventivo, :id_prodotto, :id_categoria, :descrizione, :quantita, :prezzo_unitario,
+                        :id_preventivo, :id_prodotto, :descrizione, :quantita, :prezzo_unitario,
                         :sconto, :importo_scontato, :iva, :id_sdi_natura_iva, :totale, :posizione
                     )
                 SQL);
-
-                $catLookup = null;
 
                 $pos = 1;
                 foreach ($lines as $line) {
@@ -664,22 +631,6 @@ final class PreventiviRepository
                     $s = isset($line['sconto']) ? (float) $line['sconto'] : 0.0;
                     $iva = isset($line['iva']) ? (float) $line['iva'] : null;
                     $idProd = isset($line['id_prodotto']) ? (int) $line['id_prodotto'] : null;
-                    $idCategoria = isset($line['id_categoria']) ? (int) $line['id_categoria'] : null;
-                    if ($idCategoria === 0) {
-                        $idCategoria = null;
-                    }
-                    if ($idCategoria === null && $idProd !== null) {
-                        if ($catLookup === null) {
-                            $catLookup = $this->pdo->prepare('SELECT id_categoria FROM tb_prodotti WHERE id_prodotto = :id LIMIT 1');
-                        }
-                        $catLookup->bindValue(':id', $idProd, PDO::PARAM_INT);
-                        $catLookup->execute();
-                        $rawCat = $catLookup->fetchColumn();
-                        $catLookup->closeCursor();
-                        if ($rawCat !== false) {
-                            $idCategoria = $rawCat !== null ? (int) $rawCat : null;
-                        }
-                    }
                     $idNatura = isset($line['id_sdi_natura_iva']) ? (int) $line['id_sdi_natura_iva'] : null;
 
                     // Calcoli base
@@ -689,7 +640,6 @@ final class PreventiviRepository
 
                     $ins->bindValue(':id_preventivo', $idPreventivo, PDO::PARAM_INT);
                     $ins->bindValue(':id_prodotto', $idProd, $idProd === null ? PDO::PARAM_NULL : PDO::PARAM_INT);
-                    $ins->bindValue(':id_categoria', $idCategoria, $idCategoria === null ? PDO::PARAM_NULL : PDO::PARAM_INT);
                     $ins->bindValue(':descrizione', $descr, PDO::PARAM_STR);
                     $ins->bindValue(':quantita', $q, PDO::PARAM_STR);
                     $ins->bindValue(':prezzo_unitario', $pu, PDO::PARAM_STR);
