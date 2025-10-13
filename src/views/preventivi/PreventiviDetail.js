@@ -22,14 +22,20 @@ import {
   CTableHead,
   CTableHeaderCell,
   CTableRow,
+  CModal,
+  CModalHeader,
+  CModalTitle,
+  CModalBody,
+  CModalFooter,
 } from '@coreui/react'
+import { CStepper } from '@coreui/react-pro'
 import CIcon from '@coreui/icons-react'
 import { cilCheckCircle, cilSave } from '@coreui/icons'
 
 import { useAuth } from '../../context/AuthContext'
-import { fetchAnagrafiche } from '../../services/anagrafiche'
+import { fetchAnagrafiche, fetchAnagraficaDetail } from '../../services/anagrafiche'
 import { createPreventivo, fetchPreventivoDetail } from '../../services/preventivi'
-import { fetchCategorieProdotti, fetchProdotti, fetchNatureIva, fetchProdottoVariazioni } from '../../services/prodotti'
+import { fetchCategorieProdotti, fetchProdotti, fetchNatureIva, fetchProdottoVariazioni, fetchProdottoPrezziCombinati } from '../../services/prodotti'
 
 const currencyFormatter = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' })
 const formatCurrency = (value) => {
@@ -60,7 +66,7 @@ const PreventiviDetail = () => {
   // Dati generali
   const [clienteSearch, setClienteSearch] = useState('')
   const [loadingClienti, setLoadingClienti] = useState(false)
-  const [clientiOptions, setClientiOptions] = useState([])
+  const [allClientiOptions, setAllClientiOptions] = useState([])
   const [idAnagrafica, setIdAnagrafica] = useState('')
   const [dataPreventivo, setDataPreventivo] = useState('')
   const [note, setNote] = useState('')
@@ -70,6 +76,7 @@ const PreventiviDetail = () => {
 
   // Stepper prodotti
   const [stepperOpen, setStepperOpen] = useState(false)
+  const [prodStep, setProdStep] = useState(1)
   const [catOptions, setCatOptions] = useState([])
   const [prodOptions, setProdOptions] = useState([])
   const [naturaOptions, setNaturaOptions] = useState([])
@@ -79,12 +86,17 @@ const PreventiviDetail = () => {
   // Variazioni prodotto selezionato
   const [prodVarOptions, setProdVarOptions] = useState([])
   const [selectedVarIds, setSelectedVarIds] = useState([])
+  const [prodComboMap, setProdComboMap] = useState({})
+  const [prodComboList, setProdComboList] = useState([])
   const [selIva, setSelIva] = useState('')
+  const [modalQty, setModalQty] = useState(1)
+  const [modalPrice, setModalPrice] = useState(0)
 
   // Submit state
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState(null)
   const [submitSuccess, setSubmitSuccess] = useState(null)
+  const [anagraficaDisabled, setAnagraficaDisabled] = useState(false)
 
   useEffect(() => {
     if (!token || !id) return
@@ -138,39 +150,78 @@ const PreventiviDetail = () => {
     return () => controller.abort()
   }, [token, id, logout])
 
-  // Carica clienti (stesso comportamento della pagina Crea)
+  // Verifica se l'anagrafica associata è disattiva per disabilitare attività
+  useEffect(() => {
+    const run = async () => {
+      try {
+        const aid = Number(idAnagrafica)
+        if (!token || !aid) {
+          setAnagraficaDisabled(false)
+          return
+        }
+        const det = await fetchAnagraficaDetail({ token, id: aid })
+        const active = Number(det?.anagrafica?.is_active) === 1 && String(det?.anagrafica?.stato || '').toLowerCase() === 'attiva'
+        setAnagraficaDisabled(!active)
+      } catch (_e) {
+        setAnagraficaDisabled(false)
+      }
+    }
+    run()
+  }, [token, idAnagrafica])
+
+  // Carica tutti i clienti una volta (come in Crea) e filtra in locale
   useEffect(() => {
     if (!token) return
     const controller = new AbortController()
     const load = async () => {
       setLoadingClienti(true)
       try {
-        const PAGE_SIZE = 10000
+        const PAGE_SIZE = 100
         const first = await fetchAnagrafiche({
           token,
           signal: controller.signal,
           page: 1,
           pageSize: PAGE_SIZE,
-          search: clienteSearch && clienteSearch.trim() !== '' ? clienteSearch.trim() : undefined,
+          // no search: fetch all, filter locally
           sortBy: 'ragione_sociale',
           sortDirection: 'asc',
         })
         let allItems = Array.isArray(first.items) ? [...first.items] : []
-        const totalPages = Math.max(first?.meta?.last_page ?? 1, 1)
-        const perPage = first?.meta?.per_page ?? PAGE_SIZE
-        for (let nextPage = 2; nextPage <= totalPages; nextPage += 1) {
-          if (controller.signal.aborted) return
-          const { items: pageItems = [] } = await fetchAnagrafiche({
-            token,
-            signal: controller.signal,
-            page: nextPage,
-            pageSize: perPage,
-            search: clienteSearch && clienteSearch.trim() !== '' ? clienteSearch.trim() : undefined,
-            sortBy: 'ragione_sociale',
-            sortDirection: 'asc',
-          })
-          if (Array.isArray(pageItems) && pageItems.length > 0) {
+        const totalPages = Math.max(first?.meta?.pages ?? first?.meta?.last_page ?? 1, 1)
+        const perPage = first?.meta?.per_page ?? (allItems.length || PAGE_SIZE)
+        if (totalPages > 1) {
+          for (let nextPage = 2; nextPage <= totalPages; nextPage += 1) {
+            if (controller.signal.aborted) return
+            const { items: pageItems = [] } = await fetchAnagrafiche({
+              token,
+              signal: controller.signal,
+              page: nextPage,
+              pageSize: perPage,
+              sortBy: 'ragione_sociale',
+              sortDirection: 'asc',
+            })
+            if (Array.isArray(pageItems) && pageItems.length > 0) {
+              allItems = allItems.concat(pageItems)
+            }
+          }
+        } else {
+          // Fallback: continua se la prima pagina è piena
+          let nextPage = 2
+          let safety = 0
+          while (!controller.signal.aborted && allItems.length > 0 && allItems.length % perPage === 0 && safety < 100) {
+            const { items: pageItems = [] } = await fetchAnagrafiche({
+              token,
+              signal: controller.signal,
+              page: nextPage,
+              pageSize: perPage,
+              sortBy: 'ragione_sociale',
+              sortDirection: 'asc',
+            })
+            if (!Array.isArray(pageItems) || pageItems.length === 0) break
             allItems = allItems.concat(pageItems)
+            nextPage += 1
+            safety += 1
+            if (pageItems.length < perPage) break
           }
         }
         const mapById = new Map()
@@ -185,18 +236,31 @@ const PreventiviDetail = () => {
           const B = String(b?.ragione_sociale ?? '').toLowerCase()
           return A.localeCompare(B)
         })
-        setClientiOptions(normalized)
+        setAllClientiOptions(normalized)
       } catch (e) {
         if (e.name === 'AbortError') return
         // Silenzia errori minori
-        setClientiOptions([])
+        setAllClientiOptions([])
       } finally {
         setLoadingClienti(false)
       }
     }
     load()
     return () => controller.abort()
-  }, [token, clienteSearch])
+  }, [token])
+
+  const clientiOptions = useMemo(() => {
+    const list = Array.isArray(allClientiOptions) ? allClientiOptions : []
+    const q = (clienteSearch || '').trim().toLowerCase()
+    if (q === '') return list
+    const norm = (s) => String(s || '').toLowerCase()
+    return list.filter((c) => {
+      const rs = norm(c.ragione_sociale)
+      const piva = norm(c.piva).replace(/[ .-]/g, '')
+      const cf = norm(c.codice_fiscale)
+      return rs.includes(q) || piva.includes(q.replace(/[ .-]/g, '')) || cf.includes(q)
+    })
+  }, [allClientiOptions, clienteSearch])
 
   // Carica categorie e nature IVA per stepper
   useEffect(() => {
@@ -233,33 +297,73 @@ const PreventiviDetail = () => {
     return () => controller.abort()
   }, [token, selCat, prodSearch])
 
-  // Carica variazioni del prodotto selezionato
+  // Carica variazioni del prodotto selezionato + prezzi combinati
   useEffect(() => {
     setProdVarOptions([])
     setSelectedVarIds([])
+    setProdComboMap({})
+    setProdComboList([])
     if (!token) return
     if (!selProd) return
     const controller = new AbortController()
     const load = async () => {
       try {
-        const { items } = await fetchProdottoVariazioni({ token, id_prodotto: Number(selProd), signal: controller.signal })
+        const [{ items }, combo] = await Promise.all([
+          fetchProdottoVariazioni({ token, id_prodotto: Number(selProd), signal: controller.signal }),
+          fetchProdottoPrezziCombinati({ token, id_prodotto: Number(selProd), signal: controller.signal }),
+        ])
         const sorted = Array.isArray(items)
           ? [...items].sort((a, b) => String(a?.codice || '').localeCompare(String(b?.codice || '')) || String(a?.nome || '').localeCompare(String(b?.nome || '')))
           : []
         setProdVarOptions(sorted)
+        const cmap = {}
+        const rows = Array.isArray(combo?.items) ? combo.items : []
+        rows.forEach((r) => { if (r?.combo_key) cmap[String(r.combo_key)] = Number(r.prezzo) || 0 })
+        setProdComboMap(cmap)
+        setProdComboList(rows)
       } catch (_e) {
         setProdVarOptions([])
+        setProdComboMap({})
+        setProdComboList([])
       }
     }
     load()
     return () => controller.abort()
   }, [token, selProd])
 
+  // Aggiorna prezzo suggerito nel riepilogo del modal
+  useEffect(() => {
+    const prod = prodOptions.find((p) => String(p.id_prodotto) === String(selProd))
+    const base = Number(prod?.prezzo_listino) || 0
+    const comboKey = selectedVarIds
+      .map((id) => Number(id) || 0)
+      .filter((n) => n > 0)
+      .sort((a, b) => a - b)
+      .join('+')
+    const comboPrice = comboKey && prodComboMap[comboKey] != null ? Number(prodComboMap[comboKey]) : null
+    const delta = prodVarOptions
+      .filter((v) => selectedVarIds.includes(v.id_variazione))
+      .reduce((acc, v) => acc + (Number(v.delta_prezzo) || 0), 0)
+    const suggested = comboPrice != null ? comboPrice : base + delta
+    setModalPrice(suggested)
+  }, [selProd, prodOptions, selectedVarIds, prodVarOptions, prodComboMap])
+
   const updateRiga = (index, patch) => {
     setRighe((rows) => rows.map((r, i) => (i === index ? { ...r, ...patch } : r)))
   }
   const handleAddRiga = () => {
     setRighe((rows) => rows.concat({ descrizione: '', quantita: 1, prezzo: 0, iva: 22, sconto: 0 }))
+  }
+
+  const resetProductModal = () => {
+    setProdStep(1)
+    setSelCat('')
+    setProdSearch('')
+    setSelProd('')
+    setSelectedVarIds([])
+    setSelIva('')
+    setModalQty(1)
+    setModalPrice(0)
   }
   const handleRemoveRiga = (index) => {
     setRighe((rows) => rows.filter((_, i) => i !== index))
@@ -352,6 +456,8 @@ const PreventiviDetail = () => {
 
   if (!id) return null
 
+  const uiDisabled = !editable || anagraficaDisabled
+
   return (
     <CCard>
       <CCardHeader>
@@ -382,6 +488,9 @@ const PreventiviDetail = () => {
 
         {!loading && !loadError && (
           <CForm onSubmit={handleConferma}>
+            {anagraficaDisabled && (
+              <CAlert color="warning" className="mb-3">Cliente disattivato: modifiche e conferma disabilitate.</CAlert>
+            )}
             {submitError && (
               <CAlert color="danger" className="mb-3">
                 {submitError?.payload?.message || submitError.message || 'Errore durante il salvataggio.'}
@@ -407,14 +516,14 @@ const PreventiviDetail = () => {
                       placeholder="Cerca cliente per ragione sociale o P.IVA"
                       value={clienteSearch}
                       onChange={(e) => setClienteSearch(e.target.value)}
-                      disabled={!editable}
+                      disabled={uiDisabled}
                     />
                   </CInputGroup>
                   <CFormSelect
                     className="mt-2"
                     value={idAnagrafica}
                     onChange={(e) => setIdAnagrafica(e.target.value)}
-                    disabled={!editable || loadingClienti}
+                    disabled={uiDisabled || loadingClienti}
                   >
                     <option value="">Seleziona cliente...</option>
                     {clientiOptions.map((c) => (
@@ -430,7 +539,7 @@ const PreventiviDetail = () => {
                     type="date"
                     value={dataPreventivo || ''}
                     onChange={(e) => setDataPreventivo(e.target.value)}
-                    disabled={!editable}
+                    disabled={uiDisabled}
                   />
                 </CCol>
                 <CCol md={3}>
@@ -438,7 +547,7 @@ const PreventiviDetail = () => {
                   <CFormInput
                     value={note}
                     onChange={(e) => setNote(e.target.value)}
-                    disabled={!editable}
+                    disabled={uiDisabled}
                   />
                 </CCol>
               </CRow>
@@ -448,20 +557,20 @@ const PreventiviDetail = () => {
             <div className="d-flex align-items-center justify-content-between">
               <h6 className="mb-0 text-body-secondary">Righe preventivo</h6>
               <div className="d-flex gap-2">
-                <CButton color="secondary" variant="outline" size="sm" onClick={handleAddRiga} disabled={!editable}>
+                <CButton color="secondary" variant="outline" size="sm" onClick={handleAddRiga} disabled={uiDisabled}>
                   Aggiungi riga
                 </CButton>
-                <CButton color="primary" variant="outline" size="sm" onClick={() => setStepperOpen((v) => !v)} disabled={!editable}>
+                <CButton color="primary" variant="outline" size="sm" onClick={() => { resetProductModal(); setStepperOpen(true) }} disabled={uiDisabled}>
                   Selettore prodotti
                 </CButton>
               </div>
             </div>
-            {stepperOpen && (
+            {false && (
               <div className="border rounded p-3 mt-3">
                 <CRow className="g-3 align-items-end">
                   <CCol md={3}>
                     <CFormLabel>Categoria</CFormLabel>
-                    <CFormSelect value={selCat} onChange={(e) => setSelCat(e.target.value)} disabled={!editable}>
+                    <CFormSelect value={selCat} onChange={(e) => setSelCat(e.target.value)} disabled={uiDisabled}>
                       <option value="">Tutte</option>
                       {catOptions.map((c) => (
                         <option key={c.id_categoria} value={c.id_categoria}>{c.nome}</option>
@@ -478,7 +587,7 @@ const PreventiviDetail = () => {
                         const prod = prodOptions.find((p) => String(p.id_prodotto) === String(pid))
                         if (prod && prod.iva_percento != null) setSelIva(String(prod.iva_percento))
                       }}
-                      disabled={!editable}
+                      disabled={uiDisabled}
                     >
                       <option value="">Seleziona...</option>
                       {prodOptions.map((p) => (
@@ -490,45 +599,71 @@ const PreventiviDetail = () => {
                   </CCol>
                   <CCol md={2}>
                     <CFormLabel>IVA %</CFormLabel>
-                    <CFormInput type="number" min="0" max="100" step="1" value={selIva} onChange={(e) => setSelIva(e.target.value)} disabled={!editable} />
+                    <CFormInput type="number" min="0" max="100" step="1" value={selIva} onChange={(e) => setSelIva(e.target.value)} disabled={uiDisabled} />
                   </CCol>
-                  <CCol md={3}>
-                    <CFormLabel>Variazioni prodotto (opz.)</CFormLabel>
+                  {/* Rimosso: selettore manuale variazioni. Si usano direttamente le combinazioni */}
+                  {prodComboList.length > 0 && (
+                  <CCol md={4}>
+                    <CFormLabel>Combinazioni disponibili</CFormLabel>
                     <CFormSelect
-                      multiple
-                      value={selectedVarIds.map(String)}
+                      value={(() => {
+                        const key = selectedVarIds
+                          .map((id) => Number(id) || 0)
+                          .filter((n) => n > 0)
+                          .sort((a, b) => a - b)
+                          .join('+')
+                        return key
+                      })()}
                       onChange={(e) => {
-                        const values = Array.from(e.target.selectedOptions).map((o) => Number(o.value))
-                        setSelectedVarIds(values)
+                        const opt = prodComboList.find((r) => String(r.combo_key) === String(e.target.value))
+                        if (!opt) return
+                        const ids = Array.isArray(opt.var_ids) ? opt.var_ids.map(Number) : []
+                        setSelectedVarIds(ids)
+                        const prezzo = Number(opt.prezzo) || 0
+                        const prezzoInput = document.getElementById('step-prezzo')
+                        if (prezzoInput) prezzoInput.value = String(prezzo)
                       }}
-                      disabled={!editable || prodVarOptions.length === 0}
+                      disabled={uiDisabled || prodComboList.length === 0}
                     >
-                      {prodVarOptions.map((v) => (
-                        <option key={v.id_variazione} value={v.id_variazione}>
-                          {v.categoria ? `${v.categoria} - ` : ''}{v.nome}{v.codice ? ` [${v.codice}]` : ''}{typeof v.delta_prezzo === 'number' && v.delta_prezzo !== 0 ? ` (${v.delta_prezzo >= 0 ? '+' : ''}${v.delta_prezzo})` : ''}
-                        </option>
-                      ))}
+                      <option value="">--</option>
+                      {prodComboList.map((r, idx) => {
+                        const labels = Array.isArray(r.var_ids)
+                          ? r.var_ids.map((idv) => {
+                              const vv = prodVarOptions.find((x) => Number(x.id_variazione) === Number(idv))
+                              return vv ? (vv.categoria ? `${vv.categoria} - ${vv.nome}` : vv.nome) : String(idv)
+                            })
+                          : []
+                        return (
+                          <option key={r.combo_key || idx} value={r.combo_key}>
+                            {labels.join(', ')} — {Number(r.prezzo) ?? 0}
+                          </option>
+                        )
+                      })}
                     </CFormSelect>
+                    <div className="mt-2">
+                      <CButton color="secondary" variant="outline" size="sm" onClick={() => setSelectedVarIds([])} disabled={uiDisabled || selectedVarIds.length === 0}>Annulla selezione</CButton>
+                    </div>
                   </CCol>
+                  )}
                 </CRow>
                 <CRow className="g-3 mt-2 align-items-end">
                   <CCol md={3}>
                     <CFormLabel>Ricerca prodotto</CFormLabel>
-                    <CFormInput placeholder="Cerca per nome o codice" value={prodSearch} onChange={(e) => setProdSearch(e.target.value)} disabled={!editable} />
+                    <CFormInput placeholder="Cerca per nome o codice" value={prodSearch} onChange={(e) => setProdSearch(e.target.value)} disabled={uiDisabled} />
                   </CCol>
                   <CCol md={3}>
                     <CFormLabel>Quantità</CFormLabel>
-                    <CFormInput id="step-qta" type="number" min="1" step="1" defaultValue={1} disabled={!editable} />
+                    <CFormInput id="step-qta" type="number" min="1" step="1" defaultValue={1} disabled={uiDisabled} />
                   </CCol>
                   <CCol md={3}>
                     <CFormLabel>Prezzo</CFormLabel>
                     <CFormInput id="step-prezzo" type="number" min="0" step="0.01" defaultValue={(() => {
                       const prod = prodOptions.find((p) => String(p.id_prodotto) === String(selProd))
                       return prod?.prezzo_listino ?? 0
-                    })()} disabled={!editable} />
+                    })()} disabled={uiDisabled} />
                   </CCol>
                   <CCol md={3} className="d-flex gap-2">
-                    <CButton color="primary" type="button" disabled={!editable}
+                    <CButton color="primary" type="button" disabled={uiDisabled}
                       onClick={() => {
                         const prod = prodOptions.find((p) => String(p.id_prodotto) === String(selProd))
                         if (!prod) return
@@ -537,13 +672,25 @@ const PreventiviDetail = () => {
                         const ivaPerc = Number(selIva || prod.iva_percento || 22)
                         const selectedVars = prodVarOptions.filter((v) => selectedVarIds.includes(v.id_variazione))
                         const delta = selectedVars.reduce((acc, v) => acc + (Number(v.delta_prezzo) || 0), 0)
+                        const comboKey = selectedVars
+                          .map((v) => Number(v.id_variazione) || 0)
+                          .filter((n) => n > 0)
+                          .sort((a, b) => a - b)
+                          .join('+')
+                        const comboPrice = comboKey && prodComboMap[comboKey] != null ? Number(prodComboMap[comboKey]) : null
                         const descr = selectedVars.length > 0
                           ? `${prod.nome} - ${selectedVars.map((v) => `${v.nome}${v.codice ? ' [' + v.codice + ']' : ''}`).join(', ')}`
                           : prod.nome
-                        const riga = { descrizione: descr, quantita: q, prezzo: prezzoBase + delta, iva: ivaPerc, sconto: 0, id_prodotto: prod.id_prodotto }
+                        const prezzoFinale = comboPrice != null ? comboPrice : (prezzoBase + delta)
+                        const riga = { descrizione: descr, quantita: q, prezzo: prezzoFinale, iva: ivaPerc, sconto: 0, id_prodotto: prod.id_prodotto }
                         if (ivaPerc === 0) {
-                          const nat = naturaOptions[0]
-                          if (nat) riga.id_sdi_natura_iva = nat.id_natura
+                          const natId = Number(prod.id_sdi_natura_iva) || 0
+                          if (natId > 0) {
+                            riga.id_sdi_natura_iva = natId
+                          } else {
+                            const nat = naturaOptions[0]
+                            if (nat) riga.id_sdi_natura_iva = nat.id_natura
+                          }
                         }
                         setRighe((rows) => rows.concat(riga))
                         setSelectedVarIds([])
@@ -558,6 +705,217 @@ const PreventiviDetail = () => {
                 </CRow>
               </div>
             )}
+
+            <CModal visible={stepperOpen} onClose={() => setStepperOpen(false)} size="lg" backdrop="static">
+              <CModalHeader>
+                <CModalTitle>Selettore prodotti</CModalTitle>
+              </CModalHeader>
+              <CModalBody>
+                <CStepper
+                  activeStepNumber={prodStep}
+                  steps={[ 'Categoria', 'Prodotto', 'Variazioni', 'Riepilogo' ]}
+                  linear={false}
+                  validation={false}
+                  onStepChange={(n) => {
+                    if (uiDisabled) return
+                    // Always allow going back
+                    if (n <= prodStep) {
+                      setProdStep(n)
+                      return
+                    }
+                    // Forward navigation with prerequisites
+                    if (n === 2) {
+                      setProdStep(2)
+                      return
+                    }
+                    if (n === 3) {
+                      if (!selProd) return
+                      if (Array.isArray(prodComboList) && prodComboList.length > 0) {
+                        setProdStep(3)
+                      } else {
+                        setProdStep(4)
+                      }
+                      return
+                    }
+                    if (n === 4) {
+                      if (!selProd) return
+                      setProdStep(4)
+                      return
+                    }
+                  }}
+                />
+                {prodStep === 1 && (
+                  <CRow className="g-3">
+                    <CCol md={12}>
+                      <CFormLabel>Categoria prodotto</CFormLabel>
+                      <CFormSelect value={selCat} onChange={(e) => setSelCat(e.target.value)} disabled={uiDisabled}>
+                        <option value="">Tutte</option>
+                        {catOptions.map((c) => (
+                          <option key={c.id_categoria} value={c.id_categoria}>{c.nome}</option>
+                        ))}
+                      </CFormSelect>
+                    </CCol>
+                  </CRow>
+                )}
+                {prodStep === 2 && (
+                  <CRow className="g-3">
+                    <CCol md={6}>
+                      <CFormLabel>Prodotto</CFormLabel>
+                      <CFormSelect
+                        value={selProd}
+                        onChange={(e) => {
+                          const pid = e.target.value
+                          setSelProd(pid)
+                          const prod = prodOptions.find((p) => String(p.id_prodotto) === String(pid))
+                          if (prod && prod.iva_percento != null) setSelIva(String(prod.iva_percento))
+                        }}
+                        disabled={uiDisabled}
+                      >
+                        <option value="">Seleziona...</option>
+                        {prodOptions.map((p) => (
+                          <option key={p.id_prodotto} value={p.id_prodotto}>
+                            {p.codice ? `${p.codice} - ${p.nome}` : p.nome}
+                          </option>
+                        ))}
+                      </CFormSelect>
+                    </CCol>
+                    <CCol md={6}>
+                      <CFormLabel>Ricerca</CFormLabel>
+                      <CFormInput placeholder="Cerca per nome o codice" value={prodSearch} onChange={(e) => setProdSearch(e.target.value)} disabled={uiDisabled} />
+                    </CCol>
+                  </CRow>
+                )}
+                {prodStep === 3 && (
+                  <CRow className="g-3">
+                    {prodComboList.length > 0 ? (
+                      <CCol md={12}>
+                        <CFormLabel>Variazioni combinate</CFormLabel>
+                        <CFormSelect
+                          value={(() => {
+                            const key = selectedVarIds
+                              .map((id) => Number(id) || 0)
+                              .filter((n) => n > 0)
+                              .sort((a, b) => a - b)
+                              .join('+')
+                            return key
+                          })()}
+                          onChange={(e) => {
+                            const opt = prodComboList.find((r) => String(r.combo_key) === String(e.target.value))
+                            if (!opt) { setSelectedVarIds([]); return }
+                            const ids = Array.isArray(opt.var_ids) ? opt.var_ids.map(Number) : []
+                            setSelectedVarIds(ids)
+                          }}
+                          disabled={uiDisabled || prodComboList.length === 0}
+                        >
+                          <option value="">--</option>
+                          {prodComboList.map((r, idx) => {
+                            const labels = Array.isArray(r.var_ids)
+                              ? r.var_ids.map((idv) => {
+                                  const vv = prodVarOptions.find((x) => Number(x.id_variazione) === Number(idv))
+                                  return vv ? (vv.categoria ? `${vv.categoria} - ${vv.nome}` : vv.nome) : String(idv)
+                                })
+                              : []
+                            return (
+                              <option key={r.combo_key || idx} value={r.combo_key}>
+                                {labels.join(', ')}
+                              </option>
+                            )
+                          })}
+                        </CFormSelect>
+                      </CCol>
+                    ) : (
+                      <CCol md={12}>
+                        <CAlert color="info" className="mb-0">Nessuna variazione combinata definita per il prodotto selezionato.</CAlert>
+                      </CCol>
+                    )}
+                  </CRow>
+                )}
+                {prodStep === 4 && (
+                  <CRow className="g-3">
+                    <CCol md={12}>
+                      <div className="mb-2"><strong>Prodotto:</strong> {(() => { const p = prodOptions.find((x) => String(x.id_prodotto) === String(selProd)); return p ? (p.codice ? `${p.codice} - ${p.nome}` : p.nome) : '-' })()}</div>
+                      {selectedVarIds.length > 0 && (
+                        <div className="mb-2"><strong>Variazioni:</strong> {selectedVarIds.map((idv) => {
+                          const vv = prodVarOptions.find((x) => Number(x.id_variazione) === Number(idv))
+                          return vv ? (vv.categoria ? `${vv.categoria} - ${vv.nome}` : vv.nome) : String(idv)
+                        }).join(', ')}</div>
+                      )}
+                    </CCol>
+                    <CCol md={4}>
+                      <CFormLabel>Quantità</CFormLabel>
+                      <CFormInput type="number" min="1" step="1" value={modalQty} onChange={(e) => setModalQty(Number(e.target.value) || 1)} disabled={uiDisabled} />
+                    </CCol>
+                    <CCol md={4}>
+                      <CFormLabel>Prezzo</CFormLabel>
+                      <CFormInput type="number" min="0" step="0.01" value={modalPrice} onChange={(e) => setModalPrice(Number(e.target.value) || 0)} disabled={uiDisabled} />
+                    </CCol>
+                    <CCol md={4}>
+                      <CFormLabel>IVA %</CFormLabel>
+                      <CFormInput type="number" min="0" max="100" step="1" value={selIva} onChange={(e) => setSelIva(e.target.value)} disabled={uiDisabled} />
+                    </CCol>
+                    <CCol md={6}>
+                      <CFormLabel>Natura IVA</CFormLabel>
+                      <CFormSelect value={(() => '')()} onChange={() => {}} disabled={true}>
+                        <option value="">Selezione natura disponibile nella riga dopo inserimento</option>
+                      </CFormSelect>
+                    </CCol>
+                  </CRow>
+                )}
+              </CModalBody>
+              <CModalFooter className="d-flex justify-content-between">
+                <div>
+                  {prodStep > 1 && (
+                    <CButton color="secondary" variant="outline" onClick={() => setProdStep((s) => Math.max(1, s - 1))} disabled={uiDisabled}>Indietro</CButton>
+                  )}
+                </div>
+                <div className="d-flex gap-2">
+                  <CButton color="link" onClick={() => setStepperOpen(false)}>Annulla</CButton>
+                  {prodStep < 4 && (
+                    <CButton
+                      color="primary"
+                      onClick={() => {
+                        if (prodStep === 1) { setProdStep(2); return }
+                        if (prodStep === 2) {
+                          if (!selProd) return
+                          if (prodComboList.length === 0) { setProdStep(4); return }
+                          setProdStep(3); return
+                        }
+                        if (prodStep === 3) { setProdStep(4); return }
+                      }}
+                      disabled={(prodStep === 2 && !selProd) || uiDisabled}
+                    >
+                      Avanti
+                    </CButton>
+                  )}
+                  {prodStep === 4 && (
+                    <CButton
+                      color="primary"
+                      onClick={() => {
+                        const prod = prodOptions.find((p) => String(p.id_prodotto) === String(selProd))
+                        if (!prod) return
+                        const ivaPerc = Number(selIva || prod.iva_percento || 22)
+                        const descr = selectedVarIds.length > 0
+                          ? `${prod.nome} - ${selectedVarIds.map((idv) => {
+                              const vv = prodVarOptions.find((x) => Number(x.id_variazione) === Number(idv))
+                              return vv ? (vv.categoria ? `${vv.categoria} - ${vv.nome}` : vv.nome) : String(idv)
+                            }).join(', ')}`
+                          : prod.nome
+                        const riga = { descrizione: descr, quantita: modalQty, prezzo: modalPrice, iva: ivaPerc, sconto: 0, id_prodotto: prod.id_prodotto }
+                        if (ivaPerc === 0) {
+                          // Se IVA 0, natura IVA modificabile in tabella dopo inserimento
+                        }
+                        setRighe((rows) => rows.concat(riga))
+                        setStepperOpen(false)
+                      }}
+                      disabled={uiDisabled}
+                    >
+                      Inserisci riga
+                    </CButton>
+                  )}
+                </div>
+              </CModalFooter>
+            </CModal>
+
               <CTable className="mt-3" responsive small>
                 <CTableHead color="light">
                   <CTableRow className="align-middle">
@@ -601,7 +959,7 @@ const PreventiviDetail = () => {
                             placeholder="Descrizione articolo/servizio"
                             value={riga.descrizione}
                             onChange={(e) => updateRiga(idx, { descrizione: e.target.value })}
-                            disabled={!editable}
+                      disabled={uiDisabled}
                           />
                         </CTableDataCell>
                         <CTableDataCell className="text-end">
@@ -611,7 +969,7 @@ const PreventiviDetail = () => {
                             step="1"
                             value={riga.quantita}
                             onChange={(e) => updateRiga(idx, { quantita: e.target.value })}
-                            disabled={!editable}
+                            disabled={uiDisabled}
                           />
                         </CTableDataCell>
                         <CTableDataCell className="text-end">
@@ -621,7 +979,7 @@ const PreventiviDetail = () => {
                             step="0.01"
                             value={riga.prezzo}
                             onChange={(e) => updateRiga(idx, { prezzo: e.target.value })}
-                            disabled={!editable}
+                            disabled={uiDisabled}
                           />
                         </CTableDataCell>
                         <CTableDataCell className="text-end">
@@ -632,7 +990,7 @@ const PreventiviDetail = () => {
                             step="0.1"
                             value={riga.sconto}
                             onChange={(e) => updateRiga(idx, { sconto: e.target.value })}
-                            disabled={!editable}
+                            disabled={uiDisabled}
                           />
                         </CTableDataCell>
                         <CTableDataCell className="text-end">
@@ -650,14 +1008,14 @@ const PreventiviDetail = () => {
                             }
                             updateRiga(idx, patch)
                           }}
-                          disabled={!editable}
+                          disabled={uiDisabled}
                         />
                       </CTableDataCell>
                       <CTableDataCell className="text-end">
                         <CFormSelect
                           value={riga.id_sdi_natura_iva ?? ''}
                           onChange={(e) => updateRiga(idx, { id_sdi_natura_iva: e.target.value ? Number(e.target.value) : null })}
-                          disabled={!editable || Number(riga.iva) !== 0}
+                          disabled={uiDisabled || Number(riga.iva) !== 0}
                         >
                           <option value="">--</option>
                           {naturaOptions.map((n) => (
@@ -671,7 +1029,7 @@ const PreventiviDetail = () => {
                         <CTableDataCell className="text-end">{formatCurrency(ivaVal)}</CTableDataCell>
                         <CTableDataCell className="text-end">{formatCurrency(tot)}</CTableDataCell>
                         <CTableDataCell className="text-center">
-                          <CButton color="link" size="sm" className="p-0" onClick={() => handleRemoveRiga(idx)} disabled={!editable}>
+                          <CButton color="link" size="sm" className="p-0" onClick={() => handleRemoveRiga(idx)} disabled={uiDisabled}>
                             ×
                           </CButton>
                         </CTableDataCell>
@@ -707,10 +1065,10 @@ const PreventiviDetail = () => {
             </section>
 
             <div className="d-flex gap-2">
-              <CButton color="secondary" variant="outline" type="button" onClick={handleSalvaBozza} disabled={!editable || submitting}>
+              <CButton color="secondary" variant="outline" type="button" onClick={handleSalvaBozza} disabled={uiDisabled || submitting}>
                 <CIcon icon={cilSave} className="me-2" /> Aggiorna bozza
               </CButton>
-              <CButton color="primary" type="submit" disabled={!editable || submitting}>
+              <CButton color="primary" type="submit" disabled={uiDisabled || submitting}>
                 <CIcon icon={cilCheckCircle} className="me-2" /> Conferma
               </CButton>
               <CButton color="link" type="button" onClick={() => navigate('/preventivi/lista')}>

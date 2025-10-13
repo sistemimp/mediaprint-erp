@@ -142,49 +142,57 @@ export const updateAnagraficaDetail = async ({
     payload.fiscale = fiscale
   }
 
-  // Support both array payload (update) and object payload (create/update/delete)
-  if (Array.isArray(contatti) && contatti.length > 0) {
-    payload.contatti = contatti
-  } else if (contatti && typeof contatti === 'object' && contatti !== null) {
-    const contattiPayload = {}
-    if (Array.isArray(contatti.create) && contatti.create.length > 0) {
-      contattiPayload.create = contatti.create
+  // Normalizza contatti in una lista di operazioni [{ action, ... }]
+  if (contatti) {
+    let operations = []
+    if (Array.isArray(contatti)) {
+      // Se non c'è action, interpreta come update
+      operations = contatti.map((op) => (op && typeof op === 'object' && 'action' in op ? op : { action: 'update', ...op }))
+    } else if (typeof contatti === 'object') {
+      const { create, update, delete: del } = contatti
+      if (Array.isArray(create)) operations.push(...create.map((c) => ({ action: 'create', ...c })))
+      if (Array.isArray(update)) operations.push(...update.map((u) => ({ action: 'update', ...u })))
+      if (Array.isArray(del)) {
+        operations.push(
+          ...del.map((d) => (typeof d === 'number' ? { action: 'delete', id_contatto: d } : { action: 'delete', ...d })),
+        )
+      }
     }
-    if (Array.isArray(contatti.update) && contatti.update.length > 0) {
-      contattiPayload.update = contatti.update
-    }
-    if (Array.isArray(contatti.delete) && contatti.delete.length > 0) {
-      contattiPayload.delete = contatti.delete
-    }
-    if (Object.keys(contattiPayload).length > 0) {
-      payload.contatti = contattiPayload
-    }
-  }
-
-  if (sedi && typeof sedi === 'object' && sedi !== null) {
-    const sediPayload = {}
-    if (Array.isArray(sedi.create) && sedi.create.length > 0) {
-      sediPayload.create = sedi.create
-    }
-    if (Array.isArray(sedi.update) && sedi.update.length > 0) {
-      sediPayload.update = sedi.update
-    }
-    if (Array.isArray(sedi.delete) && sedi.delete.length > 0) {
-      sediPayload.delete = sedi.delete
-    }
-    if (Object.keys(sediPayload).length > 0) {
-      payload.sedi = sediPayload
+    if (operations.length > 0) {
+      payload.contatti = operations
     }
   }
 
-  const response = await apiFetch('/anagraficheUpdate.php', {
+  // Normalizza sedi in una lista di operazioni [{ action, ... }]
+  if (sedi) {
+    let operations = []
+    if (Array.isArray(sedi)) {
+      operations = sedi.map((op) => (op && typeof op === 'object' && 'action' in op ? op : { action: 'update', ...op }))
+    } else if (typeof sedi === 'object') {
+      const { create, update, delete: del } = sedi
+      if (Array.isArray(create)) operations.push(...create.map((s) => ({ action: 'create', ...s })))
+      if (Array.isArray(update)) operations.push(...update.map((s) => ({ action: 'update', ...s })))
+      if (Array.isArray(del)) {
+        operations.push(
+          ...del.map((d) => (typeof d === 'number' ? { action: 'delete', id_sede: d } : { action: 'delete', ...d })),
+        )
+      }
+    }
+    if (operations.length > 0) {
+      payload.sedi = operations
+    }
+  }
+
+  // Esegue update e poi ricarica il dettaglio per restituire i dati aggiornati
+  await apiFetch('/anagraficheUpdate.php', {
     method: 'POST',
     token,
     body: payload,
     signal,
   })
 
-  return response ?? {}
+  const detail = await fetchAnagraficaDetail({ token, id: numericId, signal })
+  return detail ?? { ok: true }
 }
 
 export const createAnagrafica = async ({ token, body, signal } = {}) => {

@@ -29,6 +29,7 @@ import {
   fetchProdottoVariazioni,
   linkProdottoVariazione,
   unlinkProdottoVariazione,
+  saveProdottoVariazioneDelta,
   updateProdotto,
   fetchProdottoPrezziCombinati,
   upsertProdottoPrezzoCombinato,
@@ -63,12 +64,13 @@ const ProdottiDetail = () => {
   const [variazioni, setVariazioni] = useState([])
   const [assegnate, setAssegnate] = useState([])
   const [selectedVar, setSelectedVar] = useState('')
+  const [selectedDelta, setSelectedDelta] = useState('0')
+  const [deltaEdits, setDeltaEdits] = useState({})
   // Prezzi combinati (multi-variazione)
   const [comboPrezzi, setComboPrezzi] = useState([])
   const [comboSelIds, setComboSelIds] = useState([])
   const [comboPrezzoVal, setComboPrezzoVal] = useState('')
   const [comboEditing, setComboEditing] = useState(false)
-  const [comboSelByCat, setComboSelByCat] = useState({})
   // Raggruppamento combinazioni
   const [groupCat1, setGroupCat1] = useState('')
   const [groupCat2, setGroupCat2] = useState('')
@@ -118,7 +120,9 @@ const ProdottiDetail = () => {
         }
         setVariazioni(vars)
         setAssegnate(assigned)
-        // delta non più gestito: nessuna init
+        const initial = {}
+        assigned.forEach((v) => { initial[v.id_variazione] = v.delta_prezzo ?? 0 })
+        setDeltaEdits(initial)
         setComboPrezzi(Array.isArray(combos) ? combos : [])
       } catch (e) {
         if (e.name === 'AbortError') return
@@ -161,12 +165,15 @@ const ProdottiDetail = () => {
   const handleLink = async () => {
     if (!selectedVar) return
     try {
-      const delta = 0
+      const delta = Number(selectedDelta || 0)
       await linkProdottoVariazione({ token, id_prodotto: id, id_variazione: Number(selectedVar), delta })
       const { items } = await fetchProdottoVariazioni({ token, id_prodotto: id })
       setAssegnate(items)
+      const updated = {}
+      items.forEach((v) => { updated[v.id_variazione] = v.delta_prezzo ?? 0 })
+      setDeltaEdits(updated)
       setSelectedVar('')
-      
+      setSelectedDelta('0')
       showToast('Variazione aggiunta', 'success')
     } catch (e) { setError(e); showToast(e.message || 'Errore aggiunta variazione', 'error') }
   }
@@ -176,10 +183,27 @@ const ProdottiDetail = () => {
       await unlinkProdottoVariazione({ token, id_prodotto: id, id_variazione })
       const { items } = await fetchProdottoVariazioni({ token, id_prodotto: id })
       setAssegnate(items)
+      const updated = {}
+      items.forEach((v) => { updated[v.id_variazione] = v.delta_prezzo ?? 0 })
+      setDeltaEdits(updated)
     } catch (e) { setError(e); showToast(e.message || 'Errore rimozione variazione', 'error') }
   }
 
-  // Delta prezzo rimosso: gestione centralizzata su Prezzi combinati
+  const handleDeltaChange = (idVar, value) => {
+    setDeltaEdits((prev) => ({ ...prev, [idVar]: value }))
+  }
+
+  const handleDeltaSave = async (idVar) => {
+    try {
+      const delta = Number(deltaEdits[idVar] || 0)
+      await saveProdottoVariazioneDelta({ token, id_prodotto: id, id_variazione: idVar, delta })
+      const { items } = await fetchProdottoVariazioni({ token, id_prodotto: id })
+      setAssegnate(items)
+      const updated = {}
+      items.forEach((v) => { updated[v.id_variazione] = v.delta_prezzo ?? 0 })
+      setDeltaEdits(updated)
+    } catch (e) { setError(e); showToast(e.message || 'Errore salvataggio delta', 'error') }
+  }
 
   const handleComboAdd = async () => {
     if (!Array.isArray(comboSelIds) || comboSelIds.length === 0) return
@@ -189,7 +213,6 @@ const ProdottiDetail = () => {
       const { items } = await fetchProdottoPrezziCombinati({ token, id_prodotto: id })
       setComboPrezzi(items)
       setComboSelIds([])
-      setComboSelByCat({})
       setComboPrezzoVal('')
       setComboEditing(false)
       showToast('Prezzo combinato salvato', 'success')
@@ -211,13 +234,6 @@ const ProdottiDetail = () => {
     setComboSelIds(ids)
     setComboPrezzoVal(String(row.prezzo ?? ''))
     setComboEditing(true)
-    const next = {}
-    ids.forEach((idv) => {
-      const vv = comboOptions.find((x) => Number(x.id_variazione) === Number(idv)) || variazioni.find((x) => Number(x.id_variazione) === Number(idv))
-      const cat = String(vv?.categoria || 'Altro')
-      next[cat] = String(idv)
-    })
-    setComboSelByCat(next)
     showToast('Modifica selezionata: aggiorna prezzo e salva', 'success')
   }
 
@@ -225,7 +241,6 @@ const ProdottiDetail = () => {
     setComboSelIds([])
     setComboPrezzoVal('')
     setComboEditing(false)
-    setComboSelByCat({})
   }
 
   const variazioniByCodice = useMemo(() => {
@@ -248,26 +263,6 @@ const ProdottiDetail = () => {
     return variazioniByCodice.filter((v) => allowed.has(Number(v.id_variazione)))
   }, [variazioniByCodice, assegnate])
 
-  const comboOptionsByCategory = useMemo(() => {
-    const map = {}
-    for (const v of comboOptions) {
-      const cat = String(v.categoria || 'Altro')
-      if (!map[cat]) map[cat] = []
-      map[cat].push(v)
-    }
-    Object.keys(map).forEach((k) => {
-      // Ordina per codice (fallback al nome)
-      const acmp = (x) => String(x?.codice || '').toLowerCase()
-      const ncmp = (x) => String(x?.nome || '').toLowerCase()
-      map[k].sort((a, b) => {
-        const c = acmp(a).localeCompare(acmp(b))
-        if (c !== 0) return c
-        return ncmp(a).localeCompare(ncmp(b))
-      })
-    })
-    return map
-  }, [comboOptions])
-
   // Mappa id variazione -> dettaglio
   const varById = useMemo(() => {
     const map = {}
@@ -288,43 +283,31 @@ const ProdottiDetail = () => {
     return Array.from(set).sort((a, b) => String(a).localeCompare(String(b)))
   }, [comboPrezzi, varById])
 
-  // Struttura raggruppata fino a 2 livelli, ordinabile per codice variazione
-  const groupedData = useMemo(() => {
+  // Struttura raggruppata fino a 2 livelli
+  const groupedCombos = useMemo(() => {
     if (!groupCat1) return null
-    const groups = new Map()
-    const sort1 = new Map() // label k1 -> sortKey (codice o nome)
-    const sort2 = new Map() // parent+'||'+k2 -> sortKey (codice o nome)
-
-    const findByCat = (list, cat) => list.find((d) => String(d?.categoria || '') === String(cat))
-
+    const top = new Map()
+    const labelFor = (list, cat) => {
+      const f = list.find((d) => String(d?.categoria || '') === String(cat))
+      return f ? f.nome : ''
+    }
     for (const r of comboPrezzi || []) {
       const details = (r.var_ids || []).map((id) => varById[Number(id)]).filter(Boolean)
-      const v1 = findByCat(details, groupCat1)
-      const name1 = v1?.nome || '-'
-      const code1 = (v1?.codice || name1).toLowerCase()
-      const k1 = `${groupCat1} - ${name1}`
-      sort1.set(k1, code1)
-
+      const k1 = `${groupCat1} - ${labelFor(details, groupCat1) || '-'}`
       const rest = details.filter((d) => String(d.categoria || '') !== String(groupCat1) && (!groupCat2 || String(d.categoria || '') !== String(groupCat2)))
       const restLabel = rest.length > 0 ? rest.map((d) => (d.categoria ? `${d.categoria} - ${d.nome}` : d.nome)).join(', ') : '-'
-
       if (groupCat2) {
-        const v2 = findByCat(details, groupCat2)
-        const name2 = v2?.nome || '-'
-        const code2 = (v2?.codice || name2).toLowerCase()
-        const k2 = `${groupCat2} - ${name2}`
-        const key2 = `${k1}||${k2}`
-        sort2.set(key2, code2)
-        if (!groups.has(k1)) groups.set(k1, new Map())
-        const sub = groups.get(k1)
+        const k2 = `${groupCat2} - ${labelFor(details, groupCat2) || '-'}`
+        if (!top.has(k1)) top.set(k1, new Map())
+        const sub = top.get(k1)
         if (!sub.has(k2)) sub.set(k2, [])
         sub.get(k2).push({ r, restLabel })
       } else {
-        if (!groups.has(k1)) groups.set(k1, [])
-        groups.get(k1).push({ r, restLabel })
+        if (!top.has(k1)) top.set(k1, [])
+        top.get(k1).push({ r, restLabel })
       }
     }
-    return { groups, sort1, sort2 }
+    return top
   }, [comboPrezzi, varById, groupCat1, groupCat2])
 
   const sortedAssegnate = useMemo(() => {
@@ -346,28 +329,6 @@ const ProdottiDetail = () => {
     })
     return arr
   }, [assegnate, sorts])
-
-  // Raggruppa Variazioni assegnate per categoria (default)
-  const groupedAssegnate = useMemo(() => {
-    const map = new Map()
-    for (const v of sortedAssegnate) {
-      const cat = String(v.categoria || 'Altro')
-      if (!map.has(cat)) map.set(cat, [])
-      map.get(cat).push(v)
-    }
-    // Ordina ciascun gruppo per codice (fallback nome)
-    for (const [k, list] of map.entries()) {
-      list.sort((a, b) => {
-        const ac = String(a?.codice || '').toLowerCase()
-        const bc = String(b?.codice || '').toLowerCase()
-        const cmp = ac.localeCompare(bc)
-        if (cmp !== 0) return cmp
-        return String(a?.nome || '').toLowerCase().localeCompare(String(b?.nome || '').toLowerCase())
-      })
-    }
-    // Ordina i gruppi per nome categoria
-    return Array.from(map.entries()).sort((a, b) => String(a[0]).localeCompare(String(b[0])))
-  }, [sortedAssegnate])
 
   const toggleSort = (field, shiftKey = false) => {
     setSorts((prev) => {
@@ -470,35 +431,24 @@ const ProdottiDetail = () => {
               <CCol md={6}>
                 <CFormSelect value={selectedVar} onChange={(e) => setSelectedVar(e.target.value)}>
                   <option value="">Seleziona variazione da aggiungere...</option>
-                  {(() => {
-                    // Raggruppa tutte le variazioni per categoria per la selezione
-                    const map = {}
-                    for (const v of variazioniByCodice) {
-                      const cat = String(v.categoria || 'Altro')
-                      if (!map[cat]) map[cat] = []
-                      map[cat].push(v)
-                    }
-                    const cats = Object.keys(map).sort((a, b) => a.localeCompare(b))
-                    return cats.map((cat) => (
-                      <optgroup key={cat} label={cat}>
-                        {map[cat]
-                          .sort((a, b) => {
-                            const ac = String(a?.codice || '').toLowerCase()
-                            const bc = String(b?.codice || '').toLowerCase()
-                            const cmp = ac.localeCompare(bc)
-                            if (cmp !== 0) return cmp
-                            return String(a?.nome || '').toLowerCase().localeCompare(String(b?.nome || '').toLowerCase())
-                          })
-                          .map((v) => (
-                            <option key={v.id_variazione} value={v.id_variazione}>
-                              {v.codice ? `${v.codice} — ${v.nome}` : v.nome}
-                              {typeof v.prezzo === 'number' ? ` (base ${v.prezzo})` : ''}
-                            </option>
-                          ))}
-                      </optgroup>
-                    ))
-                  })()}
+                  {variazioniByCodice.map((v) => (
+                    <option key={v.id_variazione} value={v.id_variazione}>
+                      {v.nome}
+                      {v.categoria ? ` - ${v.categoria}` : ''}
+                      {v.codice ? ` [${v.codice}]` : ''}
+                      {typeof v.prezzo === 'number' ? ` (base ${v.prezzo})` : ''}
+                    </option>
+                  ))}
                 </CFormSelect>
+              </CCol>
+              <CCol md={3}>
+                <CFormInput
+                  type="number"
+                  step="0.01"
+                  value={selectedDelta}
+                  onChange={(e) => setSelectedDelta(e.target.value)}
+                  placeholder="Delta prezzo (es. 10 o -5)"
+                />
               </CCol>
               <CCol md="auto">
                 <CButton color="primary" onClick={handleLink} disabled={!selectedVar}>Aggiungi</CButton>
@@ -511,26 +461,32 @@ const ProdottiDetail = () => {
                   <CTableHeaderCell role="button" onClick={(e) => toggleSort('categoria', e.shiftKey)} className="text-nowrap">Categoria{sortIndicator('categoria')}</CTableHeaderCell>
                   <CTableHeaderCell role="button" onClick={(e) => toggleSort('nome', e.shiftKey)} className="text-nowrap">Variazione{sortIndicator('nome')}</CTableHeaderCell>
                   <CTableHeaderCell role="button" onClick={(e) => toggleSort('codice', e.shiftKey)} className="text-nowrap">Codice{sortIndicator('codice')}</CTableHeaderCell>
+                  <CTableHeaderCell className="text-nowrap">Delta prezzo</CTableHeaderCell>
                   <CTableHeaderCell className="text-center">Azioni</CTableHeaderCell>
                 </CTableRow>
               </CTableHead>
               <CTableBody>
-                {groupedAssegnate.map(([cat, items]) => (
-                  <React.Fragment key={cat}>
-                    <CTableRow className="table-secondary">
-                      <CTableDataCell colSpan={4} className="fw-semibold">{cat}</CTableDataCell>
-                    </CTableRow>
-                    {items.map((v) => (
-                      <CTableRow key={v.id_variazione}>
-                        <CTableDataCell>{v.categoria || '-'}</CTableDataCell>
-                        <CTableDataCell>{v.nome}</CTableDataCell>
-                        <CTableDataCell>{v.codice || '-'}</CTableDataCell>
-                        <CTableDataCell className="text-center">
-                          <CButton color="danger" size="sm" variant="outline" onClick={() => handleUnlink(v.id_variazione)}>Rimuovi</CButton>
-                        </CTableDataCell>
-                      </CTableRow>
-                    ))}
-                  </React.Fragment>
+                {sortedAssegnate.map((v) => (
+                  <CTableRow key={v.id_variazione}>
+                    <CTableDataCell>{v.categoria || '-'}</CTableDataCell>
+                    <CTableDataCell>{v.nome}</CTableDataCell>
+                    <CTableDataCell>{v.codice || '-'}</CTableDataCell>
+                    <CTableDataCell>
+                      <div className="d-flex gap-2">
+                        <CFormInput
+                          type="number"
+                          step="0.01"
+                          value={deltaEdits[v.id_variazione] ?? 0}
+                          onChange={(e) => handleDeltaChange(v.id_variazione, e.target.value)}
+                          style={{ maxWidth: 140 }}
+                        />
+                        <CButton size="sm" color="primary" variant="outline" onClick={() => handleDeltaSave(v.id_variazione)}>Salva</CButton>
+                      </div>
+                    </CTableDataCell>
+                    <CTableDataCell className="text-center">
+                      <CButton color="danger" size="sm" variant="outline" onClick={() => handleUnlink(v.id_variazione)}>Rimuovi</CButton>
+                    </CTableDataCell>
+                  </CTableRow>
                 ))}
               </CTableBody>
             </CTable>
@@ -538,27 +494,19 @@ const ProdottiDetail = () => {
             <hr className="my-4" />
             <h6 className="mb-3">Prezzi combinati (multi-variazione)</h6>
             <CRow className="g-2 align-items-end mb-2">
-              {Object.keys(comboOptionsByCategory).sort((a, b) => String(a).localeCompare(String(b))).map((cat) => (
-                <CCol md={4} key={cat}>
-                  <CFormLabel>{cat}</CFormLabel>
-                  <CFormSelect
-                    value={comboSelByCat[cat] ?? ''}
-                    onChange={(e) => {
-                      const val = e.target.value
-                      setComboSelByCat((prev) => ({ ...prev, [cat]: val }))
-                      const ids = Object.values({ ...comboSelByCat, [cat]: val })
-                        .map((v) => Number(v))
-                        .filter((n) => n > 0)
-                      setComboSelIds(ids)
-                    }}
-                  >
-                    <option value="">--</option>
-                    {comboOptionsByCategory[cat].map((v) => (
-                      <option key={v.id_variazione} value={v.id_variazione}>{v.nome}{v.codice ? ` [${v.codice}]` : ''}</option>
-                    ))}
-                  </CFormSelect>
-                </CCol>
-              ))}
+              <CCol md={6}>
+                <CFormLabel>Variazioni</CFormLabel>
+                <CFormSelect multiple value={comboSelIds.map(String)} onChange={(e) => {
+                  const vals = Array.from(e.target.selectedOptions).map((o) => Number(o.value))
+                  setComboSelIds(vals)
+                }}>
+                  {comboOptions.map((v) => (
+                    <option key={v.id_variazione} value={v.id_variazione}>
+                      {v.categoria ? `${v.categoria} - ` : ''}{v.nome}{v.codice ? ` [${v.codice}]` : ''}
+                    </option>
+                  ))}
+                </CFormSelect>
+              </CCol>
               <CCol md={3}>
                 <CFormLabel>Prezzo</CFormLabel>
                 <CFormInput type="number" step="0.01" value={comboPrezzoVal} onChange={(e) => setComboPrezzoVal(e.target.value)} placeholder="Es. 0.65" />
@@ -600,13 +548,9 @@ const ProdottiDetail = () => {
                 {(!comboPrezzi || comboPrezzi.length === 0) && (
                   <CTableRow><CTableDataCell colSpan={3} className="text-center text-body-secondary">Nessun prezzo combinato</CTableDataCell></CTableRow>
                 )}
-                {groupCat1 && groupedData && (
-                  Array.from(groupedData.groups.keys()).sort((a, b) => {
-                    const sa = groupedData.sort1.get(a) || String(a).toLowerCase()
-                    const sb = groupedData.sort1.get(b) || String(b).toLowerCase()
-                    return sa.localeCompare(sb)
-                  }).map((k1) => {
-                    const sub = groupedData.groups.get(k1)
+                {groupCat1 && groupedCombos && (
+                  Array.from(groupedCombos.keys()).sort((a, b) => String(a).localeCompare(String(b))).map((k1) => {
+                    const sub = groupedCombos.get(k1)
                     const rows = Array.isArray(sub) ? sub : null
                     const subs = rows ? null : sub
                     return (
@@ -624,11 +568,7 @@ const ProdottiDetail = () => {
                             </CTableDataCell>
                           </CTableRow>
                         ))}
-                        {subs && Array.from(subs.keys()).sort((a, b) => {
-                          const sa = groupedData.sort2.get(`${k1}||${a}`) || String(a).toLowerCase()
-                          const sb = groupedData.sort2.get(`${k1}||${b}`) || String(b).toLowerCase()
-                          return sa.localeCompare(sb)
-                        }).map((k2) => (
+                        {subs && Array.from(subs.keys()).sort((a, b) => String(a).localeCompare(String(b))).map((k2) => (
                           <React.Fragment key={k1 + '>' + k2}>
                             <CTableRow className="table-light"><CTableDataCell colSpan={3}>{k2}</CTableDataCell></CTableRow>
                             {subs.get(k2).map(({ r, restLabel }, idx) => (

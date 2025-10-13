@@ -27,7 +27,9 @@ import { cilPlus, cilTrash, cilSave, cilCheckCircle } from '@coreui/icons'
 import { useAuth } from '../../context/AuthContext'
 import { fetchAnagrafiche } from '../../services/anagrafiche'
 import { createPreventivo, fetchPreventivoDetail } from '../../services/preventivi'
-import { fetchCategorieProdotti, fetchProdotti, fetchNatureIva } from '../../services/prodotti'
+import { fetchCategorieProdotti, fetchProdotti, fetchNatureIva, fetchProdottoVariazioni, fetchProdottoPrezziCombinati } from '../../services/prodotti'
+import { CModal, CModalHeader, CModalTitle, CModalBody, CModalFooter } from '@coreui/react'
+import { CStepper } from '@coreui/react-pro'
 
 const currencyFormatter = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' })
 const formatCurrency = (value) => {
@@ -41,7 +43,7 @@ const PreventiviCreate = () => {
   // Sezione: Dati generali
   const [clienteSearch, setClienteSearch] = useState('')
   const [loadingClienti, setLoadingClienti] = useState(false)
-  const [clientiOptions, setClientiOptions] = useState([])
+  const [allClientiOptions, setAllClientiOptions] = useState([])
   const [idAnagrafica, setIdAnagrafica] = useState('')
   const [dataPreventivo, setDataPreventivo] = useState(() => new Date().toISOString().slice(0, 10))
   const [note, setNote] = useState('')
@@ -53,8 +55,9 @@ const PreventiviCreate = () => {
     { descrizione: '', quantita: 1, prezzo: 0, iva: 22, sconto: 0 },
   ])
 
-  // Stepper prodotti
+  // Stepper prodotti (modal wizard)
   const [stepperOpen, setStepperOpen] = useState(false)
+  const [prodStep, setProdStep] = useState(1)
   const [catOptions, setCatOptions] = useState([])
   const [prodOptions, setProdOptions] = useState([])
   const [naturaOptions, setNaturaOptions] = useState([])
@@ -62,10 +65,18 @@ const PreventiviCreate = () => {
   const [prodSearch, setProdSearch] = useState('')
   const [selProd, setSelProd] = useState('')
   const [variazione, setVariazione] = useState('')
+  // Variazioni/combos del prodotto selezionato
+  const [prodVarOptions, setProdVarOptions] = useState([])
+  const [selectedVarIds, setSelectedVarIds] = useState([])
+  const [prodComboMap, setProdComboMap] = useState({})
+  const [prodComboList, setProdComboList] = useState([])
+  // Campi riepilogo
+  const [modalQty, setModalQty] = useState(1)
+  const [modalPrice, setModalPrice] = useState(0)
   const [selIva, setSelIva] = useState('')
   const [selNatura, setSelNatura] = useState('')
 
-  // Carica clienti on-demand in base alla ricerca
+  // Carica tutti i clienti attivi (tutte le pagine) una volta, poi filtra in locale
   useEffect(() => {
     if (!token) return
     const controller = new AbortController()
@@ -80,29 +91,48 @@ const PreventiviCreate = () => {
           signal: controller.signal,
           page: 1,
           pageSize: PAGE_SIZE,
-          // se vuoto: mostra tutti
-          search: clienteSearch && clienteSearch.trim() !== '' ? clienteSearch.trim() : undefined,
+          // sempre tutte (ricerca applicata in locale)
           sortBy: 'ragione_sociale',
           sortDirection: 'asc',
         })
 
         let allItems = Array.isArray(first.items) ? [...first.items] : []
-        const totalPages = Math.max(first?.meta?.last_page ?? 1, 1)
-        const perPage = first?.meta?.per_page ?? PAGE_SIZE
+        const totalPages = Math.max(first?.meta?.pages ?? first?.meta?.last_page ?? 1, 1)
+        const perPage = first?.meta?.per_page ?? (allItems.length || PAGE_SIZE)
 
-        for (let nextPage = 2; nextPage <= totalPages; nextPage += 1) {
-          if (controller.signal.aborted) return
-          const { items: pageItems = [] } = await fetchAnagrafiche({
-            token,
-            signal: controller.signal,
-            page: nextPage,
-            pageSize: perPage,
-            search: clienteSearch && clienteSearch.trim() !== '' ? clienteSearch.trim() : undefined,
-            sortBy: 'ragione_sociale',
-            sortDirection: 'asc',
-          })
-          if (Array.isArray(pageItems) && pageItems.length > 0) {
+        if (totalPages > 1) {
+          for (let nextPage = 2; nextPage <= totalPages; nextPage += 1) {
+            if (controller.signal.aborted) return
+            const { items: pageItems = [] } = await fetchAnagrafiche({
+              token,
+              signal: controller.signal,
+              page: nextPage,
+              pageSize: perPage,
+              sortBy: 'ragione_sociale',
+              sortDirection: 'asc',
+            })
+            if (Array.isArray(pageItems) && pageItems.length > 0) {
+              allItems = allItems.concat(pageItems)
+            }
+          }
+        } else {
+          // Fallback: se meta non fornisce il numero di pagine ma la prima pagina è piena, continua a scaricare
+          let nextPage = 2
+          let safety = 0
+          while (!controller.signal.aborted && allItems.length > 0 && allItems.length % perPage === 0 && safety < 100) {
+            const { items: pageItems = [] } = await fetchAnagrafiche({
+              token,
+              signal: controller.signal,
+              page: nextPage,
+              pageSize: perPage,
+              sortBy: 'ragione_sociale',
+              sortDirection: 'asc',
+            })
+            if (!Array.isArray(pageItems) || pageItems.length === 0) break
             allItems = allItems.concat(pageItems)
+            nextPage += 1
+            safety += 1
+            if (pageItems.length < perPage) break
           }
         }
 
@@ -120,7 +150,7 @@ const PreventiviCreate = () => {
           return A.localeCompare(B)
         })
 
-        setClientiOptions(normalized)
+        setAllClientiOptions(normalized)
       } catch (e) {
         if (e.name === 'AbortError') return
         if (e.status === 401 && logout) {
@@ -128,14 +158,27 @@ const PreventiviCreate = () => {
           return
         }
         setLoadError(e)
-        setClientiOptions([])
+        setAllClientiOptions([])
       } finally {
         setLoadingClienti(false)
       }
     }
     load()
     return () => controller.abort()
-  }, [token, logout, clienteSearch])
+  }, [token, logout])
+
+  const clientiOptions = useMemo(() => {
+    if (!Array.isArray(allClientiOptions)) return []
+    const q = (clienteSearch || '').trim().toLowerCase()
+    if (q === '') return allClientiOptions
+    const norm = (s) => String(s || '').toLowerCase()
+    return allClientiOptions.filter((c) => {
+      const rs = norm(c.ragione_sociale)
+      const piva = norm(c.piva).replace(/[ .-]/g, '')
+      const cf = norm(c.codice_fiscale)
+      return rs.includes(q) || piva.includes(q.replace(/[ .-]/g, '')) || cf.includes(q)
+    })
+  }, [allClientiOptions, clienteSearch])
 
   // Carica categorie e nature IVA per stepper
   useEffect(() => {
@@ -171,6 +214,69 @@ const PreventiviCreate = () => {
     load()
     return () => controller.abort()
   }, [token, selCat, prodSearch])
+
+  // Carica variazioni + prezzi combinati quando seleziono un prodotto
+  useEffect(() => {
+    setProdVarOptions([])
+    setSelectedVarIds([])
+    setProdComboMap({})
+    setProdComboList([])
+    if (!token) return
+    if (!selProd) return
+    const controller = new AbortController()
+    const load = async () => {
+      try {
+        const [{ items }, combo] = await Promise.all([
+          fetchProdottoVariazioni({ token, id_prodotto: Number(selProd), signal: controller.signal }),
+          fetchProdottoPrezziCombinati({ token, id_prodotto: Number(selProd), signal: controller.signal }),
+        ])
+        const sorted = Array.isArray(items)
+          ? [...items].sort((a, b) => String(a?.codice || '').localeCompare(String(b?.codice || '')) || String(a?.nome || '').localeCompare(String(b?.nome || '')))
+          : []
+        setProdVarOptions(sorted)
+        const cmap = {}
+        const rows = Array.isArray(combo?.items) ? combo.items : []
+        rows.forEach((r) => { if (r?.combo_key) cmap[String(r.combo_key)] = Number(r.prezzo) || 0 })
+        setProdComboMap(cmap)
+        setProdComboList(rows)
+      } catch (_e) {
+        setProdVarOptions([])
+        setProdComboMap({})
+        setProdComboList([])
+      }
+    }
+    load()
+    return () => controller.abort()
+  }, [token, selProd])
+
+  // Calcola prezzo suggerito in base a prodotto e variazioni selezionate
+  useEffect(() => {
+    const prod = prodOptions.find((p) => String(p.id_prodotto) === String(selProd))
+    const base = Number(prod?.prezzo_listino) || 0
+    const comboKey = selectedVarIds
+      .map((id) => Number(id) || 0)
+      .filter((n) => n > 0)
+      .sort((a, b) => a - b)
+      .join('+')
+    const comboPrice = comboKey && prodComboMap[comboKey] != null ? Number(prodComboMap[comboKey]) : null
+    const delta = prodVarOptions
+      .filter((v) => selectedVarIds.includes(v.id_variazione))
+      .reduce((acc, v) => acc + (Number(v.delta_prezzo) || 0), 0)
+    const suggested = comboPrice != null ? comboPrice : base + delta
+    setModalPrice(suggested)
+  }, [selProd, prodOptions, selectedVarIds, prodVarOptions, prodComboMap])
+
+  const resetProductModal = () => {
+    setProdStep(1)
+    setSelCat('')
+    setProdSearch('')
+    setSelProd('')
+    setSelectedVarIds([])
+    setSelIva('')
+    setSelNatura('')
+    setModalQty(1)
+    setModalPrice(0)
+  }
 
   const handleAddRiga = () => {
     setRighe((rows) => rows.concat({ descrizione: '', quantita: 1, prezzo: 0, iva: 22, sconto: 0 }))
@@ -344,6 +450,217 @@ const PreventiviCreate = () => {
                 {loadError.message || 'Errore nel caricamento dei clienti.'}
               </CAlert>
             )}
+
+            <CModal visible={stepperOpen} onClose={() => setStepperOpen(false)} size="lg" backdrop="static">
+              <CModalHeader>
+                <CModalTitle>Selettore prodotti</CModalTitle>
+              </CModalHeader>
+              <CModalBody>
+                <CStepper
+                  activeStepNumber={prodStep}
+                  steps={[ 'Categoria', 'Prodotto', 'Variazioni', 'Riepilogo' ]}
+                  linear={false}
+                  validation={false}
+                  onStepChange={(n) => {
+                    // Always allow going back
+                    if (n <= prodStep) {
+                      setProdStep(n)
+                      return
+                    }
+                    // Forward navigation with prerequisites
+                    if (n === 2) {
+                      setProdStep(2)
+                      return
+                    }
+                    if (n === 3) {
+                      if (!selProd) return
+                      if (Array.isArray(prodComboList) && prodComboList.length > 0) {
+                        setProdStep(3)
+                      } else {
+                        // No combinations: go directly to summary
+                        setProdStep(4)
+                      }
+                      return
+                    }
+                    if (n === 4) {
+                      if (!selProd) return
+                      setProdStep(4)
+                      return
+                    }
+                  }}
+                />
+                {prodStep === 1 && (
+                  <CRow className="g-3">
+                    <CCol md={12}>
+                      <CFormLabel>Categoria prodotto</CFormLabel>
+                      <CFormSelect value={selCat} onChange={(e) => setSelCat(e.target.value)}>
+                        <option value="">Tutte</option>
+                        {catOptions.map((c) => (
+                          <option key={c.id_categoria} value={c.id_categoria}>{c.nome}</option>
+                        ))}
+                      </CFormSelect>
+                    </CCol>
+                  </CRow>
+                )}
+                {prodStep === 2 && (
+                  <CRow className="g-3">
+                    <CCol md={6}>
+                      <CFormLabel>Prodotto</CFormLabel>
+                      <CFormSelect
+                        value={selProd}
+                        onChange={(e) => {
+                          const pid = e.target.value
+                          setSelProd(pid)
+                          const prod = prodOptions.find((p) => String(p.id_prodotto) === String(pid))
+                          if (prod && prod.iva_percento != null) setSelIva(String(prod.iva_percento))
+                        }}
+                      >
+                        <option value="">Seleziona...</option>
+                        {prodOptions.map((p) => (
+                          <option key={p.id_prodotto} value={p.id_prodotto}>
+                            {p.codice ? `${p.codice} - ${p.nome}` : p.nome}
+                          </option>
+                        ))}
+                      </CFormSelect>
+                    </CCol>
+                    <CCol md={6}>
+                      <CFormLabel>Ricerca</CFormLabel>
+                      <CFormInput placeholder="Cerca per nome o codice" value={prodSearch} onChange={(e) => setProdSearch(e.target.value)} />
+                    </CCol>
+                  </CRow>
+                )}
+                {prodStep === 3 && (
+                  <CRow className="g-3">
+                    {prodComboList.length > 0 ? (
+                      <CCol md={12}>
+                        <CFormLabel>Variazioni combinate</CFormLabel>
+                        <CFormSelect
+                          value={(() => {
+                            const key = selectedVarIds
+                              .map((id) => Number(id) || 0)
+                              .filter((n) => n > 0)
+                              .sort((a, b) => a - b)
+                              .join('+')
+                            return key
+                          })()}
+                          onChange={(e) => {
+                            const opt = prodComboList.find((r) => String(r.combo_key) === String(e.target.value))
+                            if (!opt) { setSelectedVarIds([]); return }
+                            const ids = Array.isArray(opt.var_ids) ? opt.var_ids.map(Number) : []
+                            setSelectedVarIds(ids)
+                          }}
+                        >
+                          <option value="">--</option>
+                          {prodComboList.map((r, idx) => {
+                            const labels = Array.isArray(r.var_ids)
+                              ? r.var_ids.map((idv) => {
+                                  const vv = prodVarOptions.find((x) => Number(x.id_variazione) === Number(idv))
+                                  return vv ? (vv.categoria ? `${vv.categoria} - ${vv.nome}` : vv.nome) : String(idv)
+                                })
+                              : []
+                            return (
+                              <option key={r.combo_key || idx} value={r.combo_key}>
+                                {labels.join(', ')}
+                              </option>
+                            )
+                          })}
+                        </CFormSelect>
+                      </CCol>
+                    ) : (
+                      <CCol md={12}>
+                        <CAlert color="info" className="mb-0">Nessuna variazione combinata definita per il prodotto selezionato.</CAlert>
+                      </CCol>
+                    )}
+                  </CRow>
+                )}
+                {prodStep === 4 && (
+                  <CRow className="g-3">
+                    <CCol md={12}>
+                      <div className="mb-2"><strong>Prodotto:</strong> {(() => { const p = prodOptions.find((x) => String(x.id_prodotto) === String(selProd)); return p ? (p.codice ? `${p.codice} - ${p.nome}` : p.nome) : '-' })()}</div>
+                      {selectedVarIds.length > 0 && (
+                        <div className="mb-2"><strong>Variazioni:</strong> {selectedVarIds.map((idv) => {
+                          const vv = prodVarOptions.find((x) => Number(x.id_variazione) === Number(idv))
+                          return vv ? (vv.categoria ? `${vv.categoria} - ${vv.nome}` : vv.nome) : String(idv)
+                        }).join(', ')}</div>
+                      )}
+                    </CCol>
+                    <CCol md={4}>
+                      <CFormLabel>Quantità</CFormLabel>
+                      <CFormInput type="number" min="1" step="1" value={modalQty} onChange={(e) => setModalQty(Number(e.target.value) || 1)} />
+                    </CCol>
+                    <CCol md={4}>
+                      <CFormLabel>Prezzo</CFormLabel>
+                      <CFormInput type="number" min="0" step="0.01" value={modalPrice} onChange={(e) => setModalPrice(Number(e.target.value) || 0)} />
+                    </CCol>
+                    <CCol md={4}>
+                      <CFormLabel>IVA %</CFormLabel>
+                      <CFormInput type="number" min="0" max="100" step="1" value={selIva} onChange={(e) => setSelIva(e.target.value)} />
+                    </CCol>
+                    <CCol md={6}>
+                      <CFormLabel>Natura IVA</CFormLabel>
+                      <CFormSelect value={selNatura} onChange={(e) => setSelNatura(e.target.value)} disabled={Number(selIva) !== 0}>
+                        <option value="">--</option>
+                        {naturaOptions.map((n) => (
+                          <option key={n.id_natura} value={n.id_natura}>{n.code} - {n.label}</option>
+                        ))}
+                      </CFormSelect>
+                    </CCol>
+                  </CRow>
+                )}
+              </CModalBody>
+              <CModalFooter className="d-flex justify-content-between">
+                <div>
+                  {prodStep > 1 && (
+                    <CButton color="secondary" variant="outline" onClick={() => setProdStep((s) => Math.max(1, s - 1))}>Indietro</CButton>
+                  )}
+                </div>
+                <div className="d-flex gap-2">
+                  <CButton color="link" onClick={() => setStepperOpen(false)}>Annulla</CButton>
+                  {prodStep < 4 && (
+                    <CButton
+                      color="primary"
+                      onClick={() => {
+                        if (prodStep === 1) { setProdStep(2); return }
+                        if (prodStep === 2) {
+                          if (!selProd) return
+                          if (prodComboList.length === 0) { setProdStep(4); return }
+                          setProdStep(3); return
+                        }
+                        if (prodStep === 3) { setProdStep(4); return }
+                      }}
+                      disabled={(prodStep === 2 && !selProd)}
+                    >
+                      Avanti
+                    </CButton>
+                  )}
+                  {prodStep === 4 && (
+                    <CButton
+                      color="primary"
+                      onClick={() => {
+                        const prod = prodOptions.find((p) => String(p.id_prodotto) === String(selProd))
+                        if (!prod) return
+                        const ivaPerc = Number(selIva || prod.iva_percento || 22)
+                        const descr = selectedVarIds.length > 0
+                          ? `${prod.nome} - ${selectedVarIds.map((idv) => {
+                              const vv = prodVarOptions.find((x) => Number(x.id_variazione) === Number(idv))
+                              return vv ? (vv.categoria ? `${vv.categoria} - ${vv.nome}` : vv.nome) : String(idv)
+                            }).join(', ')}`
+                          : prod.nome
+                        const riga = { descrizione: descr, quantita: modalQty, prezzo: modalPrice, iva: ivaPerc, sconto: 0, id_prodotto: prod.id_prodotto }
+                        if (ivaPerc === 0) {
+                          const natId = selNatura ? Number(selNatura) : (Number(prod.id_sdi_natura_iva) || 0)
+                          if (natId > 0) riga.id_sdi_natura_iva = natId
+                        }
+                        setRighe((rows) => rows.concat(riga))
+                        setStepperOpen(false)
+                      }}
+                    >
+                      Inserisci riga
+                    </CButton>
+                  )}
+                </div>
+              </CModalFooter>
+            </CModal>
             <CRow className="g-3">
               <CCol md={6}>
                 <CFormLabel>Cliente</CFormLabel>
@@ -410,12 +727,12 @@ const PreventiviCreate = () => {
                 <CButton color="secondary" variant="outline" size="sm" onClick={handleAddRiga} type="button">
                   <CIcon icon={cilPlus} className="me-2" /> Riga manuale
                 </CButton>
-                <CButton color="primary" variant="outline" size="sm" type="button" onClick={() => setStepperOpen((v) => !v)}>
+                <CButton color="primary" variant="outline" size="sm" type="button" onClick={() => { resetProductModal(); setStepperOpen(true) }}>
                   Selettore prodotti
                 </CButton>
               </div>
             </div>
-            {stepperOpen && (
+{false && (
               <div className="border rounded p-3 mb-3">
                 <CRow className="g-3 align-items-end">
                   <CCol md={3}>
@@ -492,8 +809,13 @@ const PreventiviCreate = () => {
                         const descr = variazione && variazione.trim() !== '' ? `${prod.nome} - ${variazione.trim()}` : prod.nome
                         const riga = { descrizione: descr, quantita: q, prezzo: prezzo, iva: ivaPerc, sconto: 0, id_prodotto: prod.id_prodotto }
                         if (ivaPerc === 0) {
-                          const nat = naturaOptions[0]
-                          if (nat) riga.id_sdi_natura_iva = nat.id_natura
+                          const natId = Number(prod.id_sdi_natura_iva) || 0
+                          if (natId > 0) {
+                            riga.id_sdi_natura_iva = natId
+                          } else {
+                            const nat = naturaOptions[0]
+                            if (nat) riga.id_sdi_natura_iva = nat.id_natura
+                          }
                         }
                         setRighe((rows) => rows.concat(riga))
                         setVariazione('')

@@ -23,7 +23,7 @@ import CIcon from '@coreui/icons-react'
 import { cilArrowRight, cilDescription, cilEnvelopeClosed, cilPlus, cilPrint } from '@coreui/icons'
 
 import { useAuth } from '../../context/AuthContext'
-import { fetchLatestPreventivi } from '../../services/preventivi'
+import { fetchLatestPreventivi, fetchPreventiviArchivio, reactivatePreventivo, archivePreventivo } from '../../services/preventivi'
 
 const currencyFormatter = new Intl.NumberFormat('it-IT', {
   style: 'currency',
@@ -56,6 +56,8 @@ const PreventiviList = () => {
   const perPageOptions = [10, 25, 50, 100]
   const [sorts, setSorts] = useState([{ field: 'data', dir: 'desc' }])
   const [groupBy, setGroupBy] = useState('none') // none | giorno | mese | stato | cliente
+  const [viewMode, setViewMode] = useState('attivi') // attivi | archiviati
+  const [refreshIndex, setRefreshIndex] = useState(0)
 
   useEffect(() => {
     if (!token) return
@@ -66,14 +68,42 @@ const PreventiviList = () => {
       setLoading(true)
       setError(null)
       try {
-        const { items: data = [] } = await fetchLatestPreventivi({
-          token,
-          signal: controller.signal,
-          // no limit: backend ritorna fino a 1000 per paginazione client-side
-        })
-
-        // assicura ordinamento per data decrescente
-        setItems(Array.isArray(data) ? data : [])
+        if (viewMode === 'archiviati') {
+          const first = await fetchPreventiviArchivio({
+            token,
+            signal: controller.signal,
+            page: 1,
+            pageSize: 100,
+            sortBy: 'data_preventivo',
+            sortDirection: 'desc',
+          })
+          let all = Array.isArray(first.items) ? [...first.items] : []
+          const totalPages = Math.max(first?.meta?.pages ?? first?.meta?.last_page ?? 1, 1)
+          const perPage = first?.meta?.per_page ?? (all.length || 100)
+          if (totalPages > 1) {
+            for (let p = 2; p <= totalPages; p += 1) {
+              if (controller.signal.aborted) break
+              const pageRes = await fetchPreventiviArchivio({
+                token,
+                signal: controller.signal,
+                page: p,
+                pageSize: perPage,
+                sortBy: 'data_preventivo',
+                sortDirection: 'desc',
+              })
+              if (Array.isArray(pageRes.items) && pageRes.items.length > 0) {
+                all = all.concat(pageRes.items)
+              }
+            }
+          }
+          setItems(all)
+        } else {
+          const { items: data = [] } = await fetchLatestPreventivi({
+            token,
+            signal: controller.signal,
+          })
+          setItems(Array.isArray(data) ? data : [])
+        }
         setPage(0)
       } catch (e) {
         if (e.name === 'AbortError') return
@@ -90,7 +120,7 @@ const PreventiviList = () => {
 
     load()
     return () => controller.abort()
-  }, [token, logout])
+  }, [token, logout, viewMode, refreshIndex])
 
   const total = items.length
   const totalPages = Math.max(Math.ceil(total / rowsPerPage), 1)
@@ -215,15 +245,73 @@ const PreventiviList = () => {
     navigate(`/preventivi/dettagli?id=${id}`)
   }
 
+  const handleRestore = async (id) => {
+    if (!id || !token) return
+    const confirmed = window.confirm(`Confermi il ripristino del preventivo archiviato ${id}?\nVerrà assegnata una nuova numerazione.`)
+    if (!confirmed) return
+    try {
+      const res = await reactivatePreventivo({ token, id })
+      // Dopo ripristino, torna alla vista attivi e mostra il nuovo record
+      setViewMode('attivi')
+      setRefreshIndex((v) => v + 1)
+      const newId = res?.id_preventivo
+      if (newId) {
+        navigate(`/preventivi/dettagli?id=${newId}`)
+      }
+    } catch (e) {
+      if (e?.status === 401 && logout) {
+        logout()
+        return
+      }
+      alert(e?.payload?.message || e?.message || 'Ripristino non riuscito')
+    }
+  }
+
+  const handleArchive = async (id) => {
+    if (!id || !token) return
+    const confirmed = window.confirm(`Confermi l'archiviazione del preventivo ${id}?`)
+    if (!confirmed) return
+    try {
+      await archivePreventivo({ token, id })
+      setRefreshIndex((v) => v + 1)
+    } catch (e) {
+      if (e?.status === 401 && logout) {
+        logout()
+        return
+      }
+      alert(e?.payload?.message || e?.message || 'Archiviazione non riuscita')
+    }
+  }
+
   return (
     <CCard>
       <CCardHeader>
         <div className="d-flex justify-content-between align-items-center">
           <div>
-            <h5 className="mb-0">Preventivi - Elenco</h5>
-            <small className="text-body-secondary">Ordinati per data decrescente</small>
+            <h5 className="mb-0">Preventivi - Elenco {viewMode === 'archiviati' ? '(archiviati)' : ''}</h5>
+            <small className="text-body-secondary">
+              {viewMode === 'archiviati' ? 'Archivio preventivi, ordinati per data decrescente' : 'Ordinati per data decrescente'}
+            </small>
           </div>
           <div className="d-flex gap-3 align-items-center">
+            <div className="btn-group" role="group" aria-label="Seleziona elenco">
+              <CButton
+                color={viewMode === 'attivi' ? 'primary' : 'secondary'}
+                variant={viewMode === 'attivi' ? 'solid' : 'outline'}
+                onClick={() => setViewMode('attivi')}
+                disabled={loading || viewMode === 'attivi'}
+              >
+                Attivi
+              </CButton>
+              <CButton
+                color={viewMode === 'archiviati' ? 'primary' : 'secondary'}
+                variant={viewMode === 'archiviati' ? 'solid' : 'outline'}
+                onClick={() => setViewMode('archiviati')}
+                disabled={loading || viewMode === 'archiviati'}
+              >
+                Archivio
+              </CButton>
+            </div>
             <div className="d-flex align-items-center">
               <span className="me-2 text-body-secondary">Raggruppa per</span>
               <select
@@ -331,21 +419,24 @@ const PreventiviList = () => {
                         )}
                       </CTableDataCell>
                       <CTableDataCell className="text-center">
-                        <div className="d-inline-flex gap-2">
-                          <CButton color="link" size="sm" className="p-0" onClick={() => handleView(r.id_preventivo)}>
-                            <CIcon icon={cilDescription} />
+                        {viewMode === 'archiviati' ? (
+                          <CButton color="primary" variant="outline" size="sm" onClick={() => handleRestore(r.id_preventivo)}>
+                            Ripristina
                           </CButton>
-                          <CButton color="link" size="sm" className="p-0" onClick={() => { /* no-op for now */ }}>
-                            <CIcon icon={cilEnvelopeClosed} />
-                          </CButton>
-                          <CButton color="link" size="sm" className="p-0" onClick={() => { /* no-op for now */ }}>
-                            <CIcon icon={cilPrint} />
-                          </CButton>
-                        </div>
+                        ) : (
+                          <div className="d-inline-flex gap-2">
+                            <CButton color="link" size="sm" className="p-0" onClick={() => handleView(r.id_preventivo)}>
+                              <CIcon icon={cilDescription} />
+                            </CButton>
+                            <CButton color="secondary" variant="outline" size="sm" onClick={() => handleArchive(r.id_preventivo)}>
+                              Archivia
+                            </CButton>
+                          </div>
+                        )}
                       </CTableDataCell>
-                    </CTableRow>
-                  )
-                })}
+                  </CTableRow>
+                )
+              })}
               </CTableBody>
             </CTable>
 

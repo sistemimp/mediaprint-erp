@@ -1,4 +1,4 @@
-@use "@coreui/coreui/scss/coreui" as * with ( 
+@use "@coreui/coreui-pro/scss/coreui" as * with (
   $enable-deprecation-messages: false,
 );
 @use "@coreui/chartjs/scss/coreui-chartjs";
@@ -63,5 +63,39 @@ body {
 
   .footer {
     --cui-footer-bg: var(--cui-body-bg);
+  }
+}
+
+/* Sticky header for detail cards */
+.sticky-card-header {
+  position: sticky;
+  top: 0;
+  z-index: 1025;
+  background-color: var(--cui-body-bg) !important; /* force solid bg (no transparency) */
+  border-bottom: 1px solid var(--cui-border-color);
+  box-shadow: 0 1px 0 var(--cui-border-color), 0 6px 16px rgba(0,0,0,.04);
+  background-clip: padding-box;
+}
+
+/* Keep Anagrafica sticky header under breadcrumbs bar */
+.anagrafica-detail .sticky-card-header {
+  /* Keep below main header (4rem + 1px) and breadcrumbs (3rem) with extra spacing */
+  top: calc(4rem + 1px + 3rem + 0.5rem);
+}
+
+/* Red border when anagrafica is disabled */
+.anagrafica-detail .sticky-card-header.anagrafica-disabled {
+  border-bottom-color: var(--cui-danger) !important;
+  box-shadow: 0 1px 0 var(--cui-danger), 0 6px 16px rgba(0,0,0,.04);
+}
+
+/* Compact view tweaks for Anagrafica Detail */
+.anagrafica-detail.compact {
+  /* Slightly reduce vertical rhythm in compact mode */
+  .detail-field {
+    /* paddings are handled inline via class switch; ensure font sizes are balanced */
+    .small {
+      font-size: 0.7rem;
+    }
   }
 }

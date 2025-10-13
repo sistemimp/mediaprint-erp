@@ -115,7 +115,7 @@ GET `/anagraficheDetail.php`
 {
   "anagrafica": { "id_anagrafica": 123, "ragione_sociale": "ACME S.p.A.", "piva": "...", "codice_fiscale": "...", "stato": "attiva", "is_active": 1, "id_tipologia": 1, "id_sdi_regime_fiscale": null, "is_pa": 0, "note": null, "created_at": "...", "updated_at": "..." },
   "fiscale": { "pec": null, "codice_sdi": null, "iban": null, "banca": null, "id_cond_pagamento": null, "modalita_pagamento": null, "giorni_pagamento": null, "altri_dati": null },
-  "contatti": [ { "id_contatto": 1, "nome": "Mario", "cognome": "Rossi", "ruolo": "", "telefono": "", "cellulare": "", "email": "", "is_predefinito": 0, "id_sede": 10 } ],
+  "contatti": [ { "id_contatto": 1, "nome": "Mario", "ruolo": "", "telefono": "", "cellulare": "", "email": "", "is_predefinito": 0, "id_sede": 10 } ],
   "sedi": [ { "id_sede": 10, "id_tipo": 1, "denominazione": "Sede legale", "indirizzo": "Via Roma 1", "cap": "20100", "comune": "Milano", "provincia": "MI", "nazione_iso2": "IT", "telefono": null, "email": null, "note": null, "is_legale": 1, "is_predefinita": 1, "created_at": "...", "updated_at": "..." } ],
   "preventivi": [ { "id_preventivo": 45, "anno_preventivo": 2025, "numero_documento": 12, "data_preventivo": "2025-09-28", "totale": 123.45, "stato": "bozza" } ],
   "ddt": [ { "id_ddt": 7, "anno": 2025, "numero_documento": 3, "data_ddt": "2025-09-01", "totale_pezzi": 10, "causale": "Vendita", "note": null } ],
@@ -143,7 +143,7 @@ POST `/anagraficheUpdate.php`
   - `anagrafica`: campi base aggiornabili (come in create). Se include `is_active: 0` attiva l’archiviazione completa e la cancellazione dai master.
   - `fiscale`: `{ pec, codice_sdi, iban, banca, id_cond_pagamento, modalita_pagamento, giorni_pagamento, altri_dati }`
   - `sedi`: lista operazioni `[{ action: "create"|"update"|"delete", id_sede?, denominazione?, indirizzo?, civico?, cap?, comune?, provincia?, nazione_iso2?, telefono?, email?, note?, is_legale?, is_predefinita? }]`
-  - `contatti`: lista operazioni `[{ action: "create"|"update"|"delete", id_contatto?, nome?, cognome?, ruolo?, telefono?, cellulare?, email?, is_predefinito?, id_sede? }]`
+  - `contatti`: lista operazioni `[{ action: "create"|"update"|"delete", id_contatto?, nome?, ruolo?, telefono?, cellulare?, email?, is_predefinito?, id_sede? }]`
 - Risposta 200: `{ ok: true }`
 
 ### Riattivazione da archivio
@@ -229,6 +229,20 @@ GET/POST `/prodotti/variazioni/prodotto.php`
   - Unlink: `{ action: "unlink", id_prodotto: int, id_variazione: int }`
   - Set delta: `{ action: "set", id_prodotto: int, id_variazione: int, delta: number }`
   - Risposta 200: `{ ok: true }`
+
+### Prezzi combinati (multi-variazione)
+GET/POST `/prodotti/variazioni/prezzi.php`
+
+- GET query: `id_prodotto` (int)
+  - 200: `{ items: [ { id, id_prodotto, combo_key, var_ids: [int,...], prezzo } ] }`
+- POST body:
+  - Upsert: `{ action: "upsert", id_prodotto: int, var_ids: [int,...], prezzo: number }`
+  - Delete: `{ action: "delete", id_prodotto: int, var_ids: [int,...] }`
+  - Risposta 200: `{ id: int }` per upsert, `{ ok: true }` per delete
+
+Note
+- La chiave combinazione `combo_key` è ottenuta ordinando gli ID variazione e unendoli con `+`.
+- Se esiste un prezzo combinato per le variazioni scelte, il frontend può usarlo come prezzo finale del prodotto in alternativa a `prezzo_listino + somma(delta)`.
 
 ## Preventivi
 
@@ -323,4 +337,3 @@ GET `/natureIvaList.php`
 
 - Impostare header `Authorization: Bearer <token>` dove richiesto (gli endpoint pubblici attuali non validano ancora il token, ma l’integrazione è prevista/consigliata).
 - Per POST inviare sempre `Content-Type: application/json`.
-

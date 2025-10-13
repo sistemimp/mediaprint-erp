@@ -53,6 +53,38 @@ final class PreventiviService
     }
 
     /**
+     * Elenco preventivi archiviati con ricerca/sort/paginazione lato server.
+     *
+     * @return array{data: list<array<string,mixed>>, meta: array<string,int>}
+     */
+    public function listArchived(array $input): array
+    {
+        $filters = [
+            'search' => isset($input['search']) ? (string) $input['search'] : null,
+            'sort_by' => isset($input['sort_by']) ? (string) $input['sort_by'] : 'data_preventivo',
+            'sort_direction' => (isset($input['sort_direction']) && strtolower((string)$input['sort_direction']) === 'asc') ? 'asc' : 'desc',
+            'page' => isset($input['page']) ? max(1, (int) $input['page']) : 1,
+            'per_page' => isset($input['per_page']) ? max(1, (int) $input['per_page']) : 20,
+        ];
+
+        $result = $this->repository->searchArchived($filters);
+        $total = (int) $result['total'];
+        $perPage = (int) $filters['per_page'];
+        $page = (int) $filters['page'];
+        $pages = (int) max(1, (int) ceil($total / max($perPage, 1)));
+
+        return [
+            'data' => $result['data'],
+            'meta' => [
+                'total' => $total,
+                'page' => $page,
+                'per_page' => $perPage,
+                'pages' => $pages,
+            ],
+        ];
+    }
+
+    /**
      * @return array<string, mixed>
      */
     public function create(array $input): array
@@ -61,6 +93,11 @@ final class PreventiviService
         $idAnagrafica = isset($input['id_anagrafica']) ? (int) $input['id_anagrafica'] : 0;
         if ($idPrev <= 0 && $idAnagrafica <= 0) {
             throw new \RuntimeException('Cliente (anagrafica) mancante o non valido.', 422);
+        }
+
+        // Vincolo: l'anagrafica deve essere attiva per creare/aggiornare/confirmare un preventivo
+        if ($idAnagrafica > 0 && !$this->repository->existsAnagrafica($idAnagrafica)) {
+            throw new \RuntimeException('Anagrafica disattivata o inesistente. Operazione non consentita.', 422);
         }
 
         $dataPrev = isset($input['data_preventivo']) ? (string) $input['data_preventivo'] : null;
@@ -96,6 +133,14 @@ final class PreventiviService
             }
             if ($existing['stato_code'] !== null && $existing['stato_code'] !== 'bozza' && !$send) {
                 throw new \RuntimeException('Il preventivo non è in stato bozza, impossibile aggiornare.', 422);
+            }
+
+            // Se non passato un id_anagrafica valido, verifica comunque che l'anagrafica legata sia attiva
+            if ($idAnagrafica <= 0) {
+                $curr = $this->repository->fetchDetail($idPrev);
+                if ($curr && isset($curr['id_anagrafica']) && !$this->repository->existsAnagrafica((int)$curr['id_anagrafica'])) {
+                    throw new \RuntimeException('Anagrafica disattivata o inesistente. Operazione non consentita.', 422);
+                }
             }
 
             $updated = $this->repository->updateDraft($idPrev, [
@@ -162,5 +207,91 @@ final class PreventiviService
             'anno_preventivo' => $draft['anno_preventivo'] ?? null,
             'numero_documento' => $draft['numero_documento'] ?? null,
         ];
+    }
+
+    /**
+     * Ripristina un preventivo dall'archivio creando una nuova bozza con nuova numerazione.
+     * Richiede che l'anagrafica cliente sia attiva.
+     * Input: id | id_preventivo (riferito all'archivio)
+     * Output: { status: 'draft', id_preventivo:int, anno_preventivo:int, numero_documento:int }
+     */
+    public function reactivate(array $input): array
+    {
+        $id = isset($input['id']) ? (int) $input['id'] : (isset($input['id_preventivo']) ? (int) $input['id_preventivo'] : 0);
+        if ($id <= 0) {
+            throw new \RuntimeException('ID preventivo mancante o non valido per il ripristino.', 422);
+        }
+
+        $arch = $this->repository->getArchivedById($id);
+        if ($arch === null) {
+            throw new \RuntimeException('Preventivo archiviato non trovato.', 404);
+        }
+
+        $idAnag = (int) $arch['id_anagrafica'];
+        if ($idAnag <= 0 || !$this->repository->existsAnagrafica($idAnag)) {
+            throw new \RuntimeException('Anagrafica non attiva: ripristinare il cliente prima di ripristinare il preventivo.', 422);
+        }
+
+        // Inserisce una nuova bozza con nuova numerazione anno/corrente
+        $draft = $this->repository->insertDraft([
+            'id_anagrafica' => $idAnag,
+            'data_preventivo' => $arch['data_preventivo'] ?? null,
+            'note' => $arch['note'] ?? null,
+            'totale_imponibile' => isset($arch['totale_imponibile']) ? (float) $arch['totale_imponibile'] : 0.0,
+            'totale_sconto' => isset($arch['totale_sconto']) ? (float) $arch['totale_sconto'] : 0.0,
+            'totale_iva' => isset($arch['totale_iva']) ? (float) $arch['totale_iva'] : 0.0,
+            'totale' => isset($arch['totale']) ? (float) $arch['totale'] : 0.0,
+        ]);
+
+        // Prova a ripristinare anche le righe dall'archivio (se presente)
+        $archivedLines = $this->repository->getArchivedLines($id);
+        if (!empty($archivedLines)) {
+            $lines = [];
+            foreach ($archivedLines as $l) {
+                $lines[] = [
+                    'descrizione' => (string) ($l['descrizione'] ?? ''),
+                    'quantita' => isset($l['quantita']) ? (float) $l['quantita'] : 1.0,
+                    'prezzo' => isset($l['prezzo_unitario']) ? (float) $l['prezzo_unitario'] : 0.0,
+                    'sconto' => isset($l['sconto']) ? (float) $l['sconto'] : 0.0,
+                    'iva' => isset($l['iva']) ? (float) $l['iva'] : null,
+                    'id_prodotto' => isset($l['id_prodotto']) ? (int) $l['id_prodotto'] : null,
+                    'id_sdi_natura_iva' => isset($l['id_sdi_natura_iva']) ? (int) $l['id_sdi_natura_iva'] : null,
+                ];
+            }
+            if (!empty($lines)) {
+                $this->repository->replaceLines($draft['id_preventivo'], $lines);
+            }
+        }
+
+        // Rimuove il preventivo dall'archivio (testata + eventuali righe archiviate)
+        $this->repository->deleteFromArchive($id);
+
+        return [
+            'status' => 'draft',
+            'id_preventivo' => $draft['id_preventivo'],
+            'anno_preventivo' => $draft['anno_preventivo'] ?? null,
+            'numero_documento' => $draft['numero_documento'] ?? null,
+        ];
+    }
+
+    /**
+     * Archivia un preventivo (sposta in archivio e rimuove dai tavoli attivi).
+     * Input: id | id_preventivo
+     * Output: { ok: true }
+     */
+    public function archive(array $input): array
+    {
+        $id = isset($input['id']) ? (int) $input['id'] : (isset($input['id_preventivo']) ? (int) $input['id_preventivo'] : 0);
+        if ($id <= 0) {
+            throw new \RuntimeException('ID preventivo mancante o non valido per archiviazione.', 422);
+        }
+
+        $existing = $this->repository->getById($id);
+        if ($existing === null) {
+            throw new \RuntimeException('Preventivo non trovato o già archiviato.', 404);
+        }
+
+        $this->repository->archiveById($id);
+        return ['ok' => true];
     }
 }

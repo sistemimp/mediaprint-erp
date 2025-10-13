@@ -21,6 +21,12 @@ export const fetchNatureIva = async ({ token, signal } = {}) => {
   return { items }
 }
 
+export const fetchIvaList = async ({ token, signal } = {}) => {
+  const response = await apiFetch('/ivaList.php', { token, signal })
+  const items = Array.isArray(response?.items) ? response.items : []
+  return { items }
+}
+
 export const createProdotto = async ({ token, body, signal } = {}) => {
   const response = await apiFetch('/prodotti/create.php', { method: 'POST', token, body, signal })
   return response
@@ -83,5 +89,25 @@ export const unlinkProdottoVariazione = async ({ token, id_prodotto, id_variazio
 export const saveProdottoVariazioneDelta = async ({ token, id_prodotto, id_variazione, delta, signal } = {}) => {
   const body = { id_prodotto, id_variazione, action: 'set', delta }
   const response = await apiFetch('/prodotti/variazioni/prodotto.php', { method: 'POST', token, body, signal })
+  return response
+}
+
+// Prezzi combinati (multi-variazione) per prodotto
+export const fetchProdottoPrezziCombinati = async ({ token, id_prodotto, signal } = {}) => {
+  const params = { id_prodotto }
+  const response = await apiFetch('/prodotti/variazioni/prezzi.php', { token, params, signal })
+  const items = Array.isArray(response?.items) ? response.items : []
+  return { items }
+}
+
+export const upsertProdottoPrezzoCombinato = async ({ token, id_prodotto, var_ids, prezzo, signal } = {}) => {
+  const body = { action: 'upsert', id_prodotto, var_ids, prezzo }
+  const response = await apiFetch('/prodotti/variazioni/prezzi.php', { method: 'POST', token, body, signal })
+  return response
+}
+
+export const deleteProdottoPrezzoCombinato = async ({ token, id_prodotto, var_ids, signal } = {}) => {
+  const body = { action: 'delete', id_prodotto, var_ids }
+  const response = await apiFetch('/prodotti/variazioni/prezzi.php', { method: 'POST', token, body, signal })
   return response
 }

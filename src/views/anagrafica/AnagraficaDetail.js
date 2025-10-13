@@ -27,9 +27,11 @@ import {
   CPaginationItem,
 } from "@coreui/react"
 import CIcon from "@coreui/icons-react"
-import { cilArrowLeft, cilReload, cilDescription, cilEnvelopeClosed, cilPrint, cilPlus } from "@coreui/icons"
+import { cilArrowLeft, cilReload, cilDescription, cilEnvelopeClosed, cilPrint, cilPlus, cilSettings, cilTrash } from "@coreui/icons"
 
 import { fetchAnagraficaDetail, updateAnagraficaDetail } from "../../services/anagrafiche"
+import { apiFetch } from "../../services/apiClient"
+import BottomToast from "../../components/BottomToast"
 import { useAuth } from "../../context/AuthContext"
 
 const currencyFormatter = new Intl.NumberFormat("it-IT", {
@@ -101,10 +103,11 @@ const getStatusBadge = (value) => {
 
   const normalised = String(value).toLowerCase()
   const color = normalised === "attiva" ? "success" : normalised === "disattiva" ? "secondary" : "primary"
+  const label = normalised === 'attiva' ? 'Attiva' : normalised === 'disattiva' ? 'Disattivata' : String(value)
 
   return (
-    <CBadge color={color} className="text-uppercase">
-      {normalised}
+    <CBadge color={color}>
+      {label}
     </CBadge>
   )
 }
@@ -128,8 +131,8 @@ const renderBooleanBadge = (value) =>
     <span className="text-body-secondary">No</span>
   )
 
-const DetailField = ({ label, value }) => (
-  <div className="bg-body-tertiary border rounded px-3 py-2 h-100">
+const DetailField = ({ label, value, compact = false }) => (
+  <div className={`detail-field bg-body-tertiary border rounded ${compact ? 'px-2 py-1' : 'px-3 py-2'} h-100`}>
     <div className="text-body-secondary text-uppercase small fw-semibold">{label}</div>
     <div className="mt-1">{renderValue(value)}</div>
   </div>
@@ -162,7 +165,6 @@ const createFiscalForm = (fiscale) => ({
 
 const createContactForm = (contatto) => ({
   nome: contatto?.nome ?? "",
-  cognome: contatto?.cognome ?? "",
   ruolo: contatto?.ruolo ?? "",
   telefono: contatto?.telefono ?? "",
   cellulare: contatto?.cellulare ?? "",
@@ -205,6 +207,13 @@ const AnagraficaDetail = () => {
   const [refreshIndex, setRefreshIndex] = useState(0)
 
   const [mutationError, setMutationError] = useState(null)
+  const [toast, setToast] = useState({ open: false, type: 'success', message: '' })
+
+  const showToast = (message, type = 'success') => {
+    setToast({ open: true, type, message })
+    window.clearTimeout(showToast._t)
+    showToast._t = window.setTimeout(() => setToast((t) => ({ ...t, open: false })), 3000)
+  }
 
   const [isEditingGeneral, setIsEditingGeneral] = useState(false)
   const [generalForm, setGeneralForm] = useState(null)
@@ -317,6 +326,10 @@ const AnagraficaDetail = () => {
   const handleRefresh = () => {
     setRefreshIndex((value) => value + 1)
   }
+
+  // Determina se nessuna sezione è in modalità modifica per compattare la UI
+  const isCompact = !isEditingGeneral && !isEditingFiscal && editingSedeId === null && editingContactId === null
+  const gridGapClass = isCompact ? 'g-2' : 'g-3'
 
   const handleMutationSuccess = (updatedDetail) => {
     setDetail(updatedDetail)
@@ -700,12 +713,12 @@ const AnagraficaDetail = () => {
     setContactForm(createContactForm(null))
   }
 
-  const handleContactDelete = async (contattoId) => {
+  const handleContactArchive = async (contattoId) => {
     if (!recordId || !contattoId) {
       return
     }
 
-    const confirmed = window.confirm(`Confermi l'eliminazione del contatto ${contattoId}?`)
+    const confirmed = window.confirm(`Confermi l'archiviazione del contatto ${contattoId}?`)
     if (!confirmed) {
       return
     }
@@ -719,9 +732,15 @@ const AnagraficaDetail = () => {
       const response = await updateAnagraficaDetail({
         token,
         id: recordId,
-        contatti: { delete: [contattoId] },
+        // Archiviazione contatto (pass-through all'API)
+        contatti: [{ action: 'archive', id_contatto: contattoId }],
       })
-      handleMutationSuccess(response)
+      // Se l'API restituisce il dettaglio aggiornato, aggiorna lo stato; altrimenti ricarica
+      if (response && (response.contatti || response.anagrafica)) {
+        handleMutationSuccess(response)
+      } else {
+        handleRefresh()
+      }
     } catch (mutationErrorInstance) {
       if (mutationErrorInstance.status === 401 && logout) {
         logout()
@@ -750,7 +769,6 @@ const AnagraficaDetail = () => {
 
     const payload = {
       nome: contactForm.nome,
-      cognome: contactForm.cognome,
       ruolo: contactForm.ruolo,
       telefono: contactForm.telefono,
       cellulare: contactForm.cellulare,
@@ -859,6 +877,8 @@ const AnagraficaDetail = () => {
   const fatture = detail?.fatture ?? []
   const sedi = detail?.sedi ?? []
   const contatti = detail?.contatti ?? []
+  const contattiArchiviati = detail?.contatti_archiviati ?? []
+  const [contactsView, setContactsView] = useState('associati')
 
   const sedeOptions = useMemo(() => {
     const options = [
@@ -913,6 +933,68 @@ const AnagraficaDetail = () => {
     return groups
   }, [contatti])
 
+  // Gruppi per contatti archiviati (stessa grafica degli associati)
+  const contattiArchGrouped = useMemo(() => {
+    if (!Array.isArray(contattiArchiviati) || contattiArchiviati.length === 0) return []
+
+    const groups = []
+    const byKey = new Map()
+
+    const formatSedeFromContact = (c) => {
+      const composed = (c?.sede_denominazione || c?.sede_indirizzo)
+        ? [
+            c.sede_denominazione,
+            c.sede_indirizzo,
+            [c.sede_cap, c.sede_comune].filter(Boolean).join(' '),
+            c.sede_provincia ? `(${c.sede_provincia})` : null,
+          ]
+            .filter(Boolean)
+            .join(' ')
+        : '-'
+      return composed && composed !== '-' ? composed : 'Sede non assegnata'
+    }
+
+    contattiArchiviati.forEach((c) => {
+      const key = c?.id_sede ?? 'none'
+      if (!byKey.has(key)) {
+        const label = formatSedeFromContact(c)
+        const group = { key: String(key), label, items: [] }
+        byKey.set(key, group)
+        groups.push(group)
+      }
+      byKey.get(key).items.push(c)
+    })
+
+    return groups
+  }, [contattiArchiviati])
+  // Contatti archiviati: ultimi 10, con paginazione 5/pg (come preventivi)
+  const [contattiArchPage, setContattiArchPage] = useState(0)
+  const [restoringArchivedId, setRestoringArchivedId] = useState(null)
+  const [deletingArchivedId, setDeletingArchivedId] = useState(null)
+  const CONTATTI_ARCH_ROWS_PER_PAGE = 5
+  const latestContattiArch = useMemo(() => {
+    const sorted = [...contattiArchiviati].sort((a, b) => {
+      const ad = new Date(a?.archived_at || a?.updated_at || a?.created_at || 0).getTime()
+      const bd = new Date(b?.archived_at || b?.updated_at || b?.created_at || 0).getTime()
+      return bd - ad
+    })
+    return sorted.slice(0, 10)
+  }, [contattiArchiviati])
+  const totalContattiArch = latestContattiArch.length
+  const totalContattiArchPages = Math.max(
+    Math.ceil(totalContattiArch / CONTATTI_ARCH_ROWS_PER_PAGE),
+    1,
+  )
+  const paginatedContattiArch = useMemo(() => {
+    const start = contattiArchPage * CONTATTI_ARCH_ROWS_PER_PAGE
+    return latestContattiArch.slice(start, start + CONTATTI_ARCH_ROWS_PER_PAGE)
+  }, [latestContattiArch, contattiArchPage])
+  const contattiArchPaginationItems = useMemo(() => {
+    const items = []
+    for (let p = 1; p <= totalContattiArchPages; p += 1) items.push(p)
+    return items
+  }, [totalContattiArchPages])
+
   const errorMessage = error?.payload?.message ?? error?.message
 
   const generalFields = useMemo(() => {
@@ -953,16 +1035,78 @@ const AnagraficaDetail = () => {
       { label: "ID condizione pagamento", value: fiscale.id_cond_pagamento },
     ]
   }, [detail])
+  const anagraficaStatus = String(detail?.anagrafica?.stato || '').toLowerCase()
+  const isDisabled = anagraficaStatus === 'disattiva' || Number(detail?.anagrafica?.is_active) !== 1
+
+  const handleReactivateStato = async () => {
+    if (!recordId) return
+    setMutationError(null)
+    try {
+      const response = await updateAnagraficaDetail({
+        token,
+        id: recordId,
+        anagrafica: { stato: 'attiva', is_active: 1 },
+      })
+      handleMutationSuccess(response)
+    } catch (mutationErrorInstance) {
+      if (mutationErrorInstance.status === 401 && logout) {
+        logout()
+        return
+      }
+      setMutationError(mutationErrorInstance.payload?.message || mutationErrorInstance.message)
+    }
+  }
+
+  const handleArchiveClick = async () => {
+    if (!recordId) return
+    const confirmed = window.confirm(
+      "Disattivando l'anagrafica verrà archiviata e rimossa dal sistema. Vuoi continuare?",
+    )
+    if (!confirmed) return
+    setSavingGeneral(true)
+    setMutationError(null)
+    try {
+      await apiFetch('/anagraficheUpdate.php', {
+        method: 'POST',
+        token,
+        body: { id: recordId, anagrafica: { is_active: 0 } },
+      })
+      showToast('Anagrafica archiviata', 'success')
+      window.setTimeout(() => {
+        navigate('/anagrafica/lista', { replace: true })
+      }, 800)
+    } catch (mutationErrorInstance) {
+      if (mutationErrorInstance.status === 401 && logout) {
+        logout()
+        return
+      }
+      const msg = mutationErrorInstance.payload?.message || mutationErrorInstance.message
+      setMutationError(msg)
+      showToast(msg || 'Archiviazione non riuscita', 'error')
+    } finally {
+      setSavingGeneral(false)
+    }
+  }
+
   return (
-    <CCard>
-      <CCardHeader className="d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-3">
-        <div>
+    <>
+    <CCard className={`anagrafica-detail ${isCompact ? 'compact' : ''}`}>
+      <CCardHeader className={`sticky-card-header ${isDisabled ? 'anagrafica-disabled' : ''} d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-3`}>
+        <div className="d-flex flex-column">
           <h2 className="h5 mb-1">Dettaglio anagrafica</h2>
-          <p className="text-body-secondary mb-0">
-            {recordId
-              ? `ID ${recordId}`
-              : "Seleziona un record valido dalla lista per visualizzare i dettagli."}
-          </p>
+          <div className="d-flex flex-wrap align-items-center gap-2 text-body-secondary">
+            <span className="mb-0">
+              {recordId
+                ? `ID ${recordId}`
+                : "Seleziona un record valido dalla lista per visualizzare i dettagli."}
+            </span>
+            {detail?.anagrafica?.ragione_sociale && (
+              <span className="text-body fw-semibold">· {detail.anagrafica.ragione_sociale}</span>
+            )}
+            {detail?.anagrafica?.stato && (
+              <span>{getStatusBadge(detail.anagrafica.stato)}</span>
+            )}
+          </div>
         </div>
         <div className="d-flex flex-wrap gap-2">
           <CButton color="secondary" variant="outline" onClick={handleGoBack}>
@@ -976,9 +1120,20 @@ const AnagraficaDetail = () => {
           >
             <CIcon icon={cilReload} className="me-2" /> Aggiorna
           </CButton>
+          {isDisabled && recordId && (
+            <CButton color="success" variant="outline" onClick={handleReactivateStato} disabled={loading}>
+              Riattiva
+            </CButton>
+          )}
         </div>
       </CCardHeader>
-      <CCardBody className="d-flex flex-column gap-4">
+      <CCardBody className={`d-flex flex-column ${isCompact ? 'gap-3' : 'gap-4'}`}>
+        {isDisabled && (
+          <CAlert color="warning" className="mb-0">
+            Anagrafica disattivata: modifiche non consentite. Puoi solo riattivarla.
+          </CAlert>
+        )}
+
         {mutationError && (
           <CAlert color="danger" className="mb-0">
             {mutationError}
@@ -1005,7 +1160,7 @@ const AnagraficaDetail = () => {
             <section className="d-flex flex-column gap-3">
               <div className="d-flex justify-content-between align-items-start gap-3">
                 <h3 className="h6 mb-0">Informazioni generali</h3>
-                {!isEditingGeneral && (
+                {!isEditingGeneral && !isDisabled && (
                   <CButton
                     color="secondary"
                     variant="outline"
@@ -1019,7 +1174,7 @@ const AnagraficaDetail = () => {
 
               {isEditingGeneral && generalForm ? (
                 <CForm onSubmit={handleGeneralSubmit} className="d-flex flex-column gap-3">
-                  <CRow className="g-3">
+                  <CRow className={gridGapClass}>
                     <CCol md={6}>
                       <CFormLabel htmlFor="ragioneSociale">Ragione sociale</CFormLabel>
                       <CFormInput
@@ -1074,7 +1229,7 @@ const AnagraficaDetail = () => {
                         id="stato"
                         value={generalForm.stato}
                         onChange={handleGeneralFieldChange("stato")}
-                        disabled={savingGeneral}
+                        disabled
                       >
                         {statoOptions.map((option) => (
                           <option key={option.value} value={option.value}>
@@ -1083,7 +1238,7 @@ const AnagraficaDetail = () => {
                         ))}
                       </CFormSelect>
                     </CCol>
-                    <CCol md={3} className="d-flex flex-column justify-content-end">
+                    <CCol md={3} className="d-flex flex-column justify-content-end gap-2">
                       <CFormCheck
                         type="checkbox"
                         id="isPa"
@@ -1092,14 +1247,9 @@ const AnagraficaDetail = () => {
                         onChange={handleGeneralFieldChange("is_pa")}
                         disabled={savingGeneral}
                       />
-                      <CFormCheck
-                        type="checkbox"
-                        id="isActive"
-                        label="Attiva"
-                        checked={generalForm.is_active}
-                        onChange={handleGeneralFieldChange("is_active")}
-                        disabled={savingGeneral}
-                      />
+                      <CButton color="danger" variant="outline" type="button" onClick={handleArchiveClick} disabled={savingGeneral}>
+                        Archivia anagrafica
+                      </CButton>
                     </CCol>
                     <CCol xs={12}>
                       <CFormLabel htmlFor="note">Note</CFormLabel>
@@ -1129,10 +1279,10 @@ const AnagraficaDetail = () => {
                 </CForm>
               ) : (
                 <>
-                  <CRow className="g-3">
+                  <CRow className={gridGapClass}>
                     {generalFields.map((field) => (
                       <CCol key={field.label} md={6} xl={4}>
-                        <DetailField label={field.label} value={field.value} />
+                        <DetailField label={field.label} value={field.value} compact={isCompact} />
                       </CCol>
                     ))}
                   </CRow>
@@ -1148,10 +1298,12 @@ const AnagraficaDetail = () => {
               )}
             </section>
 
+            {/* Contatti archiviati: ora visibili nel selettore della sezione Contatti */}
+
             <section className="d-flex flex-column gap-3">
               <div className="d-flex justify-content-between align-items-start gap-3">
                 <h3 className="h6 mb-0">Sedi</h3>
-                {!editingSedeId && (
+                {!editingSedeId && !isDisabled && (
                   <CButton color="primary" variant="outline" size="sm" onClick={handleSedeCreate}>
                     Nuova sede
                   </CButton>
@@ -1197,7 +1349,7 @@ const AnagraficaDetail = () => {
                                 <CFormInput
                                   value={sedeForm.denominazione}
                                   onChange={handleSedeFieldChange("denominazione")}
-                                  disabled={isSaving}
+                                  disabled={isSaving || isDisabled}
                                 />
                                 <CFormLabel className="small text-body-secondary mb-0">
                                   Tipo
@@ -1206,7 +1358,7 @@ const AnagraficaDetail = () => {
                                   type="number"
                                   value={sedeForm.id_tipo}
                                   onChange={handleSedeFieldChange("id_tipo")}
-                                  disabled={isSaving}
+                                  disabled={isSaving || isDisabled}
                                 />
                               </div>
                             </CTableDataCell>
@@ -1218,7 +1370,7 @@ const AnagraficaDetail = () => {
                                 <CFormInput
                                   value={sedeForm.indirizzo}
                                   onChange={handleSedeFieldChange("indirizzo")}
-                                  disabled={isSaving}
+                                  disabled={isSaving || isDisabled}
                                 />
                                 <div className="d-flex flex-column flex-lg-row gap-2">
                                   <div className="flex-fill">
@@ -1228,7 +1380,7 @@ const AnagraficaDetail = () => {
                                     <CFormInput
                                       value={sedeForm.civico}
                                       onChange={handleSedeFieldChange("civico")}
-                                      disabled={isSaving}
+                                      disabled={isSaving || isDisabled}
                                     />
                                   </div>
                                   <div className="flex-fill">
@@ -1238,7 +1390,7 @@ const AnagraficaDetail = () => {
                                     <CFormInput
                                       value={sedeForm.cap}
                                       onChange={handleSedeFieldChange("cap")}
-                                      disabled={isSaving}
+                                      disabled={isSaving || isDisabled}
                                     />
                                   </div>
                                 </div>
@@ -1251,7 +1403,7 @@ const AnagraficaDetail = () => {
                                     <CFormInput
                                       value={sedeForm.comune}
                                       onChange={handleSedeFieldChange("comune")}
-                                      disabled={isSaving}
+                                      disabled={isSaving || isDisabled}
                                     />
                                   </div>
                                   <div>
@@ -1261,7 +1413,7 @@ const AnagraficaDetail = () => {
                                     <CFormInput
                                       value={sedeForm.provincia}
                                       onChange={handleSedeFieldChange("provincia")}
-                                      disabled={isSaving}
+                                      disabled={isSaving || isDisabled}
                                     />
                                   </div>
                                   <div style={{ maxWidth: 80 }}>
@@ -1269,7 +1421,7 @@ const AnagraficaDetail = () => {
                                     <CFormInput
                                       value={sedeForm.nazione_iso2}
                                       onChange={handleSedeFieldChange("nazione_iso2")}
-                                      disabled={isSaving}
+                                      disabled={isSaving || isDisabled}
                                       maxLength={2}
                                     />
                                   </div>
@@ -1283,7 +1435,7 @@ const AnagraficaDetail = () => {
                                   <CFormInput
                                     value={sedeForm.telefono}
                                     onChange={handleSedeFieldChange("telefono")}
-                                    disabled={isSaving}
+                                    disabled={isSaving || isDisabled}
                                   />
                                 </div>
                                 <div>
@@ -1292,7 +1444,7 @@ const AnagraficaDetail = () => {
                                     type="email"
                                     value={sedeForm.email}
                                     onChange={handleSedeFieldChange("email")}
-                                    disabled={isSaving}
+                                    disabled={isSaving || isDisabled}
                                   />
                                 </div>
                                 <div>
@@ -1301,7 +1453,7 @@ const AnagraficaDetail = () => {
                                     value={sedeForm.note}
                                     onChange={handleSedeFieldChange("note")}
                                     rows={2}
-                                    disabled={isSaving}
+                                    disabled={isSaving || isDisabled}
                                   />
                                 </div>
                               </div>
@@ -1312,7 +1464,7 @@ const AnagraficaDetail = () => {
                                 label="Legale"
                                 checked={sedeForm.is_legale}
                                 onChange={handleSedeFieldChange("is_legale")}
-                                disabled={isSaving}
+                                disabled={isSaving || isDisabled}
                               />
                             </CTableDataCell>
                             <CTableDataCell className="text-center align-middle">
@@ -1321,7 +1473,7 @@ const AnagraficaDetail = () => {
                                 label="Predefinita"
                                 checked={sedeForm.is_predefinita}
                                 onChange={handleSedeFieldChange("is_predefinita")}
-                                disabled={isSaving}
+                                disabled={isSaving || isDisabled}
                               />
                             </CTableDataCell>
                             <CTableDataCell className="align-middle">
@@ -1335,7 +1487,7 @@ const AnagraficaDetail = () => {
                                   size="sm"
                                   type="button"
                                   onClick={handleSedeCancel}
-                                  disabled={isSaving}
+                                  disabled={isSaving || isDisabled}
                                 >
                                   Annulla
                                 </CButton>
@@ -1346,7 +1498,7 @@ const AnagraficaDetail = () => {
                                     size="sm"
                                     type="button"
                                     onClick={() => handleSedeDelete(sedeData.id_sede)}
-                                    disabled={isSaving || savingSedeId === sedeData.id_sede}
+                                    disabled={isSaving || isDisabled || savingSedeId === sedeData.id_sede}
                                   >
                                     {savingSedeId === sedeData.id_sede ? "Eliminazione..." : "Elimina"}
                                   </CButton>
@@ -1356,7 +1508,7 @@ const AnagraficaDetail = () => {
                                   size="sm"
                                   type="button"
                                   onClick={handleSedeSave}
-                                  disabled={isSaving}
+                                  disabled={isSaving || isDisabled}
                                 >
                                   {isSaving ? "Salvataggio..." : "Salva"}
                                 </CButton>
@@ -1410,7 +1562,7 @@ const AnagraficaDetail = () => {
                                 variant="outline"
                                 size="sm"
                                 onClick={() => handleSedeEdit(sedeData)}
-                                disabled={Boolean(editingSedeId) || savingSedeId === sedeData.id_sede}
+                                disabled={isDisabled || Boolean(editingSedeId) || savingSedeId === sedeData.id_sede}
                               >
                                 Modifica
                               </CButton>
@@ -1419,7 +1571,7 @@ const AnagraficaDetail = () => {
                                 variant="outline"
                                 size="sm"
                                 onClick={() => handleSedeDelete(sedeData.id_sede)}
-                                disabled={Boolean(editingSedeId) || savingSedeId === sedeData.id_sede}
+                                disabled={isDisabled || Boolean(editingSedeId) || savingSedeId === sedeData.id_sede}
                               >
                                 {savingSedeId === sedeData.id_sede ? "Eliminazione..." : "Elimina"}
                               </CButton>
@@ -1439,7 +1591,7 @@ const AnagraficaDetail = () => {
             <section className="d-flex flex-column gap-3">
               <div className="d-flex justify-content-between align-items-start gap-3">
                 <h3 className="h6 mb-0">Dati fiscali</h3>
-                {!isEditingFiscal && (
+                {!isEditingFiscal && !isDisabled && (
                   <CButton color="secondary" variant="outline" size="sm" onClick={startFiscalEditing}>
                     Modifica
                   </CButton>
@@ -1456,7 +1608,7 @@ const AnagraficaDetail = () => {
                         type="email"
                         value={fiscaleForm.pec}
                         onChange={handleFiscalFieldChange("pec")}
-                        disabled={savingFiscal}
+                        disabled={savingFiscal || isDisabled}
                       />
                     </CCol>
                     <CCol md={4}>
@@ -1465,7 +1617,7 @@ const AnagraficaDetail = () => {
                         id="codiceSdi"
                         value={fiscaleForm.codice_sdi}
                         onChange={handleFiscalFieldChange("codice_sdi")}
-                        disabled={savingFiscal}
+                        disabled={savingFiscal || isDisabled}
                       />
                     </CCol>
                     <CCol md={4}>
@@ -1474,7 +1626,7 @@ const AnagraficaDetail = () => {
                         id="iban"
                         value={fiscaleForm.iban}
                         onChange={handleFiscalFieldChange("iban")}
-                        disabled={savingFiscal}
+                        disabled={savingFiscal || isDisabled}
                       />
                     </CCol>
                     <CCol md={6}>
@@ -1483,7 +1635,7 @@ const AnagraficaDetail = () => {
                         id="banca"
                         value={fiscaleForm.banca}
                         onChange={handleFiscalFieldChange("banca")}
-                        disabled={savingFiscal}
+                        disabled={savingFiscal || isDisabled}
                       />
                     </CCol>
                     <CCol md={6}>
@@ -1492,7 +1644,7 @@ const AnagraficaDetail = () => {
                         id="modalitaPagamento"
                         value={fiscaleForm.modalita_pagamento}
                         onChange={handleFiscalFieldChange("modalita_pagamento")}
-                        disabled={savingFiscal}
+                        disabled={savingFiscal || isDisabled}
                       />
                     </CCol>
                     <CCol md={6}>
@@ -1502,7 +1654,7 @@ const AnagraficaDetail = () => {
                         type="number"
                         value={fiscaleForm.id_cond_pagamento}
                         onChange={handleFiscalFieldChange("id_cond_pagamento")}
-                        disabled={savingFiscal}
+                        disabled={savingFiscal || isDisabled}
                       />
                     </CCol>
                     <CCol md={6}>
@@ -1512,7 +1664,7 @@ const AnagraficaDetail = () => {
                         type="number"
                         value={fiscaleForm.giorni_pagamento}
                         onChange={handleFiscalFieldChange("giorni_pagamento")}
-                        disabled={savingFiscal}
+                        disabled={savingFiscal || isDisabled}
                       />
                     </CCol>
                     <CCol xs={12}>
@@ -1522,15 +1674,15 @@ const AnagraficaDetail = () => {
                         rows={4}
                         value={fiscaleForm.altri_dati}
                         onChange={handleFiscalFieldChange("altri_dati")}
-                        disabled={savingFiscal}
+                        disabled={savingFiscal || isDisabled}
                       />
                     </CCol>
                   </CRow>
                   <div className="d-flex gap-2 justify-content-end">
-                    <CButton color="secondary" variant="outline" type="button" onClick={cancelFiscalEditing} disabled={savingFiscal}>
+                    <CButton color="secondary" variant="outline" type="button" onClick={cancelFiscalEditing} disabled={savingFiscal || isDisabled}>
                       Annulla
                     </CButton>
-                    <CButton color="primary" type="submit" disabled={savingFiscal}>
+                    <CButton color="primary" type="submit" disabled={savingFiscal || isDisabled}>
                       {savingFiscal ? "Salvataggio..." : "Salva modifiche"}
                     </CButton>
                   </div>
@@ -1541,7 +1693,7 @@ const AnagraficaDetail = () => {
                     <CRow className="g-3">
                       {fiscaleFields.map((field) => (
                         <CCol key={field.label} md={6} xl={4}>
-                          <DetailField label={field.label} value={field.value} />
+                          <DetailField label={field.label} value={field.value} compact={isCompact} />
                         </CCol>
                       ))}
                     </CRow>
@@ -1562,20 +1714,26 @@ const AnagraficaDetail = () => {
 
             <section className="d-flex flex-column gap-3">
               <div className="d-flex justify-content-between align-items-start gap-3">
-                <h3 className="h6 mb-0">Contatti associati</h3>
-                {!editingContactId && (
-                  <CButton
-                    color="primary"
-                    variant="outline"
-                    size="sm"
-                    onClick={handleContactCreate}
-                    disabled={savingContactId !== null || isEditingGeneral || isEditingFiscal}
-                  >
-                    Nuovo contatto
-                  </CButton>
-                )}
+                <h3 className="h6 mb-0">Contatti</h3>
+                <div className="d-flex gap-2 align-items-center">
+                  {contactsView === 'associati' && !editingContactId && (
+                    <CButton
+                      color="primary"
+                      variant="outline"
+                      size="sm"
+                      onClick={handleContactCreate}
+                      disabled={savingContactId !== null || isEditingGeneral || isEditingFiscal}
+                    >
+                      Nuovo contatto
+                    </CButton>
+                  )}
+                  <CFormSelect size="sm" value={contactsView} onChange={(e) => setContactsView(e.target.value)}>
+                    <option value="associati">Associati</option>
+                    <option value="archiviati">Archiviati</option>
+                  </CFormSelect>
+                </div>
               </div>
-              {(contatti.length > 0 || editingContactId === 'new') ? (
+              {contactsView === 'associati' ? ((contatti.length > 0 || editingContactId === 'new') ? (
                 <CTable hover responsive size="sm">
                   <CTableHead color="dark">
                     <CTableRow>
@@ -1599,35 +1757,35 @@ const AnagraficaDetail = () => {
                           <CFormInput
                             value={contactForm.nome}
                             onChange={handleContactFieldChange("nome")}
-                            disabled={savingContactId === 'new'}
+                            disabled={savingContactId === 'new' || isDisabled}
                           />
                         </CTableDataCell>
                         <CTableDataCell>
                           <CFormInput
                             value={contactForm.ruolo}
                             onChange={handleContactFieldChange("ruolo")}
-                            disabled={savingContactId === 'new'}
+                            disabled={savingContactId === 'new' || isDisabled}
                           />
                         </CTableDataCell>
                         <CTableDataCell>
                           <CFormInput
                             value={contactForm.telefono}
                             onChange={handleContactFieldChange("telefono")}
-                            disabled={savingContactId === 'new'}
+                            disabled={savingContactId === 'new' || isDisabled}
                           />
                         </CTableDataCell>
                         <CTableDataCell>
                           <CFormInput
                             value={contactForm.cellulare}
                             onChange={handleContactFieldChange("cellulare")}
-                            disabled={savingContactId === 'new'}
+                            disabled={savingContactId === 'new' || isDisabled}
                           />
                         </CTableDataCell>
                         <CTableDataCell>
                           <CFormInput
                             value={contactForm.email}
                             onChange={handleContactFieldChange("email")}
-                            disabled={savingContactId === 'new'}
+                            disabled={savingContactId === 'new' || isDisabled}
                           />
                         </CTableDataCell>
                         <CTableDataCell>
@@ -1657,7 +1815,7 @@ const AnagraficaDetail = () => {
                               label="Predefinito"
                               checked={contactForm.is_predefinito}
                               onChange={handleContactFieldChange("is_predefinito")}
-                              disabled={savingContactId === 'new'}
+                              disabled={savingContactId === 'new' || isDisabled}
                             />
                           </div>
                         </CTableDataCell>
@@ -1669,7 +1827,7 @@ const AnagraficaDetail = () => {
                               size="sm"
                               type="button"
                               onClick={handleContactCancel}
-                              disabled={savingContactId === 'new'}
+                              disabled={savingContactId === 'new' || isDisabled}
                             >
                               Annulla
                             </CButton>
@@ -1677,7 +1835,7 @@ const AnagraficaDetail = () => {
                               color="primary"
                               size="sm"
                               type="button"
-                              disabled={savingContactId === 'new'}
+                              disabled={savingContactId === 'new' || isDisabled}
                               onClick={() => handleContactSave('new')}
                             >
                               {savingContactId === 'new' ? "Salvataggio..." : "Salva"}
@@ -1714,28 +1872,28 @@ const AnagraficaDetail = () => {
                                   <CFormInput
                                     value={contactForm.nome}
                                     onChange={handleContactFieldChange("nome")}
-                                    disabled={savingContactId === contatto.id_contatto}
+                                    disabled={savingContactId === contatto.id_contatto || isDisabled}
                                   />
                                 </CTableDataCell>
                                 <CTableDataCell>
                                   <CFormInput
                                     value={contactForm.ruolo}
                                     onChange={handleContactFieldChange("ruolo")}
-                                    disabled={savingContactId === contatto.id_contatto}
+                                    disabled={savingContactId === contatto.id_contatto || isDisabled}
                                   />
                                 </CTableDataCell>
                                 <CTableDataCell>
                                   <CFormInput
                                     value={contactForm.telefono}
                                     onChange={handleContactFieldChange("telefono")}
-                                    disabled={savingContactId === contatto.id_contatto}
+                                    disabled={savingContactId === contatto.id_contatto || isDisabled}
                                   />
                                 </CTableDataCell>
                                 <CTableDataCell>
                                   <CFormInput
                                     value={contactForm.cellulare}
                                     onChange={handleContactFieldChange("cellulare")}
-                                    disabled={savingContactId === contatto.id_contatto}
+                                    disabled={savingContactId === contatto.id_contatto || isDisabled}
                                   />
                                 </CTableDataCell>
                                 <CTableDataCell>
@@ -1773,7 +1931,7 @@ const AnagraficaDetail = () => {
                                       label="Predefinito"
                                       checked={contactForm.is_predefinito}
                                       onChange={handleContactFieldChange("is_predefinito")}
-                                      disabled={savingContactId === contatto.id_contatto}
+                                      disabled={savingContactId === contatto.id_contatto || isDisabled}
                                     />
 
                                   </div>
@@ -1786,7 +1944,7 @@ const AnagraficaDetail = () => {
                                       size="sm"
                                       type="button"
                                       onClick={handleContactCancel}
-                                      disabled={savingContactId === contatto.id_contatto}
+                                      disabled={savingContactId === contatto.id_contatto || isDisabled}
                                     >
                                       Annulla
                                     </CButton>
@@ -1805,7 +1963,7 @@ const AnagraficaDetail = () => {
                             )
                           }
 
-                          const fullName = [contatto.nome, contatto.cognome].filter(Boolean).join(" ").trim()
+                          const fullName = String(contatto.nome || '').trim()
                           const isDefault = Boolean(contatto.is_predefinito)
 
                           return (
@@ -1829,18 +1987,18 @@ const AnagraficaDetail = () => {
                                     variant="outline"
                                     size="sm"
                                     onClick={() => handleContactEdit(contatto)}
-                                    disabled={savingContactId !== null || isEditingGeneral || isEditingFiscal}
+                                    disabled={isDisabled || savingContactId !== null || isEditingGeneral || isEditingFiscal}
                                   >
-                                    Modifica
+                                    <CIcon icon={cilSettings} />
                                   </CButton>
                                   <CButton
-                                    color="danger"
+                                    color="secondary"
                                     variant="outline"
                                     size="sm"
-                                    onClick={() => handleContactDelete(contatto.id_contatto)}
-                                    disabled={savingContactId !== null || isEditingGeneral || isEditingFiscal}
+                                    onClick={() => handleContactArchive(contatto.id_contatto)}
+                                    disabled={isDisabled || savingContactId !== null || isEditingGeneral || isEditingFiscal}
                                   >
-                                    {savingContactId === contatto.id_contatto ? "Eliminazione..." : "Elimina"}
+                                    {savingContactId === contatto.id_contatto ? "Archiviazione..." : "Archivia"}
                                   </CButton>
                                 </div>
                               </CTableDataCell>
@@ -1852,16 +2010,140 @@ const AnagraficaDetail = () => {
                   </CTableBody>
                 </CTable>
               ) : (
-                <CAlert color="info" className="mb-0">
-                  Nessun contatto associato.
-                </CAlert>
+                <CAlert color="info" className="mb-0">Nessun contatto associato.</CAlert>
+              )) : (
+                contattiArchGrouped.length > 0 ? (
+                  <CTable hover responsive size="sm">
+                    <CTableHead color="dark">
+                      <CTableRow>
+                        <CTableHeaderCell scope="col">Nome</CTableHeaderCell>
+                        <CTableHeaderCell scope="col">Ruolo</CTableHeaderCell>
+                        <CTableHeaderCell scope="col">Telefono</CTableHeaderCell>
+                        <CTableHeaderCell scope="col">Cellulare</CTableHeaderCell>
+                        <CTableHeaderCell scope="col">Email</CTableHeaderCell>
+                        <CTableHeaderCell scope="col" className="text-center">Predefinito</CTableHeaderCell>
+                        <CTableHeaderCell scope="col" className="text-end">Azioni</CTableHeaderCell>
+                      </CTableRow>
+                    </CTableHead>
+                    <CTableBody>
+                      {contattiArchGrouped.map((group) => (
+                        <React.Fragment key={`arch-group-${group.key}`}>
+                          <CTableRow>
+                            <CTableDataCell colSpan={7} color="secondary"><strong>{group.label}</strong></CTableDataCell>
+                          </CTableRow>
+                          {group.items.map((c) => {
+                            const fullName = String(c.nome || "").trim()
+                            const sede =
+                              c.sede_denominazione || c.sede_indirizzo
+                                ? [
+                                    c.sede_denominazione,
+                                    c.sede_indirizzo,
+                                    [c.sede_cap, c.sede_comune].filter(Boolean).join(' '),
+                                    c.sede_provincia ? `${c.sede_provincia}` : null,
+                                  ]
+                                    .filter(Boolean)
+                                    .join(' ')
+                                : '-'
+                            const isDefault = Number(c.is_predefinito) === 1
+                            return (
+                              <CTableRow key={`arch-${c.id_contatto}`}>
+                                <CTableDataCell>{fullName || '-'}</CTableDataCell>
+                                <CTableDataCell>{c.ruolo || '-'}</CTableDataCell>
+                                <CTableDataCell>{c.telefono || '-'}</CTableDataCell>
+                                <CTableDataCell>{c.cellulare || '-'}</CTableDataCell>
+                                <CTableDataCell>{c.email || '-'}</CTableDataCell>
+                                <CTableDataCell className="text-center">
+                                  {isDefault ? <CBadge color="primary">Si</CBadge> : <span className="text-body-secondary">No</span>}
+                                  <div className="small text-body-secondary mt-1">{sede}</div>
+                                </CTableDataCell>
+                                <CTableDataCell className="text-end">
+                                  <div className="d-flex gap-2 justify-content-end align-items-center">
+                                    <small className="text-body-secondary me-2">{formatDateTime(c.archived_at)}</small>
+                                    <CButton
+                                      color="secondary"
+                                      variant="outline"
+                                      size="sm"
+                                      disabled={isDisabled || restoringArchivedId === c.id_contatto}
+                                      onClick={async () => {
+                                        if (!recordId) return
+                                        setMutationError(null)
+                                        setRestoringArchivedId(c.id_contatto)
+                                        try {
+                                          const response = await updateAnagraficaDetail({
+                                            token,
+                                            id: recordId,
+                                            // Non forziamo id_sede: il backend ripristina sulla sede originale se esiste
+                                            contatti: [{ action: 'restore', id_contatto: c.id_contatto }],
+                                          })
+                                          handleMutationSuccess(response)
+                                        } catch (mutationErrorInstance) {
+                                          if (mutationErrorInstance.status === 401 && logout) {
+                                            logout();
+                                            return
+                                          }
+                                          setMutationError(mutationErrorInstance.payload?.message || mutationErrorInstance.message)
+                                        } finally {
+                                          setRestoringArchivedId(null)
+                                        }
+                                      }}
+                                    >
+                                      {restoringArchivedId === c.id_contatto ? 'Ripristino...' : 'Ripristina'}
+                                    </CButton>
+                                    <CButton
+                                      color="danger"
+                                      variant="outline"
+                                      size="sm"
+                                      disabled={isDisabled || deletingArchivedId === c.id_contatto}
+                                      onClick={async () => {
+                                        const confirmed = window.confirm(`Confermi l'eliminazione definitiva del contatto archiviato ${c.id_contatto}?`)
+                                        if (!confirmed) return
+                                        setMutationError(null)
+                                        setDeletingArchivedId(c.id_contatto)
+                                        try {
+                                          const response = await updateAnagraficaDetail({
+                                            token,
+                                            id: recordId,
+                                            contatti: [{ action: 'hard_delete', id_contatto: c.id_contatto }],
+                                          })
+                                          handleMutationSuccess(response)
+                                        } catch (mutationErrorInstance) {
+                                          if (mutationErrorInstance.status === 401 && logout) {
+                                            logout();
+                                            return
+                                          }
+                                          setMutationError(mutationErrorInstance.payload?.message || mutationErrorInstance.message)
+                                        } finally {
+                                          setDeletingArchivedId(null)
+                                        }
+                                      }}
+                                    >
+                                      {deletingArchivedId === c.id_contatto ? 'Eliminazione...' : (<><CIcon icon={cilTrash} /> Elimina</>)}
+                                    </CButton>
+                                  </div>
+                                </CTableDataCell>
+                              </CTableRow>
+                            )
+                          })}
+                        </React.Fragment>
+                      ))}
+                    </CTableBody>
+                  </CTable>
+                ) : (
+                  <CAlert color="info" className="mb-0">Nessun contatto archiviato.</CAlert>
+                )
               )}
             </section>
 
             <section>
               <div className="d-flex justify-content-between align-items-center mb-3">
                 <h3 className="h6 mb-0">Preventivi correlati</h3>
-                <CButton color="primary" variant="outline" size="sm" onClick={() => navigate('/preventivi/crea')}>
+                <CButton
+                  color="primary"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => navigate('/preventivi/crea')}
+                  disabled={isDisabled}
+                >
                   <CIcon icon={cilPlus} className="me-2" /> Nuovo preventivo
                 </CButton>
               </div>
@@ -1898,13 +2180,31 @@ const AnagraficaDetail = () => {
                           </CTableDataCell>
                           <CTableDataCell className="text-center">
                             <div className="d-inline-flex gap-2">
-                              <CButton color="link" size="sm" className="p-0" onClick={() => handleViewPreventivo(preventivo.id_preventivo)}>
+                              <CButton
+                                color="link"
+                                size="sm"
+                                className="p-0"
+                                onClick={() => handleViewPreventivo(preventivo.id_preventivo)}
+                                disabled={isDisabled}
+                              >
                                 <CIcon icon={cilDescription} />
                               </CButton>
-                              <CButton color="link" size="sm" className="p-0" onClick={() => { /* email no-op */ }}>
+                              <CButton
+                                color="link"
+                                size="sm"
+                                className="p-0"
+                                onClick={() => { /* email no-op */ }}
+                                disabled={isDisabled}
+                              >
                                 <CIcon icon={cilEnvelopeClosed} />
                               </CButton>
-                              <CButton color="link" size="sm" className="p-0" onClick={() => { /* pdf no-op */ }}>
+                              <CButton
+                                color="link"
+                                size="sm"
+                                className="p-0"
+                                onClick={() => { /* pdf no-op */ }}
+                                disabled={isDisabled}
+                              >
                                 <CIcon icon={cilPrint} />
                               </CButton>
                             </div>
@@ -2031,6 +2331,8 @@ const AnagraficaDetail = () => {
         )}
       </CCardBody>
     </CCard>
+    <BottomToast open={toast.open} type={toast.type} message={toast.message} />
+    </>
   )
 }
 

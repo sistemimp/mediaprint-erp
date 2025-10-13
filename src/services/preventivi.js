@@ -16,6 +16,33 @@ export const fetchLatestPreventivi = async ({ token, signal, limit } = {}) => {
   return { items }
 }
 
+export const fetchPreventiviArchivio = async ({ token, signal, page, pageSize, search, sortBy, sortDirection } = {}) => {
+  const params = {}
+  if (page) params.page = page
+  if (pageSize) params.per_page = pageSize
+  if (search) params.search = search
+  if (sortBy) params.sort_by = sortBy
+  if (sortDirection) params.sort_direction = sortDirection
+
+  const response = await apiFetch('/preventiviArchiveList.php', {
+    token,
+    params,
+    signal,
+  })
+
+  const items = Array.isArray(response) ? response : (response?.data ?? [])
+  const meta = response?.meta ?? {
+    total: items.length,
+    per_page: items.length,
+    current_page: 1,
+    last_page: 1,
+    from: items.length > 0 ? 1 : 0,
+    to: items.length,
+  }
+
+  return { items, meta }
+}
+
 export const createPreventivo = async ({
   token,
   id_preventivo,
@@ -61,4 +88,36 @@ export const fetchPreventivoDetail = async ({ token, id, signal } = {}) => {
   const editable = !!response?.meta?.editable
   const righe = Array.isArray(response?.righe) ? response.righe : []
   return { data, editable, righe }
+}
+
+export const reactivatePreventivo = async ({ token, id, signal } = {}) => {
+  const numericId = Number(id)
+  if (!Number.isFinite(numericId) || numericId <= 0) {
+    throw new Error('ID preventivo mancante o non valido per il ripristino.')
+  }
+
+  const response = await apiFetch('/preventiviReactivate.php', {
+    method: 'POST',
+    token,
+    body: { id: numericId },
+    signal,
+  })
+
+  return response ?? {}
+}
+
+export const archivePreventivo = async ({ token, id, signal } = {}) => {
+  const numericId = Number(id)
+  if (!Number.isFinite(numericId) || numericId <= 0) {
+    throw new Error('ID preventivo mancante o non valido per l\'archiviazione.')
+  }
+
+  const response = await apiFetch('/preventiviArchive.php', {
+    method: 'POST',
+    token,
+    body: { id: numericId },
+    signal,
+  })
+
+  return response ?? { ok: true }
 }

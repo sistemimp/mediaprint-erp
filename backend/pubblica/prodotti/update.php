@@ -31,6 +31,7 @@ try {
     if ($idCategoria === 0) { $idCategoria = null; }
     $prezzoListino = $input['prezzo_listino'] ?? null;
     $idIva = $input['id_iva'] ?? null;
+    $idNatura = $input['id_sdi_natura_iva'] ?? null;
 
     $repo = new ProdottiRepository(Database::getConnection());
     $repo->updateProdotto([
@@ -40,6 +41,7 @@ try {
         'id_categoria' => $idCategoria,
         'prezzo_listino' => $prezzoListino !== null ? (float) $prezzoListino : null,
         'id_iva' => $idIva !== null ? (int) $idIva : null,
+        'id_sdi_natura_iva' => $idNatura !== null ? (int) $idNatura : null,
     ]);
 
     HttpResponse::json(['ok' => true], 200);

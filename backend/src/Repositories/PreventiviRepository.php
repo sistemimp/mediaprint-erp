@@ -48,6 +48,268 @@ final class PreventiviRepository
     }
 
     /**
+     * Ricerca preventivi archiviati in `tb_preventivi_archive` con join su anagrafiche (attive o archiviate)
+     * per ottenere la ragione sociale e su stati per label.
+     *
+     * @return array{data: list<array<string,mixed>>, total: int}
+     */
+    public function searchArchived(array $filters): array
+    {
+        $sql = <<<'SQL'
+            SELECT
+                pa.id_preventivo,
+                pa.id_anagrafica,
+                pa.anno_preventivo,
+                pa.numero_documento,
+                pa.data_preventivo,
+                pa.totale_imponibile,
+                pa.totale_sconto,
+                pa.totale_iva,
+                pa.totale,
+                pa.stato AS stato_code,
+                COALESCE(sp.label, pa.stato) AS stato_label,
+                COALESCE(a.ragione_sociale, aa.ragione_sociale) AS ragione_sociale,
+                pa.created_at,
+                pa.updated_at
+            FROM tb_preventivi_archive pa
+            LEFT JOIN cfg_stati_preventivo sp ON sp.code = pa.stato
+            LEFT JOIN tb_anagrafiche a ON a.id_anagrafica = pa.id_anagrafica
+            LEFT JOIN tb_anagrafiche_archive aa ON aa.id_anagrafica = pa.id_anagrafica
+        SQL;
+
+        $where = [];
+        $params = [];
+
+        if (!empty($filters['search'])) {
+            $where[] = '(
+                COALESCE(a.ragione_sociale, aa.ragione_sociale) LIKE :needle
+                OR CONCAT(pa.anno_preventivo, "/", pa.numero_documento) LIKE :needle
+            )';
+            $params[':needle'] = '%' . $filters['search'] . '%';
+        }
+
+        if ($where) {
+            $sql .= ' WHERE ' . implode(' AND ', $where);
+        }
+
+        $sortable = [
+            'data_preventivo',
+            'anno_preventivo',
+            'numero_documento',
+            'totale',
+            'ragione_sociale',
+            'created_at',
+            'updated_at',
+        ];
+        $sortBy = in_array($filters['sort_by'] ?? '', $sortable, true) ? $filters['sort_by'] : 'data_preventivo';
+        $direction = strtolower($filters['sort_direction'] ?? '') === 'asc' ? 'ASC' : 'DESC';
+
+        $sql .= " ORDER BY {$sortBy} {$direction}";
+
+        $page = max((int)($filters['page'] ?? 1), 1);
+        $perPage = max(1, min((int)($filters['per_page'] ?? 20), 100));
+        $offset = ($page - 1) * $perPage;
+
+        // con prepared nativi, evitiamo placeholder in LIMIT/OFFSET
+        $sql .= ' LIMIT ' . (int) $perPage . ' OFFSET ' . (int) $offset;
+
+        $stmt = $this->pdo->prepare($sql);
+        foreach ($params as $ph => $val) {
+            $stmt->bindValue($ph, $val, PDO::PARAM_STR);
+        }
+        $stmt->execute();
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+        $countSql = 'SELECT COUNT(*) FROM tb_preventivi_archive pa'
+            . ' LEFT JOIN tb_anagrafiche a ON a.id_anagrafica = pa.id_anagrafica'
+            . ' LEFT JOIN tb_anagrafiche_archive aa ON aa.id_anagrafica = pa.id_anagrafica';
+        if ($where) {
+            $countSql .= ' WHERE ' . implode(' AND ', $where);
+        }
+        $countStmt = $this->pdo->prepare($countSql);
+        if (!empty($params[':needle'])) {
+            $countStmt->bindValue(':needle', $params[':needle'], PDO::PARAM_STR);
+        }
+        $countStmt->execute();
+        $total = (int) $countStmt->fetchColumn();
+
+        return [
+            'data' => array_map(static fn ($r) => $r, $rows),
+            'total' => $total,
+        ];
+    }
+
+    /**
+     * Ritorna una riga dall'archivio preventivi.
+     * @return array{id_preventivo:int, id_anagrafica:int, data_preventivo:?string, note:?string, totale_imponibile:float|int|null, totale_sconto:float|int|null, totale_iva:float|int|null, totale:float|int|null}|null
+     */
+    public function getArchivedById(int $id): ?array
+    {
+        $sql = <<<'SQL'
+            SELECT id_preventivo, id_anagrafica, data_preventivo, note,
+                   totale_imponibile, totale_sconto, totale_iva, totale
+            FROM tb_preventivi_archive
+            WHERE id_preventivo = :id
+            LIMIT 1
+        SQL;
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->bindValue(':id', $id, PDO::PARAM_INT);
+        $stmt->execute();
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($row === false) return null;
+        return [
+            'id_preventivo' => (int) $row['id_preventivo'],
+            'id_anagrafica' => (int) $row['id_anagrafica'],
+            'data_preventivo' => $row['data_preventivo'] ?? null,
+            'note' => $row['note'] ?? null,
+            'totale_imponibile' => $row['totale_imponibile'] ?? null,
+            'totale_sconto' => $row['totale_sconto'] ?? null,
+            'totale_iva' => $row['totale_iva'] ?? null,
+            'totale' => $row['totale'] ?? null,
+        ];
+    }
+
+    public function existsAnagrafica(int $idAnagrafica): bool
+    {
+        // Considera valida solo un'anagrafica attiva
+        $stmt = $this->pdo->prepare(
+            "SELECT 1 FROM tb_anagrafiche WHERE id_anagrafica = :id AND is_active = 1 AND LOWER(stato) = 'attiva' LIMIT 1"
+        );
+        $stmt->bindValue(':id', $idAnagrafica, PDO::PARAM_INT);
+        $stmt->execute();
+        return $stmt->fetchColumn() !== false;
+    }
+
+    /**
+     * Righe del preventivo dall'archivio, se la tabella di archivio righe è presente.
+     * Se non esiste, ritorna lista vuota.
+     * @return list<array{
+     *   id_prodotto:int|null,
+     *   descrizione:string,
+     *   quantita:float,
+     *   prezzo_unitario:float,
+     *   sconto:float|null,
+     *   iva:float|null,
+     *   id_sdi_natura_iva:int|null,
+     *   posizione:int|null
+     * }>
+     */
+    public function getArchivedLines(int $idPreventivo): array
+    {
+        try {
+            $sql = <<<'SQL'
+                SELECT id_prodotto, descrizione, quantita, prezzo_unitario, sconto, iva, id_sdi_natura_iva, posizione, id_riga
+                FROM tb_preventivi_righe_archive
+                WHERE id_preventivo = :id
+                ORDER BY COALESCE(posizione, id_riga) ASC
+            SQL;
+            $stmt = $this->pdo->prepare($sql);
+            $stmt->bindValue(':id', $idPreventivo, PDO::PARAM_INT);
+            $stmt->execute();
+            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        } catch (\Throwable $e) {
+            // Tabella non presente o altro errore: ritorna vuoto
+            return [];
+        }
+
+        $out = [];
+        foreach ($rows as $r) {
+            $out[] = [
+                'id_prodotto' => isset($r['id_prodotto']) ? (int) $r['id_prodotto'] : null,
+                'descrizione' => (string) ($r['descrizione'] ?? ''),
+                'quantita' => isset($r['quantita']) ? (float) $r['quantita'] : 1.0,
+                'prezzo_unitario' => isset($r['prezzo_unitario']) ? (float) $r['prezzo_unitario'] : 0.0,
+                'sconto' => isset($r['sconto']) ? (float) $r['sconto'] : null,
+                'iva' => isset($r['iva']) ? (float) $r['iva'] : null,
+                'id_sdi_natura_iva' => isset($r['id_sdi_natura_iva']) ? (int) $r['id_sdi_natura_iva'] : null,
+                'posizione' => isset($r['posizione']) ? (int) $r['posizione'] : null,
+            ];
+        }
+        return $out;
+    }
+
+    /**
+     * Rimuove un preventivo dall'archivio (testata e righe se presenti).
+     */
+    public function deleteFromArchive(int $idPreventivo): void
+    {
+        // Prova a cancellare prima le righe archiviate (se la tabella esiste)
+        try {
+            $delR = $this->pdo->prepare('DELETE FROM tb_preventivi_righe_archive WHERE id_preventivo = :id');
+            $delR->bindValue(':id', $idPreventivo, PDO::PARAM_INT);
+            $delR->execute();
+        } catch (\Throwable $ignored) {
+            // ignora se la tabella non esiste
+        }
+
+        // Cancella la testata dall'archivio
+        $delP = $this->pdo->prepare('DELETE FROM tb_preventivi_archive WHERE id_preventivo = :id');
+        $delP->bindValue(':id', $idPreventivo, PDO::PARAM_INT);
+        $delP->execute();
+    }
+
+    /**
+     * Archivia un preventivo (testata + righe se tabella archivio presente) e rimuove dai tavoli attivi.
+     */
+    public function archiveById(int $idPreventivo): void
+    {
+        $this->pdo->beginTransaction();
+        try {
+            // Copia testata in archivio
+            $this->pdo->prepare(
+                "INSERT INTO tb_preventivi_archive (
+                    id_preventivo, id_anagrafica, anno_preventivo, numero_documento, data_preventivo,
+                    stato, totale_imponibile, totale_sconto, totale_iva, totale, note,
+                    created_at, updated_at
+                )
+                SELECT p.id_preventivo, p.id_anagrafica, p.anno_preventivo, p.numero_documento, p.data_preventivo,
+                       COALESCE(sp.code, 'bozza') AS stato,
+                       p.totale_imponibile, p.totale_sconto, p.totale_iva, p.totale, p.note,
+                       p.created_at, p.updated_at
+                FROM tb_preventivi p
+                LEFT JOIN cfg_stati_preventivo sp ON sp.id_stato = p.id_stato_prev
+                WHERE p.id_preventivo = :id
+                  AND NOT EXISTS (
+                    SELECT 1 FROM tb_preventivi_archive pa WHERE pa.id_preventivo = p.id_preventivo
+                  )"
+            )->execute([':id' => $idPreventivo]);
+
+            // Copia righe in archivio (se tabella esiste)
+            try {
+                $this->pdo->prepare(
+                    "INSERT INTO tb_preventivi_righe_archive (
+                        id_riga, id_preventivo, id_prodotto, descrizione, quantita, prezzo_unitario,
+                        sconto, importo_scontato, iva, id_sdi_natura_iva, totale, posizione
+                    )
+                    SELECT r.id_riga, r.id_preventivo, r.id_prodotto, r.descrizione, r.quantita, r.prezzo_unitario,
+                           r.sconto, r.importo_scontato, r.iva, r.id_sdi_natura_iva, r.totale, r.posizione
+                    FROM tb_preventivi_righe r
+                    WHERE r.id_preventivo = :id
+                      AND NOT EXISTS (
+                        SELECT 1 FROM tb_preventivi_righe_archive ra WHERE ra.id_riga = r.id_riga
+                      )"
+                )->execute([':id' => $idPreventivo]);
+            } catch (\Throwable $ignored) {
+                // se la tabella non esiste, ignora
+            }
+
+            // Elimina righe e testata attive
+            $delR = $this->pdo->prepare('DELETE FROM tb_preventivi_righe WHERE id_preventivo = :id');
+            $delR->bindValue(':id', $idPreventivo, PDO::PARAM_INT);
+            $delR->execute();
+
+            $delP = $this->pdo->prepare('DELETE FROM tb_preventivi WHERE id_preventivo = :id');
+            $delP->bindValue(':id', $idPreventivo, PDO::PARAM_INT);
+            $delP->execute();
+
+            $this->pdo->commit();
+        } catch (\Throwable $e) {
+            $this->pdo->rollBack();
+            throw $e;
+        }
+    }
+
+    /**
      * @return array{id_preventivo:int, anno_preventivo:int|null, numero_documento:int|null, stato_code:?string}|null
      */
     public function getById(int $id): ?array

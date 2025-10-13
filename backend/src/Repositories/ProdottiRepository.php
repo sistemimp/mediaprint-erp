@@ -39,7 +39,7 @@ final class ProdottiRepository
     public function listProdotti(?int $idCategoria = null, ?string $search = null, ?bool $soloAttivi = true): array
     {
         $sql = <<<'SQL'
-            SELECT p.id_prodotto, p.id_categoria, p.codice, p.nome, p.prezzo_listino, p.id_iva, i.percento AS iva_percento
+            SELECT p.id_prodotto, p.id_categoria, p.codice, p.nome, p.prezzo_listino, p.id_iva, p.id_sdi_natura_iva, i.percento AS iva_percento
             FROM tb_prodotti p
             LEFT JOIN cfg_iva i ON i.id_iva = p.id_iva
             WHERE 1=1
@@ -83,6 +83,7 @@ final class ProdottiRepository
                 'nome' => (string) $r['nome'],
                 'prezzo_listino' => isset($r['prezzo_listino']) ? (float) $r['prezzo_listino'] : null,
                 'id_iva' => isset($r['id_iva']) ? (int) $r['id_iva'] : null,
+                'id_sdi_natura_iva' => isset($r['id_sdi_natura_iva']) ? (int) $r['id_sdi_natura_iva'] : null,
                 'iva_percento' => isset($r['iva_percento']) ? (float) $r['iva_percento'] : null,
             ];
         }
@@ -94,7 +95,7 @@ final class ProdottiRepository
      */
     public function getProdottoById(int $id): array
     {
-        $stmt = $this->pdo->prepare('SELECT id_prodotto, id_categoria, codice, nome, descrizione, prezzo_listino, id_iva FROM tb_prodotti WHERE id_prodotto = :id LIMIT 1');
+        $stmt = $this->pdo->prepare('SELECT id_prodotto, id_categoria, codice, nome, descrizione, prezzo_listino, id_iva, id_sdi_natura_iva FROM tb_prodotti WHERE id_prodotto = :id LIMIT 1');
         $stmt->bindValue(':id', $id, PDO::PARAM_INT);
         $stmt->execute();
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -109,6 +110,7 @@ final class ProdottiRepository
             'descrizione' => $row['descrizione'] ?? null,
             'prezzo_listino' => isset($row['prezzo_listino']) ? (float) $row['prezzo_listino'] : null,
             'id_iva' => isset($row['id_iva']) ? (int) $row['id_iva'] : null,
+            'id_sdi_natura_iva' => isset($row['id_sdi_natura_iva']) ? (int) $row['id_sdi_natura_iva'] : null,
         ];
     }
 
@@ -118,7 +120,7 @@ final class ProdottiRepository
      */
     public function createProdotto(array $data): int
     {
-        $sql = 'INSERT INTO tb_prodotti (id_categoria, codice, nome, prezzo_listino, id_iva, attivo) VALUES (:id_categoria, :codice, :nome, :prezzo_listino, :id_iva, 1)';
+        $sql = 'INSERT INTO tb_prodotti (id_categoria, codice, nome, prezzo_listino, id_iva, id_sdi_natura_iva, attivo) VALUES (:id_categoria, :codice, :nome, :prezzo_listino, :id_iva, :id_sdi_natura_iva, 1)';
         $stmt = $this->pdo->prepare($sql);
         $stmt->bindValue(':id_categoria', $data['id_categoria'], $data['id_categoria'] !== null ? PDO::PARAM_INT : PDO::PARAM_NULL);
         $stmt->bindValue(':codice', $data['codice'] ?? null, $data['codice'] !== null ? PDO::PARAM_STR : PDO::PARAM_NULL);
@@ -129,6 +131,7 @@ final class ProdottiRepository
             $stmt->bindValue(':prezzo_listino', null, PDO::PARAM_NULL);
         }
         $stmt->bindValue(':id_iva', $data['id_iva'] ?? null, (isset($data['id_iva']) && $data['id_iva'] !== null) ? PDO::PARAM_INT : PDO::PARAM_NULL);
+        $stmt->bindValue(':id_sdi_natura_iva', $data['id_sdi_natura_iva'] ?? null, (isset($data['id_sdi_natura_iva']) && $data['id_sdi_natura_iva'] !== null) ? PDO::PARAM_INT : PDO::PARAM_NULL);
         $stmt->execute();
         return (int) $this->pdo->lastInsertId();
     }
@@ -138,7 +141,7 @@ final class ProdottiRepository
      */
     public function updateProdotto(array $data): void
     {
-        $sql = 'UPDATE tb_prodotti SET id_categoria = :id_categoria, codice = :codice, nome = :nome, prezzo_listino = :prezzo_listino, id_iva = :id_iva WHERE id_prodotto = :id';
+        $sql = 'UPDATE tb_prodotti SET id_categoria = :id_categoria, codice = :codice, nome = :nome, prezzo_listino = :prezzo_listino, id_iva = :id_iva, id_sdi_natura_iva = :id_sdi_natura_iva WHERE id_prodotto = :id';
         $stmt = $this->pdo->prepare($sql);
         $stmt->bindValue(':id', (int) $data['id_prodotto'], PDO::PARAM_INT);
         $stmt->bindValue(':id_categoria', $data['id_categoria'], $data['id_categoria'] !== null ? PDO::PARAM_INT : PDO::PARAM_NULL);
@@ -150,6 +153,7 @@ final class ProdottiRepository
             $stmt->bindValue(':prezzo_listino', null, PDO::PARAM_NULL);
         }
         $stmt->bindValue(':id_iva', $data['id_iva'] ?? null, (isset($data['id_iva']) && $data['id_iva'] !== null) ? PDO::PARAM_INT : PDO::PARAM_NULL);
+        $stmt->bindValue(':id_sdi_natura_iva', $data['id_sdi_natura_iva'] ?? null, (isset($data['id_sdi_natura_iva']) && $data['id_sdi_natura_iva'] !== null) ? PDO::PARAM_INT : PDO::PARAM_NULL);
         $stmt->execute();
     }
 
@@ -278,6 +282,81 @@ final class ProdottiRepository
     {
         $stmt = $this->pdo->prepare('DELETE FROM tb_variazioni WHERE id_variazione = :id');
         $stmt->bindValue(':id', $idVariazione, PDO::PARAM_INT);
+        $stmt->execute();
+    }
+
+    /**
+     * Prezzi combinati per prodotto in base a più variazioni.
+     * La chiave di combinazione è una stringa deterministica con ID variazioni ordinati e separati da '+'.
+     * Esempio: "12+45".
+     *
+     * @return list<array{id:int,id_prodotto:int,combo_key:string,var_ids:list<int>,prezzo:float}>
+     */
+    public function listPrezziCombinatiByProdotto(int $idProdotto): array
+    {
+        $stmt = $this->pdo->prepare('SELECT id, id_prodotto, combo_key, prezzo FROM tb_prezzi_variazioni WHERE id_prodotto = :p ORDER BY combo_key ASC');
+        $stmt->bindValue(':p', $idProdotto, PDO::PARAM_INT);
+        $stmt->execute();
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        $out = [];
+        foreach ($rows as $r) {
+            $key = (string) $r['combo_key'];
+            $ids = [];
+            foreach (explode('+', $key) as $part) {
+                $n = (int) trim($part);
+                if ($n > 0) { $ids[] = $n; }
+            }
+            $out[] = [
+                'id' => (int) $r['id'],
+                'id_prodotto' => (int) $r['id_prodotto'],
+                'combo_key' => $key,
+                'var_ids' => $ids,
+                'prezzo' => isset($r['prezzo']) ? (float) $r['prezzo'] : 0.0,
+            ];
+        }
+        return $out;
+    }
+
+    /**
+     * Inserisce/Aggiorna un prezzo combinato per prodotto.
+     * @param list<int> $varIds
+     * @return int ID record
+     */
+    public function upsertPrezzoCombinato(int $idProdotto, array $varIds, float $prezzo): int
+    {
+        $filtered = array_values(array_filter(array_map(fn($v) => (int) $v, $varIds), fn($v) => $v > 0));
+        sort($filtered, SORT_NUMERIC);
+        if (empty($filtered)) { throw new \RuntimeException('Nessuna variazione valida', 422); }
+        $comboKey = implode('+', $filtered);
+
+        $stmt = $this->pdo->prepare('INSERT INTO tb_prezzi_variazioni (id_prodotto, combo_key, prezzo) VALUES (:p, :k, :z)
+            ON DUPLICATE KEY UPDATE prezzo = VALUES(prezzo)');
+        $stmt->bindValue(':p', $idProdotto, PDO::PARAM_INT);
+        $stmt->bindValue(':k', $comboKey, PDO::PARAM_STR);
+        $stmt->bindValue(':z', $prezzo);
+        $stmt->execute();
+
+        $sel = $this->pdo->prepare('SELECT id FROM tb_prezzi_variazioni WHERE id_prodotto = :p AND combo_key = :k LIMIT 1');
+        $sel->bindValue(':p', $idProdotto, PDO::PARAM_INT);
+        $sel->bindValue(':k', $comboKey, PDO::PARAM_STR);
+        $sel->execute();
+        $row = $sel->fetch(PDO::FETCH_ASSOC);
+        return (int) ($row['id'] ?? 0);
+    }
+
+    /**
+     * Elimina un prezzo combinato dato un insieme di variazioni.
+     * @param list<int> $varIds
+     */
+    public function deletePrezzoCombinato(int $idProdotto, array $varIds): void
+    {
+        $filtered = array_values(array_filter(array_map(fn($v) => (int) $v, $varIds), fn($v) => $v > 0));
+        sort($filtered, SORT_NUMERIC);
+        if (empty($filtered)) { throw new \RuntimeException('Nessuna variazione valida', 422); }
+        $comboKey = implode('+', $filtered);
+        $stmt = $this->pdo->prepare('DELETE FROM tb_prezzi_variazioni WHERE id_prodotto = :p AND combo_key = :k');
+        $stmt->bindValue(':p', $idProdotto, PDO::PARAM_INT);
+        $stmt->bindValue(':k', $comboKey, PDO::PARAM_STR);
         $stmt->execute();
     }
 }

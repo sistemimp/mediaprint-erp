@@ -77,6 +77,35 @@ final class AnagraficheService
             throw new RuntimeException('ID anagrafica mancante o non valido.', 422);
         }
 
+        // Se l'anagrafica risulta in stato "disattiva", blocca ogni modifica eccetto riattivazione
+        $current = $this->repository->getBaseStatus($id);
+        if ($current === null) {
+            throw new RuntimeException('Anagrafica non trovata.', 404);
+        }
+        $currentStato = strtolower(trim((string)($current['stato'] ?? '')));
+        if ($currentStato === 'disattiva') {
+            $hasFiscale = isset($input['fiscale']) && is_array($input['fiscale']);
+            $hasSedi = isset($input['sedi']) && is_array($input['sedi']);
+            $hasContatti = isset($input['contatti']) && is_array($input['contatti']);
+            $hasAnagrafica = isset($input['anagrafica']) && is_array($input['anagrafica']);
+
+            $allow = false;
+            if ($hasAnagrafica) {
+                $keys = array_keys($input['anagrafica']);
+                $allowedKeys = ['stato', 'is_active'];
+                $onlyAllowedKeys = count(array_diff($keys, $allowedKeys)) === 0;
+                $requestedStato = isset($input['anagrafica']['stato']) ? strtolower(trim((string)$input['anagrafica']['stato'])) : '';
+                $requestedIsActive = array_key_exists('is_active', $input['anagrafica']) ? (int)$input['anagrafica']['is_active'] : null;
+                if ($onlyAllowedKeys && $requestedStato === 'attiva' && ($requestedIsActive === null || $requestedIsActive === 1)) {
+                    $allow = true;
+                }
+            }
+
+            if (!$allow || $hasFiscale || $hasSedi || $hasContatti) {
+                throw new RuntimeException("Anagrafica disattivata: modifiche non consentite. E' possibile solo la riattivazione.", 403);
+            }
+        }
+
         return $this->repository->transactional(function () use ($id, $input): array {
             if (isset($input['anagrafica']) && is_array($input['anagrafica'])) {
                 // Se is_active=0 richiesto, esegue archiviazione completa + delete
@@ -126,6 +155,18 @@ final class AnagraficheService
                         $contattoId = isset($op['id_contatto']) ? (int) $op['id_contatto'] : 0;
                         if ($contattoId <= 0) { throw new RuntimeException('id_contatto mancante per delete contatto.', 422); }
                         $this->repository->deleteContatto($id, $contattoId);
+                    } elseif ($action === 'restore') {
+                        $archivedContattoId = isset($op['id_contatto']) ? (int) $op['id_contatto'] : 0;
+                        if ($archivedContattoId <= 0) { throw new RuntimeException('id_contatto mancante per restore contatto.', 422); }
+                        $this->repository->restoreArchivedContatto($id, $archivedContattoId, $op);
+                    } elseif ($action === 'archive') {
+                        $contattoId = isset($op['id_contatto']) ? (int) $op['id_contatto'] : 0;
+                        if ($contattoId <= 0) { throw new RuntimeException('id_contatto mancante per archiviazione contatto.', 422); }
+                        $this->repository->archiveContatto($id, $contattoId);
+                    } elseif ($action === 'hard_delete') {
+                        $archivedContattoId = isset($op['id_contatto']) ? (int) $op['id_contatto'] : 0;
+                        if ($archivedContattoId <= 0) { throw new RuntimeException('id_contatto mancante per eliminazione definitiva contatto.', 422); }
+                        $this->repository->hardDeleteArchivedContatto($archivedContattoId);
                     }
                 }
             }

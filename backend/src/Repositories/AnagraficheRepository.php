@@ -12,6 +12,26 @@ final class AnagraficheRepository
     public function __construct(private PDO $pdo) {}
 
     /**
+     * Ritorna lo stato corrente dell'anagrafica (is_active, stato) oppure null se non esiste.
+     *
+     * @return array{is_active:int,stato:string}|null
+     */
+    public function getBaseStatus(int $id): ?array
+    {
+        $stmt = $this->pdo->prepare('SELECT is_active, stato FROM tb_anagrafiche WHERE id_anagrafica = :id LIMIT 1');
+        $stmt->bindValue(':id', $id, PDO::PARAM_INT);
+        $stmt->execute();
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($row === false) {
+            return null;
+        }
+        return [
+            'is_active' => (int) ($row['is_active'] ?? 0),
+            'stato' => (string) ($row['stato'] ?? ''),
+        ];
+    }
+
+    /**
      * @return array{data: list<array<string, mixed>>, total: int}
      */
     public function search(array $filters): array
@@ -314,6 +334,38 @@ final class AnagraficheRepository
         $contattiStatement->execute();
         $contatti = $contattiStatement->fetchAll(PDO::FETCH_ASSOC);
 
+        // Contatti archiviati (collegati tramite sedi_archive -> include id_anagrafica)
+        $contattiArchSql = <<<'SQL'
+            SELECT
+                ca.id_contatto,
+                ca.nome,
+                ca.ruolo,
+                ca.telefono,
+                ca.cellulare,
+                ca.email,
+                ca.is_predefinito,
+                ca.id_sede,
+                sa.denominazione AS sede_denominazione,
+                sa.indirizzo AS sede_indirizzo,
+                sa.civico AS sede_civico,
+                sa.cap AS sede_cap,
+                sa.comune AS sede_comune,
+                sa.provincia AS sede_provincia,
+                sa.nazione_iso2 AS sede_nazione,
+                sa.telefono AS sede_telefono,
+                sa.email AS sede_email,
+                ca.archived_at
+            FROM tb_sedi_contatti_archive ca
+            INNER JOIN tb_sedi_archive sa ON sa.id_sede = ca.id_sede
+            WHERE sa.id_anagrafica = :id
+            ORDER BY ca.archived_at DESC, ca.nome ASC
+        SQL;
+
+        $contattiArchStmt = $this->pdo->prepare($contattiArchSql);
+        $contattiArchStmt->bindValue(':id', $id, PDO::PARAM_INT);
+        $contattiArchStmt->execute();
+        $contattiArchiviati = $contattiArchStmt->fetchAll(PDO::FETCH_ASSOC);
+
         $preventiviSql = <<<'SQL'
             SELECT
                 p.id_preventivo,
@@ -420,6 +472,7 @@ final class AnagraficheRepository
             'anagrafica' => $anagrafica,
             'fiscale' => $fiscale,
             'contatti' => $contatti,
+            'contatti_archiviati' => $contattiArchiviati,
             'preventivi' => $preventivi,
             'ddt' => $ddt,
             'fatture' => $fatture,
@@ -767,7 +820,6 @@ final class AnagraficheRepository
 
         $contactColumns = [
             'nome' => ['column' => 'nome', 'type' => PDO::PARAM_STR],
-            'cognome' => ['column' => 'cognome', 'type' => PDO::PARAM_STR],
             'ruolo' => ['column' => 'ruolo', 'type' => PDO::PARAM_STR],
             'telefono' => ['column' => 'telefono', 'type' => PDO::PARAM_STR],
             'cellulare' => ['column' => 'cellulare', 'type' => PDO::PARAM_STR],
@@ -846,7 +898,6 @@ final class AnagraficheRepository
     {
         $contactDefinitions = [
             'nome' => ['column' => 'nome', 'type' => PDO::PARAM_STR],
-            'cognome' => ['column' => 'cognome', 'type' => PDO::PARAM_STR],
             'ruolo' => ['column' => 'ruolo', 'type' => PDO::PARAM_STR],
             'telefono' => ['column' => 'telefono', 'type' => PDO::PARAM_STR],
             'cellulare' => ['column' => 'cellulare', 'type' => PDO::PARAM_STR],
@@ -911,10 +962,13 @@ final class AnagraficheRepository
 
         $newId = (int) $this->pdo->lastInsertId();
 
+        // Associa il nuovo contatto all'anagrafica in modo idempotente
+        // Evita errore 1062 (PRIMARY) in caso di doppio click o retry
         $isPredefAnagrafica = 0;
-        $assoc = $this->pdo->prepare(
-            'INSERT INTO tb_contatti_anagrafiche (id_anagrafica, id_contatto, is_predefinita) VALUES (:anagrafica, :contatto, :predef)'
-        );
+        $assocSql = 'INSERT INTO tb_contatti_anagrafiche (id_anagrafica, id_contatto, is_predefinita)
+                     VALUES (:anagrafica, :contatto, :predef)
+                     ON DUPLICATE KEY UPDATE is_predefinita = VALUES(is_predefinita)';
+        $assoc = $this->pdo->prepare($assocSql);
         $assoc->bindValue(':anagrafica', $anagraficaId, PDO::PARAM_INT);
         $assoc->bindValue(':contatto', $newId, PDO::PARAM_INT);
         $assoc->bindValue(':predef', $isPredefAnagrafica, PDO::PARAM_INT);
@@ -948,6 +1002,67 @@ final class AnagraficheRepository
         $delAssoc->bindValue(':anagrafica', $anagraficaId, PDO::PARAM_INT);
         $delAssoc->bindValue(':contatto', $contattoId, PDO::PARAM_INT);
         $delAssoc->execute();
+    }
+
+    /**
+     * Archivia un contatto singolo spostandolo in tb_sedi_contatti_archive e
+     * rimuovendolo dalle tabelle attive.
+     */
+    public function archiveContatto(int $anagraficaId, int $contattoId): void
+    {
+        // Verifica che il contatto sia associato all'anagrafica richiesta
+        $check = $this->pdo->prepare(
+            'SELECT 1 FROM tb_contatti_anagrafiche WHERE id_anagrafica = :anagrafica AND id_contatto = :contatto LIMIT 1'
+        );
+        $check->bindValue(':anagrafica', $anagraficaId, PDO::PARAM_INT);
+        $check->bindValue(':contatto', $contattoId, PDO::PARAM_INT);
+        $check->execute();
+
+        if ($check->fetchColumn() === false) {
+            throw new RuntimeException('Contatto non associato all\'anagrafica indicata.', 404);
+        }
+
+        // Inserisci in archivio se non esiste già
+        $ins = $this->pdo->prepare(
+            "INSERT INTO tb_sedi_contatti_archive (
+                id_contatto, id_sede, nome, ruolo, telefono, cellulare, email,
+                note, is_referente, is_predefinito,
+                created_at, updated_at, archived_at, archived_by, archive_batch_id, archive_note
+            )
+            SELECT c.id_contatto, c.id_sede, c.nome, c.ruolo, c.telefono, c.cellulare, c.email,
+                   NULL AS note, 0 AS is_referente, c.is_predefinito,
+                   c.created_at, c.updated_at, NOW(), SUBSTRING_INDEX(CURRENT_USER(), '@', 1), UUID(),
+                   'Archiviato manualmente da anagrafica'
+            FROM tb_sedi_contatti c
+            WHERE c.id_contatto = :contatto
+              AND NOT EXISTS (
+                SELECT 1 FROM tb_sedi_contatti_archive ca WHERE ca.id_contatto = c.id_contatto
+              )"
+        );
+        $ins->bindValue(':contatto', $contattoId, PDO::PARAM_INT);
+        $ins->execute();
+
+        // Rimuovi dalle tabelle attive
+        $delContact = $this->pdo->prepare('DELETE FROM tb_sedi_contatti WHERE id_contatto = :contatto');
+        $delContact->bindValue(':contatto', $contattoId, PDO::PARAM_INT);
+        $delContact->execute();
+
+        $delAssoc = $this->pdo->prepare('DELETE FROM tb_contatti_anagrafiche WHERE id_anagrafica = :anagrafica AND id_contatto = :contatto');
+        $delAssoc->bindValue(':anagrafica', $anagraficaId, PDO::PARAM_INT);
+        $delAssoc->bindValue(':contatto', $contattoId, PDO::PARAM_INT);
+        $delAssoc->execute();
+    }
+
+    /**
+     * Elimina definitivamente un contatto dall'archivio.
+     */
+    public function hardDeleteArchivedContatto(int $archivedContattoId): void
+    {
+        $stmt = $this->pdo->prepare('DELETE FROM tb_sedi_contatti_archive WHERE id_contatto = :id');
+        $stmt->bindValue(':id', $archivedContattoId, PDO::PARAM_INT);
+        $stmt->execute();
+        // L'associazione in tb_contatti_anagrafiche non dovrebbe esistere per contatti archiviati;
+        // in ogni caso, nessuna azione aggiuntiva è necessaria qui.
     }
 
     /**
@@ -1166,11 +1281,11 @@ final class AnagraficheRepository
         // 7) Contatti sede -> _archive
         $this->pdo->prepare(
             "INSERT INTO tb_sedi_contatti_archive (
-                id_contatto, id_sede, nome, cognome, ruolo, telefono, cellulare, email,
+                id_contatto, id_sede, nome, ruolo, telefono, cellulare, email,
                 note, is_referente, is_predefinito,
                 created_at, updated_at, archived_at, archived_by, archive_batch_id, archive_note
             )
-            SELECT c.id_contatto, c.id_sede, c.nome, NULL AS cognome, c.ruolo, c.telefono, c.cellulare, c.email,
+            SELECT c.id_contatto, c.id_sede, c.nome, c.ruolo, c.telefono, c.cellulare, c.email,
                    NULL AS note, 0 AS is_referente, c.is_predefinito,
                    c.created_at, c.updated_at, NOW(), SUBSTRING_INDEX(CURRENT_USER(), '@', 1), UUID(),
                    'Archiviata da disattivazione'
@@ -1197,6 +1312,84 @@ final class AnagraficheRepository
             ->execute([':id' => $idAnagrafica]);
     }
 
+    /**
+     * Ripristina un contatto archiviato da tb_sedi_contatti_archive a tb_sedi_contatti
+     * e ricrea l'associazione in tb_contatti_anagrafiche.
+     */
+    public function restoreArchivedContatto(int $anagraficaId, int $archivedContattoId, array $data = []): void
+    {
+        $arch = $this->pdo->prepare('SELECT * FROM tb_sedi_contatti_archive WHERE id_contatto = :id LIMIT 1');
+        $arch->bindValue(':id', $archivedContattoId, PDO::PARAM_INT);
+        $arch->execute();
+        $row = $arch->fetch(PDO::FETCH_ASSOC);
+        if (!$row) {
+            throw new RuntimeException('Contatto archiviato non trovato.', 404);
+        }
+
+        // Determine destination sede
+        $targetSedeId = null;
+        if (array_key_exists('id_sede', $data) && $data['id_sede'] !== null && $data['id_sede'] !== '') {
+            $targetSedeId = (int)$data['id_sede'];
+            $chk = $this->pdo->prepare('SELECT 1 FROM tb_sedi WHERE id_anagrafica = :anag AND id_sede = :sede LIMIT 1');
+            $chk->execute([':anag' => $anagraficaId, ':sede' => $targetSedeId]);
+            if ($chk->fetchColumn() === false) {
+                throw new RuntimeException('Sede di destinazione non valida per il ripristino.', 422);
+            }
+        } else {
+            $candidate = isset($row['id_sede']) ? (int)$row['id_sede'] : 0;
+            if ($candidate > 0) {
+                $chk = $this->pdo->prepare('SELECT 1 FROM tb_sedi WHERE id_anagrafica = :anag AND id_sede = :sede LIMIT 1');
+                $chk->execute([':anag' => $anagraficaId, ':sede' => $candidate]);
+                if ($chk->fetchColumn() !== false) {
+                    $targetSedeId = $candidate;
+                }
+            }
+            if ($targetSedeId === null) {
+                $pick = $this->pdo->prepare('SELECT id_sede FROM tb_sedi WHERE id_anagrafica = :anag ORDER BY is_predefinita DESC, is_legale DESC, id_sede ASC LIMIT 1');
+                $pick->execute([':anag' => $anagraficaId]);
+                $val = $pick->fetchColumn();
+                if ($val === false) {
+                    throw new RuntimeException('Nessuna sede attiva trovata per il ripristino del contatto.', 422);
+                }
+                $targetSedeId = (int)$val;
+            }
+        }
+
+        $setDefault = 0;
+        if (array_key_exists('is_predefinito', $data)) {
+            $setDefault = (int)$data['is_predefinito'] === 1 ? 1 : 0;
+        } elseif (isset($row['is_predefinito']) && (int)$row['is_predefinito'] === 1) {
+            $setDefault = 1;
+        }
+
+        if ($setDefault === 1) {
+            $unset = $this->pdo->prepare('UPDATE tb_sedi_contatti SET is_predefinito = 0 WHERE id_sede = :sede');
+            $unset->bindValue(':sede', $targetSedeId, PDO::PARAM_INT);
+            $unset->execute();
+        }
+
+        $ins = $this->pdo->prepare('INSERT INTO tb_sedi_contatti (id_sede, nome, ruolo, telefono, cellulare, email, is_predefinito) VALUES (:sede, :nome, :ruolo, :tel, :cell, :email, :pref)');
+        $ins->bindValue(':sede', $targetSedeId, PDO::PARAM_INT);
+        $ins->bindValue(':nome', (string)($row['nome'] ?? ''), PDO::PARAM_STR);
+        $ins->bindValue(':ruolo', isset($row['ruolo']) ? (string)$row['ruolo'] : null, $row['ruolo'] !== null && $row['ruolo'] !== '' ? PDO::PARAM_STR : PDO::PARAM_NULL);
+        $ins->bindValue(':tel', isset($row['telefono']) ? (string)$row['telefono'] : null, $row['telefono'] !== null && $row['telefono'] !== '' ? PDO::PARAM_STR : PDO::PARAM_NULL);
+        $ins->bindValue(':cell', isset($row['cellulare']) ? (string)$row['cellulare'] : null, $row['cellulare'] !== null && $row['cellulare'] !== '' ? PDO::PARAM_STR : PDO::PARAM_NULL);
+        $ins->bindValue(':email', isset($row['email']) ? (string)$row['email'] : null, $row['email'] !== null && $row['email'] !== '' ? PDO::PARAM_STR : PDO::PARAM_NULL);
+        $ins->bindValue(':pref', $setDefault, PDO::PARAM_INT);
+        $ins->execute();
+
+        $newId = (int)$this->pdo->lastInsertId();
+
+        $assocSql = 'INSERT INTO tb_contatti_anagrafiche (id_anagrafica, id_contatto, is_predefinita) VALUES (:anagrafica, :contatto, 0) ON DUPLICATE KEY UPDATE is_predefinita = VALUES(is_predefinita)';
+        $assoc = $this->pdo->prepare($assocSql);
+        $assoc->bindValue(':anagrafica', $anagraficaId, PDO::PARAM_INT);
+        $assoc->bindValue(':contatto', $newId, PDO::PARAM_INT);
+        $assoc->execute();
+
+        $del = $this->pdo->prepare('DELETE FROM tb_sedi_contatti_archive WHERE id_contatto = :id');
+        $del->bindValue(':id', $archivedContattoId, PDO::PARAM_INT);
+        $del->execute();
+    }
     /**
      * Riattiva una anagrafica dall'archivio riportandola nelle tabelle principali.
      * Ripristina: anagrafica base, fiscale, sedi, contatti sede.
