@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react'
+/* eslint-disable prettier/prettier */
+import React, { useEffect, useMemo, useState, useRef } from 'react'
 import {
   CAlert,
   CBadge,
@@ -12,6 +13,7 @@ import {
   CFormInput,
   CFormLabel,
   CFormSelect,
+  CFormTextarea,
   CInputGroup,
   CInputGroupText,
   CRow,
@@ -60,6 +62,7 @@ const PacchettiDetail = () => {
   const [codice, setCodice] = useState('')
   const [nome, setNome] = useState('')
   const [descrizione, setDescrizione] = useState('')
+  const descrRef = useRef(null)
   const [attivo, setAttivo] = useState(true)
 
   const [righe, setRighe] = useState([])
@@ -126,6 +129,14 @@ const PacchettiDetail = () => {
     load()
     return () => controller.abort()
   }, [token, id, logout])
+
+  // Auto-size description textarea for readability
+  useEffect(() => {
+    const el = descrRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${el.scrollHeight}px`
+  }, [descrizione])
 
   const handleAddRiga = () => {
     setRighe((rows) => rows.concat({ descrizione: '', quantita: 1, prezzo: 0, iva: 22, sconto: 0 }))
@@ -297,21 +308,27 @@ const PacchettiDetail = () => {
         ) : (
           <CForm onSubmit={handleSave}>
             <section className="mb-4">
-              <CRow className="g-3">
+              <CRow className="g-2">
                 <CCol md={3}>
                   <CFormLabel>Codice</CFormLabel>
-                  <CFormInput value={codice} onChange={(e) => setCodice(e.target.value)} />
+                  <CFormInput size="sm" value={codice} onChange={(e) => setCodice(e.target.value)} />
                 </CCol>
                 <CCol md={5}>
                   <CFormLabel>Nome</CFormLabel>
-                  <CFormInput required value={nome} onChange={(e) => setNome(e.target.value)} />
+                  <CFormInput size="sm" required value={nome} onChange={(e) => setNome(e.target.value)} />
                 </CCol>
                 <CCol md={4} className="d-flex align-items-end">
                   <CFormCheck id="attivo" label="Attivo" checked={attivo} onChange={(e) => setAttivo(e.target.checked)} />
                 </CCol>
                 <CCol md={12}>
                   <CFormLabel>Descrizione</CFormLabel>
-                  <CFormInput value={descrizione} onChange={(e) => setDescrizione(e.target.value)} />
+                  <CFormTextarea
+                    rows={12}
+                    ref={descrRef}
+                    style={{ overflow: 'hidden', resize: 'vertical' }}
+                    value={descrizione}
+                    onChange={(e) => setDescrizione(e.target.value)}
+                  />
                 </CCol>
               </CRow>
             </section>
@@ -324,7 +341,7 @@ const PacchettiDetail = () => {
               <CModalBody>
                 <CStepper
                   activeStepNumber={prodStep}
-                  steps={[ 'Categoria', 'Prodotto', 'Variazioni', 'Riepilogo' ]}
+                  steps={['Categoria', 'Prodotto', 'Variazioni', 'Riepilogo']}
                   linear={false}
                   validation={false}
                   onStepChange={(n) => {
@@ -342,7 +359,7 @@ const PacchettiDetail = () => {
                   <CRow className="g-3">
                     <CCol md={4}>
                       <CFormLabel>Categoria</CFormLabel>
-                      <CFormSelect value={selCat} onChange={(e) => setSelCat(e.target.value)}>
+                      <CFormSelect size="sm" value={selCat} onChange={(e) => setSelCat(e.target.value)}>
                         <option value="">Tutte</option>
                         {catOptions.map((c) => (
                           <option key={c.id_categoria} value={c.id_categoria}>{c.nome}</option>
@@ -351,7 +368,7 @@ const PacchettiDetail = () => {
                     </CCol>
                     <CCol md={8}>
                       <CFormLabel>Ricerca prodotto</CFormLabel>
-                      <CFormInput placeholder="Cerca per nome o codice" value={prodSearch} onChange={(e) => setProdSearch(e.target.value)} />
+                      <CFormInput size="sm" placeholder="Cerca per nome o codice" value={prodSearch} onChange={(e) => setProdSearch(e.target.value)} />
                     </CCol>
                   </CRow>
                 )}
@@ -360,6 +377,7 @@ const PacchettiDetail = () => {
                     <CCol md={12}>
                       <CFormLabel>Seleziona prodotto</CFormLabel>
                       <CFormSelect
+                        size="sm"
                         value={selProd}
                         onChange={(e) => {
                           const pid = e.target.value
@@ -383,6 +401,7 @@ const PacchettiDetail = () => {
                     <CCol md={12}>
                       <CFormLabel>Combinazioni</CFormLabel>
                       <CFormSelect
+                        size="sm"
                         value={selectedComboKey}
                         onChange={(e) => {
                           const key = e.target.value
@@ -444,22 +463,22 @@ const PacchettiDetail = () => {
                     </CCol>
                     <CCol md={4}>
                       <CFormLabel>Quantità</CFormLabel>
-                      <CFormInput type="number" min="1" step="1" value={modalQty} onChange={(e) => setModalQty(Number(e.target.value) || 1)} />
+                      <CFormInput size="sm" type="number" min="1" step="1" value={modalQty} onChange={(e) => setModalQty(Number(e.target.value) || 1)} />
                     </CCol>
                     <CCol md={4}>
                       <CFormLabel>Prezzo</CFormLabel>
-                      <CFormInput type="number" min="0" step="0.01" value={modalPrice} onChange={(e) => setModalPrice(Number(e.target.value) || 0)} />
+                      <CFormInput size="sm" type="number" min="0" step="0.01" value={modalPrice} onChange={(e) => setModalPrice(Number(e.target.value) || 0)} />
                     </CCol>
                     <CCol md={4}>
                       <CFormLabel>IVA %</CFormLabel>
-                      <CFormInput type="number" min="0" max="100" step="1" value={selIva} onChange={(e) => setSelIva(e.target.value)} />
+                      <CFormInput size="sm" type="number" min="0" max="100" step="1" value={selIva} onChange={(e) => setSelIva(e.target.value)} />
                     </CCol>
                     <CCol md={6}>
                       <CFormLabel>Natura IVA</CFormLabel>
-                      <CFormSelect value={selNatura} onChange={(e) => setSelNatura(e.target.value)} disabled={Number(selIva) !== 0}>
+                      <CFormSelect className="w-auto d-inline-block" size="sm" value={selNatura} onChange={(e) => setSelNatura(e.target.value)} disabled={Number(selIva) !== 0}>
                         <option value="">--</option>
                         {naturaOptions.map((n) => (
-                          <option key={n.id_natura} value={n.id_natura}>{n.code} - {n.label}</option>
+                          <option key={n.id_natura} value={n.id_natura}>{n.code}</option>
                         ))}
                       </CFormSelect>
                     </CCol>
@@ -513,6 +532,12 @@ const PacchettiDetail = () => {
                           descr = `${prod.nome} - ${label}`
                         }
                         const riga = { descrizione: descr, quantita: modalQty, prezzo: modalPrice, iva: ivaPerc, sconto: 0, id_prodotto: prod.id_prodotto }
+                        // Aggiungi categoria del prodotto per futuri raggruppamenti o usi
+                        if (prod.id_categoria != null) {
+                          riga.id_categoria = Number(prod.id_categoria)
+                          const c = (catOptions || []).find((x) => Number(x.id_categoria) === Number(prod.id_categoria))
+                          if (c && c.nome) riga.categoria_nome = String(c.nome)
+                        }
                         if (ivaPerc === 0) {
                           const natId = selNatura ? Number(selNatura) : 0
                           if (natId > 0) riga.id_sdi_natura_iva = natId
@@ -536,10 +561,10 @@ const PacchettiDetail = () => {
                   <CButton color="primary" variant="outline" size="sm" type="button" onClick={() => { resetProductModal(); setStepperOpen(true) }}>Selettore prodotti</CButton>
                 </div>
               </div>
-              <CTable hover responsive>
+              <CTable hover responsive small>
                 <CTableHead color="light">
                   <CTableRow>
-                    <CTableHeaderCell>Descrizione</CTableHeaderCell>
+                    <CTableHeaderCell >Descrizione</CTableHeaderCell>
                     <CTableHeaderCell className="text-end">Q.tà</CTableHeaderCell>
                     <CTableHeaderCell className="text-end">Prezzo</CTableHeaderCell>
                     <CTableHeaderCell className="text-end">Sconto %</CTableHeaderCell>
@@ -563,27 +588,29 @@ const PacchettiDetail = () => {
                     return (
                       <CTableRow key={idx}>
                         <CTableDataCell>
-                          <CFormInput value={riga.descrizione} onChange={(e) => updateRiga(idx, { descrizione: e.target.value })} />
+                          <CFormInput size="sm" style={{ width: "550px" }} value={riga.descrizione} onChange={(e) => updateRiga(idx, { descrizione: e.target.value })} />
                         </CTableDataCell>
                         <CTableDataCell className="text-end">
-                          <CFormInput type="number" min="1" step="1" value={riga.quantita} onChange={(e) => updateRiga(idx, { quantita: e.target.value })} />
+                          <CFormInput size="sm" type="number" min="1" step="1" value={riga.quantita} onChange={(e) => updateRiga(idx, { quantita: e.target.value })} />
                         </CTableDataCell>
                         <CTableDataCell className="text-end">
-                          <CFormInput type="number" min="0" step="0.01" value={riga.prezzo} onChange={(e) => updateRiga(idx, { prezzo: e.target.value })} />
+                          <CFormInput size="sm" type="number" min="0" step="0.01" value={riga.prezzo} onChange={(e) => updateRiga(idx, { prezzo: e.target.value })} />
                         </CTableDataCell>
                         <CTableDataCell className="text-end">
-                          <CFormInput type="number" min="0" max="100" step="0.1" value={riga.sconto} onChange={(e) => updateRiga(idx, { sconto: e.target.value })} />
+                          <CFormInput size="sm" type="number" min="0" max="100" step="0.1" value={riga.sconto} onChange={(e) => updateRiga(idx, { sconto: e.target.value })} />
                         </CTableDataCell>
                         <CTableDataCell className="text-end">
-                          <CFormInput type="number" min="0" max="100" step="1" value={riga.iva} onChange={(e) => {
+                          <CFormInput size="sm" type="number" min="0" max="100" step="1" value={riga.iva} onChange={(e) => {
                             const newIva = e.target.value
                             const patch = { iva: newIva }
                             if (Number(newIva) !== 0) { patch.id_sdi_natura_iva = null }
                             updateRiga(idx, patch)
                           }} />
                         </CTableDataCell>
-                        <CTableDataCell className="text-end">
+                        <CTableDataCell className="text-center">
                           <CFormSelect
+                            className="d-inline-block"
+                            size="sm"
                             value={riga.id_sdi_natura_iva ?? ''}
                             onChange={(e) => updateRiga(idx, { id_sdi_natura_iva: e.target.value ? Number(e.target.value) : null })}
                             disabled={Number(riga.iva) !== 0}
@@ -591,7 +618,7 @@ const PacchettiDetail = () => {
                             <option value="">--</option>
                             {naturaOptions.map((n) => (
                               <option key={n.id_natura} value={n.id_natura}>
-                                {n.code} - {n.label}
+                                {n.code}
                               </option>
                             ))}
                           </CFormSelect>

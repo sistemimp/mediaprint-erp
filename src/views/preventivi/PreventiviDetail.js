@@ -35,7 +35,7 @@ import { cilCheckCircle, cilSave } from '@coreui/icons'
 import { useAuth } from '../../context/AuthContext'
 import { fetchAnagrafiche, fetchAnagraficaDetail } from '../../services/anagrafiche'
 import { createPreventivo, fetchPreventivoDetail } from '../../services/preventivi'
-import { fetchCategorieProdotti, fetchProdotti, fetchNatureIva, fetchProdottoVariazioni, fetchProdottoPrezziCombinati } from '../../services/prodotti'
+import { fetchCategorieProdotti, fetchProdotti, fetchNatureIva, fetchProdottoVariazioni, fetchProdottoPrezziCombinati, fetchProdottoDetail } from '../../services/prodotti'
 import { fetchPacchetti, fetchPacchettoDetail } from '../../services/pacchetti'
 
 const currencyFormatter = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' })
@@ -74,6 +74,8 @@ const PreventiviDetail = () => {
 
   // Righe
   const [righe, setRighe] = useState([])
+  // Mappa id_prodotto -> nome categoria per raggruppamento righe
+  const [prodCategoryMap, setProdCategoryMap] = useState({})
 
   // Stepper prodotti
   const [stepperOpen, setStepperOpen] = useState(false)
@@ -305,6 +307,50 @@ const PreventiviDetail = () => {
     load()
     return () => controller.abort()
   }, [token, selCat, prodSearch])
+
+  // Risolve la categoria dei prodotti presenti nelle righe (per raggruppamento)
+  useEffect(() => {
+    if (!token) return
+    const controller = new AbortController()
+    const run = async () => {
+      try {
+        const ids = Array.from(new Set((Array.isArray(righe) ? righe : [])
+          .map((r) => Number(r?.id_prodotto) || 0)
+          .filter((n) => n > 0)))
+        const missing = ids.filter((idp) => prodCategoryMap[idp] == null)
+        if (missing.length === 0) return
+        // Carica categorie se non presenti
+        let cats = Array.isArray(catOptions) && catOptions.length > 0 ? catOptions : []
+        if (cats.length === 0) {
+          try {
+            const { items } = await fetchCategorieProdotti({ token, signal: controller.signal })
+            cats = Array.isArray(items) ? items : []
+            if (cats.length > 0) setCatOptions(cats)
+          } catch (_e) {
+            cats = []
+          }
+        }
+        const catNameById = {}
+        cats.forEach((c) => { if (c?.id_categoria != null) catNameById[Number(c.id_categoria)] = String(c.nome || '') })
+        const updates = {}
+        for (const idp of missing) {
+          try {
+            const resp = await fetchProdottoDetail({ token, id_prodotto: idp, signal: controller.signal })
+            const idcat = Number(resp?.data?.id_categoria) || 0
+            const name = idcat && catNameById[idcat] ? catNameById[idcat] : 'Altro'
+            updates[idp] = name
+          } catch (_e) {
+            updates[idp] = 'Altro'
+          }
+        }
+        if (Object.keys(updates).length > 0) {
+          setProdCategoryMap((prev) => ({ ...prev, ...updates }))
+        }
+      } catch (_e) {}
+    }
+    run()
+    return () => controller.abort()
+  }, [token, righe, catOptions, prodCategoryMap])
 
   // Carica variazioni del prodotto selezionato + prezzi combinati
   useEffect(() => {
@@ -823,6 +869,12 @@ const PreventiviDetail = () => {
                           : prod.nome
                         const prezzoFinale = comboPrice != null ? comboPrice : (prezzoBase + delta)
                         const riga = { descrizione: descr, quantita: q, prezzo: prezzoFinale, iva: ivaPerc, sconto: 0, id_prodotto: prod.id_prodotto }
+                        // Aggiungi categoria del prodotto alla riga per raggruppamento immediato
+                        if (prod.id_categoria != null) {
+                          riga.id_categoria = Number(prod.id_categoria)
+                          const c = (catOptions || []).find((x) => Number(x.id_categoria) === Number(prod.id_categoria))
+                          if (c && c.nome) riga.categoria_nome = String(c.nome)
+                        }
                         if (ivaPerc === 0) {
                           const natId = Number(prod.id_sdi_natura_iva) || 0
                           if (natId > 0) {
@@ -1060,6 +1112,12 @@ const PreventiviDetail = () => {
                           descr = `${prod.nome} - ${label}`
                         }
                         const riga = { descrizione: descr, quantita: modalQty, prezzo: modalPrice, iva: ivaPerc, sconto: 0, id_prodotto: prod.id_prodotto }
+                        // Aggiungi categoria del prodotto alla riga per raggruppamento immediato
+                        if (prod.id_categoria != null) {
+                          riga.id_categoria = Number(prod.id_categoria)
+                          const c = (catOptions || []).find((x) => Number(x.id_categoria) === Number(prod.id_categoria))
+                          if (c && c.nome) riga.categoria_nome = String(c.nome)
+                        }
                         if (ivaPerc === 0) {
                           // Se IVA 0, natura IVA modificabile in tabella dopo inserimento
                         }
@@ -1103,98 +1161,134 @@ const PreventiviDetail = () => {
                   </CTableRow>
                 </CTableHead>
                 <CTableBody>
-                  {righe.map((riga, idx) => {
-                    const q = Number(riga.quantita) || 0
-                    const p = Number(riga.prezzo) || 0
-                    const s = Number(riga.sconto) || 0
-                    const iva = Number(riga.iva) || 0
-                    const impon = Math.max(0, q * p * (1 - s / 100))
-                    const ivaVal = impon * (iva / 100)
-                    const tot = impon + ivaVal
-                    return (
-                      <CTableRow key={idx} className="align-middle">
-                        <CTableDataCell>
-                          <CFormInput
-                            placeholder="Descrizione articolo/servizio"
-                            value={riga.descrizione}
-                            onChange={(e) => updateRiga(idx, { descrizione: e.target.value })}
-                      disabled={uiDisabled}
-                          />
-                        </CTableDataCell>
-                        <CTableDataCell className="text-end">
-                          <CFormInput
-                            type="number"
-                            min="0"
-                            step="1"
-                            value={riga.quantita}
-                            onChange={(e) => updateRiga(idx, { quantita: e.target.value })}
-                            disabled={uiDisabled}
-                          />
-                        </CTableDataCell>
-                        <CTableDataCell className="text-end">
-                          <CFormInput
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            value={riga.prezzo}
-                            onChange={(e) => updateRiga(idx, { prezzo: e.target.value })}
-                            disabled={uiDisabled}
-                          />
-                        </CTableDataCell>
-                        <CTableDataCell className="text-end">
-                          <CFormInput
-                            type="number"
-                            min="0"
-                            max="100"
-                            step="0.1"
-                            value={riga.sconto}
-                            onChange={(e) => updateRiga(idx, { sconto: e.target.value })}
-                            disabled={uiDisabled}
-                          />
-                        </CTableDataCell>
-                        <CTableDataCell className="text-end">
-                        <CFormInput
-                          type="number"
-                          min="0"
-                          max="100"
-                          step="1"
-                          value={riga.iva}
-                          onChange={(e) => {
-                            const newIva = e.target.value
-                            const patch = { iva: newIva }
-                            if (Number(newIva) !== 0) {
-                              patch.id_sdi_natura_iva = null
-                            }
-                            updateRiga(idx, patch)
-                          }}
-                          disabled={uiDisabled}
-                        />
-                      </CTableDataCell>
-                      <CTableDataCell className="text-end">
-                        <CFormSelect
-                          value={riga.id_sdi_natura_iva ?? ''}
-                          onChange={(e) => updateRiga(idx, { id_sdi_natura_iva: e.target.value ? Number(e.target.value) : null })}
-                          disabled={uiDisabled || Number(riga.iva) !== 0}
-                        >
-                          <option value="">--</option>
-                          {naturaOptions.map((n) => (
-                            <option key={n.id_natura} value={n.id_natura}>
-                              {n.code} - {n.label}
-                            </option>
-                          ))}
-                        </CFormSelect>
-                      </CTableDataCell>
-                        <CTableDataCell className="text-end">{formatCurrency(impon)}</CTableDataCell>
-                        <CTableDataCell className="text-end">{formatCurrency(ivaVal)}</CTableDataCell>
-                        <CTableDataCell className="text-end">{formatCurrency(tot)}</CTableDataCell>
-                        <CTableDataCell className="text-center">
-                          <CButton color="link" size="sm" className="p-0" onClick={() => handleRemoveRiga(idx)} disabled={uiDisabled}>
-                            ×
-                          </CButton>
-                        </CTableDataCell>
-                      </CTableRow>
-                    )
-                  })}
+                  {(() => {
+                    // Raggruppa righe per categoria prodotto
+                    const rows = Array.isArray(righe) ? righe : []
+                    const groupMap = new Map()
+                    const getCat = (r) => {
+                      // Priorità: nome categoria già presente in riga
+                      if (r && r.categoria_nome) return String(r.categoria_nome)
+                      // Poi: id_categoria presente in riga -> lookup
+                      if (r && r.id_categoria) {
+                        const c = (catOptions || []).find((x) => String(x.id_categoria) === String(r.id_categoria))
+                        if (c && c.nome) return String(c.nome)
+                      }
+                      // Poi: mappa risolta da id_prodotto
+                      const idp = Number(r?.id_prodotto) || 0
+                      if (idp > 0 && prodCategoryMap[idp]) return prodCategoryMap[idp]
+                      // Fallback
+                      return 'Varie'
+                    }
+                    rows.forEach((r, i) => {
+                      const cat = getCat(r)
+                      if (!groupMap.has(cat)) groupMap.set(cat, [])
+                      groupMap.get(cat).push([r, i])
+                    })
+                    const groups = Array.from(groupMap.entries()).sort((a, b) => String(a[0]).localeCompare(String(b[0])))
+                    const out = []
+                    for (const [cat, arr] of groups) {
+                      out.push(
+                        <CTableRow key={`grp-${cat}`}>
+                          <CTableDataCell colSpan={10} className="bg-body-secondary fw-semibold">
+                            Categoria: {cat}
+                          </CTableDataCell>
+                        </CTableRow>,
+                      )
+                      for (const [riga, idx] of arr) {
+                        const q = Number(riga.quantita) || 0
+                        const p = Number(riga.prezzo) || 0
+                        const s = Number(riga.sconto) || 0
+                        const iva = Number(riga.iva) || 0
+                        const impon = Math.max(0, q * p * (1 - s / 100))
+                        const ivaVal = impon * (iva / 100)
+                        const tot = impon + ivaVal
+                        out.push(
+                          <CTableRow key={idx} className="align-middle">
+                            <CTableDataCell>
+                              <CFormInput
+                                placeholder="Descrizione articolo/servizio"
+                                value={riga.descrizione}
+                                onChange={(e) => updateRiga(idx, { descrizione: e.target.value })}
+                                disabled={uiDisabled}
+                              />
+                            </CTableDataCell>
+                            <CTableDataCell className="text-end">
+                              <CFormInput
+                                type="number"
+                                min="0"
+                                step="1"
+                                value={riga.quantita}
+                                onChange={(e) => updateRiga(idx, { quantita: e.target.value })}
+                                disabled={uiDisabled}
+                              />
+                            </CTableDataCell>
+                            <CTableDataCell className="text-end">
+                              <CFormInput
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={riga.prezzo}
+                                onChange={(e) => updateRiga(idx, { prezzo: e.target.value })}
+                                disabled={uiDisabled}
+                              />
+                            </CTableDataCell>
+                            <CTableDataCell className="text-end">
+                              <CFormInput
+                                type="number"
+                                min="0"
+                                max="100"
+                                step="0.1"
+                                value={riga.sconto}
+                                onChange={(e) => updateRiga(idx, { sconto: e.target.value })}
+                                disabled={uiDisabled}
+                              />
+                            </CTableDataCell>
+                            <CTableDataCell className="text-end">
+                              <CFormInput
+                                type="number"
+                                min="0"
+                                max="100"
+                                step="1"
+                                value={riga.iva}
+                                onChange={(e) => {
+                                  const newIva = e.target.value
+                                  const patch = { iva: newIva }
+                                  if (Number(newIva) !== 0) {
+                                    patch.id_sdi_natura_iva = null
+                                  }
+                                  updateRiga(idx, patch)
+                                }}
+                                disabled={uiDisabled}
+                              />
+                            </CTableDataCell>
+                            <CTableDataCell className="text-end">
+                              <CFormSelect
+                                value={riga.id_sdi_natura_iva ?? ''}
+                                onChange={(e) => updateRiga(idx, { id_sdi_natura_iva: e.target.value ? Number(e.target.value) : null })}
+                                disabled={uiDisabled || Number(riga.iva) !== 0}
+                              >
+                                <option value="">--</option>
+                                {naturaOptions.map((n) => (
+                                  <option key={n.id_natura} value={n.id_natura}>
+                                    {n.code} - {n.label}
+                                  </option>
+                                ))}
+                              </CFormSelect>
+                            </CTableDataCell>
+                            <CTableDataCell className="text-end">{formatCurrency(impon)}</CTableDataCell>
+                            <CTableDataCell className="text-end">{formatCurrency(ivaVal)}</CTableDataCell>
+                            <CTableDataCell className="text-end">{formatCurrency(tot)}</CTableDataCell>
+                            <CTableDataCell className="text-center">
+                              <CButton color="link" size="sm" className="p-0" onClick={() => handleRemoveRiga(idx)} disabled={uiDisabled}>
+                                -
+                              </CButton>
+                            </CTableDataCell>
+                          </CTableRow>,
+                        )
+                      }
+                    }
+                    return out
+                  })()}
                 </CTableBody>
               </CTable>
             </section>
