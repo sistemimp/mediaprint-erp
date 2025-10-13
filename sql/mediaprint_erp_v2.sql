@@ -2584,6 +2584,81 @@ LOCK TABLES `tb_movimenti` WRITE;
 UNLOCK TABLES;
 
 --
+-- Table structure for table `tb_pacchetti`
+--
+
+DROP TABLE IF EXISTS `tb_pacchetti`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `tb_pacchetti` (
+  `id_pacchetto` int(11) NOT NULL AUTO_INCREMENT,
+  `codice` varchar(64) DEFAULT NULL,
+  `nome` varchar(255) NOT NULL,
+  `descrizione` text DEFAULT NULL,
+  `attivo` tinyint(1) NOT NULL DEFAULT 1,
+  `created_at` datetime DEFAULT NULL,
+  `updated_at` datetime DEFAULT NULL,
+  PRIMARY KEY (`id_pacchetto`),
+  UNIQUE KEY `uq_tb_pacchetti_codice` (`codice`)
+) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `tb_pacchetti`
+--
+
+LOCK TABLES `tb_pacchetti` WRITE;
+/*!40000 ALTER TABLE `tb_pacchetti` DISABLE KEYS */;
+INSERT INTO `tb_pacchetti` VALUES
+(2,'PM<20','Posta Massiva fino a 20gr',NULL,1,'2025-10-13 14:41:12','2025-10-13 14:44:17');
+/*!40000 ALTER TABLE `tb_pacchetti` ENABLE KEYS */;
+UNLOCK TABLES;
+
+--
+-- Table structure for table `tb_pacchetti_righe`
+--
+
+DROP TABLE IF EXISTS `tb_pacchetti_righe`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `tb_pacchetti_righe` (
+  `id_riga` int(11) NOT NULL AUTO_INCREMENT,
+  `id_pacchetto` int(11) NOT NULL,
+  `id_prodotto` int(11) DEFAULT NULL,
+  `id_categoria` int(11) DEFAULT NULL,
+  `categoria_nome` varchar(191) DEFAULT NULL,
+  `descrizione` varchar(255) NOT NULL,
+  `quantita` decimal(10,2) NOT NULL DEFAULT 1.00,
+  `prezzo_unitario` decimal(12,4) NOT NULL DEFAULT 0.0000,
+  `sconto` decimal(5,2) DEFAULT NULL,
+  `iva` decimal(5,2) DEFAULT NULL,
+  `id_sdi_natura_iva` int(11) DEFAULT NULL,
+  `posizione` int(11) DEFAULT NULL,
+  PRIMARY KEY (`id_riga`),
+  KEY `idx_pacchetti_righe_pacchetto` (`id_pacchetto`),
+  KEY `idx_pacchetti_righe_posizione` (`posizione`),
+  KEY `idx_pacchetti_righe_id_categoria` (`id_categoria`),
+  CONSTRAINT `fk_pacchetti_righe_pacchetto` FOREIGN KEY (`id_pacchetto`) REFERENCES `tb_pacchetti` (`id_pacchetto`) ON DELETE CASCADE
+) ENGINE=InnoDB AUTO_INCREMENT=59 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `tb_pacchetti_righe`
+--
+
+LOCK TABLES `tb_pacchetti_righe` WRITE;
+/*!40000 ALTER TABLE `tb_pacchetti_righe` DISABLE KEYS */;
+INSERT INTO `tb_pacchetti_righe` VALUES
+(53,2,11,2,'Tariffe postali','Posta Massiva - Peso: Fino a 20 gr ; Tipo Spedizione: Omologato ; Destinazione: AM',1.00,0.3400,0.00,0.00,1,1),
+(54,2,11,2,'Tariffe postali','Posta Massiva - Peso: Fino a 20 gr ; Tipo Spedizione: Omologato ; Destinazione: CP',1.00,0.5200,0.00,0.00,1,2),
+(55,2,11,2,'Tariffe postali','Posta Massiva - Peso: Fino a 20 gr ; Tipo Spedizione: Omologato ; Destinazione: EU',1.00,0.6500,0.00,0.00,1,3),
+(56,2,20,2,'Tariffe postali','Posta 4 (internazionale) - Peso: Fino a 20 gr ; Destinazione: EX Zona 1',1.00,1.3500,0.00,0.00,1,4),
+(57,2,20,2,'Tariffe postali','Posta 4 (internazionale) - Peso: Fino a 20 gr ; Destinazione: EX Zona 2',1.00,2.5500,0.00,0.00,1,5),
+(58,2,20,2,'Tariffe postali','Posta 4 (internazionale) - Peso: Fino a 20 gr ; Destinazione: EX Zona 3',1.00,3.3500,0.00,0.00,1,6);
+/*!40000 ALTER TABLE `tb_pacchetti_righe` ENABLE KEYS */;
+UNLOCK TABLES;
+
+--
 -- Table structure for table `tb_preventivi`
 --
 
@@ -2624,8 +2699,8 @@ CREATE TABLE `tb_preventivi` (
 LOCK TABLES `tb_preventivi` WRITE;
 /*!40000 ALTER TABLE `tb_preventivi` DISABLE KEYS */;
 INSERT INTO `tb_preventivi` VALUES
-(1,NULL,1,2025,1,'2025-10-08',1,0.00,0.00,0.00,0.00,'prova','2025-10-08 16:27:43','2025-10-09 07:26:59'),
-(3,NULL,1,2025,2,'2025-10-09',1,275.00,50.00,132.00,335.50,'','2025-10-09 07:08:11','2025-10-09 10:10:31');
+(1,NULL,1,2025,1,'2025-10-08',1,8.76,0.00,0.00,8.76,'prova','2025-10-08 16:27:43','2025-10-13 15:18:35'),
+(3,NULL,1,2025,2,'2025-10-09',1,8.76,0.00,0.00,8.76,'','2025-10-09 07:08:11','2025-10-13 15:30:52');
 /*!40000 ALTER TABLE `tb_preventivi` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -2677,7 +2752,6 @@ CREATE TABLE `tb_preventivi_righe` (
   `id_riga` int(10) unsigned NOT NULL AUTO_INCREMENT,
   `id_preventivo` int(10) unsigned NOT NULL,
   `id_prodotto` int(10) unsigned DEFAULT NULL,
-  `id_categoria` int(10) unsigned DEFAULT NULL,
   `descrizione` varchar(255) NOT NULL,
   `quantita` decimal(12,3) NOT NULL DEFAULT 1.000,
   `prezzo_unitario` decimal(12,4) NOT NULL DEFAULT 0.0000,
@@ -2690,12 +2764,11 @@ CREATE TABLE `tb_preventivi_righe` (
   PRIMARY KEY (`id_riga`),
   KEY `idx_righeprev_prev` (`id_preventivo`),
   KEY `idx_righeprev_prod` (`id_prodotto`),
-  KEY `idx_righeprev_categoria` (`id_categoria`),
   KEY `fk_prev_righe_sdi_natura` (`id_sdi_natura_iva`),
   CONSTRAINT `fk_prev_righe_sdi_natura` FOREIGN KEY (`id_sdi_natura_iva`) REFERENCES `cfg_sdi_natura_iva` (`id_natura`) ON DELETE SET NULL,
   CONSTRAINT `fk_righeprev_prev` FOREIGN KEY (`id_preventivo`) REFERENCES `tb_preventivi` (`id_preventivo`) ON DELETE CASCADE,
   CONSTRAINT `fk_righeprev_prod` FOREIGN KEY (`id_prodotto`) REFERENCES `tb_prodotti` (`id_prodotto`) ON DELETE SET NULL
-) ENGINE=InnoDB AUTO_INCREMENT=20 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=38 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -2705,12 +2778,18 @@ CREATE TABLE `tb_preventivi_righe` (
 LOCK TABLES `tb_preventivi_righe` WRITE;
 /*!40000 ALTER TABLE `tb_preventivi_righe` DISABLE KEYS */;
 INSERT INTO `tb_preventivi_righe` VALUES
-(14,3,6,NULL,'Centro Elaborazione Dati',1.000,50.0000,50.00,25.00,22.00,NULL,30.50,1),
-(15,3,7,NULL,'PDF Digitale',1.000,250.0000,0.00,250.00,22.00,NULL,305.00,2),
-(16,3,11,NULL,'Posta Massiva - AM [D-01], Fino a 20 gr [P-01]',1.000,0.0000,0.00,0.00,22.00,NULL,0.00,3),
-(17,3,11,NULL,'Posta Massiva - CP [D-02], Fino a 20 gr [P-01]',1.000,0.0000,0.00,0.00,22.00,NULL,0.00,4),
-(18,3,11,NULL,'Posta Massiva - EU [D-03], Fino a 20 gr [P-01]',1.000,0.0000,0.00,0.00,22.00,NULL,0.00,5),
-(19,3,19,NULL,'Posta Massiva - B&N [CS-01], Fronte/Retro [TS-02]',1.000,0.0000,0.00,0.00,22.00,NULL,0.00,6);
+(26,1,11,'Posta Massiva - Peso: Fino a 20 gr ; Tipo Spedizione: Omologato ; Destinazione: AM',1.000,0.3400,0.00,0.34,0.00,1,0.34,1),
+(27,1,11,'Posta Massiva - Peso: Fino a 20 gr ; Tipo Spedizione: Omologato ; Destinazione: CP',1.000,0.5200,0.00,0.52,0.00,1,0.52,2),
+(28,1,11,'Posta Massiva - Peso: Fino a 20 gr ; Tipo Spedizione: Omologato ; Destinazione: EU',1.000,0.6500,0.00,0.65,0.00,1,0.65,3),
+(29,1,20,'Posta 4 (internazionale) - Peso: Fino a 20 gr ; Destinazione: EX Zona 1',1.000,1.3500,0.00,1.35,0.00,1,1.35,4),
+(30,1,20,'Posta 4 (internazionale) - Peso: Fino a 20 gr ; Destinazione: EX Zona 2',1.000,2.5500,0.00,2.55,0.00,1,2.55,5),
+(31,1,20,'Posta 4 (internazionale) - Peso: Fino a 20 gr ; Destinazione: EX Zona 3',1.000,3.3500,0.00,3.35,0.00,1,3.35,6),
+(32,3,11,'Posta Massiva - Peso: Fino a 20 gr ; Tipo Spedizione: Omologato ; Destinazione: AM',1.000,0.3400,0.00,0.34,0.00,1,0.34,1),
+(33,3,11,'Posta Massiva - Peso: Fino a 20 gr ; Tipo Spedizione: Omologato ; Destinazione: CP',1.000,0.5200,0.00,0.52,0.00,1,0.52,2),
+(34,3,11,'Posta Massiva - Peso: Fino a 20 gr ; Tipo Spedizione: Omologato ; Destinazione: EU',1.000,0.6500,0.00,0.65,0.00,1,0.65,3),
+(35,3,20,'Posta 4 (internazionale) - Peso: Fino a 20 gr ; Destinazione: EX Zona 1',1.000,1.3500,0.00,1.35,0.00,1,1.35,4),
+(36,3,20,'Posta 4 (internazionale) - Peso: Fino a 20 gr ; Destinazione: EX Zona 2',1.000,2.5500,0.00,2.55,0.00,1,2.55,5),
+(37,3,20,'Posta 4 (internazionale) - Peso: Fino a 20 gr ; Destinazione: EX Zona 3',1.000,3.3500,0.00,3.35,0.00,1,3.35,6);
 /*!40000 ALTER TABLE `tb_preventivi_righe` ENABLE KEYS */;
 UNLOCK TABLES;
 /*!50003 SET @saved_cs_client      = @@character_set_client */ ;
@@ -2827,6 +2906,169 @@ DELIMITER ;
 /*!50003 SET collation_connection  = @saved_col_connection */ ;
 
 --
+-- Table structure for table `tb_preventivi_righe_archive`
+--
+
+DROP TABLE IF EXISTS `tb_preventivi_righe_archive`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `tb_preventivi_righe_archive` (
+  `id_riga` int(11) NOT NULL,
+  `id_preventivo` int(11) NOT NULL,
+  `id_prodotto` int(11) DEFAULT NULL,
+  `descrizione` varchar(1024) NOT NULL,
+  `quantita` decimal(18,6) NOT NULL DEFAULT 1.000000,
+  `prezzo_unitario` decimal(18,6) NOT NULL DEFAULT 0.000000,
+  `sconto` decimal(18,6) DEFAULT NULL,
+  `importo_scontato` decimal(18,6) DEFAULT NULL,
+  `iva` decimal(5,2) DEFAULT NULL,
+  `id_sdi_natura_iva` int(11) DEFAULT NULL,
+  `totale` decimal(18,6) DEFAULT NULL,
+  `posizione` int(11) DEFAULT NULL,
+  `archived_at` datetime NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id_riga`),
+  KEY `idx_prev_arch_righe_idprev` (`id_preventivo`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `tb_preventivi_righe_archive`
+--
+
+LOCK TABLES `tb_preventivi_righe_archive` WRITE;
+/*!40000 ALTER TABLE `tb_preventivi_righe_archive` DISABLE KEYS */;
+/*!40000 ALTER TABLE `tb_preventivi_righe_archive` ENABLE KEYS */;
+UNLOCK TABLES;
+
+--
+-- Table structure for table `tb_prezzi_variazioni`
+--
+
+DROP TABLE IF EXISTS `tb_prezzi_variazioni`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `tb_prezzi_variazioni` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `id_prodotto` int(10) unsigned NOT NULL,
+  `combo_key` varchar(255) NOT NULL,
+  `prezzo` decimal(12,4) NOT NULL DEFAULT 0.0000,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uniq_prod_combo` (`id_prodotto`,`combo_key`),
+  CONSTRAINT `fk_prezzi_var_prod` FOREIGN KEY (`id_prodotto`) REFERENCES `tb_prodotti` (`id_prodotto`) ON DELETE CASCADE
+) ENGINE=InnoDB AUTO_INCREMENT=109 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `tb_prezzi_variazioni`
+--
+
+LOCK TABLES `tb_prezzi_variazioni` WRITE;
+/*!40000 ALTER TABLE `tb_prezzi_variazioni` DISABLE KEYS */;
+INSERT INTO `tb_prezzi_variazioni` VALUES
+(1,11,'1+4+5',0.3700),
+(2,11,'1+4+6',0.5500),
+(3,11,'1+4+7',0.6700),
+(4,11,'2+4+5',0.6400),
+(5,11,'2+4+6',0.9400),
+(6,11,'2+4+7',1.2400),
+(7,11,'1+3+5',0.3400),
+(9,11,'1+3+7',0.6500),
+(11,11,'1+3+6',0.5200),
+(12,11,'2+3+5',0.6200),
+(13,11,'2+3+7',1.2200),
+(15,11,'2+3+6',0.9200),
+(16,11,'4+5+20',1.4700),
+(17,11,'4+6+20',1.5200),
+(18,11,'4+7+20',1.5900),
+(19,11,'4+5+21',2.8100),
+(20,11,'4+6+21',2.8800),
+(21,11,'4+7+21',2.9300),
+(22,11,'4+5+22',2.9900),
+(23,11,'4+6+22',3.0600),
+(24,11,'4+7+22',3.1100),
+(25,11,'4+5+23',4.3400),
+(26,11,'4+6+23',4.4000),
+(27,11,'4+7+23',4.4600),
+(28,11,'4+5+24',5.5600),
+(29,11,'4+6+24',5.6200),
+(30,11,'4+7+24',5.6800),
+(31,11,'3+5+20',1.4100),
+(32,11,'3+6+20',1.4700),
+(33,11,'3+7+20',1.5200),
+(34,11,'3+5+21',2.6900),
+(35,11,'3+6+21',2.9300),
+(36,11,'3+7+21',2.8100),
+(37,11,'3+5+22',2.8800),
+(39,11,'3+7+22',2.9900),
+(40,11,'3+5+23',4.1000),
+(41,11,'3+6+22',2.9300),
+(42,11,'3+6+23',4.1500),
+(43,11,'3+7+23',4.2200),
+(44,11,'3+5+24',5.3200),
+(45,11,'3+6+24',5.3700),
+(46,11,'3+7+24',5.4400),
+(47,12,'1+5',2.8100),
+(48,12,'1+6',3.1800),
+(49,12,'1+7',4.0300),
+(50,12,'2+5',3.3100),
+(51,12,'2+6',3.6700),
+(52,12,'2+7',4.7700),
+(53,12,'5+20',3.8000),
+(54,12,'6+20',4.1500),
+(55,12,'7+20',5.2600),
+(56,12,'5+21',4.3400),
+(57,12,'6+21',4.7000),
+(58,12,'7+21',5.8100),
+(59,12,'5+22',4.7700),
+(60,12,'6+22',5.1900),
+(61,12,'7+22',6.2400),
+(62,12,'5+23',5.7500),
+(63,12,'6+23',6.1100),
+(64,12,'7+23',7.2100),
+(65,12,'5+24',6.9000),
+(66,12,'6+24',7.2800),
+(67,12,'7+24',8.3700),
+(68,14,'1+8',7.6500),
+(69,14,'1+9',9.0500),
+(70,14,'1+10',9.7000),
+(71,14,'2+8',10.2000),
+(72,14,'2+9',11.6500),
+(73,14,'2+10',12.8000),
+(74,14,'8+20',11.3500),
+(75,14,'9+20',12.9000),
+(76,14,'10+20',14.5500),
+(77,14,'8+21',13.7000),
+(78,14,'9+21',17.7500),
+(79,14,'10+21',19.3000),
+(80,14,'8+22',15.3500),
+(81,14,'9+22',20.0500),
+(82,14,'10+22',25.7000),
+(83,14,'8+23',20.8000),
+(84,14,'9+23',28.9000),
+(85,14,'10+23',38.6000),
+(86,14,'8+24',30.6000),
+(87,14,'9+24',43.3000),
+(88,14,'10+24',54.7500),
+(89,20,'1+8',1.3500),
+(93,20,'2+8',3.3000),
+(94,20,'1+9',2.5500),
+(95,20,'2+9',4.1500),
+(96,20,'1+10',3.3500),
+(97,20,'2+10',5.1500),
+(98,15,'1',12.4000),
+(99,15,'2',13.7500),
+(100,15,'20',13.7500),
+(101,15,'21',14.9000),
+(102,15,'22',14.9000),
+(103,15,'24',16.4000),
+(104,15,'23',16.4000),
+(105,6,'31',50.0000),
+(106,6,'32',150.0000),
+(108,6,'33',150.0000);
+/*!40000 ALTER TABLE `tb_prezzi_variazioni` ENABLE KEYS */;
+UNLOCK TABLES;
+
+--
 -- Table structure for table `tb_prodotti`
 --
 
@@ -2842,6 +3084,7 @@ CREATE TABLE `tb_prodotti` (
   `id_unita` smallint(5) unsigned DEFAULT NULL,
   `prezzo_listino` decimal(12,4) DEFAULT NULL,
   `id_iva` smallint(5) unsigned DEFAULT NULL,
+  `id_sdi_natura_iva` tinyint(4) DEFAULT NULL,
   `attivo` tinyint(1) NOT NULL DEFAULT 1,
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
   `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
@@ -2864,24 +3107,24 @@ CREATE TABLE `tb_prodotti` (
 LOCK TABLES `tb_prodotti` WRITE;
 /*!40000 ALTER TABLE `tb_prodotti` DISABLE KEYS */;
 INSERT INTO `tb_prodotti` VALUES
-(5,1,'GS-3','Posta Ordinaria','Area web all time, copie conformi all’originale, servizi reportistica',NULL,90.0000,NULL,1,'2025-10-03 16:53:17','2025-10-09 08:37:21'),
-(6,1,'GS-1','Centro Elaborazione Dati','Elaborazioni, controlli, modifiche eseguite da personale informatico',NULL,75.0000,NULL,1,'2025-10-03 16:53:17','2025-10-09 08:37:08'),
-(7,3,'PD-1','Elaborazione',NULL,NULL,0.0000,NULL,1,'2025-10-03 16:53:17','2025-10-09 08:32:10'),
-(8,1,'GS-2','Posta Certificata','Include: Casella postale per accettazione posta di ritorno, area web all time, real time, immagine di tutti documenti inviati (copia conforme) immagini dei documenti di ritorno, cartolina corredata della firma e data di ritiro*,  busta inesitata corredata di data e motivazione dell’inesito*,  servizio archiviazione fisica e digitale (accessorio).\r\n* informazioni disponibili solo su lavorazioni eseguite e se presenti sui documenti forniti dall’operatore postale.',NULL,135.0000,NULL,1,'2025-10-03 16:53:17','2025-10-09 08:31:27'),
-(9,2,'TP-06','Posta Light',NULL,NULL,0.5900,NULL,1,'2025-10-03 16:53:17','2025-10-09 09:05:52'),
-(10,1,'GS-4','Utilizzo di terzi','utilizzo di documenti di terze parti su app GianoSystem',NULL,0.0200,NULL,1,'2025-10-03 16:53:17','2025-10-09 08:37:39'),
-(11,2,'TP-01','Posta Massiva',NULL,NULL,0.0000,NULL,1,'2025-10-03 16:53:17','2025-10-09 08:54:22'),
-(12,2,'TP-02-01','Raccomandata AR Smart',NULL,NULL,0.0000,NULL,1,'2025-10-03 16:53:17','2025-10-09 09:01:01'),
-(13,4,'SI-02','Raccomandata AR','Fornitura Busta 3 Finestre • Cartolina • Stampa F/R • Imbustamento',NULL,0.0000,NULL,1,'2025-10-03 16:53:17','2025-10-09 08:39:32'),
-(14,2,'TP-02-02','Raccomandata AR Internazionale',NULL,NULL,0.0000,NULL,1,'2025-10-03 16:53:17','2025-10-09 09:01:13'),
-(15,2,'TP-07','Atti Giudiziari',NULL,NULL,0.0000,NULL,1,'2025-10-03 16:53:17','2025-10-09 09:22:40'),
-(16,4,'SI-03','Raccomandata AG','Fornitura Busta Verde 3 Finestre • Cartolina • Stampa F/R • Imbustamento',NULL,0.0000,NULL,1,'2025-10-03 16:53:17','2025-10-09 08:40:37'),
-(17,2,'TP-04-02','Target invito alla prova',NULL,NULL,0.0000,NULL,1,'2025-10-03 16:53:17','2025-10-09 09:00:46'),
-(18,2,'TP-04-01','Target',NULL,NULL,0.0000,NULL,1,'2025-10-03 16:53:17','2025-10-09 09:00:39'),
-(19,4,'SI-01','Posta Massiva','Fornitura Busta 2 Finestre • Stampa F/R • Imbustamento',NULL,0.0000,NULL,1,'2025-10-03 16:53:17','2025-10-09 08:38:33'),
-(20,2,'TP-05','Posta Mail Internationale',NULL,NULL,0.0000,NULL,1,'2025-10-03 16:53:17','2025-10-09 09:01:50'),
-(21,2,'TP-99','Servizio InfoDelivery',NULL,NULL,0.0200,NULL,1,'2025-10-03 16:53:17','2025-10-09 08:53:27'),
-(36,4,'SI-99','Foglio Aggiuntivo',NULL,NULL,0.0500,NULL,1,'2025-10-09 08:24:28','2025-10-09 08:42:20');
+(5,1,'GS-3','Posta Ordinaria','Area web all time, copie conformi all’originale, servizi reportistica',NULL,90.0000,NULL,NULL,1,'2025-10-03 16:53:17','2025-10-09 08:37:21'),
+(6,1,'GS-1','Centro Elaborazione Dati','Elaborazioni, controlli, modifiche eseguite da personale informatico',NULL,NULL,NULL,NULL,1,'2025-10-03 16:53:17','2025-10-13 15:22:11'),
+(7,3,'PD-1','Elaborazione',NULL,NULL,0.0000,NULL,NULL,1,'2025-10-03 16:53:17','2025-10-09 08:32:10'),
+(8,1,'GS-2','Posta Certificata','Include: Casella postale per accettazione posta di ritorno, area web all time, real time, immagine di tutti documenti inviati (copia conforme) immagini dei documenti di ritorno, cartolina corredata della firma e data di ritiro*,  busta inesitata corredata di data e motivazione dell’inesito*,  servizio archiviazione fisica e digitale (accessorio).\r\n* informazioni disponibili solo su lavorazioni eseguite e se presenti sui documenti forniti dall’operatore postale.',NULL,135.0000,NULL,NULL,1,'2025-10-03 16:53:17','2025-10-09 08:31:27'),
+(9,2,'TP-06','Posta Light',NULL,NULL,0.5900,NULL,NULL,1,'2025-10-03 16:53:17','2025-10-09 09:05:52'),
+(10,1,'GS-4','Utilizzo di terzi','utilizzo di documenti di terze parti su app GianoSystem',NULL,0.0200,NULL,NULL,1,'2025-10-03 16:53:17','2025-10-09 08:37:39'),
+(11,2,'TP-01','Posta Massiva',NULL,NULL,0.0000,NULL,NULL,1,'2025-10-03 16:53:17','2025-10-09 08:54:22'),
+(12,2,'TP-02-01','Raccomandata AR Smart',NULL,NULL,0.0000,NULL,NULL,1,'2025-10-03 16:53:17','2025-10-09 09:01:01'),
+(13,4,'SI-02','Raccomandata AR','Fornitura Busta 3 Finestre • Cartolina • Stampa F/R • Imbustamento',NULL,0.0000,NULL,NULL,1,'2025-10-03 16:53:17','2025-10-09 08:39:32'),
+(14,2,'TP-02-02','Raccomandata AR Internazionale',NULL,NULL,0.0000,NULL,NULL,1,'2025-10-03 16:53:17','2025-10-09 09:01:13'),
+(15,2,'TP-07','Atti Giudiziari',NULL,NULL,0.0000,NULL,NULL,1,'2025-10-03 16:53:17','2025-10-09 09:22:40'),
+(16,4,'SI-03','Raccomandata AG','Fornitura Busta Verde 3 Finestre • Cartolina • Stampa F/R • Imbustamento',NULL,0.0000,NULL,NULL,1,'2025-10-03 16:53:17','2025-10-09 08:40:37'),
+(17,2,'TP-04-02','Target invito alla prova',NULL,NULL,0.0000,NULL,NULL,1,'2025-10-03 16:53:17','2025-10-09 09:00:46'),
+(18,2,'TP-04-01','Target',NULL,NULL,0.0000,NULL,NULL,1,'2025-10-03 16:53:17','2025-10-09 09:00:39'),
+(19,4,'SI-01','Posta Massiva','Fornitura Busta 2 Finestre • Stampa F/R • Imbustamento',NULL,0.0000,NULL,NULL,1,'2025-10-03 16:53:17','2025-10-09 08:38:33'),
+(20,2,'TP-05','Posta Mail Internationale',NULL,NULL,0.0000,NULL,NULL,1,'2025-10-03 16:53:17','2025-10-09 09:01:50'),
+(21,2,'TP-99','Servizio InfoDelivery',NULL,NULL,0.0200,NULL,NULL,1,'2025-10-03 16:53:17','2025-10-09 08:53:27'),
+(36,4,'SI-99','Foglio Aggiuntivo',NULL,NULL,0.0500,NULL,NULL,1,'2025-10-09 08:24:28','2025-10-09 08:42:20');
 /*!40000 ALTER TABLE `tb_prodotti` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -6093,7 +6336,7 @@ DELIMITER ;
 /*!50001 SET character_set_results     = utf8mb4 */;
 /*!50001 SET collation_connection      = utf8mb4_unicode_ci */;
 /*!50001 CREATE ALGORITHM=UNDEFINED */
-/* 50013 DEFINER=`laravel_mediaprint`@`%` SQL SECURITY INVOKER */
+/* 50013 DEFINER=`laravel_mediaprint`@`%` SQL SECURITY DEFINER */
 /*!50001 VIEW `v_anagrafiche_sede_legale` AS select `a`.`id_anagrafica` AS `id_anagrafica`,`a`.`ragione_sociale` AS `ragione_sociale`,`a`.`piva` AS `piva`,`a`.`stato` AS `stato`,`s`.`indirizzo` AS `indirizzo`,`s`.`civico` AS `civico`,`s`.`cap` AS `cap`,`s`.`comune` AS `citta`,`s`.`provincia` AS `provincia` from (`tb_anagrafiche` `a` join `tb_sedi` `s` on(`a`.`id_anagrafica` = `s`.`id_anagrafica` and `s`.`is_legale` = 1)) */;
 /*!50001 SET character_set_client      = @saved_cs_client */;
 /*!50001 SET character_set_results     = @saved_cs_results */;
@@ -6183,7 +6426,7 @@ DELIMITER ;
 /*!50001 SET character_set_results     = utf8mb4 */;
 /*!50001 SET collation_connection      = utf8mb4_unicode_ci */;
 /*!50001 CREATE ALGORITHM=UNDEFINED */
-/* 50013 DEFINER=`laravel_mediaprint`@`%` SQL SECURITY INVOKER */
+/* 50013 DEFINER=`laravel_mediaprint`@`%` SQL SECURITY DEFINER */
 /*!50001 VIEW `v_fatture_slim` AS select `f`.`id_fattura` AS `id_fattura`,`f`.`id_anagrafica` AS `id_anagrafica`,`f`.`anno` AS `anno`,`f`.`numero_documento` AS `numero_documento`,`f`.`data_fattura` AS `data_fattura`,`f`.`totale_imponibile` AS `totale_imponibile`,`f`.`totale_sconto` AS `totale_sconto`,`f`.`totale_iva` AS `totale_iva`,`f`.`totale` AS `totale`,`f`.`saldo` AS `saldo`,`f`.`note` AS `note`,`f`.`created_at` AS `created_at`,`f`.`updated_at` AS `updated_at` from `tb_fatture` `f` union all select `a`.`id_fattura` AS `id_fattura`,`a`.`id_anagrafica` AS `id_anagrafica`,`a`.`anno` AS `anno`,`a`.`numero_documento` AS `numero_documento`,`a`.`data_fattura` AS `data_fattura`,`a`.`totale_imponibile` AS `totale_imponibile`,`a`.`totale_sconto` AS `totale_sconto`,`a`.`totale_iva` AS `totale_iva`,`a`.`totale` AS `totale`,`a`.`saldo` AS `saldo`,`a`.`note` AS `note`,`a`.`created_at` AS `created_at`,`a`.`updated_at` AS `updated_at` from `tb_fatture_archive` `a` */;
 /*!50001 SET character_set_client      = @saved_cs_client */;
 /*!50001 SET character_set_results     = @saved_cs_results */;
@@ -6234,4 +6477,4 @@ DELIMITER ;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2025-10-09 17:26:27
+-- Dump completed on 2025-10-13 17:36:37
