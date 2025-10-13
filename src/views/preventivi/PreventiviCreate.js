@@ -199,7 +199,7 @@ const PreventiviCreate = () => {
         ])
         setCatOptions(cats)
         setNaturaOptions(nats)
-      } catch (_e) {}
+      } catch (_e) { }
     }
     load()
     return () => controller.abort()
@@ -298,10 +298,10 @@ const PreventiviCreate = () => {
     const comboKey = selectedComboKey && String(selectedComboKey).trim() !== ''
       ? selectedComboKey
       : (selectedVarIds
-          .map((id) => Number(id) || 0)
-          .filter((n) => n > 0)
-          .sort((a, b) => a - b)
-          .join('+'))
+        .map((id) => Number(id) || 0)
+        .filter((n) => n > 0)
+        .sort((a, b) => a - b)
+        .join('+'))
     const comboPrice = comboKey && prodComboMap[comboKey] != null ? Number(prodComboMap[comboKey]) : null
     const delta = prodVarOptions
       .filter((v) => selectedVarIds.includes(v.id_variazione))
@@ -406,7 +406,7 @@ const PreventiviCreate = () => {
               id_sdi_natura_iva: r.id_sdi_natura_iva ?? null,
             })))
           }
-        } catch (_e) {}
+        } catch (_e) { }
       }
       if (result?.anno_preventivo && result?.numero_documento) {
         setSubmitSuccess(`Bozza salvata. N. ${result.anno_preventivo}/${result.numero_documento}`)
@@ -456,7 +456,7 @@ const PreventiviCreate = () => {
               id_sdi_natura_iva: r.id_sdi_natura_iva ?? null,
             })))
           }
-        } catch (_e) {}
+        } catch (_e) { }
       }
       if (result?.status === 'sent') {
         setSubmitSuccess(
@@ -510,7 +510,7 @@ const PreventiviCreate = () => {
               <CModalBody>
                 <CStepper
                   activeStepNumber={prodStep}
-                  steps={[ 'Categoria', 'Prodotto', 'Variazioni', 'Riepilogo' ]}
+                  steps={['Categoria', 'Prodotto', 'Variazioni', 'Riepilogo']}
                   linear={false}
                   validation={false}
                   onStepChange={(n) => {
@@ -628,22 +628,22 @@ const PreventiviCreate = () => {
                   <CRow className="g-3">
                     <CCol md={12}>
                       <div className="mb-2"><strong>Prodotto:</strong> {(() => { const p = prodOptions.find((x) => String(x.id_prodotto) === String(selProd)); return p ? (p.codice ? `${p.codice} - ${p.nome}` : p.nome) : '-' })()}</div>
-                    {(() => {
-                      const ids = selectedComboKey
-                        ? selectedComboKey.split('+').map((x) => Number(x) || 0).filter((n) => n > 0)
-                        : selectedVarIds
-                      if (!ids || ids.length === 0) return null
-                      const groups = {}
-                      ids.forEach((idv) => {
-                        const vv = prodVarOptions.find((x) => Number(x.id_variazione) === Number(idv))
-                        const cat = (vv && vv.categoria) ? String(vv.categoria) : 'Altro'
-                        const nm = vv ? String(vv.nome) : String(idv)
-                        if (!groups[cat]) groups[cat] = []
-                        groups[cat].push(nm)
-                      })
-                      const label = Object.entries(groups).map(([cat, names]) => `${cat}: ${names.join(', ')}`).join(' ; ')
-                      return (<div className="mb-2"><strong>Variazioni:</strong> {label}</div>)
-                    })()}
+                      {(() => {
+                        const ids = selectedComboKey
+                          ? selectedComboKey.split('+').map((x) => Number(x) || 0).filter((n) => n > 0)
+                          : selectedVarIds
+                        if (!ids || ids.length === 0) return null
+                        const groups = {}
+                        ids.forEach((idv) => {
+                          const vv = prodVarOptions.find((x) => Number(x.id_variazione) === Number(idv))
+                          const cat = (vv && vv.categoria) ? String(vv.categoria) : 'Altro'
+                          const nm = vv ? String(vv.nome) : String(idv)
+                          if (!groups[cat]) groups[cat] = []
+                          groups[cat].push(nm)
+                        })
+                        const label = Object.entries(groups).map(([cat, names]) => `${cat}: ${names.join(', ')}`).join(' ; ')
+                        return (<div className="mb-2"><strong>Variazioni:</strong> {label}</div>)
+                      })()}
                     </CCol>
                     <CCol md={4}>
                       <CFormLabel>Quantità</CFormLabel>
@@ -806,7 +806,7 @@ const PreventiviCreate = () => {
                 </CButton>
               </div>
             </div>
-{false && (
+            {false && (
               <div className="border rounded p-3 mb-3">
                 <CRow className="g-3 align-items-end">
                   <CCol md={3}>
@@ -988,32 +988,32 @@ const PreventiviCreate = () => {
                           type="number"
                           min="0"
                           max="100"
-                        step="1"
-                        value={riga.iva}
-                        onChange={(e) => {
-                          const newIva = e.target.value
-                          const patch = { iva: newIva }
-                          if (Number(newIva) !== 0) {
-                            patch.id_sdi_natura_iva = null
-                          }
-                          updateRiga(idx, patch)
-                        }}
-                      />
-                    </CTableDataCell>
-                    <CTableDataCell className="text-end">
-                      <CFormSelect
-                        value={riga.id_sdi_natura_iva ?? ''}
-                        onChange={(e) => updateRiga(idx, { id_sdi_natura_iva: e.target.value ? Number(e.target.value) : null })}
-                        disabled={Number(riga.iva) !== 0}
-                      >
-                        <option value="">--</option>
-                        {naturaOptions.map((n) => (
-                          <option key={n.id_natura} value={n.id_natura}>
-                            {n.code} - {n.label}
-                          </option>
-                        ))}
-                      </CFormSelect>
-                    </CTableDataCell>
+                          step="1"
+                          value={riga.iva}
+                          onChange={(e) => {
+                            const newIva = e.target.value
+                            const patch = { iva: newIva }
+                            if (Number(newIva) !== 0) {
+                              patch.id_sdi_natura_iva = null
+                            }
+                            updateRiga(idx, patch)
+                          }}
+                        />
+                      </CTableDataCell>
+                      <CTableDataCell className="text-end">
+                        <CFormSelect
+                          value={riga.id_sdi_natura_iva ?? ''}
+                          onChange={(e) => updateRiga(idx, { id_sdi_natura_iva: e.target.value ? Number(e.target.value) : null })}
+                          disabled={Number(riga.iva) !== 0}
+                        >
+                          <option value="">--</option>
+                          {naturaOptions.map((n) => (
+                            <option key={n.id_natura} value={n.id_natura}>
+                              {n.code} - {n.label}
+                            </option>
+                          ))}
+                        </CFormSelect>
+                      </CTableDataCell>
                       <CTableDataCell className="text-end">{formatCurrency(impon)}</CTableDataCell>
                       <CTableDataCell className="text-end">{formatCurrency(ivaVal)}</CTableDataCell>
                       <CTableDataCell className="text-end">{formatCurrency(tot)}</CTableDataCell>
