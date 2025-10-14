@@ -1,0 +1,137 @@
+diff --git a/src/views/preventivi/PreventiviDetail.js b/src/views/preventivi/PreventiviDetail.js
+--- a/src/views/preventivi/PreventiviDetail.js
++++ b/src/views/preventivi/PreventiviDetail.js
+@@
+   CFormInput,
+   CFormLabel,
+   CFormSelect,
++  CFormTextarea,
+   CInputGroup,
+@@
+-import { CStepper } from '@coreui/react-pro'
++import { CAutocomplete, CStepper } from '@coreui/react-pro'
+@@
+   const clientiOptions = useMemo(() => {
+     const list = Array.isArray(allClientiOptions) ? allClientiOptions : []
+     const q = (clienteSearch || '').trim().toLowerCase()
+@@
+     })
+   }, [allClientiOptions, clienteSearch])
++
++  const clientiAutocompleteOptions = useMemo(() => {
++    return clientiOptions
++      .map((c) => {
++        const rawId = c?.id_anagrafica ?? c?.id
++        if (rawId == null || rawId === '') {
++          return null
++        }
++        const numericId = Number(rawId)
++        if (!Number.isFinite(numericId)) {
++          return null
++        }
++        const ragione = String(c?.ragione_sociale || '').trim()
++        const codiceCliente = String(c?.codice_cliente || '').trim()
++        const piva = String(c?.piva || '').trim()
++        const codiceFiscale = String(c?.codice_fiscale || '').trim()
++        return {
++          label: ragione || '--',
++          value: numericId,
++          ragioneSociale: ragione || '--',
++          codiceCliente: codiceCliente || null,
++          piva: piva || null,
++          codiceFiscale: codiceFiscale || null,
++        }
++      })
++      .filter(Boolean)
++  }, [clientiOptions])
++
++  const selectedClienteValue = useMemo(() => {
++    if (idAnagrafica === '' || idAnagrafica == null) {
++      return undefined
++    }
++    const numeric = Number(idAnagrafica)
++    return Number.isFinite(numeric) ? numeric : undefined
++  }, [idAnagrafica])
+@@
+-                <CCol md={6}>
+-                  <CFormLabel>Cliente</CFormLabel>
+-                  <CInputGroup>
+-                    <CFormInput
+-                      placeholder="Cerca cliente per ragione sociale o P.IVA"
+-                      value={clienteSearch}
+-                      onChange={(e) => setClienteSearch(e.target.value)}
+-                      disabled={uiDisabled}
+-                    />
+-                  </CInputGroup>
+-                  <CFormSelect
+-                    className="mt-2"
+-                    value={idAnagrafica}
+-                    onChange={(e) => setIdAnagrafica(e.target.value)}
+-                    disabled={uiDisabled || loadingClienti}
+-                  >
+-                    <option value="">Seleziona cliente...</option>
+-                    {clientiOptions.map((c) => (
+-                      <option key={c.id_anagrafica ?? c.id} value={c.id_anagrafica ?? c.id}>
+-                        {c.ragione_sociale}
+-                      </option>
+-                    ))}
+-                  </CFormSelect>
+-                </CCol>
++                <CCol md={6}>
++                  <CFormLabel>Cliente</CFormLabel>
++                  <CAutocomplete
++                    placeholder="Cerca cliente per ragione sociale, codice o P.IVA"
++                    options={clientiAutocompleteOptions}
++                    value={selectedClienteValue}
++                    search="external"
++                    disabled={uiDisabled || loadingClienti}
++                    loading={loadingClienti}
++                    allowOnlyDefinedOptions
++                    cleaner
++                    indicator
++                    optionsMaxHeight={360}
++                    onInput={(value) => setClienteSearch(value || '')}
++                    onChange={(option) => {
++                      if (!option || typeof option === 'string') {
++                        setIdAnagrafica('')
++                        return
++                      }
++                      const optValue = typeof option.value === 'number' ? option.value : Number(option.value)
++                      if (Number.isFinite(optValue)) {
++                        setIdAnagrafica(String(optValue))
++                      } else {
++                        setIdAnagrafica('')
++                      }
++                    }}
++                    optionsTemplate={(option) => {
++                      if (!option || typeof option === 'string') {
++                        return option || ''
++                      }
++                      const details = [
++                        option.codiceCliente ? `Cod. cliente ${option.codiceCliente}` : null,
++                        option.piva ? `P.IVA ${option.piva}` : null,
++                        option.codiceFiscale ? `CF ${option.codiceFiscale}` : null,
++                      ].filter(Boolean)
++                      return (
++                        <div className="d-flex flex-column">
++                          <span className="fw-semibold">{option.ragioneSociale}</span>
++                          {details.length > 0 && (
++                            <small className="text-body-secondary">{details.join(' - ')}</small>
++                          )}
++                        </div>
++                      )
++                    }}
++                    searchNoResultsLabel="Nessun cliente trovato"
++                  />
++                </CCol>
+@@
+-                              <CFormInput
++                              <CFormTextarea
+                                 placeholder="Descrizione articolo/servizio"
+                                 value={riga.descrizione}
+                                 onChange={(e) => updateRiga(idx, { descrizione: e.target.value })}
+                                 disabled={uiDisabled}
+-                              />
++                                rows={3}
++                                style={{ minWidth: '420px' }}
++                              />

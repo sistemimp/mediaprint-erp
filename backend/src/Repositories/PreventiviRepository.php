@@ -48,6 +48,61 @@ final class PreventiviRepository
     }
 
     /**
+     * @return list<array{id_stato:int, code:string, label:string, ordering:int}>
+     */
+    public function listStatuses(): array
+    {
+        $stmt = $this->pdo->query(
+            'SELECT id_stato, code, label, ordering FROM cfg_stati_preventivo WHERE attivo = 1 ORDER BY ordering ASC, id_stato ASC'
+        );
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+        $out = [];
+        foreach ($rows as $row) {
+            $out[] = [
+                'id_stato' => (int) $row['id_stato'],
+                'code' => (string) $row['code'],
+                'label' => (string) $row['label'],
+                'ordering' => (int) $row['ordering'],
+            ];
+        }
+
+        return $out;
+    }
+
+    /**
+     * @return array{id_stato:int, code:string, label:string}|null
+     */
+    public function findStatusByCode(string $code): ?array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT id_stato, code, label FROM cfg_stati_preventivo WHERE code = :code AND attivo = 1 LIMIT 1'
+        );
+        $stmt->bindValue(':code', $code, PDO::PARAM_STR);
+        $stmt->execute();
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($row === false) {
+            return null;
+        }
+
+        return [
+            'id_stato' => (int) $row['id_stato'],
+            'code' => (string) $row['code'],
+            'label' => (string) $row['label'],
+        ];
+    }
+
+    public function updateStatus(int $idPreventivo, int $idStato): void
+    {
+        $stmt = $this->pdo->prepare(
+            'UPDATE tb_preventivi SET id_stato_prev = :id_stato, updated_at = NOW() WHERE id_preventivo = :id LIMIT 1'
+        );
+        $stmt->bindValue(':id', $idPreventivo, PDO::PARAM_INT);
+        $stmt->bindValue(':id_stato', $idStato, PDO::PARAM_INT);
+        $stmt->execute();
+    }
+
+    /**
      * Ricerca preventivi archiviati in `tb_preventivi_archive` con join su anagrafiche (attive o archiviate)
      * per ottenere la ragione sociale e su stati per label.
      *
@@ -495,6 +550,7 @@ final class PreventiviRepository
      *   totale_iva:float|int|null,
      *   totale:float|int|null,
      *   stato_code:?string,
+     *   stato_label:?string,
      *   created_at:?string,
      *   updated_at:?string
      * }|null
@@ -514,6 +570,7 @@ final class PreventiviRepository
                 p.totale_iva,
                 p.totale,
                 sp.code AS stato_code,
+                sp.label AS stato_label,
                 p.created_at,
                 p.updated_at
             FROM tb_preventivi p
@@ -541,6 +598,7 @@ final class PreventiviRepository
             'totale_iva' => isset($row['totale_iva']) ? (float) $row['totale_iva'] : null,
             'totale' => isset($row['totale']) ? (float) $row['totale'] : null,
             'stato_code' => $row['stato_code'] ?? null,
+            'stato_label' => $row['stato_label'] ?? null,
             'created_at' => $row['created_at'] ?? null,
             'updated_at' => $row['updated_at'] ?? null,
         ];

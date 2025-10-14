@@ -87,7 +87,9 @@ export const fetchPreventivoDetail = async ({ token, id, signal } = {}) => {
   const data = response?.data ?? null
   const editable = !!response?.meta?.editable
   const righe = Array.isArray(response?.righe) ? response.righe : []
-  return { data, editable, righe }
+  const statuses = Array.isArray(response?.meta?.statuses) ? response.meta.statuses : []
+  const currentStatus = response?.meta?.current_status ?? null
+  return { data, editable, righe, statuses, currentStatus }
 }
 
 export const reactivatePreventivo = async ({ token, id, signal } = {}) => {
@@ -120,4 +122,30 @@ export const archivePreventivo = async ({ token, id, signal } = {}) => {
   })
 
   return response ?? { ok: true }
+}
+
+export const updatePreventivoStatus = async ({ token, id, statusCode, signal } = {}) => {
+  const numericId = Number(id)
+  const payload = {
+    stato: statusCode,
+  }
+  if (Number.isFinite(numericId) && numericId > 0) {
+    payload.id = numericId
+  } else if (id) {
+    payload.id = id
+  }
+
+  const response = await apiFetch('/preventiviStatus.php', {
+    method: 'POST',
+    token,
+    body: payload,
+    signal,
+  })
+
+  const data = response?.data ?? null
+  const statuses = Array.isArray(response?.meta?.statuses) ? response.meta.statuses : []
+  const currentStatus = response?.meta?.current_status ?? null
+  const editable = !!response?.meta?.editable
+
+  return { data, statuses, currentStatus, editable }
 }

@@ -27,11 +27,18 @@ final class PreventiviService
 
         $editable = ($row['stato_code'] ?? 'bozza') === 'bozza';
         $righe = $this->repository->getLines($id);
+        $statuses = $this->repository->listStatuses();
+        $currentStatus = [
+            'code' => $row['stato_code'] ?? null,
+            'label' => $row['stato_label'] ?? ($row['stato_code'] ?? null),
+        ];
         return [
             'data' => $row,
             'righe' => $righe,
             'meta' => [
                 'editable' => $editable,
+                'statuses' => $statuses,
+                'current_status' => $currentStatus,
             ],
         ];
     }
@@ -80,6 +87,55 @@ final class PreventiviService
                 'page' => $page,
                 'per_page' => $perPage,
                 'pages' => $pages,
+            ],
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function changeStatus(array $input): array
+    {
+        $id = isset($input['id']) ? (int) $input['id'] : (isset($input['id_preventivo']) ? (int) $input['id_preventivo'] : 0);
+        if ($id <= 0) {
+            throw new \RuntimeException('ID preventivo mancante o non valido.', 422);
+        }
+
+        $code = isset($input['stato']) ? (string) $input['stato'] : (isset($input['code']) ? (string) $input['code'] : '');
+        $code = strtolower(trim($code));
+        if ($code === '') {
+            throw new \RuntimeException('Codice stato mancante.', 422);
+        }
+
+        $existing = $this->repository->getById($id);
+        if ($existing === null) {
+            throw new \RuntimeException('Preventivo non trovato.', 404);
+        }
+
+        $status = $this->repository->findStatusByCode($code);
+        if ($status === null) {
+            throw new \RuntimeException('Stato preventivo non valido.', 422);
+        }
+
+        $this->repository->updateStatus($id, $status['id_stato']);
+
+        $detail = $this->repository->fetchDetail($id);
+        if ($detail === null) {
+            throw new \RuntimeException('Preventivo non trovato dopo l\'aggiornamento.', 500);
+        }
+
+        $editable = ($detail['stato_code'] ?? 'bozza') === 'bozza';
+        $statuses = $this->repository->listStatuses();
+
+        return [
+            'data' => $detail,
+            'meta' => [
+                'editable' => $editable,
+                'statuses' => $statuses,
+                'current_status' => [
+                    'code' => $detail['stato_code'] ?? null,
+                    'label' => $detail['stato_label'] ?? ($detail['stato_code'] ?? null),
+                ],
             ],
         ];
     }

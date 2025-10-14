@@ -1,4 +1,4 @@
-/*M!999999\- enable the sandbox mode */ 
+/*M!999999\- enable the sandbox mode */
 -- MariaDB dump 10.19  Distrib 10.11.13-MariaDB, for debian-linux-gnu (x86_64)
 --
 -- Host: localhost    Database: mediaprint_erp_v2
@@ -1291,9 +1291,9 @@ LOCK TABLES `cfg_stati_preventivo` WRITE;
 INSERT INTO `cfg_stati_preventivo` VALUES
 (1,'bozza','Bozza',10,1),
 (2,'inviato','Inviato',20,1),
-(3,'accettato','Accettato',30,1),
-(4,'rifiutato','Rifiutato',40,1),
-(5,'scaduto','Scaduto',50,1);
+(3,'confermato','Confermato',30,1),
+(4,'rifiutato_cliente','Rifiutato dal cliente',40,1),
+(5,'annullato','Annullato (operatore/cliente)',50,1);
 /*!40000 ALTER TABLE `cfg_stati_preventivo` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -2717,7 +2717,7 @@ CREATE TABLE `tb_preventivi_archive` (
   `anno_preventivo` smallint(5) unsigned NOT NULL,
   `numero_documento` int(10) unsigned NOT NULL,
   `data_preventivo` date DEFAULT NULL,
-  `stato` enum('bozza','inviato','accettato','rifiutato','scaduto') NOT NULL DEFAULT 'bozza',
+  `stato` enum('bozza','inviato','confermato','rifiutato_cliente','annullato') NOT NULL DEFAULT 'bozza',
   `totale_imponibile` decimal(12,2) DEFAULT NULL,
   `totale_sconto` decimal(12,2) DEFAULT NULL,
   `totale_iva` decimal(12,2) DEFAULT NULL,
@@ -5612,7 +5612,7 @@ BEGIN
     -- JOIN v_anagrafiche_inattive_2y i USING (id_anagrafica)
     -- SET a.is_active = 0
     -- WHERE a.is_active <> 0;
-    
+
     -- Output riepilogo
     SELECT 'OK' AS esito, ROW_COUNT() AS righe_archiviate;
   END IF;

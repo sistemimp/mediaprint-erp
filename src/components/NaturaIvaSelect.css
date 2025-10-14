@@ -1,0 +1,31 @@
+.ni-dropdown { position: relative; }
+.ni-dropdown .ni-selected-code { font-weight: 500; }
+.ni-dropdown .ni-measure { position: absolute; visibility: hidden; white-space: nowrap; inset: -9999px auto auto -9999px; }
+
+/* Backdrop shown when dropdown is open (adapts to light/dark) */
+.natura-iva-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.2);
+  z-index: 1020; /* behind dropdown menu */
+}
+
+/* Ensure menu sits above backdrop and matches theme tokens */
+.ni-dropdown .ni-menu {
+  z-index: 1030;
+  max-height: 320px;
+  overflow: auto;
+  border: 1px solid var(--cui-border-color, rgba(0,0,0,0.125));
+}
+
+/* Active and hover states respect theme */
+.ni-dropdown .dropdown-item.active,
+.ni-dropdown .dropdown-item:active {
+  background-color: var(--cui-primary, #0d6efd);
+  color: var(--cui-body-bg, #fff);
+}
+
+.ni-dropdown .dropdown-item:focus,
+.ni-dropdown .dropdown-item:hover {
+  background-color: var(--cui-secondary-bg, rgba(0,0,0,0.05));
+}

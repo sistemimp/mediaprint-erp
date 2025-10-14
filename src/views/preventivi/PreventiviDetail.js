@@ -1,5 +1,5 @@
 /* eslint-disable prettier/prettier */
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import {
   CAlert,
@@ -35,7 +35,7 @@ import { cilCheckCircle, cilSave } from '@coreui/icons'
 
 import { useAuth } from '../../context/AuthContext'
 import { fetchAnagrafiche, fetchAnagraficaDetail } from '../../services/anagrafiche'
-import { createPreventivo, fetchPreventivoDetail } from '../../services/preventivi'
+import { createPreventivo, fetchPreventivoDetail, updatePreventivoStatus } from '../../services/preventivi'
 import {
   fetchCategorieProdotti,
   fetchProdotti,
@@ -71,6 +71,11 @@ const PreventiviDetail = () => {
   const [loadError, setLoadError] = useState(null)
   const [editable, setEditable] = useState(false)
   const [header, setHeader] = useState({ anno: null, numero: null, stato: null })
+  const [statusOptions, setStatusOptions] = useState([])
+  const [currentStatus, setCurrentStatus] = useState({ code: null, label: null })
+  const [statusUpdating, setStatusUpdating] = useState(false)
+  const [statusError, setStatusError] = useState(null)
+  const [statusSuccess, setStatusSuccess] = useState(null)
 
   // Dati generali
   const [clienteSearch, setClienteSearch] = useState('')
@@ -125,14 +130,32 @@ const PreventiviDetail = () => {
       setLoading(true)
       setLoadError(null)
       try {
-        const { data, editable, righe: righeSrv } = await fetchPreventivoDetail({ token, id, signal: controller.signal })
+        setStatusError(null)
+        setStatusSuccess(null)
+        const { data, editable, righe: righeSrv, statuses, currentStatus: current } = await fetchPreventivoDetail({
+          token,
+          id,
+          signal: controller.signal,
+        })
         if (!data) throw new Error('Dettaglio non disponibile')
         setEditable(!!editable)
         setHeader({
           anno: data.anno_preventivo ?? null,
           numero: data.numero_documento ?? null,
-          stato: data.stato_code ?? null,
+          stato: data.stato_label ?? data.stato_code ?? null,
         })
+        setStatusOptions(Array.isArray(statuses) ? statuses : [])
+        if (current && (current.code || current.label)) {
+          setCurrentStatus({
+            code: current.code ?? null,
+            label: current.label ?? data.stato_label ?? data.stato_code ?? null,
+          })
+        } else {
+          setCurrentStatus({
+            code: data.stato_code ?? null,
+            label: data.stato_label ?? data.stato_code ?? null,
+          })
+        }
         setIdAnagrafica(String(data.id_anagrafica ?? ''))
         setDataPreventivo(data.data_preventivo ?? '')
         setNote(data.note ?? '')
@@ -506,6 +529,68 @@ const PreventiviDetail = () => {
     return () => controller.abort()
   }, [token, pkgOpen, selPacchetto])
 
+  const handleStatusChange = useCallback(async (nextCode) => {
+    const safeCode = typeof nextCode === 'string' ? nextCode.trim().toLowerCase() : String(nextCode || '').trim().toLowerCase()
+    if (!safeCode) return
+    if (!token || !id) return
+    if (statusUpdating) return
+    setStatusError(null)
+    setStatusSuccess(null)
+    setStatusUpdating(true)
+    try {
+      const result = await updatePreventivoStatus({ token, id, statusCode: safeCode })
+      const updatedStatuses = Array.isArray(result.statuses) ? result.statuses : null
+      if (updatedStatuses) {
+        setStatusOptions(updatedStatuses)
+      }
+      const resolvedCode = result.currentStatus?.code ?? safeCode
+      let resolvedLabel = result.currentStatus?.label ?? null
+      if (!resolvedLabel) {
+        const sourceStatuses = updatedStatuses || statusOptions
+        if (Array.isArray(sourceStatuses)) {
+          const match = sourceStatuses.find((s) => s?.code === resolvedCode)
+          if (match) {
+            resolvedLabel = match.label ?? resolvedLabel
+          }
+        }
+      }
+      setCurrentStatus({
+        code: resolvedCode ?? null,
+        label: resolvedLabel ?? resolvedCode ?? null,
+      })
+      if (result.data) {
+        setHeader((prev) => ({
+          ...prev,
+          stato: result.data.stato_label ?? result.data.stato_code ?? prev?.stato ?? null,
+        }))
+      }
+      if (typeof result.editable === 'boolean') {
+        setEditable(result.editable)
+      }
+      setStatusSuccess('Stato aggiornato correttamente.')
+    } catch (err) {
+      if (err?.name === 'AbortError') return
+      if (err?.status === 401 && logout) {
+        logout()
+        return
+      }
+      setStatusError(err)
+    } finally {
+      setStatusUpdating(false)
+    }
+  }, [token, id, statusUpdating, logout, statusOptions])
+
+  const handleStatusStepChange = useCallback((stepNumber) => {
+    if (statusUpdating) return
+    if (!Array.isArray(statusOptions) || statusOptions.length === 0) return
+    const index = Number(stepNumber) - 1
+    if (!Number.isFinite(index) || index < 0 || index >= statusOptions.length) return
+    const target = statusOptions[index]
+    if (!target || !target.code) return
+    if ((currentStatus?.code ?? null) === target.code) return
+    handleStatusChange(target.code)
+  }, [statusUpdating, statusOptions, currentStatus, handleStatusChange])
+
   const buildPayload = () => ({
     id_preventivo: id,
     id_anagrafica: Number(idAnagrafica) || 0,
@@ -526,6 +611,8 @@ const PreventiviDetail = () => {
     setSubmitting(true)
     setSubmitError(null)
     setSubmitSuccess(null)
+    setStatusError(null)
+    setStatusSuccess(null)
     try {
       const controller = new AbortController()
       const payload = buildPayload()
@@ -552,6 +639,8 @@ const PreventiviDetail = () => {
     setSubmitting(true)
     setSubmitError(null)
     setSubmitSuccess(null)
+    setStatusError(null)
+    setStatusSuccess(null)
     try {
       const controller = new AbortController()
       const payload = buildPayload()
@@ -561,7 +650,18 @@ const PreventiviDetail = () => {
           ? `Preventivo confermato e inviato. N. ${result.anno_preventivo}/${result.numero_documento}`
           : `Preventivo salvato come bozza (ID ${result?.id_preventivo ?? id})`,
       )
-      // Dopo conferma, non più modificabile
+      if (result?.status === 'sent') {
+        const sentStatus = statusOptions.find((s) => (s?.code ?? '') === 'inviato')
+        setCurrentStatus({
+          code: 'inviato',
+          label: sentStatus?.label ?? 'Inviato',
+        })
+        setHeader((prev) => ({
+          ...prev,
+          stato: sentStatus?.label ?? 'Inviato',
+        }))
+      }
+      // Dopo conferma, non piu modificabile
       setEditable(false)
     } catch (err) {
       if (err.status === 401 && logout) {
@@ -575,6 +675,20 @@ const PreventiviDetail = () => {
   }
 
   if (!id) return null
+
+  const statusSteps = useMemo(
+    () => statusOptions.map((s) => (s?.label ?? s?.code ?? '')).map((label) => (label ? String(label) : '')),
+    [statusOptions],
+  )
+  const activeStatusStep = useMemo(() => {
+    if (!Array.isArray(statusOptions) || statusOptions.length === 0) {
+      return 1
+    }
+    const currentCode = currentStatus?.code ?? null
+    const idx = statusOptions.findIndex((s) => (s?.code ?? null) === currentCode)
+    return idx >= 0 ? idx + 1 : 1
+  }, [statusOptions, currentStatus])
+  const currentStatusLabel = currentStatus?.label ?? null
 
   const uiDisabled = !editable || anagraficaDisabled
 
@@ -624,6 +738,47 @@ const PreventiviDetail = () => {
               <CAlert color="info" className="mb-3">
                 Il documento non è in stato bozza. La modifica è disabilitata.
               </CAlert>
+            )}
+
+            {statusSteps.length > 0 && (
+              <section className="mb-4">
+                <div className="d-flex justify-content-between align-items-center mb-3">
+                  <h6 className="mb-0 text-body-secondary">Stato preventivo</h6>
+                  {statusUpdating && (
+                    <div className="d-flex align-items-center gap-2">
+                      <CSpinner size="sm" />
+                      <small className="text-body-secondary">Aggiornamento in corso...</small>
+                    </div>
+                  )}
+                </div>
+                {statusError && (
+                  <CAlert color="danger" className="mb-3">
+                    {statusError?.payload?.message || statusError.message || "Errore durante l'aggiornamento dello stato."}
+                  </CAlert>
+                )}
+                {statusSuccess && (
+                  <CAlert color="success" className="mb-3">
+                    {statusSuccess}
+                  </CAlert>
+                )}
+                <div className="px-2 px-lg-3 py-3 border rounded bg-light">
+                  <CStepper
+                    activeStepNumber={activeStatusStep}
+                    steps={statusSteps}
+                    linear={false}
+                    validation={false}
+                    onStepChange={handleStatusStepChange}
+                  />
+                  <div className="mt-3 d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-2">
+                    <div>
+                      <small className="text-body-secondary">
+                        Stato attuale: <span className="fw-semibold">{currentStatusLabel || 'N.D.'}</span>
+                      </small>
+                    </div>
+                    <small className="text-body-secondary">Seleziona uno step per aggiornare manualmente lo stato.</small>
+                  </div>
+                </div>
+              </section>
             )}
 
             <section className="mb-4">
