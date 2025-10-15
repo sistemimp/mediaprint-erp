@@ -2672,6 +2672,8 @@ CREATE TABLE `tb_preventivi` (
   `anno_preventivo` smallint(5) unsigned NOT NULL,
   `numero_documento` int(10) unsigned NOT NULL,
   `data_preventivo` date DEFAULT NULL,
+  `oggetto` varchar(255) DEFAULT NULL,
+  `riferimento_cliente` varchar(255) DEFAULT NULL,
   `id_stato_prev` tinyint(3) unsigned NOT NULL,
   `totale_imponibile` decimal(12,2) DEFAULT NULL,
   `totale_sconto` decimal(12,2) DEFAULT NULL,
@@ -2699,8 +2701,8 @@ CREATE TABLE `tb_preventivi` (
 LOCK TABLES `tb_preventivi` WRITE;
 /*!40000 ALTER TABLE `tb_preventivi` DISABLE KEYS */;
 INSERT INTO `tb_preventivi` VALUES
-(1,NULL,1,2025,1,'2025-10-08',1,8.76,0.00,0.00,8.76,'prova','2025-10-08 16:27:43','2025-10-13 15:18:35'),
-(3,NULL,1,2025,2,'2025-10-09',1,8.76,0.00,0.00,8.76,'','2025-10-09 07:08:11','2025-10-13 15:30:52');
+(1,NULL,1,2025,1,'2025-10-08',NULL,NULL,1,8.76,0.00,0.00,8.76,'prova','2025-10-08 16:27:43','2025-10-13 15:18:35'),
+(3,NULL,1,2025,2,'2025-10-09',NULL,NULL,1,8.76,0.00,0.00,8.76,'','2025-10-09 07:08:11','2025-10-13 15:30:52');
 /*!40000 ALTER TABLE `tb_preventivi` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -2722,6 +2724,8 @@ CREATE TABLE `tb_preventivi_archive` (
   `totale_sconto` decimal(12,2) DEFAULT NULL,
   `totale_iva` decimal(12,2) DEFAULT NULL,
   `totale` decimal(12,2) DEFAULT NULL,
+  `oggetto` varchar(255) DEFAULT NULL,
+  `riferimento_cliente` varchar(255) DEFAULT NULL,
   `note` text DEFAULT NULL,
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
   `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),

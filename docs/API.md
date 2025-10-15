@@ -279,7 +279,7 @@ GET `/preventiviDetail.php?id=...`
 - Risposta 200
 ```json
 {
-  "data": { "id_preventivo": 101, "anno_preventivo": 2025, "numero_documento": 12, "data_preventivo": "2025-10-05", "stato_code": "bozza", "totale": 122, "totale_imponibile": 100, "totale_sconto": 0, "totale_iva": 22, "note": null, "id_anagrafica": 123, "ragione_sociale": "ACME S.p.A." },
+  "data": { "id_preventivo": 101, "anno_preventivo": 2025, "numero_documento": 12, "data_preventivo": "2025-10-05", "oggetto": "Stampa brochure A4", "riferimento_cliente": "ORD-2025-003", "stato_code": "bozza", "totale": 122, "totale_imponibile": 100, "totale_sconto": 0, "totale_iva": 22, "note": null, "id_anagrafica": 123, "ragione_sociale": "ACME S.p.A." },
   "righe": [ { "id_riga": 1, "id_prodotto": 10, "descrizione": "Carta 100g", "quantita": 2, "prezzo_unitario": 50, "sconto": 0, "importo_scontato": 100, "iva": 22, "id_sdi_natura_iva": null, "totale": 122, "posizione": 1 } ],
   "meta": { "editable": true }
 }
@@ -289,7 +289,7 @@ GET `/preventiviDetail.php?id=...`
 POST `/preventiviCreate.php`
 
 - Body JSON
-  - Per nuova bozza: `{ id_anagrafica: int, data_preventivo?: string(YYYY-MM-DD), note?: string, righe?: [ { descrizione, quantita?, prezzo?, sconto?, iva?, id_prodotto?, id_sdi_natura_iva? } ], totals?: { imponibile, sconto, totaleIva, totale }, send?: boolean }`
+  - Per nuova bozza: `{ id_anagrafica: int, data_preventivo?: string(YYYY-MM-DD), oggetto?: string, riferimento_cliente?: string, note?: string, righe?: [ { descrizione, quantita?, prezzo?, sconto?, iva?, id_prodotto?, id_sdi_natura_iva? } ], totals?: { imponibile, sconto, totaleIva, totale }, send?: boolean }`
   - Per aggiornare bozza esistente: aggiungere `id_preventivo` (int)
   - Per “inviare” (confermare/numero): impostare `send: true`
 - Risposte

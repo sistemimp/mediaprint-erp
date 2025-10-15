@@ -131,6 +131,7 @@ const PreventiviList = () => {
       if (field === 'cliente') return String(row.ragione_sociale || '')
       if (field === 'documento') return `${row.anno_preventivo ?? ''}/${row.numero_documento ?? ''}`
       if (field === 'data') return String(row.data_preventivo || row.created_at || '')
+      if (field === 'riferimento') return String(row.riferimento_cliente || '')
       if (field === 'totale') return Number(row.totale || 0)
       if (field === 'stato') return String(row.stato_label || row.stato_code || '')
       return ''
@@ -376,6 +377,9 @@ const PreventiviList = () => {
                   <CTableHeaderCell role="button" onClick={(e) => toggleSort('data', e.shiftKey)} className="text-nowrap">
                     Data{sortIndicator('data')}
                   </CTableHeaderCell>
+                  <CTableHeaderCell role="button" onClick={(e) => toggleSort('riferimento', e.shiftKey)} className="text-nowrap">
+                    Rif. cliente{sortIndicator('riferimento')}
+                  </CTableHeaderCell>
                   <CTableHeaderCell className="text-nowrap">Imponibile</CTableHeaderCell>
                   <CTableHeaderCell className="text-nowrap">IVA</CTableHeaderCell>
                   <CTableHeaderCell role="button" onClick={(e) => toggleSort('totale', e.shiftKey)} className="text-nowrap">
@@ -392,7 +396,7 @@ const PreventiviList = () => {
                   if (row.type === 'group') {
                     return (
                       <CTableRow key={`g-${idx}`} className="table-secondary">
-                        <CTableDataCell colSpan={8} className="fw-semibold">
+                        <CTableDataCell colSpan={9} className="fw-semibold">
                           {row.label} — {row.count} elementi
                         </CTableDataCell>
                       </CTableRow>
@@ -408,6 +412,7 @@ const PreventiviList = () => {
                         {(r.anno_preventivo ?? '-')}/{r.numero_documento ?? '-'}
                       </CTableDataCell>
                       <CTableDataCell>{formatDate(r.data_preventivo)}</CTableDataCell>
+                      <CTableDataCell>{r.riferimento_cliente || '-'}</CTableDataCell>
                       <CTableDataCell>{formatCurrency(r.totale_imponibile)}</CTableDataCell>
                       <CTableDataCell>{formatCurrency(r.totale_iva)}</CTableDataCell>
                       <CTableDataCell>{formatCurrency(r.totale)}</CTableDataCell>

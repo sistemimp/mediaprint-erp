@@ -11,6 +11,7 @@ import {
   CFormInput,
   CFormLabel,
   CFormSelect,
+  CFormTextarea,
   CInputGroup,
   CInputGroupText,
   CRow,
@@ -30,7 +31,7 @@ import { createPreventivo, fetchPreventivoDetail } from '../../services/preventi
 import { fetchCategorieProdotti, fetchProdotti, fetchNatureIva, fetchProdottoVariazioni, fetchProdottoPrezziCombinati } from '../../services/prodotti'
 import { fetchPacchetti, fetchPacchettoDetail } from '../../services/pacchetti'
 import { CModal, CModalHeader, CModalTitle, CModalBody, CModalFooter } from '@coreui/react'
-import { CStepper } from '@coreui/react-pro'
+import { CAutocomplete, CStepper } from '@coreui/react-pro'
 
 const currencyFormatter = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' })
 const formatCurrency = (value) => {
@@ -186,6 +187,41 @@ const PreventiviCreate = () => {
       return rs.includes(q) || piva.includes(q.replace(/[ .-]/g, '')) || cf.includes(q)
     })
   }, [allClientiOptions, clienteSearch])
+
+  const clientiAutocompleteOptions = useMemo(() => {
+    return clientiOptions
+      .map((c) => {
+        const rawId = c?.id_anagrafica ?? c?.id
+        if (rawId == null || rawId === '') {
+          return null
+        }
+        const numericId = Number(rawId)
+        if (!Number.isFinite(numericId)) {
+          return null
+        }
+        const ragione = String(c?.ragione_sociale || '').trim()
+        const codiceCliente = String(c?.codice_cliente || '').trim()
+        const piva = String(c?.piva || '').trim()
+        const codiceFiscale = String(c?.codice_fiscale || '').trim()
+        return {
+          label: ragione || '--',
+          value: numericId,
+          ragioneSociale: ragione || '--',
+          codiceCliente: codiceCliente || null,
+          piva: piva || null,
+          codiceFiscale: codiceFiscale || null,
+        }
+      })
+      .filter(Boolean)
+  }, [clientiOptions])
+
+  const selectedClienteValue = useMemo(() => {
+    if (idAnagrafica === '' || idAnagrafica == null) {
+      return undefined
+    }
+    const numeric = Number(idAnagrafica)
+    return Number.isFinite(numeric) ? numeric : undefined
+  }, [idAnagrafica])
 
   // Carica categorie e nature IVA per stepper
   useEffect(() => {

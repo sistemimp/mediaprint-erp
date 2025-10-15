@@ -13,8 +13,14 @@ import {
   CFormInput,
   CFormLabel,
   CFormSelect,
+  CFormTextarea,
   CInputGroup,
   CInputGroupText,
+  CNav,
+  CNavItem,
+  CNavLink,
+  CTabContent,
+  CTabPane,
   CRow,
   CSpinner,
   CTable,
@@ -30,12 +36,13 @@ import {
   CModalFooter,
 } from '@coreui/react'
 import { CStepper } from '@coreui/react-pro'
+import AnagraficaAutocomplete from '../../components/AnagraficaAutocomplete'
 import CIcon from '@coreui/icons-react'
 import { cilCheckCircle, cilSave } from '@coreui/icons'
 
 import { useAuth } from '../../context/AuthContext'
 import { fetchAnagrafiche, fetchAnagraficaDetail } from '../../services/anagrafiche'
-import { createPreventivo, fetchPreventivoDetail, updatePreventivoStatus } from '../../services/preventivi'
+import { createPreventivo, fetchPreventivoDetail, updatePreventivoStatus, logPreventivoStatusChange, fetchPreventivoStatusLog } from '../../services/preventivi'
 import {
   fetchCategorieProdotti,
   fetchProdotti,
@@ -58,7 +65,7 @@ const PreventiviDetail = () => {
   const navigate = useNavigate()
   const query = useQuery()
   const id = Number(query.get('id') || 0)
-  const { token, logout } = useAuth()
+  const { token, logout, user } = useAuth()
 
   // Se non viene passato un ID valido, reindirizza alla lista
   useEffect(() => {
@@ -76,6 +83,10 @@ const PreventiviDetail = () => {
   const [statusUpdating, setStatusUpdating] = useState(false)
   const [statusError, setStatusError] = useState(null)
   const [statusSuccess, setStatusSuccess] = useState(null)
+  const [statusLog, setStatusLog] = useState([])
+  const [statusLogLoading, setStatusLogLoading] = useState(false)
+  const [statusLogError, setStatusLogError] = useState(null)
+  const [statusTab, setStatusTab] = useState('timeline')
 
   // Dati generali
   const [clienteSearch, setClienteSearch] = useState('')
@@ -84,6 +95,8 @@ const PreventiviDetail = () => {
   const [idAnagrafica, setIdAnagrafica] = useState('')
   const [dataPreventivo, setDataPreventivo] = useState('')
   const [note, setNote] = useState('')
+  const [oggetto, setOggetto] = useState('')
+  const [rifCliente, setRifCliente] = useState('')
 
   // Righe
   const [righe, setRighe] = useState([])
@@ -159,6 +172,8 @@ const PreventiviDetail = () => {
         setIdAnagrafica(String(data.id_anagrafica ?? ''))
         setDataPreventivo(data.data_preventivo ?? '')
         setNote(data.note ?? '')
+        setOggetto(data.oggetto ?? data.oggetto_preventivo ?? data.subject ?? '')
+        setRifCliente(data.riferimento_cliente ?? data.riferimento ?? data.rif_cliente ?? '')
 
         // Righe dal server -> mappa a forma UI (nessun fallback sintetico)
         if (Array.isArray(righeSrv)) {
@@ -202,6 +217,34 @@ const PreventiviDetail = () => {
     return () => controller.abort()
   }, [token, id, logout])
 
+  // Carica storico cambi stato
+  useEffect(() => {
+    if (!token || !id) return
+    const controller = new AbortController()
+    const loadLog = async () => {
+      setStatusLogLoading(true)
+      setStatusLogError(null)
+      try {
+        const { items } = await fetchPreventivoStatusLog({ token, id, signal: controller.signal })
+        const normalized = Array.isArray(items) ? items.slice() : []
+        normalized.sort((a, b) => {
+          const da = new Date(a?.at || a?.created_at || a?.timestamp || 0).getTime()
+          const db = new Date(b?.at || b?.created_at || b?.timestamp || 0).getTime()
+          return db - da
+        })
+        setStatusLog(normalized)
+      } catch (e) {
+        if (e?.name === 'AbortError') return
+        setStatusLogError(e)
+        setStatusLog([])
+      } finally {
+        setStatusLogLoading(false)
+      }
+    }
+    loadLog()
+    return () => controller.abort()
+  }, [token, id])
+
   // Verifica se l'anagrafica associata è disattiva per disabilitare attività
   useEffect(() => {
     const run = async () => {
@@ -241,7 +284,7 @@ const PreventiviDetail = () => {
         let allItems = Array.isArray(first.items) ? [...first.items] : []
         const totalPages = Math.max(first?.meta?.pages ?? first?.meta?.last_page ?? 1, 1)
         const perPage = first?.meta?.per_page ?? (allItems.length || PAGE_SIZE)
-        if (totalPages > 1) {
+        if (totalPages> 1) {
           for (let nextPage = 2; nextPage <= totalPages; nextPage += 1) {
             if (controller.signal.aborted) return
             const { items: pageItems = [] } = await fetchAnagrafiche({
@@ -252,7 +295,7 @@ const PreventiviDetail = () => {
               sortBy: 'ragione_sociale',
               sortDirection: 'asc',
             })
-            if (Array.isArray(pageItems) && pageItems.length > 0) {
+            if (Array.isArray(pageItems) && pageItems.length> 0) {
               allItems = allItems.concat(pageItems)
             }
           }
@@ -260,7 +303,7 @@ const PreventiviDetail = () => {
           // Fallback: continua se la prima pagina è piena
           let nextPage = 2
           let safety = 0
-          while (!controller.signal.aborted && allItems.length > 0 && allItems.length % perPage === 0 && safety < 100) {
+          while (!controller.signal.aborted && allItems.length> 0 && allItems.length % perPage === 0 && safety < 100) {
             const { items: pageItems = [] } = await fetchAnagrafiche({
               token,
               signal: controller.signal,
@@ -273,7 +316,7 @@ const PreventiviDetail = () => {
             allItems = allItems.concat(pageItems)
             nextPage += 1
             safety += 1
-            if (pageItems.length < perPage) break
+            if (pageItems.length <perPage) break
           }
         }
         const mapById = new Map()
@@ -306,13 +349,22 @@ const PreventiviDetail = () => {
     const q = (clienteSearch || '').trim().toLowerCase()
     if (q === '') return list
     const norm = (s) => String(s || '').toLowerCase()
+    const qNoSep = q.replace(/[ .-]/g, '')
     return list.filter((c) => {
       const rs = norm(c.ragione_sociale)
       const piva = norm(c.piva).replace(/[ .-]/g, '')
       const cf = norm(c.codice_fiscale)
-      return rs.includes(q) || piva.includes(q.replace(/[ .-]/g, '')) || cf.includes(q)
+      const codice = norm(c.codice_cliente)
+      return (
+        rs.includes(q) ||
+        piva.includes(qNoSep) ||
+        cf.includes(q) ||
+        (codice && codice.includes(q))
+      )
     })
   }, [allClientiOptions, clienteSearch])
+
+  // Opzioni già filtrate a monte; il componente si occupa solo del rendering/controllo
 
   // Carica categorie e nature IVA per stepper
   useEffect(() => {
@@ -357,16 +409,16 @@ const PreventiviDetail = () => {
       try {
         const ids = Array.from(new Set((Array.isArray(righe) ? righe : [])
           .map((r) => Number(r?.id_prodotto) || 0)
-          .filter((n) => n > 0)))
+          .filter((n) => n> 0)))
         const missing = ids.filter((idp) => prodCategoryMap[idp] == null)
         if (missing.length === 0) return
         // Carica categorie se non presenti
-        let cats = Array.isArray(catOptions) && catOptions.length > 0 ? catOptions : []
+        let cats = Array.isArray(catOptions) && catOptions.length> 0 ? catOptions : []
         if (cats.length === 0) {
           try {
             const { items } = await fetchCategorieProdotti({ token, signal: controller.signal })
             cats = Array.isArray(items) ? items : []
-            if (cats.length > 0) setCatOptions(cats)
+            if (cats.length> 0) setCatOptions(cats)
           } catch (_e) {
             cats = []
           }
@@ -387,7 +439,7 @@ const PreventiviDetail = () => {
             updates[idp] = 'Altro'
           }
         }
-        if (Object.keys(updates).length > 0) {
+        if (Object.keys(updates).length> 0) {
           setProdCategoryMap((prev) => ({ ...prev, ...updates }))
         }
       } catch (_e) { }
@@ -439,7 +491,7 @@ const PreventiviDetail = () => {
       ? selectedComboKey
       : (selectedVarIds
         .map((id) => Number(id) || 0)
-        .filter((n) => n > 0)
+        .filter((n) => n> 0)
         .sort((a, b) => a - b)
         .join('+'))
     const comboPrice = comboKey && prodComboMap[comboKey] != null ? Number(prodComboMap[comboKey]) : null
@@ -534,6 +586,8 @@ const PreventiviDetail = () => {
     if (!safeCode) return
     if (!token || !id) return
     if (statusUpdating) return
+    const prevCode = String(currentStatus?.code || '').toLowerCase()
+    const prevLabel = currentStatus?.label ?? prevCode
     setStatusError(null)
     setStatusSuccess(null)
     setStatusUpdating(true)
@@ -558,6 +612,37 @@ const PreventiviDetail = () => {
         code: resolvedCode ?? null,
         label: resolvedLabel ?? resolvedCode ?? null,
       })
+      // best-effort: salva log cambio stato (non blocca il flusso)
+      try {
+        const description = `Cambio stato da ${prevLabel || prevCode || '-'} a ${resolvedLabel || resolvedCode || safeCode}`
+        await logPreventivoStatusChange({
+          token,
+          id,
+          fromStatus: prevLabel || prevCode || null,
+          toStatus: resolvedLabel || resolvedCode || safeCode,
+          note: description,
+          description,
+          userId: (user && (user.id || user.user_id)) || null,
+          userName: (user && (user.username || user.name || user.nome)) || null,
+          context: {
+            preventivo_id: id,
+            previous_code: prevCode || null,
+            previous_label: prevLabel || null,
+            new_code: resolvedCode || safeCode,
+            new_label: resolvedLabel || null,
+          },
+        })
+        try {
+          const { items } = await fetchPreventivoStatusLog({ token, id })
+          const normalized = Array.isArray(items) ? items.slice() : []
+          normalized.sort((a, b) => {
+            const da = new Date(a?.at || a?.created_at || a?.timestamp || 0).getTime()
+            const db = new Date(b?.at || b?.created_at || b?.timestamp || 0).getTime()
+            return db - da
+          })
+          setStatusLog(normalized)
+        } catch (_e2) { }
+      } catch (_e) { }
       if (result.data) {
         setHeader((prev) => ({
           ...prev,
@@ -580,22 +665,16 @@ const PreventiviDetail = () => {
     }
   }, [token, id, statusUpdating, logout, statusOptions])
 
-  const handleStatusStepChange = useCallback((stepNumber) => {
-    if (statusUpdating) return
-    if (!Array.isArray(statusOptions) || statusOptions.length === 0) return
-    const index = Number(stepNumber) - 1
-    if (!Number.isFinite(index) || index < 0 || index >= statusOptions.length) return
-    const target = statusOptions[index]
-    if (!target || !target.code) return
-    if ((currentStatus?.code ?? null) === target.code) return
-    handleStatusChange(target.code)
-  }, [statusUpdating, statusOptions, currentStatus, handleStatusChange])
+  // Stepper usa gestione inline (3 step). Le transizioni 1->bozza, 2->inviato
+  // sono gestite direttamente, mentre il passo 3 (Finale) usa la select.
 
   const buildPayload = () => ({
     id_preventivo: id,
     id_anagrafica: Number(idAnagrafica) || 0,
     data_preventivo: dataPreventivo,
     note,
+    oggetto,
+    riferimento_cliente: rifCliente,
     righe,
     totals: {
       imponibile: totals.imponibile,
@@ -676,21 +755,39 @@ const PreventiviDetail = () => {
 
   if (!id) return null
 
-  const statusSteps = useMemo(
-    () => statusOptions.map((s) => (s?.label ?? s?.code ?? '')).map((label) => (label ? String(label) : '')),
-    [statusOptions],
-  )
-  const activeStatusStep = useMemo(() => {
-    if (!Array.isArray(statusOptions) || statusOptions.length === 0) {
-      return 1
-    }
-    const currentCode = currentStatus?.code ?? null
-    const idx = statusOptions.findIndex((s) => (s?.code ?? null) === currentCode)
-    return idx >= 0 ? idx + 1 : 1
-  }, [statusOptions, currentStatus])
+  // Visualizzazione stato: 3 step (Bozza -> Inviato -> Finale),
+  // con select per scegliere lo stato finale (Confermato/Rifiutato/Annullato)
+  const isFinalCode = useCallback((code) => {
+    const s = String(code || '').toLowerCase()
+    return s === 'confermato' || s === 'rifiutato_cliente' || s === 'annullato'
+  }, [])
+
+  const visualStatusSteps = useMemo(() => ['Bozza', 'Inviato', 'Finale'], [])
+
+  const activeVisualStatusStep = useMemo(() => {
+    const code = String(currentStatus?.code || '').toLowerCase()
+    if (code === 'bozza') return 1
+    if (code === 'inviato') return 2
+    if (isFinalCode(code)) return 3
+    return 1
+  }, [currentStatus, isFinalCode])
+
+  const finalStatusOptions = useMemo(() => {
+    const all = Array.isArray(statusOptions) ? statusOptions : []
+    return all.filter((s) => {
+      const c = String(s?.code || '').toLowerCase()
+      return c && c !== 'bozza' && c !== 'inviato'
+    })
+  }, [statusOptions])
+
   const currentStatusLabel = currentStatus?.label ?? null
 
   const uiDisabled = !editable || anagraficaDisabled
+  const formatDateTime = (val) => {
+    const d = new Date(val)
+    if (Number.isFinite(d.getTime())) return d.toLocaleString('it-IT')
+    return String(val || '')
+  }
 
   return (
     <CCard>
@@ -740,73 +837,141 @@ const PreventiviDetail = () => {
               </CAlert>
             )}
 
-            {statusSteps.length > 0 && (
-              <section className="mb-4">
-                <div className="d-flex justify-content-between align-items-center mb-3">
-                  <h6 className="mb-0 text-body-secondary">Stato preventivo</h6>
-                  {statusUpdating && (
+            <section className="mb-4">
+              <CNav variant="tabs" role="tablist" className="mb-3">
+                <CNavItem>
+                  <CNavLink active={statusTab === 'timeline'} role="tab" aria-selected={statusTab === 'timeline'} onClick={() => setStatusTab('timeline')}>
+                    Timeline
+                  </CNavLink>
+                </CNavItem>
+                <CNavItem>
+                  <CNavLink active={statusTab === 'storico'} role="tab" aria-selected={statusTab === 'storico'} onClick={() => setStatusTab('storico')}>
+                    Storico
+                  </CNavLink>
+                </CNavItem>
+              </CNav>
+                            <CTabContent>
+                <CTabPane visible={statusTab === 'timeline'} role="tabpanel">
+                  {visualStatusSteps.length > 0 && (
+                    <>
+                      {statusError && (
+                        <CAlert color="danger" className="mb-3">
+                          {statusError?.payload?.message || statusError.message || "Errore durante l'aggiornamento dello stato."}
+                        </CAlert>
+                      )}
+                      {statusSuccess && (
+                        <CAlert color="success" className="mb-3">{statusSuccess}</CAlert>
+                      )}
+                      <div className="px-2 px-lg-3 py-3 border rounded bg-body-tertiary">
+                        <div className="d-flex flex-column flex-lg-row align-items-center justify-content-between gap-3">
+                          <div className="flex-grow-1 w-100">
+                            <CStepper
+                              className="w-100"
+                              activeStepNumber={activeVisualStatusStep}
+                              steps={visualStatusSteps}
+                              linear={false}
+                              validation={false}
+                              onStepChange={(n) => {
+                                if (statusUpdating) return
+                                const step = Number(n)
+                                if (step === 1) { handleStatusChange('bozza'); return }
+                                if (step === 2) { handleStatusChange('inviato'); return }
+                              }}
+                            />
+                          </div>
+                          <div className="w-100 w-lg-auto align-self-center" style={{ minWidth: '220px', maxWidth: '320px' }}>
+                            <CInputGroup size="sm">
+                              <CInputGroupText>Stato finale</CInputGroupText>
+                              <CFormSelect
+                                size="sm"
+                                value={isFinalCode(currentStatus?.code) ? currentStatus.code : ''}
+                                onChange={(e) => {
+                                  const next = e.target.value
+                                  if (!next) return
+                                  handleStatusChange(next)
+                                }}
+                                disabled={statusUpdating || finalStatusOptions.length === 0}
+                              >
+                                <option value="">Seleziona...</option>
+                                {finalStatusOptions.map((opt) => (
+                                  <option key={opt.code} value={opt.code}>{opt.label ?? opt.code}</option>
+                                ))}
+                              </CFormSelect>
+                            </CInputGroup>
+                          </div>
+                        </div>
+                        <div className="mt-3 d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-2">
+                          <div>
+                            <small className="text-body-secondary">
+                              Stato attuale: <span className="fw-semibold">{currentStatusLabel || 'N.D.'}</span>
+                            </small>
+                          </div>
+                          <div className="d-flex align-items-center gap-2">
+                            {statusUpdating && <CSpinner size="sm" />}
+                            <small className="text-body-secondary">Seleziona uno step per aggiornare manualmente lo stato.</small>
+                          </div>
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </CTabPane>
+                <CTabPane visible={statusTab === 'storico'} role="tabpanel">
+                  {statusLogLoading && (
                     <div className="d-flex align-items-center gap-2">
                       <CSpinner size="sm" />
-                      <small className="text-body-secondary">Aggiornamento in corso...</small>
+                      <small className="text-body-secondary">Caricamento storico...</small>
                     </div>
                   )}
-                </div>
-                {statusError && (
-                  <CAlert color="danger" className="mb-3">
-                    {statusError?.payload?.message || statusError.message || "Errore durante l'aggiornamento dello stato."}
-                  </CAlert>
-                )}
-                {statusSuccess && (
-                  <CAlert color="success" className="mb-3">
-                    {statusSuccess}
-                  </CAlert>
-                )}
-                <div className="px-2 px-lg-3 py-3 border rounded bg-light">
-                  <CStepper
-                    activeStepNumber={activeStatusStep}
-                    steps={statusSteps}
-                    linear={false}
-                    validation={false}
-                    onStepChange={handleStatusStepChange}
-                  />
-                  <div className="mt-3 d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-2">
-                    <div>
-                      <small className="text-body-secondary">
-                        Stato attuale: <span className="fw-semibold">{currentStatusLabel || 'N.D.'}</span>
-                      </small>
-                    </div>
-                    <small className="text-body-secondary">Seleziona uno step per aggiornare manualmente lo stato.</small>
-                  </div>
-                </div>
-              </section>
-            )}
+                  {!statusLogLoading && statusLogError && (
+                    <CAlert color="danger" className="mb-0">Impossibile caricare lo storico dei cambi di stato.</CAlert>
+                  )}
+                  {!statusLogLoading && !statusLogError && (
+                    statusLog.length === 0 ? (
+                      <small className="text-body-secondary">Nessun evento di stato.</small>
+                    ) : (
+                      <CTable small responsive className="mb-0">
+                        <CTableHead color="light">
+                          <CTableRow>
+                            <CTableHeaderCell>Data</CTableHeaderCell>
+                            <CTableHeaderCell>Utente</CTableHeaderCell>
+                            <CTableHeaderCell>Transizione</CTableHeaderCell>
+                            <CTableHeaderCell>Nota</CTableHeaderCell>
+                          </CTableRow>
+                        </CTableHead>
+                        <CTableBody>
+                          {statusLog.map((e, idx) => (
+                            <CTableRow key={idx}>
+                              <CTableDataCell>{formatDateTime(e.at || e.created_at || e.timestamp)}</CTableDataCell>
+                              <CTableDataCell>{e.user_name || e.username || e.user || e.operatore || '-'}</CTableDataCell>
+                              <CTableDataCell>
+                                {(e.from_status || e.from || e.da)
+                                  ? `${e.from_status || e.from || e.da} → ${e.to_status || e.to || e.a || e.status || ''}`
+                                  : (e.to_status || e.to || e.a || e.status || '')}
+                              </CTableDataCell>
+                              <CTableDataCell>{e.note || e.message || ''}</CTableDataCell>
+                            </CTableRow>
+                          ))}
+                        </CTableBody>
+                      </CTable>
+                    )
+                  )}
+                </CTabPane>
+              </CTabContent>
+            </section>
 
             <section className="mb-4">
               <h6 className="mb-3 text-body-secondary">Dati generali</h6>
               <CRow className="g-3">
                 <CCol md={6}>
                   <CFormLabel>Cliente</CFormLabel>
-                  <CInputGroup>
-                    <CFormInput
-                      placeholder="Cerca cliente per ragione sociale o P.IVA"
-                      value={clienteSearch}
-                      onChange={(e) => setClienteSearch(e.target.value)}
-                      disabled={uiDisabled}
-                    />
-                  </CInputGroup>
-                  <CFormSelect
-                    className="mt-2"
+                  <AnagraficaAutocomplete
+                    items={clientiOptions}
                     value={idAnagrafica}
-                    onChange={(e) => setIdAnagrafica(e.target.value)}
-                    disabled={uiDisabled || loadingClienti}
-                  >
-                    <option value="">Seleziona cliente...</option>
-                    {clientiOptions.map((c) => (
-                      <option key={c.id_anagrafica ?? c.id} value={c.id_anagrafica ?? c.id}>
-                        {c.ragione_sociale}
-                      </option>
-                    ))}
-                  </CFormSelect>
+                    onChange={(id) => setIdAnagrafica(id)}
+                    onSearch={(q) => setClienteSearch(q)}
+                    loading={loadingClienti}
+                    disabled={uiDisabled}
+                  />
                 </CCol>
                 <CCol md={3}>
                   <CFormLabel>Data preventivo</CFormLabel>
@@ -818,10 +983,18 @@ const PreventiviDetail = () => {
                   />
                 </CCol>
                 <CCol md={3}>
-                  <CFormLabel>Note</CFormLabel>
+                  <CFormLabel>Riferimento cliente</CFormLabel>
                   <CFormInput
-                    value={note}
-                    onChange={(e) => setNote(e.target.value)}
+                    value={rifCliente}
+                    onChange={(e) => setRifCliente(e.target.value)}
+                    disabled={uiDisabled}
+                  />
+                </CCol>
+                <CCol md={12}>
+                  <CFormLabel>Oggetto preventivo</CFormLabel>
+                  <CFormInput
+                    value={oggetto}
+                    onChange={(e) => setOggetto(e.target.value)}
                     disabled={uiDisabled}
                   />
                 </CCol>
@@ -872,7 +1045,7 @@ const PreventiviDetail = () => {
                       </div>
                     </CCol>
                   </CRow>
-                  {pkgPreview.length > 0 && (
+                  {pkgPreview.length> 0 && (
                     <div className="border rounded p-2">
                       <div className="fw-semibold mb-2">Righe del pacchetto</div>
                       <CTable compact hover responsive>
@@ -940,7 +1113,7 @@ const PreventiviDetail = () => {
 
                           if (!line.categoria_nome) {
                             const idp = Number(r.id_prodotto) || 0
-                            if (idp > 0 && prodCategoryMap[idp]) {
+                            if (idp> 0 && prodCategoryMap[idp]) {
                               line.categoria_nome = String(prodCategoryMap[idp])
                             }
                           }
@@ -949,8 +1122,7 @@ const PreventiviDetail = () => {
                         })
                         setRighe((rows) => rows.concat(newLines))
                         setPkgOpen(false)
-                      }}
-                    >
+                      }}>
                       Inserisci in preventivo
                     </CButton>
                   </div>
@@ -978,8 +1150,7 @@ const PreventiviDetail = () => {
                           const prod = prodOptions.find((p) => String(p.id_prodotto) === String(pid))
                           if (prod && prod.iva_percento != null) setSelIva(String(prod.iva_percento))
                         }}
-                        disabled={uiDisabled}
-                      >
+                        disabled={uiDisabled}>
                         <option value="">Seleziona...</option>
                         {prodOptions.map((p) => (
                           <option key={p.id_prodotto} value={p.id_prodotto}>
@@ -993,14 +1164,14 @@ const PreventiviDetail = () => {
                       <CFormInput type="number" min="0" max="100" step="1" value={selIva} onChange={(e) => setSelIva(e.target.value)} disabled={uiDisabled} />
                     </CCol>
                     {/* Rimosso: selettore manuale variazioni. Si usano direttamente le combinazioni */}
-                    {prodComboList.length > 0 && (
+                    {prodComboList.length> 0 && (
                       <CCol md={4}>
                         <CFormLabel>Combinazioni disponibili</CFormLabel>
                         <CFormSelect
                           value={(() => {
                             const key = selectedVarIds
                               .map((id) => Number(id) || 0)
-                              .filter((n) => n > 0)
+                              .filter((n) => n> 0)
                               .sort((a, b) => a - b)
                               .join('+')
                             return key
@@ -1014,8 +1185,7 @@ const PreventiviDetail = () => {
                             const prezzoInput = document.getElementById('step-prezzo')
                             if (prezzoInput) prezzoInput.value = String(prezzo)
                           }}
-                          disabled={uiDisabled || prodComboList.length === 0}
-                        >
+                          disabled={uiDisabled || prodComboList.length === 0}>
                           <option value="">--</option>
                           {prodComboList.map((r, idx) => {
                             const labels = Array.isArray(r.var_ids)
@@ -1065,11 +1235,11 @@ const PreventiviDetail = () => {
                           const delta = selectedVars.reduce((acc, v) => acc + (Number(v.delta_prezzo) || 0), 0)
                           const comboKey = selectedVars
                             .map((v) => Number(v.id_variazione) || 0)
-                            .filter((n) => n > 0)
+                            .filter((n) => n> 0)
                             .sort((a, b) => a - b)
                             .join('+')
                           const comboPrice = comboKey && prodComboMap[comboKey] != null ? Number(prodComboMap[comboKey]) : null
-                          const descr = selectedVars.length > 0
+                          const descr = selectedVars.length> 0
                             ? `${prod.nome} - ${selectedVars.map((v) => `${v.nome}${v.codice ? ' [' + v.codice + ']' : ''}`).join(', ')}`
                             : prod.nome
                           const prezzoFinale = comboPrice != null ? comboPrice : (prezzoBase + delta)
@@ -1082,7 +1252,7 @@ const PreventiviDetail = () => {
                           }
                           if (ivaPerc === 0) {
                             const natId = Number(prod.id_sdi_natura_iva) || 0
-                            if (natId > 0) {
+                            if (natId> 0) {
                               riga.id_sdi_natura_iva = natId
                             } else {
                               const nat = naturaOptions[0]
@@ -1091,8 +1261,7 @@ const PreventiviDetail = () => {
                           }
                           setRighe((rows) => rows.concat(riga))
                           setSelectedVarIds([])
-                        }}
-                      >
+                        }}>
                         Inserisci riga
                       </CButton>
                       <CButton color="link" type="button" onClick={() => setStepperOpen(false)}>
@@ -1127,7 +1296,7 @@ const PreventiviDetail = () => {
                       }
                       if (n === 3) {
                         if (!selProd) return
-                        if (Array.isArray(prodComboList) && prodComboList.length > 0) {
+                        if (Array.isArray(prodComboList) && prodComboList.length> 0) {
                           setProdStep(3)
                         } else {
                           setProdStep(4)
@@ -1166,8 +1335,7 @@ const PreventiviDetail = () => {
                             const prod = prodOptions.find((p) => String(p.id_prodotto) === String(pid))
                             if (prod && prod.iva_percento != null) setSelIva(String(prod.iva_percento))
                           }}
-                          disabled={uiDisabled}
-                        >
+                          disabled={uiDisabled}>
                           <option value="">Seleziona...</option>
                           {prodOptions.map((p) => (
                             <option key={p.id_prodotto} value={p.id_prodotto}>
@@ -1184,7 +1352,7 @@ const PreventiviDetail = () => {
                   )}
                   {prodStep === 3 && (
                     <CRow className="g-3">
-                      {prodComboList.length > 0 ? (
+                      {prodComboList.length> 0 ? (
                         <CCol md={12}>
                           <CFormLabel>Combinazioni</CFormLabel>
                           <CFormSelect
@@ -1197,8 +1365,7 @@ const PreventiviDetail = () => {
                               const ids = Array.isArray(opt.var_ids) ? opt.var_ids.map(Number) : []
                               setSelectedVarIds(ids)
                             }}
-                            disabled={uiDisabled || prodComboList.length === 0}
-                          >
+                            disabled={uiDisabled || prodComboList.length === 0}>
                             <option value="">Seleziona una combinazione…</option>
                             {prodComboList.map((r, idx) => {
                               const ids = Array.isArray(r.var_ids) ? r.var_ids : String(r.combo_key).split('+').map((x) => Number(x) || 0)
@@ -1232,7 +1399,7 @@ const PreventiviDetail = () => {
                         <div className="mb-2"><strong>Prodotto:</strong> {(() => { const p = prodOptions.find((x) => String(x.id_prodotto) === String(selProd)); return p ? (p.codice ? `${p.codice} - ${p.nome}` : p.nome) : '-' })()}</div>
                         {(() => {
                           const ids = selectedComboKey
-                            ? selectedComboKey.split('+').map((x) => Number(x) || 0).filter((n) => n > 0)
+                            ? selectedComboKey.split('+').map((x) => Number(x) || 0).filter((n) => n> 0)
                             : selectedVarIds
                           if (!ids || ids.length === 0) return null
                           const groups = {}
@@ -1270,7 +1437,7 @@ const PreventiviDetail = () => {
                 </CModalBody>
                 <CModalFooter className="d-flex justify-content-between">
                   <div>
-                    {prodStep > 1 && (
+                    {prodStep> 1 && (
                       <CButton color="secondary" variant="outline" onClick={() => setProdStep((s) => Math.max(1, s - 1))} disabled={uiDisabled}>Indietro</CButton>
                     )}
                   </div>
@@ -1288,8 +1455,7 @@ const PreventiviDetail = () => {
                           }
                           if (prodStep === 3) { setProdStep(4); return }
                         }}
-                        disabled={(prodStep === 2 && !selProd) || uiDisabled}
-                      >
+                        disabled={(prodStep === 2 && !selProd) || uiDisabled}>
                         Avanti
                       </CButton>
                     )}
@@ -1301,10 +1467,10 @@ const PreventiviDetail = () => {
                           if (!prod) return
                           const ivaPerc = Number(selIva || prod.iva_percento || 22)
                           const comboIds = selectedComboKey
-                            ? selectedComboKey.split('+').map((x) => Number(x) || 0).filter((n) => n > 0)
+                            ? selectedComboKey.split('+').map((x) => Number(x) || 0).filter((n) => n> 0)
                             : selectedVarIds
                           let descr = prod.nome
-                          if (comboIds && comboIds.length > 0) {
+                          if (comboIds && comboIds.length> 0) {
                             const groups = {}
                             comboIds.forEach((idv) => {
                               const vv = prodVarOptions.find((x) => Number(x.id_variazione) === Number(idv))
@@ -1329,8 +1495,7 @@ const PreventiviDetail = () => {
                           setRighe((rows) => rows.concat(riga))
                           setStepperOpen(false)
                         }}
-                        disabled={uiDisabled}
-                      >
+                        disabled={uiDisabled}>
                         Inserisci riga
                       </CButton>
                     )}
@@ -1380,7 +1545,7 @@ const PreventiviDetail = () => {
                       }
                       // Poi: mappa risolta da id_prodotto
                       const idp = Number(r?.id_prodotto) || 0
-                      if (idp > 0 && prodCategoryMap[idp]) return prodCategoryMap[idp]
+                      if (idp> 0 && prodCategoryMap[idp]) return prodCategoryMap[idp]
                       // Fallback
                       return 'Varie'
                     }
@@ -1470,8 +1635,7 @@ const PreventiviDetail = () => {
                               <CFormSelect
                                 value={riga.id_sdi_natura_iva ?? ''}
                                 onChange={(e) => updateRiga(idx, { id_sdi_natura_iva: e.target.value ? Number(e.target.value) : null })}
-                                disabled={uiDisabled || Number(riga.iva) !== 0}
-                              >
+                                disabled={uiDisabled || Number(riga.iva) !== 0}>
                                 <option value="">--</option>
                                 {naturaOptions.map((n) => (
                                   <option key={n.id_natura} value={n.id_natura}>
@@ -1516,11 +1680,25 @@ const PreventiviDetail = () => {
                 <CCol md={4}>
                   <CInputGroup>
                     <CInputGroupText>Totale</CInputGroupText>
-                    <CFormInput value={formatCurrency(totals.totale)} readOnly disabled />
-                  </CInputGroup>
-                </CCol>
-              </CRow>
-            </section>
+                <CFormInput value={formatCurrency(totals.totale)} readOnly disabled />
+              </CInputGroup>
+            </CCol>
+          </CRow>
+        </section>
+
+        <section className="mb-4">
+          <h6 className="mb-3 text-body-secondary">Note</h6>
+          <CRow>
+            <CCol md={12}>
+              <CFormTextarea
+                rows={5}
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                disabled={uiDisabled}
+              />
+            </CCol>
+          </CRow>
+        </section>
 
             <div className="d-flex gap-2">
               <CButton color="secondary" variant="outline" type="button" onClick={handleSalvaBozza} disabled={uiDisabled || submitting}>
@@ -1541,3 +1719,6 @@ const PreventiviDetail = () => {
 }
 
 export default PreventiviDetail
+
+
+

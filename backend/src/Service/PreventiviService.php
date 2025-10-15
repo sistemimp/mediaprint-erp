@@ -158,6 +158,8 @@ final class PreventiviService
 
         $dataPrev = isset($input['data_preventivo']) ? (string) $input['data_preventivo'] : null;
         $note = isset($input['note']) ? (string) $input['note'] : null;
+        $oggetto = isset($input['oggetto']) ? (string) $input['oggetto'] : null;
+        $rifCliente = isset($input['riferimento_cliente']) ? (string) $input['riferimento_cliente'] : null;
 
         $totImpon = isset($input['totale_imponibile']) ? (float) $input['totale_imponibile'] : 0.0;
         $totSconto = isset($input['totale_sconto']) ? (float) $input['totale_sconto'] : 0.0;
@@ -203,6 +205,8 @@ final class PreventiviService
                 'id_anagrafica' => $idAnagrafica ?: null,
                 'data_preventivo' => $dataPrev,
                 'note' => $note,
+                'oggetto' => $oggetto,
+                'riferimento_cliente' => $rifCliente,
                 'totale_imponibile' => $totImpon,
                 'totale_sconto' => $totSconto,
                 'totale_iva' => $totIva,
@@ -237,6 +241,8 @@ final class PreventiviService
             'id_anagrafica' => $idAnagrafica,
             'data_preventivo' => $dataPrev,
             'note' => $note,
+            'oggetto' => $oggetto,
+            'riferimento_cliente' => $rifCliente,
             'totale_imponibile' => $totImpon,
             'totale_sconto' => $totSconto,
             'totale_iva' => $totIva,
@@ -293,6 +299,8 @@ final class PreventiviService
             'id_anagrafica' => $idAnag,
             'data_preventivo' => $arch['data_preventivo'] ?? null,
             'note' => $arch['note'] ?? null,
+            'oggetto' => $arch['oggetto'] ?? null,
+            'riferimento_cliente' => $arch['riferimento_cliente'] ?? null,
             'totale_imponibile' => isset($arch['totale_imponibile']) ? (float) $arch['totale_imponibile'] : 0.0,
             'totale_sconto' => isset($arch['totale_sconto']) ? (float) $arch['totale_sconto'] : 0.0,
             'totale_iva' => isset($arch['totale_iva']) ? (float) $arch['totale_iva'] : 0.0,

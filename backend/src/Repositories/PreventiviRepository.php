@@ -20,6 +20,8 @@ final class PreventiviRepository
                 p.anno_preventivo,
                 p.numero_documento,
                 p.data_preventivo,
+                p.oggetto,
+                p.riferimento_cliente,
                 p.totale_imponibile,
                 p.totale_sconto,
                 p.totale_iva,
@@ -117,6 +119,8 @@ final class PreventiviRepository
                 pa.anno_preventivo,
                 pa.numero_documento,
                 pa.data_preventivo,
+                pa.oggetto,
+                pa.riferimento_cliente,
                 pa.totale_imponibile,
                 pa.totale_sconto,
                 pa.totale_iva,
@@ -201,7 +205,7 @@ final class PreventiviRepository
     public function getArchivedById(int $id): ?array
     {
         $sql = <<<'SQL'
-            SELECT id_preventivo, id_anagrafica, data_preventivo, note,
+            SELECT id_preventivo, id_anagrafica, data_preventivo, oggetto, riferimento_cliente, note,
                    totale_imponibile, totale_sconto, totale_iva, totale
             FROM tb_preventivi_archive
             WHERE id_preventivo = :id
@@ -216,6 +220,8 @@ final class PreventiviRepository
             'id_preventivo' => (int) $row['id_preventivo'],
             'id_anagrafica' => (int) $row['id_anagrafica'],
             'data_preventivo' => $row['data_preventivo'] ?? null,
+            'oggetto' => $row['oggetto'] ?? null,
+            'riferimento_cliente' => $row['riferimento_cliente'] ?? null,
             'note' => $row['note'] ?? null,
             'totale_imponibile' => $row['totale_imponibile'] ?? null,
             'totale_sconto' => $row['totale_sconto'] ?? null,
@@ -314,12 +320,12 @@ final class PreventiviRepository
             $this->pdo->prepare(
                 "INSERT INTO tb_preventivi_archive (
                     id_preventivo, id_anagrafica, anno_preventivo, numero_documento, data_preventivo,
-                    stato, totale_imponibile, totale_sconto, totale_iva, totale, note,
+                    stato, totale_imponibile, totale_sconto, totale_iva, totale, oggetto, riferimento_cliente, note,
                     created_at, updated_at
                 )
                 SELECT p.id_preventivo, p.id_anagrafica, p.anno_preventivo, p.numero_documento, p.data_preventivo,
                        COALESCE(sp.code, 'bozza') AS stato,
-                       p.totale_imponibile, p.totale_sconto, p.totale_iva, p.totale, p.note,
+                       p.totale_imponibile, p.totale_sconto, p.totale_iva, p.totale, p.oggetto, p.riferimento_cliente, p.note,
                        p.created_at, p.updated_at
                 FROM tb_preventivi p
                 LEFT JOIN cfg_stati_preventivo sp ON sp.id_stato = p.id_stato_prev
@@ -416,6 +422,8 @@ final class PreventiviRepository
                     anno_preventivo,
                     numero_documento,
                     data_preventivo,
+                    oggetto,
+                    riferimento_cliente,
                     totale_imponibile,
                     totale_sconto,
                     totale_iva,
@@ -429,6 +437,8 @@ final class PreventiviRepository
                     :anno,
                     :numero,
                     :data_preventivo,
+                    :oggetto,
+                    :riferimento_cliente,
                     :totale_imponibile,
                     :totale_sconto,
                     :totale_iva,
@@ -445,6 +455,8 @@ final class PreventiviRepository
             $stmt->bindValue(':anno', $year, PDO::PARAM_INT);
             $stmt->bindValue(':numero', $next, PDO::PARAM_INT);
             $stmt->bindValue(':data_preventivo', $data['data_preventivo'] ?? null, PDO::PARAM_STR);
+            $stmt->bindValue(':oggetto', $data['oggetto'] ?? null, PDO::PARAM_STR);
+            $stmt->bindValue(':riferimento_cliente', $data['riferimento_cliente'] ?? null, PDO::PARAM_STR);
             $stmt->bindValue(':totale_imponibile', $data['totale_imponibile'] ?? 0, PDO::PARAM_STR);
             $stmt->bindValue(':totale_sconto', $data['totale_sconto'] ?? 0, PDO::PARAM_STR);
             $stmt->bindValue(':totale_iva', $data['totale_iva'] ?? 0, PDO::PARAM_STR);
@@ -477,12 +489,14 @@ final class PreventiviRepository
             SET
                 id_anagrafica = COALESCE(:id_anagrafica, id_anagrafica),
                 data_preventivo = :data_preventivo,
+                oggetto = :oggetto,
+                riferimento_cliente = :riferimento_cliente,
                 totale_imponibile = :totale_imponibile,
                 totale_sconto = :totale_sconto,
                 totale_iva = :totale_iva,
                 totale = :totale,
                 note = :note,
-                updated_at = NOW()
+            updated_at = NOW()
             WHERE id_preventivo = :id
             LIMIT 1
         SQL;
@@ -491,6 +505,8 @@ final class PreventiviRepository
         $stmt->bindValue(':id', $id, PDO::PARAM_INT);
         $stmt->bindValue(':id_anagrafica', isset($data['id_anagrafica']) ? (int) $data['id_anagrafica'] : null, PDO::PARAM_INT);
         $stmt->bindValue(':data_preventivo', $data['data_preventivo'] ?? null, PDO::PARAM_STR);
+        $stmt->bindValue(':oggetto', $data['oggetto'] ?? null, PDO::PARAM_STR);
+        $stmt->bindValue(':riferimento_cliente', $data['riferimento_cliente'] ?? null, PDO::PARAM_STR);
         $stmt->bindValue(':totale_imponibile', $data['totale_imponibile'] ?? 0, PDO::PARAM_STR);
         $stmt->bindValue(':totale_sconto', $data['totale_sconto'] ?? 0, PDO::PARAM_STR);
         $stmt->bindValue(':totale_iva', $data['totale_iva'] ?? 0, PDO::PARAM_STR);
@@ -564,6 +580,8 @@ final class PreventiviRepository
                 p.anno_preventivo,
                 p.numero_documento,
                 p.data_preventivo,
+                p.oggetto,
+                p.riferimento_cliente,
                 p.note,
                 p.totale_imponibile,
                 p.totale_sconto,
@@ -592,6 +610,8 @@ final class PreventiviRepository
             'anno_preventivo' => isset($row['anno_preventivo']) ? (int) $row['anno_preventivo'] : null,
             'numero_documento' => isset($row['numero_documento']) ? (int) $row['numero_documento'] : null,
             'data_preventivo' => $row['data_preventivo'] ?? null,
+            'oggetto' => $row['oggetto'] ?? null,
+            'riferimento_cliente' => $row['riferimento_cliente'] ?? null,
             'note' => $row['note'] ?? null,
             'totale_imponibile' => isset($row['totale_imponibile']) ? (float) $row['totale_imponibile'] : null,
             'totale_sconto' => isset($row['totale_sconto']) ? (float) $row['totale_sconto'] : null,

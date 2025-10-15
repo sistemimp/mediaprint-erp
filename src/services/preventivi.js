@@ -49,6 +49,8 @@ export const createPreventivo = async ({
   id_anagrafica,
   data_preventivo,
   note,
+  oggetto,
+  riferimento_cliente,
   righe,
   totals,
   send,
@@ -59,6 +61,8 @@ export const createPreventivo = async ({
     id_anagrafica,
     data_preventivo,
     note,
+    oggetto,
+    riferimento_cliente,
     righe,
     // backend persiste solo testata per ora: passiamo i totali
     totale_imponibile: totals?.imponibile ?? 0,
@@ -148,4 +152,62 @@ export const updatePreventivoStatus = async ({ token, id, statusCode, signal } =
   const editable = !!response?.meta?.editable
 
   return { data, statuses, currentStatus, editable }
+}
+
+// Salva un log del cambio stato (best-effort; non blocca il flusso se fallisce)
+export const logPreventivoStatusChange = async ({ token, id, fromStatus, toStatus, note, description, context, userId, userName, signal } = {}) => {
+  const numericId = Number(id)
+  const body = {
+    id: Number.isFinite(numericId) && numericId > 0 ? numericId : id,
+    from_status: fromStatus ?? null,
+    to_status: toStatus ?? null,
+    note: note ?? null,
+    description: description ?? note ?? null,
+    context: context ?? null,
+    user_id: userId ?? null,
+    user_name: userName ?? null,
+    at: new Date().toISOString(),
+  }
+
+  try {
+    const resp = await apiFetch('/preventiviStatusLog.php', {
+      method: 'POST',
+      token,
+      body,
+      signal,
+    })
+    return resp ?? { ok: true }
+  } catch (_e) {
+    // Non propagare: il log non deve impedire l'uso dell'app
+    return { ok: false }
+  }
+}
+
+// Legge lo storico dei cambi stato del preventivo
+export const fetchPreventivoStatusLog = async ({ token, id, signal } = {}) => {
+  const numericId = Number(id)
+  const params = {
+    id: Number.isFinite(numericId) && numericId > 0 ? numericId : id,
+  }
+
+  const response = await apiFetch('/preventiviStatusLog.php', {
+    token,
+    params,
+    signal,
+  })
+
+  const items = Array.isArray(response?.items)
+    ? response.items
+    : (Array.isArray(response?.data)
+      ? response.data
+      : (Array.isArray(response)
+        ? response
+        : []))
+
+  return { items }
+}
+
+// Alias semantico per log generico di eventi stato preventivo
+export const logPreventivoEvent = async (args = {}) => {
+  return logPreventivoStatusChange(args)
 }
