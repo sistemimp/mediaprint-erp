@@ -27,6 +27,11 @@ final class PreventiviService
 
         $editable = ($row['stato_code'] ?? 'bozza') === 'bozza';
         $righe = $this->repository->getLines($id);
+        $cig = $this->repository->getCigList($id);
+        $determine = $this->repository->getDetermineList($id);
+        // Oggetti selezionati (multi-select) e opzioni disponibili
+        $selectedOggetti = $this->repository->getOggettiForPreventivo($id);
+        $row['oggetti'] = $selectedOggetti;
         $statuses = $this->repository->listStatuses();
         $currentStatus = [
             'code' => $row['stato_code'] ?? null,
@@ -35,6 +40,8 @@ final class PreventiviService
         return [
             'data' => $row,
             'righe' => $righe,
+            'cig' => $cig,
+            'determine' => $determine,
             'meta' => [
                 'editable' => $editable,
                 'statuses' => $statuses,
@@ -158,7 +165,16 @@ final class PreventiviService
 
         $dataPrev = isset($input['data_preventivo']) ? (string) $input['data_preventivo'] : null;
         $note = isset($input['note']) ? (string) $input['note'] : null;
-        $oggetto = isset($input['oggetto']) ? (string) $input['oggetto'] : null;
+        $oggetto = isset($input['oggetto']) ? (string) $input['oggetto'] : null; // kept for compatibility; will be overridden by computed text
+        // Multi-select oggetti + testo custom
+        $oggettiIds = [];
+        if (isset($input['oggetti']) && is_array($input['oggetti'])) {
+            foreach ($input['oggetti'] as $oid) {
+                $oid = (int) $oid;
+                if ($oid > 0) { $oggettiIds[] = $oid; }
+            }
+        }
+        // Niente testo custom: rimosso
         $rifCliente = isset($input['riferimento_cliente']) ? (string) $input['riferimento_cliente'] : null;
 
         $totImpon = isset($input['totale_imponibile']) ? (float) $input['totale_imponibile'] : 0.0;
@@ -184,6 +200,39 @@ final class PreventiviService
             }
         }
 
+        // Normalizza CIG e Determine (opzionali)
+        $cigItems = [];
+        if (isset($input['cig']) && is_array($input['cig'])) {
+            foreach ($input['cig'] as $c) {
+                if (!is_array($c)) continue;
+                $cigItems[] = [
+                    'cig' => (string) ($c['cig'] ?? $c['code'] ?? ''),
+                    'data_cig' => isset($c['data_cig']) ? (string) $c['data_cig'] : (isset($c['data']) ? (string) $c['data'] : null),
+                    'motivazione' => isset($c['motivazione']) ? (string) $c['motivazione'] : (isset($c['note']) ? (string) $c['note'] : null),
+                ];
+            }
+        }
+        $detItems = [];
+        if (isset($input['determine']) && is_array($input['determine'])) {
+            foreach ($input['determine'] as $d) {
+                if (!is_array($d)) continue;
+                $detItems[] = [
+                    'determina' => (string) ($d['determina'] ?? $d['numero'] ?? ''),
+                    'data_determina' => isset($d['data_determina']) ? (string) $d['data_determina'] : (isset($d['data']) ? (string) $d['data'] : null),
+                    'motivazione' => isset($d['motivazione']) ? (string) $d['motivazione'] : (isset($d['note']) ? (string) $d['note'] : null),
+                ];
+            }
+        } elseif (isset($input['determina']) && is_array($input['determina'])) { // compat: 'determina'
+            foreach ($input['determina'] as $d) {
+                if (!is_array($d)) continue;
+                $detItems[] = [
+                    'determina' => (string) ($d['determina'] ?? $d['numero'] ?? ''),
+                    'data_determina' => isset($d['data_determina']) ? (string) $d['data_determina'] : (isset($d['data']) ? (string) $d['data'] : null),
+                    'motivazione' => isset($d['motivazione']) ? (string) $d['motivazione'] : (isset($d['note']) ? (string) $d['note'] : null),
+                ];
+            }
+        }
+
         if ($idPrev > 0) {
             $existing = $this->repository->getById($idPrev);
             if ($existing === null) {
@@ -205,7 +254,7 @@ final class PreventiviService
                 'id_anagrafica' => $idAnagrafica ?: null,
                 'data_preventivo' => $dataPrev,
                 'note' => $note,
-                'oggetto' => $oggetto,
+                'oggetto' => $oggetto, // will be recomputed from selections below
                 'riferimento_cliente' => $rifCliente,
                 'totale_imponibile' => $totImpon,
                 'totale_sconto' => $totSconto,
@@ -213,10 +262,16 @@ final class PreventiviService
                 'totale' => $totale,
             ]);
 
+            // Aggiorna selezioni oggetto + testo (solo da label selezionate)
+            $this->repository->replaceOggettiAndUpdateText($idPrev, $oggettiIds);
+
             if (!empty($lines)) {
                 // aggiorna righe bozza
                 $this->repository->replaceLines($idPrev, $lines);
             }
+            // sostituisce CIG e Determine (consente anche svuotamento)
+            $this->repository->replaceCig($idPrev, $cigItems);
+            $this->repository->replaceDetermine($idPrev, $detItems);
 
             if ($send) {
                 $numbered = $this->repository->confirmAndNumber($idPrev);
@@ -241,7 +296,7 @@ final class PreventiviService
             'id_anagrafica' => $idAnagrafica,
             'data_preventivo' => $dataPrev,
             'note' => $note,
-            'oggetto' => $oggetto,
+            'oggetto' => $oggetto, // will be recomputed from selections
             'riferimento_cliente' => $rifCliente,
             'totale_imponibile' => $totImpon,
             'totale_sconto' => $totSconto,
@@ -249,9 +304,15 @@ final class PreventiviService
             'totale' => $totale,
         ]);
 
+        // Imposta selezioni multi-oggetto e aggiorna testo
+        $this->repository->replaceOggettiAndUpdateText($draft['id_preventivo'], $oggettiIds);
+
         if (!empty($lines)) {
             $this->repository->replaceLines($draft['id_preventivo'], $lines);
         }
+        // Inserisce CIG/Determine per la bozza
+        $this->repository->replaceCig($draft['id_preventivo'], $cigItems);
+        $this->repository->replaceDetermine($draft['id_preventivo'], $detItems);
 
         if ($send) {
             $numbered = $this->repository->confirmAndNumber($draft['id_preventivo']);
@@ -306,6 +367,8 @@ final class PreventiviService
             'totale_iva' => isset($arch['totale_iva']) ? (float) $arch['totale_iva'] : 0.0,
             'totale' => isset($arch['totale']) ? (float) $arch['totale'] : 0.0,
         ]);
+
+        // Niente testo custom da archivio
 
         // Prova a ripristinare anche le righe dall'archivio (se presente)
         $archivedLines = $this->repository->getArchivedLines($id);

@@ -1,9 +1,9 @@
-import React, { useEffect, useRef } from 'react'
+import React, { useEffect, useMemo, useRef } from 'react'
 
 import { CChartLine } from '@coreui/react-chartjs'
 import { getStyle } from '@coreui/utils'
 
-const MainChart = () => {
+const MainChart = ({ stats }) => {
   const chartRef = useRef(null)
 
   useEffect(() => {
@@ -28,64 +28,71 @@ const MainChart = () => {
 
   const random = () => Math.round(Math.random() * 100)
 
+  const chartData = useMemo(() => {
+    const series = stats?.fatture_series
+    if (Array.isArray(series) && series.length > 0) {
+      const labels = series.map((s) => s.mese)
+      const datasetTotale = series.map((s) => Number(s.totale || 0))
+      const datasetPagate = series.map((s) => Number(s.pagate || 0))
+      return {
+        labels,
+        datasets: [
+          {
+            label: 'Totale fatture',
+            backgroundColor: `rgba(${getStyle('--cui-info-rgb')}, .1)`,
+            borderColor: getStyle('--cui-info'),
+            pointHoverBackgroundColor: getStyle('--cui-info'),
+            borderWidth: 2,
+            data: datasetTotale,
+            fill: true,
+          },
+          {
+            label: 'Pagato',
+            backgroundColor: 'transparent',
+            borderColor: getStyle('--cui-success'),
+            pointHoverBackgroundColor: getStyle('--cui-success'),
+            borderWidth: 2,
+            data: datasetPagate,
+          },
+        ],
+      }
+    }
+
+    // Fallback demo
+    return {
+      labels: ['January', 'February', 'March', 'April', 'May', 'June', 'July'],
+      datasets: [
+        {
+          label: 'Dataset A',
+          backgroundColor: `rgba(${getStyle('--cui-info-rgb')}, .1)`,
+          borderColor: getStyle('--cui-info'),
+          pointHoverBackgroundColor: getStyle('--cui-info'),
+          borderWidth: 2,
+          data: [random(), random(), random(), random(), random(), random(), random()],
+          fill: true,
+        },
+        {
+          label: 'Dataset B',
+          backgroundColor: 'transparent',
+          borderColor: getStyle('--cui-success'),
+          pointHoverBackgroundColor: getStyle('--cui-success'),
+          borderWidth: 2,
+          data: [random(), random(), random(), random(), random(), random(), random()],
+        },
+      ],
+    }
+  }, [stats])
+
   return (
     <>
       <CChartLine
         ref={chartRef}
         style={{ height: '300px', marginTop: '40px' }}
-        data={{
-          labels: ['January', 'February', 'March', 'April', 'May', 'June', 'July'],
-          datasets: [
-            {
-              label: 'My First dataset',
-              backgroundColor: `rgba(${getStyle('--cui-info-rgb')}, .1)`,
-              borderColor: getStyle('--cui-info'),
-              pointHoverBackgroundColor: getStyle('--cui-info'),
-              borderWidth: 2,
-              data: [
-                random(50, 200),
-                random(50, 200),
-                random(50, 200),
-                random(50, 200),
-                random(50, 200),
-                random(50, 200),
-                random(50, 200),
-              ],
-              fill: true,
-            },
-            {
-              label: 'My Second dataset',
-              backgroundColor: 'transparent',
-              borderColor: getStyle('--cui-success'),
-              pointHoverBackgroundColor: getStyle('--cui-success'),
-              borderWidth: 2,
-              data: [
-                random(50, 200),
-                random(50, 200),
-                random(50, 200),
-                random(50, 200),
-                random(50, 200),
-                random(50, 200),
-                random(50, 200),
-              ],
-            },
-            {
-              label: 'My Third dataset',
-              backgroundColor: 'transparent',
-              borderColor: getStyle('--cui-danger'),
-              pointHoverBackgroundColor: getStyle('--cui-danger'),
-              borderWidth: 1,
-              borderDash: [8, 5],
-              data: [65, 65, 65, 65, 65, 65, 65],
-            },
-          ],
-        }}
+        data={chartData}
         options={{
           maintainAspectRatio: false,
           plugins: {
-            legend: {
-              display: false,
-            },
+            legend: { display: true },
           },
           scales: {
             x: {
@@ -105,11 +112,8 @@ const MainChart = () => {
               grid: {
                 color: getStyle('--cui-border-color-translucent'),
               },
-              max: 250,
               ticks: {
                 color: getStyle('--cui-body-color'),
-                maxTicksLimit: 5,
-                stepSize: Math.ceil(250 / 5),
               },
             },
           },

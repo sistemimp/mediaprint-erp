@@ -10,6 +10,236 @@ final class PreventiviRepository
     public function __construct(private PDO $pdo) {}
 
     /**
+     * Ensure configuration tables for Preventivo "Oggetto" options exist.
+     * Creates (if missing):
+     *  - cfg_preventivi_oggetti
+     *  - tb_preventivi_oggetti_map
+     * Also seeds default options when table is empty.
+     */
+    private function ensureOggettoSchema(): void
+    {
+        try {
+            // Options table
+            $this->pdo->exec(<<<SQL
+                CREATE TABLE IF NOT EXISTS cfg_preventivi_oggetti (
+                    id_oggetto INT AUTO_INCREMENT PRIMARY KEY,
+                    label VARCHAR(255) NOT NULL UNIQUE,
+                    code VARCHAR(64) NULL UNIQUE,
+                    ordering INT NOT NULL DEFAULT 0,
+                    attivo TINYINT(1) NOT NULL DEFAULT 1
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            SQL);
+
+            // Mapping table
+            $this->pdo->exec(<<<SQL
+                CREATE TABLE IF NOT EXISTS tb_preventivi_oggetti_map (
+                    id_preventivo INT NOT NULL,
+                    id_oggetto INT NOT NULL,
+                    PRIMARY KEY (id_preventivo, id_oggetto)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            SQL);
+
+            // Rimuovi eventuale colonna oggetto_custom se presente (non più necessaria)
+            try {
+                $stmtC = $this->pdo->query("SHOW COLUMNS FROM tb_preventivi LIKE 'oggetto_custom'");
+                if ($stmtC && $stmtC->fetchColumn() !== false) {
+                    $this->pdo->exec("ALTER TABLE tb_preventivi DROP COLUMN oggetto_custom");
+                }
+            } catch (\Throwable $ignored) {}
+            try {
+                $stmtT = $this->pdo->query("SHOW TABLES LIKE 'tb_preventivi_archive'");
+                $tableExists = $stmtT && $stmtT->fetchColumn() !== false;
+                if ($tableExists) {
+                    $stmtC = $this->pdo->query("SHOW COLUMNS FROM tb_preventivi_archive LIKE 'oggetto_custom'");
+                    if ($stmtC && $stmtC->fetchColumn() !== false) {
+                        $this->pdo->exec("ALTER TABLE tb_preventivi_archive DROP COLUMN oggetto_custom");
+                    }
+                }
+            } catch (\Throwable $ignored) {}
+
+            // Seed default options if empty
+            try {
+                $count = (int) ($this->pdo->query('SELECT COUNT(*) FROM cfg_preventivi_oggetti')->fetchColumn() ?: 0);
+                if ($count === 0) {
+                    $ins = $this->pdo->prepare('INSERT INTO cfg_preventivi_oggetti (label, code, ordering, attivo) VALUES (:label, :code, :ordering, 1)');
+                    $defaults = [
+                        ['Stampa', 'stampa', 1],
+                        ['Imbustamento', 'imbustamento', 2],
+                        ['Cellophanatura', 'cellophanatura', 3],
+                        ['Posta Digitale', 'posta_digitale', 4],
+                    ];
+                    foreach ($defaults as [$label, $code, $ord]) {
+                        $ins->bindValue(':label', $label);
+                        $ins->bindValue(':code', $code);
+                        $ins->bindValue(':ordering', $ord, PDO::PARAM_INT);
+                        $ins->execute();
+                    }
+                }
+            } catch (\Throwable $ignored) {
+                // if SELECT failed (table missing), ignore
+            }
+        } catch (\Throwable $ignored) {
+            // Ignore ensure failures; subsequent calls will handle absence gracefully
+        }
+    }
+
+    /**
+     * @return list<array{id_oggetto:int,label:string,ordering:int,attivo:int}>
+     */
+    public function listOggettoOptions(): array
+    {
+        $this->ensureOggettoSchema();
+        try {
+            $stmt = $this->pdo->query('SELECT id_oggetto, label, ordering, attivo FROM cfg_preventivi_oggetti WHERE attivo = 1 ORDER BY ordering ASC, id_oggetto ASC');
+            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+            $out = [];
+            foreach ($rows as $r) {
+                $out[] = [
+                    'id_oggetto' => (int) $r['id_oggetto'],
+                    'label' => (string) $r['label'],
+                    'ordering' => (int) $r['ordering'],
+                    'attivo' => (int) $r['attivo'],
+                ];
+            }
+            if (!empty($out)) return $out;
+        } catch (\Throwable $ignored) {}
+
+        // Fallback defaults if table not available
+        return [
+            ['id_oggetto' => 1, 'label' => 'Stampa', 'ordering' => 1, 'attivo' => 1],
+            ['id_oggetto' => 2, 'label' => 'Imbustamento', 'ordering' => 2, 'attivo' => 1],
+            ['id_oggetto' => 3, 'label' => 'Cellophanatura', 'ordering' => 3, 'attivo' => 1],
+            ['id_oggetto' => 4, 'label' => 'Posta Digitale', 'ordering' => 4, 'attivo' => 1],
+        ];
+    }
+
+    /**
+     * Crea una nuova opzione oggetto se non esiste già (case-insensitive per label).
+     * @return array{id_oggetto:int,label:string,ordering:int,attivo:int}
+     */
+    public function createOggettoOption(string $label): array
+    {
+        $this->ensureOggettoSchema();
+        $name = trim($label);
+        if ($name === '') {
+            throw new \RuntimeException('Label mancante.', 422);
+        }
+
+        // Esiste già?
+        $sel = $this->pdo->prepare('SELECT id_oggetto, label, ordering, attivo FROM cfg_preventivi_oggetti WHERE LOWER(label) = LOWER(:label) LIMIT 1');
+        $sel->bindValue(':label', $name, PDO::PARAM_STR);
+        $sel->execute();
+        $row = $sel->fetch(PDO::FETCH_ASSOC);
+        if ($row !== false) {
+            // Riattiva se necessario
+            if ((int) $row['attivo'] !== 1) {
+                $this->pdo->prepare('UPDATE cfg_preventivi_oggetti SET attivo = 1 WHERE id_oggetto = :id')
+                    ->execute([':id' => (int) $row['id_oggetto']]);
+                $row['attivo'] = 1;
+            }
+            return [
+                'id_oggetto' => (int) $row['id_oggetto'],
+                'label' => (string) $row['label'],
+                'ordering' => (int) $row['ordering'],
+                'attivo' => (int) $row['attivo'],
+            ];
+        }
+
+        // Calcola ordering
+        $ord = 1;
+        try {
+            $ord = (int) ($this->pdo->query('SELECT COALESCE(MAX(ordering), 0) + 1 FROM cfg_preventivi_oggetti')->fetchColumn() ?: 1);
+        } catch (\Throwable $ignored) {}
+
+        $ins = $this->pdo->prepare('INSERT INTO cfg_preventivi_oggetti (label, code, ordering, attivo) VALUES (:label, NULL, :ordering, 1)');
+        $ins->bindValue(':label', $name, PDO::PARAM_STR);
+        $ins->bindValue(':ordering', $ord, PDO::PARAM_INT);
+        $ins->execute();
+        $id = (int) $this->pdo->lastInsertId();
+
+        return [
+            'id_oggetto' => $id,
+            'label' => $name,
+            'ordering' => $ord,
+            'attivo' => 1,
+        ];
+    }
+
+    /**
+     * @return list<int> ids of selected oggetti for a preventivo
+     */
+    public function getOggettiForPreventivo(int $idPreventivo): array
+    {
+        $this->ensureOggettoSchema();
+        try {
+            $stmt = $this->pdo->prepare('SELECT id_oggetto FROM tb_preventivi_oggetti_map WHERE id_preventivo = :id ORDER BY id_oggetto ASC');
+            $stmt->bindValue(':id', $idPreventivo, PDO::PARAM_INT);
+            $stmt->execute();
+            $rows = $stmt->fetchAll(PDO::FETCH_COLUMN) ?: [];
+            return array_map('intval', $rows);
+        } catch (\Throwable $ignored) {
+            return [];
+        }
+    }
+
+    /**
+     * Replace selected oggetti for preventivo and update textual field (oggetto)
+     * @param list<int> $ids
+     */
+    public function replaceOggettiAndUpdateText(int $idPreventivo, array $ids): void
+    {
+        $this->ensureOggettoSchema();
+        $this->pdo->beginTransaction();
+        try {
+            // Replace mapping
+            try {
+                $del = $this->pdo->prepare('DELETE FROM tb_preventivi_oggetti_map WHERE id_preventivo = :id');
+                $del->bindValue(':id', $idPreventivo, PDO::PARAM_INT);
+                $del->execute();
+            } catch (\Throwable $ignored) {}
+
+            if (!empty($ids)) {
+                try {
+                    $ins = $this->pdo->prepare('INSERT INTO tb_preventivi_oggetti_map (id_preventivo, id_oggetto) VALUES (:id, :oggetto)');
+                    foreach ($ids as $oid) {
+                        $oid = (int) $oid;
+                        if ($oid <= 0) continue;
+                        $ins->bindValue(':id', $idPreventivo, PDO::PARAM_INT);
+                        $ins->bindValue(':oggetto', $oid, PDO::PARAM_INT);
+                        $ins->execute();
+                    }
+                } catch (\Throwable $ignored) {}
+            }
+
+            // Build textual oggetto from selected labels + custom text
+            $labels = [];
+            if (!empty($ids)) {
+                try {
+                    $ph = implode(',', array_fill(0, count($ids), '?'));
+                    $stmt = $this->pdo->prepare("SELECT label FROM cfg_preventivi_oggetti WHERE id_oggetto IN ($ph) AND attivo = 1 ORDER BY ordering ASC, id_oggetto ASC");
+                    foreach (array_values($ids) as $idx => $val) {
+                        $stmt->bindValue($idx + 1, (int) $val, PDO::PARAM_INT);
+                    }
+                    $stmt->execute();
+                    $labels = array_map(static fn($r) => (string) $r['label'], $stmt->fetchAll(PDO::FETCH_ASSOC) ?: []);
+                } catch (\Throwable $ignored) {}
+            }
+            $text = implode(' - ', array_filter($labels, static fn($s) => $s !== ''));
+
+            // Update preventivo textual fields
+            $upd = $this->pdo->prepare('UPDATE tb_preventivi SET oggetto = :oggetto, updated_at = NOW() WHERE id_preventivo = :id LIMIT 1');
+            $upd->bindValue(':id', $idPreventivo, PDO::PARAM_INT);
+            $upd->bindValue(':oggetto', $text !== '' ? $text : null, $text === '' ? PDO::PARAM_NULL : PDO::PARAM_STR);
+            $upd->execute();
+
+            $this->pdo->commit();
+        } catch (\Throwable $e) {
+            $this->pdo->rollBack();
+            throw $e;
+        }
+    }
+
+    /**
      * @return list<array<string, mixed>>
      */
     public function listLatest(int $limit = 10): array
@@ -102,6 +332,93 @@ final class PreventiviRepository
         $stmt->bindValue(':id', $idPreventivo, PDO::PARAM_INT);
         $stmt->bindValue(':id_stato', $idStato, PDO::PARAM_INT);
         $stmt->execute();
+    }
+
+    /**
+     * Conteggio dei nuovi preventivi nel mese corrente raggruppati per stato attivo.
+     * Restituisce anche stati con 0 occorrenze per coerenza UI.
+     *
+     * @return list<array{id_stato:int, code:string, label:string, ordering:int, tot:int}>
+     */
+    public function countNewByStatusCurrentMonth(): array
+    {
+        $sql = <<<'SQL'
+            WITH p AS (
+              SELECT
+                DATE_FORMAT(CURDATE(), '%Y-%m-01')                             AS m0,
+                DATE_ADD(DATE_FORMAT(CURDATE(), '%Y-%m-01'), INTERVAL 1 MONTH) AS m_next
+            )
+            SELECT
+              s.id_stato,
+              s.code,
+              s.label,
+              s.ordering,
+              COUNT(pv.id_preventivo) AS tot
+            FROM cfg_stati_preventivo s
+            LEFT JOIN tb_preventivi pv
+              ON pv.id_stato_prev = s.id_stato
+             AND COALESCE(pv.data_preventivo, pv.created_at) >= (SELECT m0 FROM p)
+             AND COALESCE(pv.data_preventivo, pv.created_at) <  (SELECT m_next FROM p)
+            WHERE s.attivo = 1
+            GROUP BY s.id_stato, s.code, s.label, s.ordering
+            ORDER BY s.ordering ASC, s.id_stato ASC
+        SQL;
+
+        $stmt = $this->pdo->query($sql);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+        $out = [];
+        foreach ($rows as $r) {
+            $out[] = [
+                'id_stato' => (int) $r['id_stato'],
+                'code' => (string) $r['code'],
+                'label' => (string) $r['label'],
+                'ordering' => (int) $r['ordering'],
+                'tot' => (int) $r['tot'],
+            ];
+        }
+        return $out;
+    }
+
+    /**
+     * Top clienti per totale preventivi negli ultimi 12 mesi.
+     *
+     * @return list<array{id_anagrafica:int|null, ragione_sociale:?string, num_preventivi:int, totale:float}>
+     */
+    public function listTopClientsLast12Months(int $limit = 5): array
+    {
+        $effectiveLimit = max(1, $limit);
+        $sql = <<<'SQL'
+            WITH p AS (
+              SELECT DATE_SUB(DATE_FORMAT(CURDATE(), '%Y-%m-01'), INTERVAL 11 MONTH) AS start_at
+            )
+            SELECT
+              a.id_anagrafica,
+              a.ragione_sociale,
+              COUNT(v.id_preventivo) AS num_preventivi,
+              COALESCE(SUM(v.totale), 0) AS totale
+            FROM p
+            JOIN tb_preventivi v ON COALESCE(v.data_preventivo, v.created_at) >= p.start_at
+            LEFT JOIN tb_anagrafiche a ON a.id_anagrafica = v.id_anagrafica
+            GROUP BY a.id_anagrafica, a.ragione_sociale
+            ORDER BY totale DESC
+            LIMIT :limit
+        SQL;
+        // Evita sprintf: la query contiene DATE_FORMAT('%Y-..') che usa '%'
+        $sql = str_replace('LIMIT :limit', 'LIMIT ' . (int) $effectiveLimit, $sql);
+
+        $stmt = $this->pdo->query($sql);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        $out = [];
+        foreach ($rows as $r) {
+            $out[] = [
+                'id_anagrafica' => isset($r['id_anagrafica']) ? (int) $r['id_anagrafica'] : null,
+                'ragione_sociale' => $r['ragione_sociale'] ?? null,
+                'num_preventivi' => (int) $r['num_preventivi'],
+                'totale' => (float) $r['totale'],
+            ];
+        }
+        return $out;
     }
 
     /**
@@ -314,6 +631,7 @@ final class PreventiviRepository
      */
     public function archiveById(int $idPreventivo): void
     {
+        $this->ensureOggettoSchema();
         $this->pdo->beginTransaction();
         try {
             // Copia testata in archivio
@@ -567,6 +885,9 @@ final class PreventiviRepository
      *   totale:float|int|null,
      *   stato_code:?string,
      *   stato_label:?string,
+     *   cliente_ragione_sociale:?string,
+     *   cliente_piva:?string,
+     *   cliente_codice_fiscale:?string,
      *   created_at:?string,
      *   updated_at:?string
      * }|null
@@ -589,9 +910,14 @@ final class PreventiviRepository
                 p.totale,
                 sp.code AS stato_code,
                 sp.label AS stato_label,
+                COALESCE(a.ragione_sociale, aa.ragione_sociale) AS cliente_ragione_sociale,
+                COALESCE(a.piva, aa.piva) AS cliente_piva,
+                COALESCE(a.codice_fiscale, aa.codice_fiscale) AS cliente_codice_fiscale,
                 p.created_at,
                 p.updated_at
             FROM tb_preventivi p
+            LEFT JOIN tb_anagrafiche a ON a.id_anagrafica = p.id_anagrafica
+            LEFT JOIN tb_anagrafiche_archive aa ON aa.id_anagrafica = p.id_anagrafica
             LEFT JOIN cfg_stati_preventivo sp ON sp.id_stato = p.id_stato_prev
             WHERE p.id_preventivo = :id
             LIMIT 1
@@ -619,6 +945,9 @@ final class PreventiviRepository
             'totale' => isset($row['totale']) ? (float) $row['totale'] : null,
             'stato_code' => $row['stato_code'] ?? null,
             'stato_label' => $row['stato_label'] ?? null,
+            'cliente_ragione_sociale' => $row['cliente_ragione_sociale'] ?? null,
+            'cliente_piva' => $row['cliente_piva'] ?? null,
+            'cliente_codice_fiscale' => $row['cliente_codice_fiscale'] ?? null,
             'created_at' => $row['created_at'] ?? null,
             'updated_at' => $row['updated_at'] ?? null,
         ];
@@ -671,6 +1000,146 @@ final class PreventiviRepository
             ];
         }
         return $out;
+    }
+
+    /**
+     * Elenco CIG associati al preventivo.
+     * @return list<array{id_cig:int, cig:string, data_cig:?string, motivazione:?string}>
+     */
+    public function getCigList(int $idPreventivo): array
+    {
+        $sql = <<<'SQL'
+            SELECT id_cig, cig, data_cig, motivazione
+            FROM tb_preventivi_cig
+            WHERE id_preventivo = :id
+            ORDER BY id_cig ASC
+        SQL;
+
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->bindValue(':id', $idPreventivo, PDO::PARAM_INT);
+        $stmt->execute();
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+        $out = [];
+        foreach ($rows as $r) {
+            $out[] = [
+                'id_cig' => (int) $r['id_cig'],
+                'cig' => (string) $r['cig'],
+                'data_cig' => $r['data_cig'] ?? null,
+                'motivazione' => $r['motivazione'] ?? null,
+            ];
+        }
+        return $out;
+    }
+
+    /**
+     * Sostituisce i CIG del preventivo con la lista fornita.
+     * Ogni item: { cig: string, data_cig?: string|null, motivazione?: string|null }
+     * @param list<array<string,mixed>> $items
+     */
+    public function replaceCig(int $idPreventivo, array $items): void
+    {
+        $this->pdo->beginTransaction();
+        try {
+            $del = $this->pdo->prepare('DELETE FROM tb_preventivi_cig WHERE id_preventivo = :id');
+            $del->bindValue(':id', $idPreventivo, PDO::PARAM_INT);
+            $del->execute();
+
+            if (!empty($items)) {
+                $ins = $this->pdo->prepare(<<<'SQL'
+                    INSERT INTO tb_preventivi_cig (id_preventivo, cig, data_cig, motivazione)
+                    VALUES (:id_preventivo, :cig, :data_cig, :motivazione)
+                SQL);
+
+                foreach ($items as $it) {
+                    $code = trim((string) ($it['cig'] ?? $it['code'] ?? ''));
+                    if ($code === '') { continue; }
+                    $date = $it['data_cig'] ?? $it['data'] ?? null;
+                    $mot = $it['motivazione'] ?? $it['note'] ?? null;
+
+                    $ins->bindValue(':id_preventivo', $idPreventivo, PDO::PARAM_INT);
+                    $ins->bindValue(':cig', $code, PDO::PARAM_STR);
+                    $ins->bindValue(':data_cig', $date, $date === null ? PDO::PARAM_NULL : PDO::PARAM_STR);
+                    $ins->bindValue(':motivazione', $mot, $mot === null ? PDO::PARAM_NULL : PDO::PARAM_STR);
+                    $ins->execute();
+                }
+            }
+
+            $this->pdo->commit();
+        } catch (\Throwable $e) {
+            $this->pdo->rollBack();
+            throw $e;
+        }
+    }
+
+    /**
+     * Elenco Determine associate al preventivo.
+     * @return list<array{id_determina:int, determina:string, data_determina:?string, motivazione:?string}>
+     */
+    public function getDetermineList(int $idPreventivo): array
+    {
+        $sql = <<<'SQL'
+            SELECT id_determina, determina, data_determina, motivazione
+            FROM tb_preventivi_determina
+            WHERE id_preventivo = :id
+            ORDER BY id_determina ASC
+        SQL;
+
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->bindValue(':id', $idPreventivo, PDO::PARAM_INT);
+        $stmt->execute();
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+        $out = [];
+        foreach ($rows as $r) {
+            $out[] = [
+                'id_determina' => (int) $r['id_determina'],
+                'determina' => (string) $r['determina'],
+                'data_determina' => $r['data_determina'] ?? null,
+                'motivazione' => $r['motivazione'] ?? null,
+            ];
+        }
+        return $out;
+    }
+
+    /**
+     * Sostituisce le Determine del preventivo con la lista fornita.
+     * Ogni item: { determina: string, data_determina?: string|null, motivazione?: string|null }
+     * @param list<array<string,mixed>> $items
+     */
+    public function replaceDetermine(int $idPreventivo, array $items): void
+    {
+        $this->pdo->beginTransaction();
+        try {
+            $del = $this->pdo->prepare('DELETE FROM tb_preventivi_determina WHERE id_preventivo = :id');
+            $del->bindValue(':id', $idPreventivo, PDO::PARAM_INT);
+            $del->execute();
+
+            if (!empty($items)) {
+                $ins = $this->pdo->prepare(<<<'SQL'
+                    INSERT INTO tb_preventivi_determina (id_preventivo, determina, data_determina, motivazione)
+                    VALUES (:id_preventivo, :determina, :data_determina, :motivazione)
+                SQL);
+
+                foreach ($items as $it) {
+                    $code = trim((string) ($it['determina'] ?? $it['numero'] ?? ''));
+                    if ($code === '') { continue; }
+                    $date = $it['data_determina'] ?? $it['data'] ?? null;
+                    $mot = $it['motivazione'] ?? $it['note'] ?? null;
+
+                    $ins->bindValue(':id_preventivo', $idPreventivo, PDO::PARAM_INT);
+                    $ins->bindValue(':determina', $code, PDO::PARAM_STR);
+                    $ins->bindValue(':data_determina', $date, $date === null ? PDO::PARAM_NULL : PDO::PARAM_STR);
+                    $ins->bindValue(':motivazione', $mot, $mot === null ? PDO::PARAM_NULL : PDO::PARAM_STR);
+                    $ins->execute();
+                }
+            }
+
+            $this->pdo->commit();
+        } catch (\Throwable $e) {
+            $this->pdo->rollBack();
+            throw $e;
+        }
     }
 
     /**

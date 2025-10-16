@@ -1,5 +1,5 @@
 /* eslint-disable prettier/prettier */
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import {
   CAlert,
@@ -42,7 +42,8 @@ import { cilCheckCircle, cilSave } from '@coreui/icons'
 
 import { useAuth } from '../../context/AuthContext'
 import { fetchAnagrafiche, fetchAnagraficaDetail } from '../../services/anagrafiche'
-import { createPreventivo, fetchPreventivoDetail, updatePreventivoStatus, logPreventivoStatusChange, fetchPreventivoStatusLog } from '../../services/preventivi'
+import { createPreventivo, fetchPreventivoDetail, updatePreventivoStatus, logPreventivoStatusChange, fetchPreventivoStatusLog, fetchPreventivoOggettiOptions, createPreventivoOggettoOption } from '../../services/preventivi'
+import { CMultiSelect } from '@coreui/react-pro'
 import {
   fetchCategorieProdotti,
   fetchProdotti,
@@ -63,9 +64,12 @@ const useQuery = () => new URLSearchParams(useLocation().search)
 
 const PreventiviDetail = () => {
   const navigate = useNavigate()
+  const location = useLocation()
   const query = useQuery()
   const id = Number(query.get('id') || 0)
   const { token, logout, user } = useAuth()
+  const prefill = location.state?.prefill ?? null
+  const prefillAppliedRef = useRef(false)
 
   // Se non viene passato un ID valido, reindirizza alla lista
   useEffect(() => {
@@ -93,10 +97,24 @@ const PreventiviDetail = () => {
   const [loadingClienti, setLoadingClienti] = useState(false)
   const [allClientiOptions, setAllClientiOptions] = useState([])
   const [idAnagrafica, setIdAnagrafica] = useState('')
+  const [clienteDisplay, setClienteDisplay] = useState({
+    id: null,
+    label: '',
+    codiceCliente: null,
+    piva: null,
+    codiceFiscale: null,
+  })
   const [dataPreventivo, setDataPreventivo] = useState('')
   const [note, setNote] = useState('')
   const [oggetto, setOggetto] = useState('')
+  const [oggettiOptions, setOggettiOptions] = useState([])
+  const [selectedOggetti, setSelectedOggetti] = useState([])
   const [rifCliente, setRifCliente] = useState('')
+  // CIG / Determine
+  const [cigList, setCigList] = useState([])
+  const [newCig, setNewCig] = useState({ cig: '', data_cig: '', motivazione: '' })
+  const [determineList, setDetermineList] = useState([])
+  const [newDetermina, setNewDetermina] = useState({ determina: '', data_determina: '', motivazione: '' })
 
   // Righe
   const [righe, setRighe] = useState([])
@@ -136,6 +154,143 @@ const PreventiviDetail = () => {
   const [pkgOnlyActive, setPkgOnlyActive] = useState(true)
 
   useEffect(() => {
+    const currentId = Number(idAnagrafica || clienteDisplay.id || 0)
+    if (!currentId) return
+    const existing = allClientiOptions.find(
+      (c) => Number(c?.id_anagrafica ?? c?.id ?? 0) === currentId,
+    )
+    if (!existing) return
+    const nextLabel = existing.ragione_sociale ?? existing.ragioneSociale ?? ''
+    const nextCodice = existing.codice_cliente ?? null
+    const nextPiva = existing.piva ?? null
+    const nextCf = existing.codice_fiscale ?? null
+    setClienteDisplay((prev) => {
+      if (
+        prev.id === currentId &&
+        prev.label === nextLabel &&
+        prev.codiceCliente === nextCodice &&
+        prev.piva === nextPiva &&
+        prev.codiceFiscale === nextCf
+      ) {
+        return prev
+      }
+      return {
+        id: currentId,
+        label: nextLabel,
+        codiceCliente: nextCodice,
+        piva: nextPiva,
+        codiceFiscale: nextCf,
+      }
+    })
+  }, [allClientiOptions, idAnagrafica])
+
+  useEffect(() => {
+    if (!prefill || prefillAppliedRef.current) return
+
+    if (prefill.id_anagrafica != null && prefill.id_anagrafica !== '') {
+      setIdAnagrafica(String(prefill.id_anagrafica))
+    }
+    if (prefill.data_preventivo) {
+      setDataPreventivo(prefill.data_preventivo)
+    }
+    if (prefill.note != null) {
+      setNote(prefill.note)
+    }
+    if (prefill.oggetto != null) {
+      setOggetto(prefill.oggetto)
+    }
+    if (Array.isArray(prefill.oggetti)) {
+      setSelectedOggetti(prefill.oggetti.map((v) => String(v)))
+    }
+    
+    if (prefill.riferimento_cliente != null) {
+      setRifCliente(prefill.riferimento_cliente)
+    }
+    const label =
+      prefill.cliente?.label ??
+      prefill.clienteLabel ??
+      null
+
+    if (prefill.cliente && prefill.cliente.id) {
+      setClienteDisplay((prev) => ({
+        id: Number(prefill.cliente.id),
+        label: prefill.cliente.label ?? label ?? prev.label ?? '',
+        codiceCliente: prefill.cliente.codiceCliente ?? prev.codiceCliente,
+        piva: prefill.cliente.piva ?? prev.piva,
+        codiceFiscale: prefill.cliente.codiceFiscale ?? prev.codiceFiscale,
+      }))
+      setAllClientiOptions((prev) => {
+        const exists = prev.some(
+          (c) =>
+            Number(c?.id_anagrafica ?? c?.id ?? 0) === Number(prefill.cliente.id ?? 0),
+        )
+        if (exists) return prev
+        return [
+          {
+            id_anagrafica: prefill.cliente.id,
+            ragione_sociale: prefill.cliente.label ?? label ?? '--',
+            codice_cliente: prefill.cliente.codiceCliente ?? null,
+            piva: prefill.cliente.piva ?? null,
+            codice_fiscale: prefill.cliente.codiceFiscale ?? null,
+          },
+          ...prev,
+        ]
+      })
+    } else if (prefill.id_anagrafica && label) {
+      setClienteDisplay((prev) => ({
+        id: Number(prefill.id_anagrafica),
+        label: label ?? prev.label ?? '',
+        codiceCliente: prev.codiceCliente,
+        piva: prev.piva,
+        codiceFiscale: prev.codiceFiscale,
+      }))
+      setAllClientiOptions((prev) => {
+        const exists = prev.some(
+          (c) =>
+            Number(c?.id_anagrafica ?? c?.id ?? 0) === Number(prefill.id_anagrafica ?? 0),
+        )
+        if (exists) return prev
+        return [
+          {
+            id_anagrafica: prefill.id_anagrafica,
+            ragione_sociale: label,
+            codice_cliente: null,
+            piva: null,
+            codice_fiscale: null,
+          },
+          ...prev,
+        ]
+      })
+    }
+
+    prefillAppliedRef.current = true
+    navigate(`${location.pathname}${location.search}`, { replace: true, state: null })
+  }, [prefill, navigate, location.pathname, location.search])
+
+  // Carica opzioni per multi-select Oggetto preventivo
+  useEffect(() => {
+    if (!token) return
+    const controller = new AbortController()
+    const load = async () => {
+      try {
+        const opts = await fetchPreventivoOggettiOptions({ token, signal: controller.signal })
+        setOggettiOptions(opts)
+      } catch (_e) {
+        setOggettiOptions([
+          { value: 1, label: 'Stampa' },
+          { value: 2, label: 'Imbustamento' },
+          { value: 3, label: 'Cellophanatura' },
+          { value: 4, label: 'Posta Digitale' },
+        ])
+      }
+    }
+    load()
+    return () => controller.abort()
+  }, [token])
+
+  // L'oggetto testuale è calcolato dal backend dalle etichette selezionate.
+
+  useEffect(() => {
     if (!token || !id) return
     const controller = new AbortController()
 
@@ -145,7 +300,7 @@ const PreventiviDetail = () => {
       try {
         setStatusError(null)
         setStatusSuccess(null)
-        const { data, editable, righe: righeSrv, statuses, currentStatus: current } = await fetchPreventivoDetail({
+        const { data, editable, righe: righeSrv, cig: cigSrv, determine: determineSrv, statuses, currentStatus: current } = await fetchPreventivoDetail({
           token,
           id,
           signal: controller.signal,
@@ -169,11 +324,64 @@ const PreventiviDetail = () => {
             label: data.stato_label ?? data.stato_code ?? null,
           })
         }
-        setIdAnagrafica(String(data.id_anagrafica ?? ''))
-        setDataPreventivo(data.data_preventivo ?? '')
-        setNote(data.note ?? '')
-        setOggetto(data.oggetto ?? data.oggetto_preventivo ?? data.subject ?? '')
-        setRifCliente(data.riferimento_cliente ?? data.riferimento ?? data.rif_cliente ?? '')
+        if (data.id_anagrafica != null && data.id_anagrafica !== '') {
+          setIdAnagrafica(String(data.id_anagrafica))
+        }
+        if (data.data_preventivo) {
+          setDataPreventivo(data.data_preventivo)
+        }
+        if (data.note != null) {
+          setNote(data.note)
+        }
+        const fetchedOggetto = data.oggetto ?? data.oggetto_preventivo ?? data.subject ?? null
+        if (fetchedOggetto != null) {
+          setOggetto(fetchedOggetto)
+        }
+        // Inizializza la multi-select "Oggetto preventivo" con i valori dal backend
+        if (Array.isArray(data.oggetti)) {
+          setSelectedOggetti(data.oggetti.map((v) => String(v)))
+        }
+        const fetchedRif =
+          data.riferimento_cliente ?? data.riferimento ?? data.rif_cliente ?? null
+        if (fetchedRif != null) {
+          setRifCliente(fetchedRif)
+        }
+        if (data.id_anagrafica != null && data.id_anagrafica !== '') {
+          const numericId = Number(data.id_anagrafica)
+          const clienteLabel =
+            data.cliente_ragione_sociale ??
+            data.ragione_sociale ??
+            null
+          setClienteDisplay((prev) => ({
+            id: Number.isFinite(numericId) && numericId > 0 ? numericId : prev.id,
+            label: clienteLabel ?? prev.label ?? '',
+            codiceCliente: data.cliente_codice_cliente ?? prev.codiceCliente ?? null,
+            piva: data.cliente_piva ?? prev.piva ?? null,
+            codiceFiscale: data.cliente_codice_fiscale ?? prev.codiceFiscale ?? null,
+          }))
+          setAllClientiOptions((prev) => {
+            const list = Array.isArray(prev) ? prev : []
+            if (!Number.isFinite(numericId) || numericId <= 0) {
+              return list
+            }
+            const exists = list.some(
+              (c) => Number(c?.id_anagrafica ?? c?.id ?? 0) === numericId,
+            )
+            if (exists) {
+              return list
+            }
+            return [
+              {
+                id_anagrafica: numericId,
+                ragione_sociale: clienteLabel ?? '--',
+                codice_cliente: data.cliente_codice_cliente ?? null,
+                piva: data.cliente_piva ?? null,
+                codice_fiscale: data.cliente_codice_fiscale ?? null,
+              },
+              ...list,
+            ]
+          })
+        }
 
         // Righe dal server -> mappa a forma UI (nessun fallback sintetico)
         if (Array.isArray(righeSrv)) {
@@ -201,6 +409,19 @@ const PreventiviDetail = () => {
         } else {
           setRighe([])
         }
+        // CIG / Determine dal server
+        setCigList(Array.isArray(cigSrv) ? cigSrv.map((c) => ({
+          id_cig: c.id_cig ?? undefined,
+          cig: c.cig ?? '',
+          data_cig: c.data_cig ?? '',
+          motivazione: c.motivazione ?? '',
+        })) : [])
+        setDetermineList(Array.isArray(determineSrv) ? determineSrv.map((d) => ({
+          id_determina: d.id_determina ?? undefined,
+          determina: d.determina ?? '',
+          data_determina: d.data_determina ?? '',
+          motivazione: d.motivazione ?? '',
+        })) : [])
       } catch (e) {
         if (e.name === 'AbortError') return
         if (e.status === 401 && logout) {
@@ -215,7 +436,7 @@ const PreventiviDetail = () => {
 
     load()
     return () => controller.abort()
-  }, [token, id, logout])
+  }, [token, id])
 
   // Carica storico cambi stato
   useEffect(() => {
@@ -245,17 +466,40 @@ const PreventiviDetail = () => {
     return () => controller.abort()
   }, [token, id])
 
-  // Verifica se l'anagrafica associata è disattiva per disabilitare attività
+  // Verifica se l'anagrafica associata Ã¨ disattiva per disabilitare attivitÃ 
   useEffect(() => {
     const run = async () => {
       try {
         const aid = Number(idAnagrafica)
         if (!token || !aid) {
           setAnagraficaDisabled(false)
+          setClienteDisplay({
+            id: null,
+            label: '',
+            codiceCliente: null,
+            piva: null,
+            codiceFiscale: null,
+          })
           return
         }
         const det = await fetchAnagraficaDetail({ token, id: aid })
-        const active = Number(det?.anagrafica?.is_active) === 1 && String(det?.anagrafica?.stato || '').toLowerCase() === 'attiva'
+        const detailData = det?.anagrafica ?? det?.data ?? null
+        if (detailData) {
+          setClienteDisplay((prev) => ({
+            id: Number(detailData.id_anagrafica ?? detailData.id ?? aid),
+            label:
+              detailData.ragione_sociale ??
+              detailData.ragioneSociale ??
+              prev.label ??
+              '',
+            codiceCliente: detailData.codice_cliente ?? prev.codiceCliente ?? null,
+            piva: detailData.piva ?? detailData.partita_iva ?? prev.piva ?? null,
+            codiceFiscale: detailData.codice_fiscale ?? prev.codiceFiscale ?? null,
+          }))
+        }
+        const active =
+          Number(det?.anagrafica?.is_active) === 1 &&
+          String(det?.anagrafica?.stato || '').toLowerCase() === 'attiva'
         setAnagraficaDisabled(!active)
       } catch (_e) {
         setAnagraficaDisabled(false)
@@ -284,7 +528,7 @@ const PreventiviDetail = () => {
         let allItems = Array.isArray(first.items) ? [...first.items] : []
         const totalPages = Math.max(first?.meta?.pages ?? first?.meta?.last_page ?? 1, 1)
         const perPage = first?.meta?.per_page ?? (allItems.length || PAGE_SIZE)
-        if (totalPages> 1) {
+        if (totalPages > 1) {
           for (let nextPage = 2; nextPage <= totalPages; nextPage += 1) {
             if (controller.signal.aborted) return
             const { items: pageItems = [] } = await fetchAnagrafiche({
@@ -295,15 +539,15 @@ const PreventiviDetail = () => {
               sortBy: 'ragione_sociale',
               sortDirection: 'asc',
             })
-            if (Array.isArray(pageItems) && pageItems.length> 0) {
+            if (Array.isArray(pageItems) && pageItems.length > 0) {
               allItems = allItems.concat(pageItems)
             }
           }
         } else {
-          // Fallback: continua se la prima pagina è piena
+          // Fallback: continua se la prima pagina Ã¨ piena
           let nextPage = 2
           let safety = 0
-          while (!controller.signal.aborted && allItems.length> 0 && allItems.length % perPage === 0 && safety < 100) {
+          while (!controller.signal.aborted && allItems.length > 0 && allItems.length % perPage === 0 && safety < 100) {
             const { items: pageItems = [] } = await fetchAnagrafiche({
               token,
               signal: controller.signal,
@@ -316,7 +560,7 @@ const PreventiviDetail = () => {
             allItems = allItems.concat(pageItems)
             nextPage += 1
             safety += 1
-            if (pageItems.length <perPage) break
+            if (pageItems.length < perPage) break
           }
         }
         const mapById = new Map()
@@ -345,7 +589,33 @@ const PreventiviDetail = () => {
   }, [token])
 
   const clientiOptions = useMemo(() => {
-    const list = Array.isArray(allClientiOptions) ? allClientiOptions : []
+    let list = Array.isArray(allClientiOptions) ? [...allClientiOptions] : []
+    const currentId = clienteDisplay.id ?? (idAnagrafica ? Number(idAnagrafica) : null)
+    if (
+      currentId &&
+      !list.some(
+        (c) => Number(c?.id_anagrafica ?? c?.id ?? 0) === Number(currentId),
+      )
+    ) {
+      list = [
+        {
+          id_anagrafica: currentId,
+          ragione_sociale: clienteDisplay.label || '--',
+          codice_cliente: clienteDisplay.codiceCliente ?? null,
+          piva: clienteDisplay.piva ?? null,
+          codice_fiscale: clienteDisplay.codiceFiscale ?? null,
+        },
+        ...list,
+      ]
+    }
+    // Deduplica per id per evitare duplicati che possono confondere l'autocomplete
+    const mapById = new Map()
+    for (const c of list) {
+      const cid = c?.id_anagrafica ?? c?.id
+      if (cid == null) continue
+      if (!mapById.has(cid)) mapById.set(cid, c)
+    }
+    list = Array.from(mapById.values())
     const q = (clienteSearch || '').trim().toLowerCase()
     if (q === '') return list
     const norm = (s) => String(s || '').toLowerCase()
@@ -362,9 +632,9 @@ const PreventiviDetail = () => {
         (codice && codice.includes(q))
       )
     })
-  }, [allClientiOptions, clienteSearch])
+  }, [allClientiOptions, clienteSearch, clienteDisplay, idAnagrafica])
 
-  // Opzioni già filtrate a monte; il componente si occupa solo del rendering/controllo
+  // Opzioni giÃ  filtrate a monte; il componente si occupa solo del rendering/controllo
 
   // Carica categorie e nature IVA per stepper
   useEffect(() => {
@@ -409,16 +679,16 @@ const PreventiviDetail = () => {
       try {
         const ids = Array.from(new Set((Array.isArray(righe) ? righe : [])
           .map((r) => Number(r?.id_prodotto) || 0)
-          .filter((n) => n> 0)))
+          .filter((n) => n > 0)))
         const missing = ids.filter((idp) => prodCategoryMap[idp] == null)
         if (missing.length === 0) return
         // Carica categorie se non presenti
-        let cats = Array.isArray(catOptions) && catOptions.length> 0 ? catOptions : []
+        let cats = Array.isArray(catOptions) && catOptions.length > 0 ? catOptions : []
         if (cats.length === 0) {
           try {
             const { items } = await fetchCategorieProdotti({ token, signal: controller.signal })
             cats = Array.isArray(items) ? items : []
-            if (cats.length> 0) setCatOptions(cats)
+            if (cats.length > 0) setCatOptions(cats)
           } catch (_e) {
             cats = []
           }
@@ -439,7 +709,7 @@ const PreventiviDetail = () => {
             updates[idp] = 'Altro'
           }
         }
-        if (Object.keys(updates).length> 0) {
+        if (Object.keys(updates).length > 0) {
           setProdCategoryMap((prev) => ({ ...prev, ...updates }))
         }
       } catch (_e) { }
@@ -491,7 +761,7 @@ const PreventiviDetail = () => {
       ? selectedComboKey
       : (selectedVarIds
         .map((id) => Number(id) || 0)
-        .filter((n) => n> 0)
+        .filter((n) => n > 0)
         .sort((a, b) => a - b)
         .join('+'))
     const comboPrice = comboKey && prodComboMap[comboKey] != null ? Number(prodComboMap[comboKey]) : null
@@ -529,6 +799,24 @@ const PreventiviDetail = () => {
   const handleRemoveRiga = (index) => {
     setRighe((rows) => rows.filter((_, i) => i !== index))
   }
+
+  // Gestione CIG
+  const addCig = () => {
+    const code = String(newCig.cig || '').trim()
+    if (!code) return
+    setCigList((list) => [...list, { cig: code, data_cig: newCig.data_cig || '', motivazione: newCig.motivazione || '' }])
+    setNewCig({ cig: '', data_cig: '', motivazione: '' })
+  }
+  const removeCig = (index) => setCigList((list) => list.filter((_, i) => i !== index))
+
+  // Gestione Determine
+  const addDetermina = () => {
+    const num = String(newDetermina.determina || '').trim()
+    if (!num) return
+    setDetermineList((list) => [...list, { determina: num, data_determina: newDetermina.data_determina || '', motivazione: newDetermina.motivazione || '' }])
+    setNewDetermina({ determina: '', data_determina: '', motivazione: '' })
+  }
+  const removeDetermina = (index) => setDetermineList((list) => list.filter((_, i) => i !== index))
 
   const totals = useMemo(() => {
     let imponibile = 0
@@ -668,21 +956,36 @@ const PreventiviDetail = () => {
   // Stepper usa gestione inline (3 step). Le transizioni 1->bozza, 2->inviato
   // sono gestite direttamente, mentre il passo 3 (Finale) usa la select.
 
-  const buildPayload = () => ({
-    id_preventivo: id,
-    id_anagrafica: Number(idAnagrafica) || 0,
-    data_preventivo: dataPreventivo,
-    note,
-    oggetto,
-    riferimento_cliente: rifCliente,
-    righe,
-    totals: {
-      imponibile: totals.imponibile,
-      totaleIva: totals.totaleIva,
-      totale: totals.totale,
-      sconto: 0,
-    },
-  })
+  const computedOggettoText = useMemo(() => {
+    const manual = String(oggetto || '').trim()
+    if (manual) return manual
+    const map = new Map((Array.isArray(oggettiOptions) ? oggettiOptions : []).map((o) => [String(o.value), String(o.label || '')]))
+    const labels = (Array.isArray(selectedOggetti) ? selectedOggetti : [])
+      .map((v) => map.get(String(v)))
+      .filter(Boolean)
+    return labels.join(' - ')
+  }, [oggetto, oggettiOptions, selectedOggetti])
+
+  const buildPayload = () => {
+    return {
+      id_preventivo: id,
+      id_anagrafica: Number(idAnagrafica) || 0,
+      data_preventivo: dataPreventivo,
+      note,
+      oggetto: computedOggettoText,
+      oggetti: selectedOggetti.map((v) => Number(v)).filter((n) => Number.isFinite(n) && n > 0),
+      riferimento_cliente: rifCliente,
+      cig: cigList.map((c) => ({ cig: c.cig, data_cig: c.data_cig || null, motivazione: c.motivazione || null })),
+      determine: determineList.map((d) => ({ determina: d.determina, data_determina: d.data_determina || null, motivazione: d.motivazione || null })),
+      righe,
+      totals: {
+        imponibile: totals.imponibile,
+        totaleIva: totals.totaleIva,
+        totale: totals.totale,
+        sconto: 0,
+      },
+    }
+  }
 
   const handleSalvaBozza = async (e) => {
     e.preventDefault()
@@ -833,7 +1136,7 @@ const PreventiviDetail = () => {
 
             {!editable && (
               <CAlert color="info" className="mb-3">
-                Il documento non è in stato bozza. La modifica è disabilitata.
+                Il documento non Ã¨ in stato bozza. La modifica Ã¨ disabilitata.
               </CAlert>
             )}
 
@@ -850,7 +1153,7 @@ const PreventiviDetail = () => {
                   </CNavLink>
                 </CNavItem>
               </CNav>
-                            <CTabContent>
+              <CTabContent>
                 <CTabPane visible={statusTab === 'timeline'} role="tabpanel">
                   {visualStatusSteps.length > 0 && (
                     <>
@@ -872,10 +1175,18 @@ const PreventiviDetail = () => {
                               linear={false}
                               validation={false}
                               onStepChange={(n) => {
-                                if (statusUpdating) return
                                 const step = Number(n)
-                                if (step === 1) { handleStatusChange('bozza'); return }
-                                if (step === 2) { handleStatusChange('inviato'); return }
+                                // Evita loop: non reagire se già su quello step o durante update
+                                if (statusUpdating) return
+                                if (step === activeVisualStatusStep) return
+                                // Mappa step -> codice stato e salta se già coerente
+                                let nextCode = null
+                                if (step === 1) nextCode = 'bozza'
+                                if (step === 2) nextCode = 'inviato'
+                                if (!nextCode) return
+                                const currCode = String(currentStatus?.code || '').toLowerCase()
+                                if (currCode === nextCode) return
+                                handleStatusChange(nextCode)
                               }}
                             />
                           </div>
@@ -945,7 +1256,7 @@ const PreventiviDetail = () => {
                               <CTableDataCell>{e.user_name || e.username || e.user || e.operatore || '-'}</CTableDataCell>
                               <CTableDataCell>
                                 {(e.from_status || e.from || e.da)
-                                  ? `${e.from_status || e.from || e.da} → ${e.to_status || e.to || e.a || e.status || ''}`
+                                  ? `${e.from_status || e.from || e.da} â†’ ${e.to_status || e.to || e.a || e.status || ''}`
                                   : (e.to_status || e.to || e.a || e.status || '')}
                               </CTableDataCell>
                               <CTableDataCell>{e.note || e.message || ''}</CTableDataCell>
@@ -962,16 +1273,109 @@ const PreventiviDetail = () => {
             <section className="mb-4">
               <h6 className="mb-3 text-body-secondary">Dati generali</h6>
               <CRow className="g-3">
-                <CCol md={6}>
-                  <CFormLabel>Cliente</CFormLabel>
-                  <AnagraficaAutocomplete
+              <CCol md={6}>
+                <CFormLabel>Cliente</CFormLabel>
+                <AnagraficaAutocomplete
                     items={clientiOptions}
                     value={idAnagrafica}
                     onChange={(id) => setIdAnagrafica(id)}
-                    onSearch={(q) => setClienteSearch(q)}
+                    onChangeCliente={(cliente) => {
+                      // Evita aggiornamenti ridondanti del display cliente
+                      if (cliente) {
+                        const nextId = Number(cliente.id_anagrafica ?? cliente.id ?? idAnagrafica ?? 0) || null
+                        const nextLabel = String(
+                          cliente.ragione_sociale ?? cliente.ragioneSociale ?? cliente.cliente_ragione_sociale ?? ''
+                        )
+                        const nextCodice = cliente.codice_cliente ?? null
+                        const nextPiva = cliente.piva ?? null
+                        const nextCf = cliente.codice_fiscale ?? null
+                        setClienteDisplay((prev) => {
+                          if (
+                            prev.id === nextId &&
+                            prev.label === nextLabel &&
+                            prev.codiceCliente === nextCodice &&
+                            prev.piva === nextPiva &&
+                            prev.codiceFiscale === nextCf
+                          ) {
+                            return prev
+                          }
+                          return {
+                            id: nextId,
+                            label: nextLabel,
+                            codiceCliente: nextCodice,
+                            piva: nextPiva,
+                            codiceFiscale: nextCf,
+                          }
+                        })
+                      } else {
+                        setClienteDisplay((prev) => {
+                          if (
+                            prev.id == null &&
+                            prev.label === '' &&
+                            prev.codiceCliente == null &&
+                            prev.piva == null &&
+                            prev.codiceFiscale == null
+                          ) {
+                            return prev
+                          }
+                          return {
+                            id: null,
+                            label: '',
+                            codiceCliente: null,
+                            piva: null,
+                            codiceFiscale: null,
+                          }
+                        })
+                      }
+                    }}
+                    onSearch={(q) => {
+                      const s = String(q || '')
+                      setClienteSearch((prev) => (prev === s ? prev : s))
+                    }}
                     loading={loadingClienti}
                     disabled={uiDisabled}
                   />
+                </CCol>
+                <CCol md={6}>
+                  <CFormLabel>CIG</CFormLabel>
+                  <CTable small bordered responsive>
+                    <CTableHead>
+                      <CTableRow>
+                        <CTableHeaderCell style={{ width: '25%' }}>CIG</CTableHeaderCell>
+                        <CTableHeaderCell style={{ width: '20%' }}>Data</CTableHeaderCell>
+                        <CTableHeaderCell>Motivazione</CTableHeaderCell>
+                        <CTableHeaderCell style={{ width: '10%' }} className="text-center">Azioni</CTableHeaderCell>
+                      </CTableRow>
+                    </CTableHead>
+                    <CTableBody>
+                      <CTableRow>
+                        <CTableDataCell>
+                          <CFormInput placeholder="CIG" value={newCig.cig} onChange={(e) => setNewCig((s) => ({ ...s, cig: e.target.value }))} disabled={uiDisabled} />
+                        </CTableDataCell>
+                        <CTableDataCell>
+                          <CFormInput type="date" value={newCig.data_cig} onChange={(e) => setNewCig((s) => ({ ...s, data_cig: e.target.value }))} disabled={uiDisabled} />
+                        </CTableDataCell>
+                        <CTableDataCell>
+                          <CFormInput placeholder="Motivazione" value={newCig.motivazione} onChange={(e) => setNewCig((s) => ({ ...s, motivazione: e.target.value }))} disabled={uiDisabled} />
+                        </CTableDataCell>
+                        <CTableDataCell className="text-center">
+                          <CButton size="sm" color="primary" variant="outline" type="button" onClick={addCig} disabled={uiDisabled || !String(newCig.cig || '').trim()}>
+                            Aggiungi
+                          </CButton>
+                        </CTableDataCell>
+                      </CTableRow>
+                      {cigList.map((c, idx) => (
+                        <CTableRow key={idx}>
+                          <CTableDataCell>{c.cig}</CTableDataCell>
+                          <CTableDataCell>{c.data_cig || '-'}</CTableDataCell>
+                          <CTableDataCell>{c.motivazione || ''}</CTableDataCell>
+                          <CTableDataCell className="text-center">
+                            <CButton size="sm" color="link" type="button" onClick={() => removeCig(idx)} disabled={uiDisabled}>Rimuovi</CButton>
+                          </CTableDataCell>
+                        </CTableRow>
+                      ))}
+                    </CTableBody>
+                  </CTable>
                 </CCol>
                 <CCol md={3}>
                   <CFormLabel>Data preventivo</CFormLabel>
@@ -990,14 +1394,86 @@ const PreventiviDetail = () => {
                     disabled={uiDisabled}
                   />
                 </CCol>
-                <CCol md={12}>
-                  <CFormLabel>Oggetto preventivo</CFormLabel>
-                  <CFormInput
-                    value={oggetto}
-                    onChange={(e) => setOggetto(e.target.value)}
-                    disabled={uiDisabled}
-                  />
+                <CCol md={6}>
+                  <CFormLabel>Determina</CFormLabel>
+                  <CTable small bordered responsive>
+                    <CTableHead>
+                      <CTableRow>
+                        <CTableHeaderCell style={{ width: '25%' }}>Determina</CTableHeaderCell>
+                        <CTableHeaderCell style={{ width: '20%' }}>Data</CTableHeaderCell>
+                        <CTableHeaderCell>Motivazione</CTableHeaderCell>
+                        <CTableHeaderCell style={{ width: '10%' }} className="text-center">Azioni</CTableHeaderCell>
+                      </CTableRow>
+                    </CTableHead>
+                    <CTableBody>
+                      <CTableRow>
+                        <CTableDataCell>
+                          <CFormInput placeholder="Num./Codice" value={newDetermina.determina} onChange={(e) => setNewDetermina((s) => ({ ...s, determina: e.target.value }))} disabled={uiDisabled} />
+                        </CTableDataCell>
+                        <CTableDataCell>
+                          <CFormInput type="date" value={newDetermina.data_determina} onChange={(e) => setNewDetermina((s) => ({ ...s, data_determina: e.target.value }))} disabled={uiDisabled} />
+                        </CTableDataCell>
+                        <CTableDataCell>
+                          <CFormInput placeholder="Motivazione" value={newDetermina.motivazione} onChange={(e) => setNewDetermina((s) => ({ ...s, motivazione: e.target.value }))} disabled={uiDisabled} />
+                        </CTableDataCell>
+                        <CTableDataCell className="text-center">
+                          <CButton size="sm" color="primary" variant="outline" type="button" onClick={addDetermina} disabled={uiDisabled || !String(newDetermina.determina || '').trim()}>
+                            Aggiungi
+                          </CButton>
+                        </CTableDataCell>
+                      </CTableRow>
+                      {determineList.map((d, idx) => (
+                        <CTableRow key={idx}>
+                          <CTableDataCell>{d.determina}</CTableDataCell>
+                          <CTableDataCell>{d.data_determina || '-'}</CTableDataCell>
+                          <CTableDataCell>{d.motivazione || ''}</CTableDataCell>
+                          <CTableDataCell className="text-center">
+                            <CButton size="sm" color="link" type="button" onClick={() => removeDetermina(idx)} disabled={uiDisabled}>Rimuovi</CButton>
+                          </CTableDataCell>
+                        </CTableRow>
+                      ))}
+                    </CTableBody>
+                  </CTable>
                 </CCol>
+                <CCol md={6}>
+                  <CFormLabel>Oggetto preventivo</CFormLabel>
+                  <CMultiSelect
+                    options={oggettiOptions}
+                    selectionType="tags"
+                    placeholder="Seleziona o crea opzioni"
+                    value={selectedOggetti}
+                    allowCreateOptions
+                    disabled={uiDisabled}
+                  onChange={(vals) => {
+                    // Supporta sia array di values che array di oggetti { value, label }
+                    const arr = Array.isArray(vals)
+                      ? vals
+                          .map((v) => {
+                            if (v && typeof v === 'object') {
+                              return v.value != null ? String(v.value) : ''
+                            }
+                            return String(v)
+                          })
+                          .filter((s) => s !== '')
+                      : []
+                    setSelectedOggetti(arr)
+                  }}
+                    onCreateOption={async (label) => {
+                      try {
+                        const controller = new AbortController()
+                        const created = await createPreventivoOggettoOption({ token, label, signal: controller.signal })
+                        if (created) {
+                          setOggettiOptions((opts) => (opts.some((o) => String(o.value) === String(created.value)) ? opts : opts.concat(created)))
+                          setSelectedOggetti((prev) => Array.from(new Set([...(prev || []).map(String), String(created.value)])))
+                          return created
+                        }
+                      } catch (_e) {}
+                      return null
+                    }}
+                  />
+                  <div className="form-text">Oggetto: {computedOggettoText || '-'}</div>
+                </CCol>
+                {/* Rimosso: testo libero e anteprima (richiesta) */}
               </CRow>
             </section>
 
@@ -1030,7 +1506,7 @@ const PreventiviDetail = () => {
                     <CCol md={5}>
                       <CFormLabel>Pacchetto</CFormLabel>
                       <CFormSelect value={selPacchetto} onChange={(e) => setSelPacchetto(e.target.value)} disabled={uiDisabled}>
-                        <option value="">Seleziona…</option>
+                        <option value="">Selezionaâ€¦</option>
                         {pkgOptions.map((p) => (
                           <option key={p.id_pacchetto} value={p.id_pacchetto}>
                             {p.codice ? `${p.codice} - ${p.nome}` : p.nome}
@@ -1045,14 +1521,14 @@ const PreventiviDetail = () => {
                       </div>
                     </CCol>
                   </CRow>
-                  {pkgPreview.length> 0 && (
+                  {pkgPreview.length > 0 && (
                     <div className="border rounded p-2">
                       <div className="fw-semibold mb-2">Righe del pacchetto</div>
                       <CTable compact hover responsive>
                         <CTableHead color="light">
                           <CTableRow>
                             <CTableHeaderCell>Descrizione</CTableHeaderCell>
-                            <CTableHeaderCell className="text-end">Q.tà</CTableHeaderCell>
+                            <CTableHeaderCell className="text-end">Q.tÃ </CTableHeaderCell>
                             <CTableHeaderCell className="text-end">Prezzo</CTableHeaderCell>
                             <CTableHeaderCell className="text-end">IVA %</CTableHeaderCell>
                             <CTableHeaderCell className="text-end">Sconto %</CTableHeaderCell>
@@ -1113,7 +1589,7 @@ const PreventiviDetail = () => {
 
                           if (!line.categoria_nome) {
                             const idp = Number(r.id_prodotto) || 0
-                            if (idp> 0 && prodCategoryMap[idp]) {
+                            if (idp > 0 && prodCategoryMap[idp]) {
                               line.categoria_nome = String(prodCategoryMap[idp])
                             }
                           }
@@ -1164,14 +1640,14 @@ const PreventiviDetail = () => {
                       <CFormInput type="number" min="0" max="100" step="1" value={selIva} onChange={(e) => setSelIva(e.target.value)} disabled={uiDisabled} />
                     </CCol>
                     {/* Rimosso: selettore manuale variazioni. Si usano direttamente le combinazioni */}
-                    {prodComboList.length> 0 && (
+                    {prodComboList.length > 0 && (
                       <CCol md={4}>
                         <CFormLabel>Combinazioni disponibili</CFormLabel>
                         <CFormSelect
                           value={(() => {
                             const key = selectedVarIds
                               .map((id) => Number(id) || 0)
-                              .filter((n) => n> 0)
+                              .filter((n) => n > 0)
                               .sort((a, b) => a - b)
                               .join('+')
                             return key
@@ -1196,7 +1672,7 @@ const PreventiviDetail = () => {
                               : []
                             return (
                               <option key={r.combo_key || idx} value={r.combo_key}>
-                                {labels.join(', ')} — {Number(r.prezzo) ?? 0}
+                                {labels.join(', ')} â€” {Number(r.prezzo) ?? 0}
                               </option>
                             )
                           })}
@@ -1213,7 +1689,7 @@ const PreventiviDetail = () => {
                       <CFormInput placeholder="Cerca per nome o codice" value={prodSearch} onChange={(e) => setProdSearch(e.target.value)} disabled={uiDisabled} />
                     </CCol>
                     <CCol md={3}>
-                      <CFormLabel>Quantità</CFormLabel>
+                      <CFormLabel>QuantitÃ </CFormLabel>
                       <CFormInput id="step-qta" type="number" min="1" step="1" defaultValue={1} disabled={uiDisabled} />
                     </CCol>
                     <CCol md={3}>
@@ -1235,11 +1711,11 @@ const PreventiviDetail = () => {
                           const delta = selectedVars.reduce((acc, v) => acc + (Number(v.delta_prezzo) || 0), 0)
                           const comboKey = selectedVars
                             .map((v) => Number(v.id_variazione) || 0)
-                            .filter((n) => n> 0)
+                            .filter((n) => n > 0)
                             .sort((a, b) => a - b)
                             .join('+')
                           const comboPrice = comboKey && prodComboMap[comboKey] != null ? Number(prodComboMap[comboKey]) : null
-                          const descr = selectedVars.length> 0
+                          const descr = selectedVars.length > 0
                             ? `${prod.nome} - ${selectedVars.map((v) => `${v.nome}${v.codice ? ' [' + v.codice + ']' : ''}`).join(', ')}`
                             : prod.nome
                           const prezzoFinale = comboPrice != null ? comboPrice : (prezzoBase + delta)
@@ -1252,7 +1728,7 @@ const PreventiviDetail = () => {
                           }
                           if (ivaPerc === 0) {
                             const natId = Number(prod.id_sdi_natura_iva) || 0
-                            if (natId> 0) {
+                            if (natId > 0) {
                               riga.id_sdi_natura_iva = natId
                             } else {
                               const nat = naturaOptions[0]
@@ -1284,6 +1760,7 @@ const PreventiviDetail = () => {
                     validation={false}
                     onStepChange={(n) => {
                       if (uiDisabled) return
+                      if (Number(n) === prodStep) return
                       // Always allow going back
                       if (n <= prodStep) {
                         setProdStep(n)
@@ -1296,7 +1773,7 @@ const PreventiviDetail = () => {
                       }
                       if (n === 3) {
                         if (!selProd) return
-                        if (Array.isArray(prodComboList) && prodComboList.length> 0) {
+                        if (Array.isArray(prodComboList) && prodComboList.length > 0) {
                           setProdStep(3)
                         } else {
                           setProdStep(4)
@@ -1352,7 +1829,7 @@ const PreventiviDetail = () => {
                   )}
                   {prodStep === 3 && (
                     <CRow className="g-3">
-                      {prodComboList.length> 0 ? (
+                      {prodComboList.length > 0 ? (
                         <CCol md={12}>
                           <CFormLabel>Combinazioni</CFormLabel>
                           <CFormSelect
@@ -1366,7 +1843,7 @@ const PreventiviDetail = () => {
                               setSelectedVarIds(ids)
                             }}
                             disabled={uiDisabled || prodComboList.length === 0}>
-                            <option value="">Seleziona una combinazione…</option>
+                            <option value="">Seleziona una combinazioneâ€¦</option>
                             {prodComboList.map((r, idx) => {
                               const ids = Array.isArray(r.var_ids) ? r.var_ids : String(r.combo_key).split('+').map((x) => Number(x) || 0)
                               const groups = {}
@@ -1399,7 +1876,7 @@ const PreventiviDetail = () => {
                         <div className="mb-2"><strong>Prodotto:</strong> {(() => { const p = prodOptions.find((x) => String(x.id_prodotto) === String(selProd)); return p ? (p.codice ? `${p.codice} - ${p.nome}` : p.nome) : '-' })()}</div>
                         {(() => {
                           const ids = selectedComboKey
-                            ? selectedComboKey.split('+').map((x) => Number(x) || 0).filter((n) => n> 0)
+                            ? selectedComboKey.split('+').map((x) => Number(x) || 0).filter((n) => n > 0)
                             : selectedVarIds
                           if (!ids || ids.length === 0) return null
                           const groups = {}
@@ -1415,7 +1892,7 @@ const PreventiviDetail = () => {
                         })()}
                       </CCol>
                       <CCol md={4}>
-                        <CFormLabel>Quantità</CFormLabel>
+                        <CFormLabel>QuantitÃ </CFormLabel>
                         <CFormInput type="number" min="1" step="1" value={modalQty} onChange={(e) => setModalQty(Number(e.target.value) || 1)} disabled={uiDisabled} />
                       </CCol>
                       <CCol md={4}>
@@ -1437,7 +1914,7 @@ const PreventiviDetail = () => {
                 </CModalBody>
                 <CModalFooter className="d-flex justify-content-between">
                   <div>
-                    {prodStep> 1 && (
+                    {prodStep > 1 && (
                       <CButton color="secondary" variant="outline" onClick={() => setProdStep((s) => Math.max(1, s - 1))} disabled={uiDisabled}>Indietro</CButton>
                     )}
                   </div>
@@ -1467,10 +1944,10 @@ const PreventiviDetail = () => {
                           if (!prod) return
                           const ivaPerc = Number(selIva || prod.iva_percento || 22)
                           const comboIds = selectedComboKey
-                            ? selectedComboKey.split('+').map((x) => Number(x) || 0).filter((n) => n> 0)
+                            ? selectedComboKey.split('+').map((x) => Number(x) || 0).filter((n) => n > 0)
                             : selectedVarIds
                           let descr = prod.nome
-                          if (comboIds && comboIds.length> 0) {
+                          if (comboIds && comboIds.length > 0) {
                             const groups = {}
                             comboIds.forEach((idv) => {
                               const vv = prodVarOptions.find((x) => Number(x.id_variazione) === Number(idv))
@@ -1508,7 +1985,7 @@ const PreventiviDetail = () => {
                   <CTableRow className="align-middle">
                     <CTableHeaderCell>Descrizione</CTableHeaderCell>
                     <CTableHeaderCell className="text-end" style={{ width: 120 }}>
-                      Q.tà
+                      Q.tÃ 
                     </CTableHeaderCell>
                     <CTableHeaderCell className="text-end" style={{ width: 160 }}>
                       Prezzo
@@ -1536,7 +2013,7 @@ const PreventiviDetail = () => {
                     const rows = Array.isArray(righe) ? righe : []
                     const groupMap = new Map()
                     const getCat = (r) => {
-                      // Priorità: nome categoria già presente in riga
+                      // PrioritÃ : nome categoria giÃ  presente in riga
                       if (r && r.categoria_nome) return String(r.categoria_nome)
                       // Poi: id_categoria presente in riga -> lookup
                       if (r && r.id_categoria) {
@@ -1545,7 +2022,7 @@ const PreventiviDetail = () => {
                       }
                       // Poi: mappa risolta da id_prodotto
                       const idp = Number(r?.id_prodotto) || 0
-                      if (idp> 0 && prodCategoryMap[idp]) return prodCategoryMap[idp]
+                      if (idp > 0 && prodCategoryMap[idp]) return prodCategoryMap[idp]
                       // Fallback
                       return 'Varie'
                     }
@@ -1680,25 +2157,25 @@ const PreventiviDetail = () => {
                 <CCol md={4}>
                   <CInputGroup>
                     <CInputGroupText>Totale</CInputGroupText>
-                <CFormInput value={formatCurrency(totals.totale)} readOnly disabled />
-              </CInputGroup>
-            </CCol>
-          </CRow>
-        </section>
+                    <CFormInput value={formatCurrency(totals.totale)} readOnly disabled />
+                  </CInputGroup>
+                </CCol>
+              </CRow>
+            </section>
 
-        <section className="mb-4">
-          <h6 className="mb-3 text-body-secondary">Note</h6>
-          <CRow>
-            <CCol md={12}>
-              <CFormTextarea
-                rows={5}
-                value={note}
-                onChange={(e) => setNote(e.target.value)}
-                disabled={uiDisabled}
-              />
-            </CCol>
-          </CRow>
-        </section>
+            <section className="mb-4">
+              <h6 className="mb-3 text-body-secondary">Note</h6>
+              <CRow>
+                <CCol md={12}>
+                  <CFormTextarea
+                    rows={5}
+                    value={note}
+                    onChange={(e) => setNote(e.target.value)}
+                    disabled={uiDisabled}
+                  />
+                </CCol>
+              </CRow>
+            </section>
 
             <div className="d-flex gap-2">
               <CButton color="secondary" variant="outline" type="button" onClick={handleSalvaBozza} disabled={uiDisabled || submitting}>
@@ -1719,6 +2196,3 @@ const PreventiviDetail = () => {
 }
 
 export default PreventiviDetail
-
-
-

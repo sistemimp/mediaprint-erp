@@ -1,5 +1,5 @@
 /* eslint-disable prettier/prettier */
-import React, { useMemo } from 'react'
+import React, { useMemo, useRef } from 'react'
 import { CAutocomplete } from '@coreui/react-pro'
 
 /**
@@ -28,49 +28,91 @@ const AnagraficaAutocomplete = ({
   disabled = false,
   placeholder = 'Seleziona o cerca cliente',
 }) => {
+  const lastQueryRef = useRef('')
   const options = useMemo(() => {
     const list = Array.isArray(items) ? items : []
-    return list.map((c) => ({
-      value: c?.id_anagrafica ?? c?.id,
-      label: String(c?.ragione_sociale || ''),
-      piva: c?.piva ? String(c.piva) : null,
-      cf: c?.codice_fiscale ? String(c.codice_fiscale) : null,
-      raw: c,
-    }))
+    return list
+      .map((c) => {
+        const rawId = c?.id_anagrafica ?? c?.id
+        if (rawId == null || rawId === '') return null
+        const numericId = Number(rawId)
+        if (!Number.isFinite(numericId)) return null
+        return {
+          value: numericId,
+          label: String(c?.ragione_sociale || ''),
+          piva: c?.piva ? String(c.piva) : null,
+          cf: c?.codice_fiscale ? String(c.codice_fiscale) : null,
+          raw: c,
+        }
+      })
+      .filter(Boolean)
   }, [items])
 
-  const selected = useMemo(() => {
-    const val = String(value ?? '')
-    if (!val) return null
-    return options.find((o) => String(o.value) === val) || null
-  }, [options, value])
+  const selectedValue = useMemo(() => {
+    if (value == null || value === '') return undefined
+    const n = Number(value)
+    return Number.isFinite(n) ? n : undefined
+  }, [value])
+
+  // Etichetta dell'opzione correntemente selezionata (se presente)
+  const selectedLabel = useMemo(() => {
+    if (selectedValue == null) return ''
+    const match = options.find((o) => Number(o.value) === Number(selectedValue))
+    return match ? String(match.label || '') : ''
+  }, [options, selectedValue])
 
   return (
     <CAutocomplete
       placeholder={placeholder}
       options={options}
-      value={selected}
+      value={selectedValue}
+      search="external"
       loading={loading}
       allowOnlyDefinedOptions
       highlightOptionsOnSearch
       indicator
-      getOptionLabel={(o) => (o && o.label) || ''}
-      onInputChange={(q) => {
-        if (onSearch) onSearch(String(q || ''))
+      onInput={(q) => {
+        const s = String(q || '')
+        // Ignora gli aggiornamenti di input che riflettono l'opzione selezionata
+        if (s === selectedLabel) return
+        // Se c'è già una selezione e arriva input vuoto, ignora (sincronizzazioni interne)
+        if (selectedValue != null && s.trim() === '') return
+        if (lastQueryRef.current === s) return
+        lastQueryRef.current = s
+        if (onSearch) onSearch(s)
       }}
       onChange={(opt) => {
-        const id = opt?.value ? String(opt.value) : ''
-        if (onChange) onChange(id)
+        // Non azzerare l'ID su digitazione (CAutocomplete passa stringhe durante la ricerca)
+        if (typeof opt === 'string') {
+          return
+        }
+        // Clear esplicito
+        if (!opt) {
+          if (onChange) onChange('')
+          if (onChangeCliente) onChangeCliente(null)
+          return
+        }
+        const id = opt?.value
+        const idStr = id != null ? String(id) : ''
+        // Evita set identici (riduce render e loop)
+        if (String(value ?? '') === idStr) {
+          // Se la selezione non cambia, non propagare nulla per evitare loop
+          return
+        }
+        if (onChange) onChange(idStr)
         if (onChangeCliente) onChangeCliente(opt?.raw ?? null)
       }}
       disabled={disabled}
       searchNoResultsLabel="Nessun cliente trovato"
       optionsTemplate={(opt) => {
+        if (!opt || typeof opt === 'string') return opt || ''
         const top = (opt && opt.label) || ''
         const details = [
           opt?.piva ? `P.IVA ${opt.piva}` : null,
           opt?.cf ? `CF ${opt.cf}` : null,
-        ].filter(Boolean).join(' • ')
+        ]
+          .filter(Boolean)
+          .join(' · ')
         return (
           <div className="d-flex flex-column">
             <div className="fw-semibold text-body">{top}</div>

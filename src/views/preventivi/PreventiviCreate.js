@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   CAlert,
   CBadge,
@@ -27,7 +28,8 @@ import CIcon from '@coreui/icons-react'
 import { cilPlus, cilTrash, cilSave, cilCheckCircle } from '@coreui/icons'
 import { useAuth } from '../../context/AuthContext'
 import { fetchAnagrafiche } from '../../services/anagrafiche'
-import { createPreventivo, fetchPreventivoDetail } from '../../services/preventivi'
+import { createPreventivo, fetchPreventivoOggettiOptions, createPreventivoOggettoOption } from '../../services/preventivi'
+import { CMultiSelect } from '@coreui/react-pro'
 import { fetchCategorieProdotti, fetchProdotti, fetchNatureIva, fetchProdottoVariazioni, fetchProdottoPrezziCombinati } from '../../services/prodotti'
 import { fetchPacchetti, fetchPacchettoDetail } from '../../services/pacchetti'
 import { CModal, CModalHeader, CModalTitle, CModalBody, CModalFooter } from '@coreui/react'
@@ -41,6 +43,7 @@ const formatCurrency = (value) => {
 
 const PreventiviCreate = () => {
   const { token, logout } = useAuth()
+  const navigate = useNavigate()
 
   // Sezione: Dati generali
   const [clienteSearch, setClienteSearch] = useState('')
@@ -48,6 +51,10 @@ const PreventiviCreate = () => {
   const [allClientiOptions, setAllClientiOptions] = useState([])
   const [idAnagrafica, setIdAnagrafica] = useState('')
   const [dataPreventivo, setDataPreventivo] = useState(() => new Date().toISOString().slice(0, 10))
+  const [oggetto, setOggetto] = useState('')
+  const [oggettiOptions, setOggettiOptions] = useState([])
+  const [selectedOggetti, setSelectedOggetti] = useState([])
+  const [rifCliente, setRifCliente] = useState('')
   const [note, setNote] = useState('')
   const [loadError, setLoadError] = useState(null)
   const [idPreventivo, setIdPreventivo] = useState(null)
@@ -83,6 +90,8 @@ const PreventiviCreate = () => {
   const [pkgOptions, setPkgOptions] = useState([])
   const [selPacchetto, setSelPacchetto] = useState('')
   const [pkgPreview, setPkgPreview] = useState([])
+  const [pkgOnlyActive, setPkgOnlyActive] = useState(true)
+  const lastClienteQueryRef = useRef('')
 
   // Carica tutti i clienti attivi (tutte le pagine) una volta, poi filtra in locale
   useEffect(() => {
@@ -173,7 +182,31 @@ const PreventiviCreate = () => {
     }
     load()
     return () => controller.abort()
-  }, [token, logout])
+  }, [token])
+
+  // Carica opzioni per "Oggetto preventivo"
+  useEffect(() => {
+    if (!token) return
+    const controller = new AbortController()
+    const load = async () => {
+      try {
+        const opts = await fetchPreventivoOggettiOptions({ token, signal: controller.signal })
+        setOggettiOptions(opts)
+      } catch (e) {
+        // fallback: default static options
+        setOggettiOptions([
+          { value: 1, label: 'Stampa' },
+          { value: 2, label: 'Imbustamento' },
+          { value: 3, label: 'Cellophanatura' },
+          { value: 4, label: 'Posta Digitale' },
+        ])
+      }
+    }
+    load()
+    return () => controller.abort()
+  }, [token])
+
+  // L'oggetto testuale viene calcolato dal backend dai label selezionati.
 
   const clientiOptions = useMemo(() => {
     if (!Array.isArray(allClientiOptions)) return []
@@ -300,7 +333,12 @@ const PreventiviCreate = () => {
     const controller = new AbortController()
     const load = async () => {
       try {
-        const { items } = await fetchPacchetti({ token, q: pkgSearch, signal: controller.signal })
+        const { items } = await fetchPacchetti({
+          token,
+          q: pkgSearch,
+          onlyActive: pkgOnlyActive,
+          signal: controller.signal,
+        })
         setPkgOptions(items)
       } catch (_e) {
         setPkgOptions([])
@@ -308,7 +346,7 @@ const PreventiviCreate = () => {
     }
     load()
     return () => controller.abort()
-  }, [token, pkgOpen, pkgSearch])
+  }, [token, pkgOpen, pkgSearch, pkgOnlyActive])
 
   // Carica righe del pacchetto selezionato
   useEffect(() => {
@@ -364,7 +402,19 @@ const PreventiviCreate = () => {
     setSelPacchetto('')
     setPkgOptions([])
     setPkgPreview([])
+    setPkgOnlyActive(true)
   }
+
+  // Calcola un testo "oggetto" coerente dalle opzioni selezionate (fallback al testo manuale se presente)
+  const computedOggettoText = useMemo(() => {
+    const manual = String(oggetto || '').trim()
+    if (manual) return manual
+    const map = new Map((Array.isArray(oggettiOptions) ? oggettiOptions : []).map((o) => [String(o.value), String(o.label || '')]))
+    const labels = (Array.isArray(selectedOggetti) ? selectedOggetti : [])
+      .map((v) => map.get(String(v)))
+      .filter(Boolean)
+    return labels.join(' - ')
+  }, [oggetto, oggettiOptions, selectedOggetti])
 
   const handleAddRiga = () => {
     setRighe((rows) => rows.concat({ descrizione: '', quantita: 1, prezzo: 0, iva: 22, sconto: 0 }))
@@ -399,19 +449,73 @@ const PreventiviCreate = () => {
   const [submitError, setSubmitError] = useState(null)
   const [submitSuccess, setSubmitSuccess] = useState(null)
 
-  const buildPayload = () => ({
-    id_preventivo: idPreventivo ?? undefined,
-    id_anagrafica: Number(idAnagrafica) || 0,
-    data_preventivo: dataPreventivo,
-    note,
-    righe,
-    totals: {
-      imponibile: totals.imponibile,
-      totaleIva: totals.totaleIva,
-      totale: totals.totale,
-      sconto: 0,
-    },
-  })
+  const buildNavigationPrefill = () => {
+    const hasId = idAnagrafica != null && idAnagrafica !== ''
+    const numericId = hasId ? Number(idAnagrafica) : null
+
+    const rawCliente = hasId
+      ? allClientiOptions.find(
+          (c) =>
+            Number(c?.id_anagrafica ?? c?.id ?? 0) === Number(idAnagrafica),
+        ) ?? null
+      : null
+
+    const clienteOption = hasId
+      ? clientiAutocompleteOptions.find(
+          (opt) => Number(opt.value) === Number(idAnagrafica),
+        ) ?? null
+      : null
+
+    const clienteLabel =
+      (clienteOption?.ragioneSociale ?? clienteOption?.label) ??
+      (rawCliente?.ragione_sociale ?? rawCliente?.ragioneSociale ?? null)
+
+    return {
+      id_anagrafica: Number.isFinite(numericId) && numericId > 0 ? numericId : null,
+      data_preventivo: dataPreventivo || '',
+      note,
+      oggetto,
+      oggetti: Array.isArray(selectedOggetti) ? selectedOggetti.slice() : [],
+      riferimento_cliente: rifCliente,
+      clienteLabel: clienteLabel ?? '',
+      cliente: clienteOption
+        ? {
+            id: Number(clienteOption.value),
+            label: clienteOption.ragioneSociale ?? clienteOption.label ?? '',
+            codiceCliente: clienteOption.codiceCliente ?? null,
+            piva: clienteOption.piva ?? null,
+            codiceFiscale: clienteOption.codiceFiscale ?? null,
+          }
+        : rawCliente
+        ? {
+            id: Number(rawCliente.id_anagrafica ?? rawCliente.id ?? 0),
+            label: rawCliente.ragione_sociale ?? rawCliente.ragioneSociale ?? '',
+            codiceCliente: rawCliente.codice_cliente ?? null,
+            piva: rawCliente.piva ?? null,
+            codiceFiscale: rawCliente.codice_fiscale ?? null,
+          }
+        : null,
+    }
+  }
+
+  const buildPayload = () => {
+    return {
+      id_preventivo: idPreventivo ?? undefined,
+      id_anagrafica: Number(idAnagrafica) || 0,
+      data_preventivo: dataPreventivo,
+      note,
+      oggetto: computedOggettoText,
+      oggetti: selectedOggetti.map((v) => Number(v)).filter((n) => Number.isFinite(n) && n > 0),
+      riferimento_cliente: rifCliente,
+      righe,
+      totals: {
+        imponibile: totals.imponibile,
+        totaleIva: totals.totaleIva,
+        totale: totals.totale,
+        sconto: 0,
+      },
+    }
+  }
 
   const handleSalvaBozza = async (e) => {
     e.preventDefault()
@@ -429,34 +533,12 @@ const PreventiviCreate = () => {
       })
       if (result?.id_preventivo) {
         setIdPreventivo(result.id_preventivo)
-        try {
-          const { righe: righeSrv } = await fetchPreventivoDetail({ token, id: result.id_preventivo, signal: controller.signal })
-          if (Array.isArray(righeSrv) && righeSrv.length > 0) {
-            setRighe(righeSrv.map((r) => {
-              const idCategoria =
-                r.id_categoria ?? r.id_categoria_prodotto ?? r.id_categoria_prodotto_default ?? null
-              const categoriaNome =
-                r.categoria_nome ?? r.categoria ?? r.nome_categoria ?? r.nome_categoria_prodotto ?? null
-              return {
-                descrizione: r.descrizione ?? '',
-                quantita: r.quantita ?? 1,
-                prezzo: r.prezzo_unitario ?? 0,
-                iva: r.iva ?? 22,
-                sconto: r.sconto ?? 0,
-                id_prodotto: r.id_prodotto ?? null,
-                id_sdi_natura_iva: r.id_sdi_natura_iva ?? null,
-                id_categoria: idCategoria != null ? Number(idCategoria) : null,
-                categoria_nome: categoriaNome != null ? String(categoriaNome) : undefined,
-              }
-            }))
-          }
-        } catch (_e) { }
+        navigate(`/preventivi/dettagli?id=${result.id_preventivo}`, {
+          state: { prefill: buildNavigationPrefill(), fromCreate: true },
+        })
+        return
       }
-      if (result?.anno_preventivo && result?.numero_documento) {
-        setSubmitSuccess(`Bozza salvata. N. ${result.anno_preventivo}/${result.numero_documento}`)
-      } else {
-        setSubmitSuccess(`Bozza salvata (ID ${result?.id_preventivo ?? '?'})`)
-      }
+      setSubmitSuccess('Bozza salvata.')
     } catch (err) {
       if (err.status === 401 && logout) {
         logout()
@@ -487,36 +569,12 @@ const PreventiviCreate = () => {
       })
       if (result?.id_preventivo) {
         setIdPreventivo(result.id_preventivo)
-        try {
-          const { righe: righeSrv } = await fetchPreventivoDetail({ token, id: result.id_preventivo, signal: controller.signal })
-          if (Array.isArray(righeSrv) && righeSrv.length > 0) {
-            setRighe(righeSrv.map((r) => {
-              const idCategoria =
-                r.id_categoria ?? r.id_categoria_prodotto ?? r.id_categoria_prodotto_default ?? null
-              const categoriaNome =
-                r.categoria_nome ?? r.categoria ?? r.nome_categoria ?? r.nome_categoria_prodotto ?? null
-              return {
-                descrizione: r.descrizione ?? '',
-                quantita: r.quantita ?? 1,
-                prezzo: r.prezzo_unitario ?? 0,
-                iva: r.iva ?? 22,
-                sconto: r.sconto ?? 0,
-                id_prodotto: r.id_prodotto ?? null,
-                id_sdi_natura_iva: r.id_sdi_natura_iva ?? null,
-                id_categoria: idCategoria != null ? Number(idCategoria) : null,
-                categoria_nome: categoriaNome != null ? String(categoriaNome) : undefined,
-              }
-            }))
-          }
-        } catch (_e) { }
+        navigate(`/preventivi/dettagli?id=${result.id_preventivo}`, {
+          state: { prefill: buildNavigationPrefill(), fromCreate: true },
+        })
+        return
       }
-      if (result?.status === 'sent') {
-        setSubmitSuccess(
-          `Preventivo confermato e inviato. N. ${result.anno_preventivo}/${result.numero_documento}`,
-        )
-      } else {
-        setSubmitSuccess(`Preventivo salvato come bozza (ID ${result?.id_preventivo ?? '?'})`)
-      }
+      setSubmitSuccess('Preventivo salvato.')
     } catch (err) {
       if (err.status === 401 && logout) {
         logout()
@@ -787,36 +845,56 @@ const PreventiviCreate = () => {
             <CRow className="g-3">
               <CCol md={6}>
                 <CFormLabel>Cliente</CFormLabel>
-                <CInputGroup>
-                  <CInputGroupText>Ricerca</CInputGroupText>
-                  <CFormInput
-                    placeholder="Ragione sociale o P.IVA (vuoto = tutti)"
-                    value={clienteSearch}
-                    onChange={(e) => setClienteSearch(e.target.value)}
-                  />
-                </CInputGroup>
-                <div className="mt-2">
-                  {loadingClienti ? (
-                    <div className="d-flex align-items-center gap-2 text-body-secondary">
-                      <CSpinner size="sm" /> <span>Caricamento opzioni…</span>
-                    </div>
-                  ) : (
-                    <CFormSelect
-                      value={idAnagrafica}
-                      onChange={(e) => setIdAnagrafica(e.target.value)}
-                    >
-                      <option value="">Seleziona cliente…</option>
-                      {clientiOptions.map((c) => (
-                        <option key={c.id_anagrafica} value={c.id_anagrafica}>
-                          {c.ragione_sociale} {c.piva ? `- P.IVA ${c.piva}` : ''}
-                        </option>
-                      ))}
-                    </CFormSelect>
-                  )}
-                  {!loadingClienti && (
-                    <div className="form-text">{`Risultati: ${clientiOptions.length}`}</div>
-                  )}
-                </div>
+                <CAutocomplete
+                  placeholder="Cerca cliente per ragione sociale, codice o P.IVA"
+                  options={clientiAutocompleteOptions}
+                  value={selectedClienteValue}
+                  search="external"
+                  disabled={submitting || loadingClienti}
+                  loading={loadingClienti}
+                  allowOnlyDefinedOptions
+                  cleaner
+                  indicator
+                  optionsMaxHeight={360}
+                  onInput={(value) => {
+                    const s = String(value || '')
+                    if (lastClienteQueryRef.current !== s) {
+                      lastClienteQueryRef.current = s
+                      setClienteSearch(s)
+                    }
+                  }}
+                  onChange={(option) => {
+                    if (!option || typeof option === 'string') {
+                      setIdAnagrafica('')
+                      return
+                    }
+                    const optValue = typeof option.value === 'number' ? option.value : Number(option.value)
+                    if (Number.isFinite(optValue)) {
+                      setIdAnagrafica(String(optValue))
+                    } else {
+                      setIdAnagrafica('')
+                    }
+                  }}
+                  optionsTemplate={(option) => {
+                    if (!option || typeof option === 'string') {
+                      return option || ''
+                    }
+                    const details = [
+                      option.codiceCliente ? `Cod. cliente ${option.codiceCliente}` : null,
+                      option.piva ? `P.IVA ${option.piva}` : null,
+                      option.codiceFiscale ? `CF ${option.codiceFiscale}` : null,
+                    ].filter(Boolean)
+                    return (
+                      <div className="d-flex flex-column">
+                        <span className="fw-semibold">{option.ragioneSociale}</span>
+                        {details.length > 0 && (
+                          <small className="text-body-secondary">{details.join(' - ')}</small>
+                        )}
+                      </div>
+                    )
+                  }}
+                  searchNoResultsLabel="Nessun cliente trovato"
+                />
               </CCol>
               <CCol md={3}>
                 <CFormLabel>Data preventivo</CFormLabel>
@@ -832,14 +910,51 @@ const PreventiviCreate = () => {
                   <CBadge color="secondary">bozza</CBadge>
                 </div>
               </CCol>
-              <CCol md={12}>
-                <CFormLabel>Note</CFormLabel>
+              <CCol md={3}>
+                <CFormLabel>Riferimento cliente</CFormLabel>
                 <CFormInput
-                  placeholder="Note interne o per il cliente"
-                  value={note}
-                  onChange={(e) => setNote(e.target.value)}
+                  value={rifCliente}
+                  onChange={(e) => setRifCliente(e.target.value)}
                 />
               </CCol>
+              <CCol md={6}>
+                <CFormLabel>Oggetto preventivo</CFormLabel>
+                <CMultiSelect
+                  options={oggettiOptions}
+                  selectionType="tags"
+                  placeholder="Seleziona o crea opzioni"
+                  value={selectedOggetti}
+                  allowCreateOptions
+                  disabled={submitting}
+                  onChange={(vals) => {
+                    // Gestisce sia array di values che array di oggetti { value, label }
+                    const arr = Array.isArray(vals)
+                      ? vals
+                          .map((v) => {
+                            if (v && typeof v === 'object') {
+                              return v.value != null ? String(v.value) : ''
+                            }
+                            return String(v)
+                          })
+                          .filter((s) => s !== '')
+                      : []
+                    setSelectedOggetti(arr)
+                  }}
+                  onCreateOption={async (label) => {
+                    try {
+                      const controller = new AbortController()
+                      const created = await createPreventivoOggettoOption({ token, label, signal: controller.signal })
+                      if (created) {
+                        setOggettiOptions((opts) => (opts.some((o) => String(o.value) === String(created.value)) ? opts : opts.concat(created)))
+                        setSelectedOggetti((prev) => Array.from(new Set([...(prev || []).map(String), String(created.value)])))
+                        return created
+                      }
+                    } catch (_e) {}
+                    return null
+                  }}
+                />
+              </CCol>
+              {/* Rimosso: testo libero e anteprima (richiesta) */}
             </CRow>
           </section>
 
@@ -858,6 +973,151 @@ const PreventiviCreate = () => {
                 </CButton>
               </div>
             </div>
+            {/* Modal selezione pacchetto */}
+            <CModal
+              visible={pkgOpen}
+              onClose={() => {
+                setPkgOpen(false)
+                resetPkgModal()
+              }}
+              size="lg"
+              backdrop="static"
+            >
+              <CModalHeader>
+                <CModalTitle>Seleziona pacchetto</CModalTitle>
+              </CModalHeader>
+              <CModalBody>
+                <CRow className="g-3 mb-3 align-items-end">
+                  <CCol md={7}>
+                    <CFormLabel>Ricerca</CFormLabel>
+                    <CFormInput
+                      placeholder="Nome o codice pacchetto"
+                      value={pkgSearch}
+                      onChange={(e) => setPkgSearch(e.target.value)}
+                      disabled={submitting}
+                    />
+                  </CCol>
+                  <CCol md={5}>
+                    <CFormLabel>Pacchetto</CFormLabel>
+                    <CFormSelect
+                      value={selPacchetto}
+                      onChange={(e) => setSelPacchetto(e.target.value)}
+                      disabled={submitting}
+                    >
+                      <option value="">Seleziona.</option>
+                      {pkgOptions.map((p) => (
+                        <option key={p.id_pacchetto} value={p.id_pacchetto}>
+                          {p.codice ? `${p.codice} - ${p.nome}` : p.nome}
+                        </option>
+                      ))}
+                    </CFormSelect>
+                  </CCol>
+                  <CCol md={12}>
+                    <div className="form-check mt-2">
+                      <input
+                        id="pkgOnlyActive"
+                        type="checkbox"
+                        className="form-check-input"
+                        checked={pkgOnlyActive}
+                        onChange={(e) => setPkgOnlyActive(e.target.checked)}
+                        disabled={submitting}
+                      />
+                      <label htmlFor="pkgOnlyActive" className="form-check-label">
+                        Solo attivi
+                      </label>
+                    </div>
+                  </CCol>
+                </CRow>
+                {pkgPreview.length > 0 && (
+                  <div className="border rounded p-2">
+                    <div className="fw-semibold mb-2">Righe del pacchetto</div>
+                    <CTable compact hover responsive>
+                      <CTableHead color="light">
+                        <CTableRow>
+                          <CTableHeaderCell>Descrizione</CTableHeaderCell>
+                          <CTableHeaderCell className="text-end">Q.tà</CTableHeaderCell>
+                          <CTableHeaderCell className="text-end">Prezzo</CTableHeaderCell>
+                          <CTableHeaderCell className="text-end">IVA %</CTableHeaderCell>
+                          <CTableHeaderCell className="text-end">Sconto %</CTableHeaderCell>
+                        </CTableRow>
+                      </CTableHead>
+                      <CTableBody>
+                        {pkgPreview.map((r, idx) => (
+                          <CTableRow key={idx}>
+                            <CTableDataCell>{r.descrizione}</CTableDataCell>
+                            <CTableDataCell className="text-end">
+                              {Number(r.quantita) || 1}
+                            </CTableDataCell>
+                            <CTableDataCell className="text-end">
+                              {(Number(r.prezzo_unitario) || 0).toFixed(2)}
+                            </CTableDataCell>
+                            <CTableDataCell className="text-end">{r.iva ?? '-'}</CTableDataCell>
+                            <CTableDataCell className="text-end">{r.sconto ?? 0}</CTableDataCell>
+                          </CTableRow>
+                        ))}
+                      </CTableBody>
+                    </CTable>
+                  </div>
+                )}
+              </CModalBody>
+              <CModalFooter className="d-flex justify-content-between">
+                <div />
+                <div className="d-flex gap-2">
+                  <CButton
+                    color="link"
+                    onClick={() => {
+                      setPkgOpen(false)
+                      resetPkgModal()
+                    }}
+                  >
+                    Annulla
+                  </CButton>
+                  <CButton
+                    color="primary"
+                    disabled={!selPacchetto || pkgPreview.length === 0 || submitting}
+                    onClick={() => {
+                      if (!selPacchetto || pkgPreview.length === 0) return
+                      const newLines = pkgPreview.map((r) => {
+                        const line = {
+                          descrizione: r.descrizione ?? '',
+                          quantita: Number(r.quantita) || 1,
+                          prezzo: Number(r.prezzo_unitario) || 0,
+                          iva: r.iva != null ? Number(r.iva) : 22,
+                          sconto: r.sconto != null ? Number(r.sconto) : 0,
+                          id_prodotto: r.id_prodotto ?? null,
+                          id_sdi_natura_iva: r.id_sdi_natura_iva ?? null,
+                        }
+
+                        const catId = r.id_categoria != null ? Number(r.id_categoria) : null
+                        if (catId && !Number.isNaN(catId)) {
+                          line.id_categoria = catId
+                        }
+
+                        if (r.categoria_nome) {
+                          line.categoria_nome = String(r.categoria_nome)
+                        }
+
+                        if (line.id_categoria != null && !line.categoria_nome) {
+                          const cat = (catOptions || []).find(
+                            (c) => Number(c.id_categoria) === Number(line.id_categoria),
+                          )
+                          if (cat && cat.nome) {
+                            line.categoria_nome = String(cat.nome)
+                          }
+                        }
+
+                        return line
+                      })
+                      setRighe((rows) => rows.concat(newLines))
+                      setPkgOpen(false)
+                      resetPkgModal()
+                    }}
+                  >
+                    Inserisci in preventivo
+                  </CButton>
+                </div>
+              </CModalFooter>
+            </CModal>
             {false && (
               <div className="border rounded p-3 mb-3">
                 <CRow className="g-3 align-items-end">
@@ -1013,10 +1273,12 @@ const PreventiviCreate = () => {
                   return (
                     <CTableRow key={idx} className="align-middle">
                       <CTableDataCell>
-                        <CFormInput
+                        <CFormTextarea
                           placeholder="Descrizione articolo/servizio"
                           value={riga.descrizione}
                           onChange={(e) => updateRiga(idx, { descrizione: e.target.value })}
+                          rows={3}
+                          style={{ minWidth: '420px' }}
                         />
                       </CTableDataCell>
                       <CTableDataCell className="text-end">
@@ -1120,6 +1382,16 @@ const PreventiviCreate = () => {
                 </CInputGroup>
               </CCol>
             </CRow>
+          </section>
+
+          <section className="mb-4">
+            <h6 className="mb-3 text-body-secondary">Note</h6>
+            <CFormTextarea
+              rows={5}
+              placeholder="Note interne o per il cliente"
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+            />
           </section>
 
           <div className="d-flex gap-2">

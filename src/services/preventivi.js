@@ -50,7 +50,10 @@ export const createPreventivo = async ({
   data_preventivo,
   note,
   oggetto,
+  oggetti,
   riferimento_cliente,
+  cig,
+  determine,
   righe,
   totals,
   send,
@@ -62,7 +65,11 @@ export const createPreventivo = async ({
     data_preventivo,
     note,
     oggetto,
+    oggetto_preventivo: oggetto,
+    oggetti,
     riferimento_cliente,
+    cig,
+    determine,
     righe,
     // backend persiste solo testata per ora: passiamo i totali
     totale_imponibile: totals?.imponibile ?? 0,
@@ -91,9 +98,41 @@ export const fetchPreventivoDetail = async ({ token, id, signal } = {}) => {
   const data = response?.data ?? null
   const editable = !!response?.meta?.editable
   const righe = Array.isArray(response?.righe) ? response.righe : []
+  const cig = Array.isArray(response?.cig) ? response.cig : []
+  const determine = Array.isArray(response?.determine) ? response.determine : []
   const statuses = Array.isArray(response?.meta?.statuses) ? response.meta.statuses : []
   const currentStatus = response?.meta?.current_status ?? null
-  return { data, editable, righe, statuses, currentStatus }
+  return { data, editable, righe, cig, determine, statuses, currentStatus }
+}
+
+// Opzioni per la multi-select "Oggetto preventivo"
+export const fetchPreventivoOggettiOptions = async ({ token, signal } = {}) => {
+  const response = await apiFetch('/preventiviOggettiList.php', {
+    token,
+    signal,
+  })
+  const items = Array.isArray(response) ? response : (response?.data ?? [])
+  // Normalizza in { value, label }
+  const options = items.map((it) => ({
+    value: it?.id_oggetto ?? it?.id ?? null,
+    label: it?.label ?? it?.nome ?? '',
+  })).filter((o) => o.value != null && String(o.label || '').trim() !== '')
+  return options
+}
+
+// Crea una nuova opzione "oggetto preventivo" nel DB
+export const createPreventivoOggettoOption = async ({ token, label, signal } = {}) => {
+  const response = await apiFetch('/preventiviOggettiCreate.php', {
+    method: 'POST',
+    token,
+    body: { label: String(label || '') },
+    signal,
+  })
+  const data = response?.data ?? response ?? null
+  if (!data) return null
+  const id = data?.id_oggetto ?? data?.id ?? null
+  const out = id != null ? { value: id, label: data?.label ?? String(label || '') } : null
+  return out
 }
 
 export const reactivatePreventivo = async ({ token, id, signal } = {}) => {

@@ -253,16 +253,135 @@ const Dashboard = () => {
         </CCol>
       </CRow>
 
+      {/* KPI sintetiche reali */}
+      <CRow className="mb-4">
+        <CCol sm={6} lg={3}>
+          <CCard>
+            <CCardBody>
+              <div className="text-body-secondary text-truncate small">Nuove anagrafiche (mese)</div>
+              <div className="fs-4 fw-semibold">{kpiAnag?.nuovi_mese_corrente ?? '—'}</div>
+            </CCardBody>
+          </CCard>
+        </CCol>
+        <CCol sm={6} lg={3}>
+          <CCard>
+            <CCardBody>
+              <div className="text-body-secondary text-truncate small">Nuovi preventivi (mese)</div>
+              <div className="fs-4 fw-semibold">{Array.isArray(statsJson?.preventivi_mese_per_stato) ? statsJson.preventivi_mese_per_stato.reduce((acc, s) => acc + Number(s.tot || 0), 0) : '—'}</div>
+            </CCardBody>
+          </CCard>
+        </CCol>
+      </CRow>
+
+      {/* Preventivi per stato e ultimi preventivi */}
+      <CRow className="mb-4">
+        <CCol md={6}>
+          <CCard>
+            <CCardHeader>Nuovi preventivi del mese per stato</CCardHeader>
+            <CCardBody>
+              <CTable hover responsive size="sm">
+                <CTableHead>
+                  <CTableRow>
+                    <CTableHeaderCell>Stato</CTableHeaderCell>
+                    <CTableHeaderCell className="text-end">Totale</CTableHeaderCell>
+                  </CTableRow>
+                </CTableHead>
+                <CTableBody>
+                  {Array.isArray(statsJson?.preventivi_mese_per_stato) && statsJson.preventivi_mese_per_stato.length > 0 ? (
+                    statsJson.preventivi_mese_per_stato.map((row, idx) => (
+                      <CTableRow key={idx}>
+                        <CTableDataCell>{row.label || row.code}</CTableDataCell>
+                        <CTableDataCell className="text-end">{row.tot}</CTableDataCell>
+                      </CTableRow>
+                    ))
+                  ) : (
+                    <CTableRow>
+                      <CTableDataCell colSpan={2} className="text-center text-body-secondary">
+                        Nessun dato disponibile
+                      </CTableDataCell>
+                    </CTableRow>
+                  )}
+                </CTableBody>
+              </CTable>
+            </CCardBody>
+          </CCard>
+        </CCol>
+        <CCol md={6}>
+          <CCard>
+            <CCardHeader>Ultimi 5 preventivi</CCardHeader>
+            <CCardBody>
+              <CTable hover responsive size="sm">
+                <CTableHead>
+                  <CTableRow>
+                    <CTableHeaderCell>N.</CTableHeaderCell>
+                    <CTableHeaderCell>Cliente</CTableHeaderCell>
+                    <CTableHeaderCell>Data</CTableHeaderCell>
+                    <CTableHeaderCell className="text-end">Totale</CTableHeaderCell>
+                  </CTableRow>
+                </CTableHead>
+                <CTableBody>
+                  {Array.isArray(statsJson?.ultimi_preventivi) && statsJson.ultimi_preventivi.length > 0 ? (
+                    statsJson.ultimi_preventivi.map((p) => (
+                      <CTableRow key={p.id_preventivo}>
+                        <CTableDataCell>{[p.anno_preventivo, p.numero_documento].filter(Boolean).join('/')}</CTableDataCell>
+                        <CTableDataCell>{p.ragione_sociale || '—'}</CTableDataCell>
+                        <CTableDataCell>{p.data_preventivo || '—'}</CTableDataCell>
+                        <CTableDataCell className="text-end">{Number(p.totale || 0).toLocaleString('it-IT', { style: 'currency', currency: 'EUR' })}</CTableDataCell>
+                      </CTableRow>
+                    ))
+                  ) : (
+                    <CTableRow>
+                      <CTableDataCell colSpan={4} className="text-center text-body-secondary">Nessun preventivo</CTableDataCell>
+                    </CTableRow>
+                  )}
+                </CTableBody>
+              </CTable>
+            </CCardBody>
+          </CCard>
+        </CCol>
+      </CRow>
+
+      {/* Top clienti */}
+      <CCard className="mb-4">
+        <CCardHeader>Top 5 clienti (totale preventivi ultimi 12 mesi)</CCardHeader>
+        <CCardBody>
+          <CTable hover responsive size="sm">
+            <CTableHead>
+              <CTableRow>
+                <CTableHeaderCell>Cliente</CTableHeaderCell>
+                <CTableHeaderCell className="text-end"># Preventivi</CTableHeaderCell>
+                <CTableHeaderCell className="text-end">Totale</CTableHeaderCell>
+              </CTableRow>
+            </CTableHead>
+            <CTableBody>
+              {Array.isArray(statsJson?.top_clienti) && statsJson.top_clienti.length > 0 ? (
+                statsJson.top_clienti.map((c, idx) => (
+                  <CTableRow key={c.id_anagrafica ?? idx}>
+                    <CTableDataCell>{c.ragione_sociale || '—'}</CTableDataCell>
+                    <CTableDataCell className="text-end">{c.num_preventivi}</CTableDataCell>
+                    <CTableDataCell className="text-end">{Number(c.totale || 0).toLocaleString('it-IT', { style: 'currency', currency: 'EUR' })}</CTableDataCell>
+                  </CTableRow>
+                ))
+              ) : (
+                <CTableRow>
+                  <CTableDataCell colSpan={3} className="text-center text-body-secondary">Nessun dato</CTableDataCell>
+                </CTableRow>
+              )}
+            </CTableBody>
+          </CTable>
+        </CCardBody>
+      </CCard>
+
 
 
       <CCard className="mb-4">
         <CCardBody>
           <CRow>
             <CCol sm={5}>
-              <h4 id="traffic" className="card-title mb-0">
-                Traffic
+              <h4 id="fatture-trend" className="card-title mb-0">
+                Andamento fatture
               </h4>
-              <div className="small text-body-secondary">January - July 2023</div>
+              <div className="small text-body-secondary">Ultimi 12 mesi</div>
             </CCol>
             <CCol sm={7} className="d-none d-md-block">
               <CButton color="primary" className="float-end">
@@ -282,7 +401,7 @@ const Dashboard = () => {
               </CButtonGroup>
             </CCol>
           </CRow>
-          <MainChart />
+          <MainChart stats={statsJson} />
         </CCardBody>
         <CCardFooter>
           <CRow
