@@ -60,6 +60,76 @@ const formatCurrency = (value) => {
   return Number.isFinite(n) ? currencyFormatter.format(n) : '-'
 }
 
+const normalizeOggettoOption = (option) => {
+  if (!option) return null
+  const rawValue =
+    option.id ??
+    option.id_oggetto ??
+    option.value ??
+    option.valueId ??
+    null
+  const numericValue = Number(rawValue)
+  const label = String(option.label ?? option.nome ?? option.text ?? '').trim()
+  if (!Number.isFinite(numericValue) || numericValue <= 0 || label === '') {
+    return null
+  }
+  const attivo = Number(option.attivo ?? option.active ?? option.is_active ?? 0) === 1 ? 1 : 0
+  const rawOrdering = option.ordering ?? option.ordine ?? option.sort ?? option.position ?? null
+  const ordering = Number.isFinite(Number(rawOrdering)) ? Number(rawOrdering) : null
+  return {
+    id: numericValue,
+    id_oggetto: numericValue,
+    value: String(numericValue),
+    label,
+    attivo,
+    ordering,
+  }
+}
+
+const mergeOggettoOptionLists = (base = [], extra = []) => {
+  const merged = []
+  const indexById = new Map()
+  const pushOption = (opt) => {
+    if (!opt) return
+    const normalized = normalizeOggettoOption(opt)
+    if (!normalized) return
+    const id = normalized.id
+    if (indexById.has(id)) {
+      const idx = indexById.get(id)
+      const current = merged[idx]
+      merged[idx] = {
+        ...current,
+        ...normalized,
+        id,
+        id_oggetto: id,
+        value: String(id),
+        attivo: normalized.attivo ?? current.attivo ?? 0,
+        ordering: normalized.ordering ?? current.ordering ?? null,
+      }
+      return
+    }
+    merged.push({
+      ...normalized,
+      id,
+      id_oggetto: id,
+      value: String(id),
+      attivo: normalized.attivo ?? 0,
+      ordering: normalized.ordering ?? null,
+    })
+    indexById.set(id, merged.length - 1)
+  }
+  base.forEach(pushOption)
+  extra.forEach(pushOption)
+  return merged
+}
+
+const DEFAULT_OGGETTO_OPTIONS = [
+  { id: 1, id_oggetto: 1, value: '1', label: 'Stampa', attivo: 1 },
+  { id: 2, id_oggetto: 2, value: '2', label: 'Imbustamento', attivo: 1 },
+  { id: 3, id_oggetto: 3, value: '3', label: 'Cellophanatura', attivo: 1 },
+  { id: 4, id_oggetto: 4, value: '4', label: 'Posta Digitale', attivo: 1 },
+]
+
 const useQuery = () => new URLSearchParams(useLocation().search)
 
 const PreventiviDetail = () => {
@@ -109,6 +179,16 @@ const PreventiviDetail = () => {
   const [oggetto, setOggetto] = useState('')
   const [oggettiOptions, setOggettiOptions] = useState([])
   const [selectedOggetti, setSelectedOggetti] = useState([])
+  const [pendingOggettoCreate, setPendingOggettoCreate] = useState(false)
+  const creatingOggettoPromisesRef = useRef(new Map())
+  const pendingOggettoCreateCountRef = useRef(0)
+  const adjustPendingOggettoCreate = useCallback((delta) => {
+    pendingOggettoCreateCountRef.current += delta
+    if (pendingOggettoCreateCountRef.current < 0) {
+      pendingOggettoCreateCountRef.current = 0
+    }
+    setPendingOggettoCreate(pendingOggettoCreateCountRef.current > 0)
+  }, [])
   const [rifCliente, setRifCliente] = useState('')
   // CIG / Determine
   const [cigList, setCigList] = useState([])
@@ -200,9 +280,26 @@ const PreventiviDetail = () => {
       setOggetto(prefill.oggetto)
     }
     if (Array.isArray(prefill.oggetti)) {
-      setSelectedOggetti(prefill.oggetti.map((v) => String(v)))
+      setSelectedOggetti(
+        prefill.oggetti
+          .map((v) => Number(v))
+          .filter((num) => Number.isFinite(num) && num > 0),
+      )
     }
-    
+    if (Array.isArray(prefill.oggetti_detail)) {
+      const detailOptions = prefill.oggetti_detail
+        .map(normalizeOggettoOption)
+        .filter(Boolean)
+      if (detailOptions.length > 0) {
+        setOggettiOptions((prev) =>
+          mergeOggettoOptionLists(
+            Array.isArray(prev) ? prev : [],
+            detailOptions,
+          ),
+        )
+      }
+    }
+
     if (prefill.riferimento_cliente != null) {
       setRifCliente(prefill.riferimento_cliente)
     }
@@ -267,26 +364,108 @@ const PreventiviDetail = () => {
     navigate(`${location.pathname}${location.search}`, { replace: true, state: null })
   }, [prefill, navigate, location.pathname, location.search])
 
+  const loadOggettoOptions = useCallback(
+    async ({ signal, extraOptions = [] } = {}) => {
+      if (!token) return []
+      const extraNormalized = Array.isArray(extraOptions)
+        ? extraOptions.map(normalizeOggettoOption).filter(Boolean)
+        : []
+      try {
+        const opts = await fetchPreventivoOggettiOptions({ token, signal })
+        if (signal?.aborted) return []
+        const normalized = (Array.isArray(opts) ? opts : []).map(normalizeOggettoOption).filter(Boolean)
+        setOggettiOptions((prev) => {
+          const prevList = Array.isArray(prev) ? prev : []
+          const withServer = mergeOggettoOptionLists(normalized, prevList)
+          return mergeOggettoOptionLists(withServer, extraNormalized)
+        })
+        return normalized
+      } catch (error) {
+        if (signal?.aborted) return []
+        console.error('Impossibile caricare le opzioni oggetto preventivo (dettaglio)', error)
+        setOggettiOptions((prev) => {
+          const prevList = Array.isArray(prev) ? prev : []
+          const withFallback = mergeOggettoOptionLists(DEFAULT_OGGETTO_OPTIONS, prevList)
+          return mergeOggettoOptionLists(withFallback, extraNormalized)
+        })
+        return []
+      }
+    },
+    [token],
+  )
+
+  const createOggettoOptionForLabel = useCallback(
+    async (rawLabel) => {
+      const cleanLabel = String(rawLabel || '').trim()
+      if (!cleanLabel || !token) {
+        return null
+      }
+
+      const existingOption = (Array.isArray(oggettiOptions) ? oggettiOptions : []).find(
+        (opt) => String(opt?.label ?? '').toLowerCase() === cleanLabel.toLowerCase(),
+      )
+      if (existingOption) {
+        return normalizeOggettoOption(existingOption)
+      }
+
+      const key = cleanLabel.toLowerCase()
+      if (creatingOggettoPromisesRef.current.has(key)) {
+        return creatingOggettoPromisesRef.current.get(key)
+      }
+
+      const createPromise = (async () => {
+        adjustPendingOggettoCreate(1)
+        try {
+          const created = await createPreventivoOggettoOption({
+            token,
+            label: cleanLabel,
+            active: false,
+          })
+          const normalized = normalizeOggettoOption(created)
+          if (normalized) {
+            await loadOggettoOptions({ extraOptions: [normalized] })
+          }
+          return normalized
+        } finally {
+          adjustPendingOggettoCreate(-1)
+          creatingOggettoPromisesRef.current.delete(key)
+        }
+      })()
+
+      creatingOggettoPromisesRef.current.set(key, createPromise)
+      return createPromise
+    },
+    [token, oggettiOptions, loadOggettoOptions, adjustPendingOggettoCreate],
+  )
+
+  const handleOggettiChange = useCallback(
+    (vals) => {
+      const incoming = Array.isArray(vals) ? vals : []
+      const next = new Set()
+      incoming.forEach((item) => {
+        let candidate = null
+        if (item && typeof item === 'object') {
+          candidate = item.id ?? item.id_oggetto ?? item.value ?? null
+        } else {
+          candidate = item
+        }
+        const numeric = Number(candidate)
+        if (Number.isFinite(numeric) && numeric > 0) {
+          next.add(numeric)
+        }
+      })
+      setSelectedOggetti(Array.from(next))
+    },
+    [],
+  )
+
   // Carica opzioni per multi-select Oggetto preventivo
   useEffect(() => {
     if (!token) return
     const controller = new AbortController()
-    const load = async () => {
-      try {
-        const opts = await fetchPreventivoOggettiOptions({ token, signal: controller.signal })
-        setOggettiOptions(opts)
-      } catch (_e) {
-        setOggettiOptions([
-          { value: 1, label: 'Stampa' },
-          { value: 2, label: 'Imbustamento' },
-          { value: 3, label: 'Cellophanatura' },
-          { value: 4, label: 'Posta Digitale' },
-        ])
-      }
-    }
-    load()
+    loadOggettoOptions({ signal: controller.signal })
     return () => controller.abort()
-  }, [token])
+  }, [token, loadOggettoOptions])
 
   // L'oggetto testuale è calcolato dal backend dalle etichette selezionate.
 
@@ -339,7 +518,32 @@ const PreventiviDetail = () => {
         }
         // Inizializza la multi-select "Oggetto preventivo" con i valori dal backend
         if (Array.isArray(data.oggetti)) {
-          setSelectedOggetti(data.oggetti.map((v) => String(v)))
+          setSelectedOggetti(
+            data.oggetti
+              .map((v) => Number(v))
+              .filter((num) => Number.isFinite(num) && num > 0),
+          )
+        }
+        if (Array.isArray(data.oggetti_detail)) {
+          const detailOptions = data.oggetti_detail
+            .map(normalizeOggettoOption)
+            .filter(Boolean)
+          if (detailOptions.length > 0) {
+            setOggettiOptions((prev) =>
+              mergeOggettoOptionLists(
+                Array.isArray(prev) ? prev : [],
+                detailOptions,
+              ),
+            )
+            if (!Array.isArray(data.oggetti) || data.oggetti.length === 0) {
+              const detailIds = detailOptions
+                .map((opt) => Number(opt.id))
+                .filter((num) => Number.isFinite(num) && num > 0)
+              if (detailIds.length > 0) {
+                setSelectedOggetti(detailIds)
+              }
+            }
+          }
         }
         const fetchedRif =
           data.riferimento_cliente ?? data.riferimento ?? data.rif_cliente ?? null
@@ -959,9 +1163,14 @@ const PreventiviDetail = () => {
   const computedOggettoText = useMemo(() => {
     const manual = String(oggetto || '').trim()
     if (manual) return manual
-    const map = new Map((Array.isArray(oggettiOptions) ? oggettiOptions : []).map((o) => [String(o.value), String(o.label || '')]))
+    const map = new Map(
+      (Array.isArray(oggettiOptions) ? oggettiOptions : []).map((o) => [
+        Number(o?.id ?? o?.value ?? 0),
+        String(o.label || ''),
+      ]),
+    )
     const labels = (Array.isArray(selectedOggetti) ? selectedOggetti : [])
-      .map((v) => map.get(String(v)))
+      .map((v) => map.get(Number(v)))
       .filter(Boolean)
     return labels.join(' - ')
   }, [oggetto, oggettiOptions, selectedOggetti])
@@ -989,7 +1198,7 @@ const PreventiviDetail = () => {
 
   const handleSalvaBozza = async (e) => {
     e.preventDefault()
-    if (!editable) return
+    if (!editable || pendingOggettoCreate) return
     setSubmitting(true)
     setSubmitError(null)
     setSubmitSuccess(null)
@@ -1017,7 +1226,7 @@ const PreventiviDetail = () => {
 
   const handleConferma = async (e) => {
     e.preventDefault()
-    if (!editable) return
+    if (!editable || pendingOggettoCreate) return
     setSubmitting(true)
     setSubmitError(null)
     setSubmitSuccess(null)
@@ -1056,8 +1265,7 @@ const PreventiviDetail = () => {
     }
   }
 
-  if (!id) return null
-
+  // Allow the component to run all Hooks on every render; effects and logic below already guard on `id`.
   // Visualizzazione stato: 3 step (Bozza -> Inviato -> Finale),
   // con select per scegliere lo stato finale (Confermato/Rifiutato/Annullato)
   const isFinalCode = useCallback((code) => {
@@ -1273,9 +1481,9 @@ const PreventiviDetail = () => {
             <section className="mb-4">
               <h6 className="mb-3 text-body-secondary">Dati generali</h6>
               <CRow className="g-3">
-              <CCol md={6}>
-                <CFormLabel>Cliente</CFormLabel>
-                <AnagraficaAutocomplete
+                <CCol md={6}>
+                  <CFormLabel>Cliente</CFormLabel>
+                  <AnagraficaAutocomplete
                     items={clientiOptions}
                     value={idAnagrafica}
                     onChange={(id) => setIdAnagrafica(id)}
@@ -1441,39 +1649,64 @@ const PreventiviDetail = () => {
                     options={oggettiOptions}
                     selectionType="tags"
                     placeholder="Seleziona o crea opzioni"
-                    value={selectedOggetti}
+                    value={selectedOggetti.map((id) => String(id))}
                     allowCreateOptions
-                    disabled={uiDisabled}
-                  onChange={(vals) => {
-                    // Supporta sia array di values che array di oggetti { value, label }
-                    const arr = Array.isArray(vals)
-                      ? vals
-                          .map((v) => {
-                            if (v && typeof v === 'object') {
-                              return v.value != null ? String(v.value) : ''
-                            }
-                            return String(v)
-                          })
-                          .filter((s) => s !== '')
-                      : []
-                    setSelectedOggetti(arr)
-                  }}
+                    disabled={uiDisabled || pendingOggettoCreate}
+                    onChange={(vals) => {
+                      void handleOggettiChange(vals)
+                    }}
                     onCreateOption={async (label) => {
-                      try {
-                        const controller = new AbortController()
-                        const created = await createPreventivoOggettoOption({ token, label, signal: controller.signal })
-                        if (created) {
-                          setOggettiOptions((opts) => (opts.some((o) => String(o.value) === String(created.value)) ? opts : opts.concat(created)))
-                          setSelectedOggetti((prev) => Array.from(new Set([...(prev || []).map(String), String(created.value)])))
-                          return created
+                      const cleanLabel = String(label || '').trim()
+                      if (cleanLabel === '') {
+                        return null
+                      }
+
+                      const existing = (Array.isArray(oggettiOptions) ? oggettiOptions : []).find(
+                        (opt) => String(opt.label ?? '').toLowerCase() === cleanLabel.toLowerCase(),
+                      )
+                      if (existing) {
+                        const numericExisting = Number(existing.id ?? existing.id_oggetto ?? existing.value ?? 0)
+                        if (Number.isFinite(numericExisting) && numericExisting > 0) {
+                          setSelectedOggetti((prev) => {
+                            const next = new Set(prev ?? [])
+                            next.add(numericExisting)
+                            return Array.from(next)
+                          })
+                          return {
+                            id: existing.id ?? existing.id_oggetto ?? numericExisting,
+                            value: existing.value ?? String(numericExisting),
+                            label: existing.label ?? cleanLabel,
+                          }
                         }
-                      } catch (_e) {}
+                      }
+
+                      try {
+                        const normalized = await createOggettoOptionForLabel(cleanLabel)
+                        if (normalized) {
+                          const numericId = Number(normalized.id)
+                          if (Number.isFinite(numericId) && numericId > 0) {
+                            setSelectedOggetti((prev) => {
+                              const next = new Set(prev ?? [])
+                              next.add(numericId)
+                              return Array.from(next)
+                            })
+                          }
+                          return {
+                            id: normalized.id,
+                            value: normalized.value,
+                            label: normalized.label,
+                          }
+                        }
+                      } catch (error) { 
+                        console.error('Creazione opzione oggetto fallita (dettaglio)', error)
+                      }
                       return null
                     }}
                   />
-                  <div className="form-text">Oggetto: {computedOggettoText || '-'}</div>
                 </CCol>
-                {/* Rimosso: testo libero e anteprima (richiesta) */}
+                <CCol md={12}>
+                  <CFormLabel>Oggetto:{selectedOggetti}</CFormLabel>
+                </CCol>
               </CRow>
             </section>
 
@@ -1985,7 +2218,7 @@ const PreventiviDetail = () => {
                   <CTableRow className="align-middle">
                     <CTableHeaderCell>Descrizione</CTableHeaderCell>
                     <CTableHeaderCell className="text-end" style={{ width: 120 }}>
-                      Q.tÃ 
+                      Q.tÃ
                     </CTableHeaderCell>
                     <CTableHeaderCell className="text-end" style={{ width: 160 }}>
                       Prezzo
@@ -2178,10 +2411,10 @@ const PreventiviDetail = () => {
             </section>
 
             <div className="d-flex gap-2">
-              <CButton color="secondary" variant="outline" type="button" onClick={handleSalvaBozza} disabled={uiDisabled || submitting}>
+              <CButton color="secondary" variant="outline" type="button" onClick={handleSalvaBozza} disabled={uiDisabled || submitting || pendingOggettoCreate}>
                 <CIcon icon={cilSave} className="me-2" /> Aggiorna bozza
               </CButton>
-              <CButton color="primary" type="submit" disabled={uiDisabled || submitting}>
+              <CButton color="primary" type="submit" disabled={uiDisabled || submitting || pendingOggettoCreate}>
                 <CIcon icon={cilCheckCircle} className="me-2" /> Conferma
               </CButton>
               <CButton color="link" type="button" onClick={() => navigate('/preventivi/lista')}>
