@@ -25,8 +25,15 @@ try {
         throw new RuntimeException('Label mancante.', 422);
     }
 
+    $active = true;
+    if (array_key_exists('attivo', $payload)) {
+        $active = (int) $payload['attivo'] === 1;
+    } elseif (array_key_exists('active', $payload)) {
+        $active = (bool) $payload['active'];
+    }
+
     $repo = new PreventiviRepository(Database::getConnection());
-    $created = $repo->createOggettoOption($label);
+    $created = $repo->createOggettoOption($label, $active);
     HttpResponse::json(['data' => $created], 201);
 } catch (RuntimeException $exception) {
     $code = $exception->getCode();
@@ -37,4 +44,3 @@ try {
 } catch (Throwable $throwable) {
     HttpResponse::error('Errore interno inatteso.', 500, ['error' => $throwable->getMessage()]);
 }
-

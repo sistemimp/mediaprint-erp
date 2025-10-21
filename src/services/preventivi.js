@@ -112,27 +112,56 @@ export const fetchPreventivoOggettiOptions = async ({ token, signal } = {}) => {
     signal,
   })
   const items = Array.isArray(response) ? response : (response?.data ?? [])
-  // Normalizza in { value, label }
-  const options = items.map((it) => ({
-    value: it?.id_oggetto ?? it?.id ?? null,
-    label: it?.label ?? it?.nome ?? '',
-  })).filter((o) => o.value != null && String(o.label || '').trim() !== '')
+  // Normalizza in { id, value, label }
+  const options = items
+    .map((it) => {
+      const rawValue = it?.id_oggetto ?? it?.id ?? it?.value ?? null
+      const numericValue = Number(rawValue)
+      const label = String(it?.label ?? it?.nome ?? '').trim()
+      if (!Number.isFinite(numericValue) || numericValue <= 0 || label === '') {
+        return null
+      }
+      return {
+        id: numericValue,
+        id_oggetto: numericValue,
+        value: String(numericValue),
+        label,
+        attivo: Number(it?.attivo ?? it?.active ?? 1) === 1 ? 1 : 0,
+        ordering: Number.isFinite(Number(it?.ordering)) ? Number(it?.ordering) : null,
+      }
+    })
+    .filter(Boolean)
   return options
 }
 
 // Crea una nuova opzione "oggetto preventivo" nel DB
-export const createPreventivoOggettoOption = async ({ token, label, signal } = {}) => {
+export const createPreventivoOggettoOption = async ({ token, label, active = true, signal } = {}) => {
   const response = await apiFetch('/preventiviOggettiCreate.php', {
     method: 'POST',
     token,
-    body: { label: String(label || '') },
+    body: {
+      label: String(label || ''),
+      attivo: active ? 1 : 0,
+    },
     signal,
   })
   const data = response?.data ?? response ?? null
   if (!data) return null
   const id = data?.id_oggetto ?? data?.id ?? null
-  const out = id != null ? { value: id, label: data?.label ?? String(label || '') } : null
-  return out
+  if (id == null) {
+    throw new Error('Creazione opzione oggetto fallita: ID non restituito dal server.')
+  }
+  const labelText = data?.label ?? String(label || '')
+  const ordering = Number.isFinite(Number(data?.ordering)) ? Number(data?.ordering) : null
+  const attivo = Number(data?.attivo ?? (active ? 1 : 0)) === 1 ? 1 : 0
+  return {
+    id,
+    id_oggetto: id,
+    value: String(id),
+    label: labelText,
+    ordering,
+    attivo,
+  }
 }
 
 export const reactivatePreventivo = async ({ token, id, signal } = {}) => {

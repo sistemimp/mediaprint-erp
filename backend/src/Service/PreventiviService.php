@@ -29,9 +29,25 @@ final class PreventiviService
         $righe = $this->repository->getLines($id);
         $cig = $this->repository->getCigList($id);
         $determine = $this->repository->getDetermineList($id);
-        // Oggetti selezionati (multi-select) e opzioni disponibili
-        $selectedOggetti = $this->repository->getOggettiForPreventivo($id);
-        $row['oggetti'] = $selectedOggetti;
+        // Oggetti selezionati (multi-select) e relative etichette
+        $selectedOggettiRows = $this->repository->getOggettiForPreventivo($id);
+        $selectedOggettiIds = [];
+        $selectedOggettiDetail = [];
+        foreach ($selectedOggettiRows as $item) {
+            $oid = isset($item['id_oggetto']) ? (int) $item['id_oggetto'] : 0;
+            if ($oid <= 0) {
+                continue;
+            }
+            $selectedOggettiIds[] = $oid;
+            $selectedOggettiDetail[] = [
+                'id_oggetto' => $oid,
+                'label' => isset($item['label']) && $item['label'] !== null ? (string) $item['label'] : null,
+                'attivo' => isset($item['attivo']) ? (int) $item['attivo'] : 0,
+                'ordering' => isset($item['ordering']) ? (int) $item['ordering'] : null,
+            ];
+        }
+        $row['oggetti'] = $selectedOggettiIds;
+        $row['oggetti_detail'] = $selectedOggettiDetail;
         $statuses = $this->repository->listStatuses();
         $currentStatus = [
             'code' => $row['stato_code'] ?? null,

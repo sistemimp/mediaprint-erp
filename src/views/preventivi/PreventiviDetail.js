@@ -670,7 +670,7 @@ const PreventiviDetail = () => {
     return () => controller.abort()
   }, [token, id])
 
-  // Verifica se l'anagrafica associata Ã¨ disattiva per disabilitare attivitÃ 
+  // Verifica se l'anagrafica associata è disattiva per disabilitare attività
   useEffect(() => {
     const run = async () => {
       try {
@@ -748,7 +748,7 @@ const PreventiviDetail = () => {
             }
           }
         } else {
-          // Fallback: continua se la prima pagina Ã¨ piena
+          // Fallback: continua se la prima pagina è piena
           let nextPage = 2
           let safety = 0
           while (!controller.signal.aborted && allItems.length > 0 && allItems.length % perPage === 0 && safety < 100) {
@@ -838,7 +838,7 @@ const PreventiviDetail = () => {
     })
   }, [allClientiOptions, clienteSearch, clienteDisplay, idAnagrafica])
 
-  // Opzioni giÃ  filtrate a monte; il componente si occupa solo del rendering/controllo
+  // Opzioni già filtrate a monte; il componente si occupa solo del rendering/controllo
 
   // Carica categorie e nature IVA per stepper
   useEffect(() => {
@@ -1344,7 +1344,7 @@ const PreventiviDetail = () => {
 
             {!editable && (
               <CAlert color="info" className="mb-3">
-                Il documento non Ã¨ in stato bozza. La modifica Ã¨ disabilitata.
+                Il documento non è in stato bozza. La modifica è disabilitata.
               </CAlert>
             )}
 
@@ -1464,7 +1464,7 @@ const PreventiviDetail = () => {
                               <CTableDataCell>{e.user_name || e.username || e.user || e.operatore || '-'}</CTableDataCell>
                               <CTableDataCell>
                                 {(e.from_status || e.from || e.da)
-                                  ? `${e.from_status || e.from || e.da} â†’ ${e.to_status || e.to || e.a || e.status || ''}`
+                                  ? `${e.from_status || e.from || e.da} → ${e.to_status || e.to || e.a || e.status || ''}`
                                   : (e.to_status || e.to || e.a || e.status || '')}
                               </CTableDataCell>
                               <CTableDataCell>{e.note || e.message || ''}</CTableDataCell>
@@ -1739,7 +1739,7 @@ const PreventiviDetail = () => {
                     <CCol md={5}>
                       <CFormLabel>Pacchetto</CFormLabel>
                       <CFormSelect value={selPacchetto} onChange={(e) => setSelPacchetto(e.target.value)} disabled={uiDisabled}>
-                        <option value="">Selezionaâ€¦</option>
+                        <option value="">Seleziona…</option>
                         {pkgOptions.map((p) => (
                           <option key={p.id_pacchetto} value={p.id_pacchetto}>
                             {p.codice ? `${p.codice} - ${p.nome}` : p.nome}
@@ -1761,7 +1761,7 @@ const PreventiviDetail = () => {
                         <CTableHead color="light">
                           <CTableRow>
                             <CTableHeaderCell>Descrizione</CTableHeaderCell>
-                            <CTableHeaderCell className="text-end">Q.tÃ </CTableHeaderCell>
+                            <CTableHeaderCell className="text-end">Q.tà</CTableHeaderCell>
                             <CTableHeaderCell className="text-end">Prezzo</CTableHeaderCell>
                             <CTableHeaderCell className="text-end">IVA %</CTableHeaderCell>
                             <CTableHeaderCell className="text-end">Sconto %</CTableHeaderCell>
@@ -1905,7 +1905,7 @@ const PreventiviDetail = () => {
                               : []
                             return (
                               <option key={r.combo_key || idx} value={r.combo_key}>
-                                {labels.join(', ')} â€” {Number(r.prezzo) ?? 0}
+                                {labels.join(', ')} — {Number(r.prezzo) ?? 0}
                               </option>
                             )
                           })}
@@ -1922,7 +1922,7 @@ const PreventiviDetail = () => {
                       <CFormInput placeholder="Cerca per nome o codice" value={prodSearch} onChange={(e) => setProdSearch(e.target.value)} disabled={uiDisabled} />
                     </CCol>
                     <CCol md={3}>
-                      <CFormLabel>QuantitÃ </CFormLabel>
+                      <CFormLabel>Quantità</CFormLabel>
                       <CFormInput id="step-qta" type="number" min="1" step="1" defaultValue={1} disabled={uiDisabled} />
                     </CCol>
                     <CCol md={3}>
@@ -2076,7 +2076,7 @@ const PreventiviDetail = () => {
                               setSelectedVarIds(ids)
                             }}
                             disabled={uiDisabled || prodComboList.length === 0}>
-                            <option value="">Seleziona una combinazioneâ€¦</option>
+                            <option value="">Seleziona una combinazione…</option>
                             {prodComboList.map((r, idx) => {
                               const ids = Array.isArray(r.var_ids) ? r.var_ids : String(r.combo_key).split('+').map((x) => Number(x) || 0)
                               const groups = {}
@@ -2125,7 +2125,7 @@ const PreventiviDetail = () => {
                         })()}
                       </CCol>
                       <CCol md={4}>
-                        <CFormLabel>QuantitÃ </CFormLabel>
+                        <CFormLabel>Quantità</CFormLabel>
                         <CFormInput type="number" min="1" step="1" value={modalQty} onChange={(e) => setModalQty(Number(e.target.value) || 1)} disabled={uiDisabled} />
                       </CCol>
                       <CCol md={4}>
@@ -2218,7 +2218,7 @@ const PreventiviDetail = () => {
                   <CTableRow className="align-middle">
                     <CTableHeaderCell>Descrizione</CTableHeaderCell>
                     <CTableHeaderCell className="text-end" style={{ width: 120 }}>
-                      Q.tÃ
+                      Q.tà
                     </CTableHeaderCell>
                     <CTableHeaderCell className="text-end" style={{ width: 160 }}>
                       Prezzo
@@ -2246,7 +2246,7 @@ const PreventiviDetail = () => {
                     const rows = Array.isArray(righe) ? righe : []
                     const groupMap = new Map()
                     const getCat = (r) => {
-                      // PrioritÃ : nome categoria giÃ  presente in riga
+                      // Priorità: nome categoria già presente in riga
                       if (r && r.categoria_nome) return String(r.categoria_nome)
                       // Poi: id_categoria presente in riga -> lookup
                       if (r && r.id_categoria) {

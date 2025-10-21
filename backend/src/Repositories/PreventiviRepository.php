@@ -94,8 +94,11 @@ final class PreventiviRepository
             $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
             $out = [];
             foreach ($rows as $r) {
+                $id = (int) $r['id_oggetto'];
                 $out[] = [
-                    'id_oggetto' => (int) $r['id_oggetto'],
+                    'id' => $id,
+                    'id_oggetto' => $id,
+                    'value' => (string) $id,
                     'label' => (string) $r['label'],
                     'ordering' => (int) $r['ordering'],
                     'attivo' => (int) $r['attivo'],
@@ -106,18 +109,18 @@ final class PreventiviRepository
 
         // Fallback defaults if table not available
         return [
-            ['id_oggetto' => 1, 'label' => 'Stampa', 'ordering' => 1, 'attivo' => 1],
-            ['id_oggetto' => 2, 'label' => 'Imbustamento', 'ordering' => 2, 'attivo' => 1],
-            ['id_oggetto' => 3, 'label' => 'Cellophanatura', 'ordering' => 3, 'attivo' => 1],
-            ['id_oggetto' => 4, 'label' => 'Posta Digitale', 'ordering' => 4, 'attivo' => 1],
+            ['id' => 1, 'id_oggetto' => 1, 'value' => '1', 'label' => 'Stampa', 'ordering' => 1, 'attivo' => 1],
+            ['id' => 2, 'id_oggetto' => 2, 'value' => '2', 'label' => 'Imbustamento', 'ordering' => 2, 'attivo' => 1],
+            ['id' => 3, 'id_oggetto' => 3, 'value' => '3', 'label' => 'Cellophanatura', 'ordering' => 3, 'attivo' => 1],
+            ['id' => 4, 'id_oggetto' => 4, 'value' => '4', 'label' => 'Posta Digitale', 'ordering' => 4, 'attivo' => 1],
         ];
     }
 
     /**
      * Crea una nuova opzione oggetto se non esiste già (case-insensitive per label).
-     * @return array{id_oggetto:int,label:string,ordering:int,attivo:int}
+     * @return array{id_oggetto:int,label:string,ordering:int|null,attivo:int}
      */
-    public function createOggettoOption(string $label): array
+    public function createOggettoOption(string $label, bool $active = true): array
     {
         $this->ensureOggettoSchema();
         $name = trim($label);
@@ -131,17 +134,21 @@ final class PreventiviRepository
         $sel->execute();
         $row = $sel->fetch(PDO::FETCH_ASSOC);
         if ($row !== false) {
-            // Riattiva se necessario
-            if ((int) $row['attivo'] !== 1) {
+            $currentActive = (int) $row['attivo'] === 1;
+            if ($active && !$currentActive) {
                 $this->pdo->prepare('UPDATE cfg_preventivi_oggetti SET attivo = 1 WHERE id_oggetto = :id')
                     ->execute([':id' => (int) $row['id_oggetto']]);
                 $row['attivo'] = 1;
+                $currentActive = true;
             }
+            $id = (int) $row['id_oggetto'];
             return [
-                'id_oggetto' => (int) $row['id_oggetto'],
+                'id' => $id,
+                'id_oggetto' => $id,
+                'value' => (string) $id,
                 'label' => (string) $row['label'],
                 'ordering' => (int) $row['ordering'],
-                'attivo' => (int) $row['attivo'],
+                'attivo' => $currentActive ? 1 : 0,
             ];
         }
 
@@ -151,32 +158,60 @@ final class PreventiviRepository
             $ord = (int) ($this->pdo->query('SELECT COALESCE(MAX(ordering), 0) + 1 FROM cfg_preventivi_oggetti')->fetchColumn() ?: 1);
         } catch (\Throwable $ignored) {}
 
-        $ins = $this->pdo->prepare('INSERT INTO cfg_preventivi_oggetti (label, code, ordering, attivo) VALUES (:label, NULL, :ordering, 1)');
+        $ins = $this->pdo->prepare('INSERT INTO cfg_preventivi_oggetti (label, code, ordering, attivo) VALUES (:label, NULL, :ordering, :attivo)');
         $ins->bindValue(':label', $name, PDO::PARAM_STR);
         $ins->bindValue(':ordering', $ord, PDO::PARAM_INT);
+        $ins->bindValue(':attivo', $active ? 1 : 0, PDO::PARAM_INT);
         $ins->execute();
         $id = (int) $this->pdo->lastInsertId();
 
         return [
+            'id' => $id,
             'id_oggetto' => $id,
+            'value' => (string) $id,
             'label' => $name,
             'ordering' => $ord,
-            'attivo' => 1,
+            'attivo' => $active ? 1 : 0,
         ];
     }
 
     /**
-     * @return list<int> ids of selected oggetti for a preventivo
+     * @return list<array{id_oggetto:int,label:?string,attivo:int,ordering:?int}>
      */
     public function getOggettiForPreventivo(int $idPreventivo): array
     {
         $this->ensureOggettoSchema();
         try {
-            $stmt = $this->pdo->prepare('SELECT id_oggetto FROM tb_preventivi_oggetti_map WHERE id_preventivo = :id ORDER BY id_oggetto ASC');
+            $stmt = $this->pdo->prepare(<<<'SQL'
+                SELECT
+                    m.id_oggetto,
+                    o.label,
+                    o.attivo,
+                    o.ordering
+                FROM tb_preventivi_oggetti_map AS m
+                LEFT JOIN cfg_preventivi_oggetti AS o ON o.id_oggetto = m.id_oggetto
+                WHERE m.id_preventivo = :id
+                ORDER BY
+                    COALESCE(o.ordering, 9999) ASC,
+                    m.id_oggetto ASC
+            SQL);
             $stmt->bindValue(':id', $idPreventivo, PDO::PARAM_INT);
             $stmt->execute();
-            $rows = $stmt->fetchAll(PDO::FETCH_COLUMN) ?: [];
-            return array_map('intval', $rows);
+            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+            $out = [];
+            foreach ($rows as $row) {
+                $id = isset($row['id_oggetto']) ? (int) $row['id_oggetto'] : 0;
+                if ($id <= 0) {
+                    continue;
+                }
+                $out[] = [
+                    'id_oggetto' => $id,
+                    'label' => array_key_exists('label', $row) && $row['label'] !== null ? (string) $row['label'] : null,
+                    'attivo' => isset($row['attivo']) ? (int) $row['attivo'] : 0,
+                    'ordering' => isset($row['ordering']) ? (int) $row['ordering'] : null,
+                ];
+            }
+            return $out;
         } catch (\Throwable $ignored) {
             return [];
         }
@@ -216,12 +251,30 @@ final class PreventiviRepository
             if (!empty($ids)) {
                 try {
                     $ph = implode(',', array_fill(0, count($ids), '?'));
-                    $stmt = $this->pdo->prepare("SELECT label FROM cfg_preventivi_oggetti WHERE id_oggetto IN ($ph) AND attivo = 1 ORDER BY ordering ASC, id_oggetto ASC");
+                    $stmt = $this->pdo->prepare("SELECT id_oggetto, label FROM cfg_preventivi_oggetti WHERE id_oggetto IN ($ph)");
                     foreach (array_values($ids) as $idx => $val) {
                         $stmt->bindValue($idx + 1, (int) $val, PDO::PARAM_INT);
                     }
                     $stmt->execute();
-                    $labels = array_map(static fn($r) => (string) $r['label'], $stmt->fetchAll(PDO::FETCH_ASSOC) ?: []);
+                    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+                    $labelById = [];
+                    foreach ($rows as $row) {
+                        $rid = isset($row['id_oggetto']) ? (int) $row['id_oggetto'] : 0;
+                        if ($rid <= 0) {
+                            continue;
+                        }
+                        $labelById[$rid] = isset($row['label']) && $row['label'] !== null ? (string) $row['label'] : '';
+                    }
+                    foreach ($ids as $oid) {
+                        $oid = (int) $oid;
+                        if ($oid <= 0) {
+                            continue;
+                        }
+                        $label = $labelById[$oid] ?? null;
+                        if ($label !== null) {
+                            $labels[] = (string) $label;
+                        }
+                    }
                 } catch (\Throwable $ignored) {}
             }
             $text = implode(' - ', array_filter($labels, static fn($s) => $s !== ''));
@@ -913,6 +966,7 @@ final class PreventiviRepository
                 COALESCE(a.ragione_sociale, aa.ragione_sociale) AS cliente_ragione_sociale,
                 COALESCE(a.piva, aa.piva) AS cliente_piva,
                 COALESCE(a.codice_fiscale, aa.codice_fiscale) AS cliente_codice_fiscale,
+                COALESCE(a.is_pa, aa.is_pa) AS cliente_is_pa,
                 p.created_at,
                 p.updated_at
             FROM tb_preventivi p
@@ -948,6 +1002,7 @@ final class PreventiviRepository
             'cliente_ragione_sociale' => $row['cliente_ragione_sociale'] ?? null,
             'cliente_piva' => $row['cliente_piva'] ?? null,
             'cliente_codice_fiscale' => $row['cliente_codice_fiscale'] ?? null,
+            'cliente_is_pa' => isset($row['cliente_is_pa']) ? (int) $row['cliente_is_pa'] : 0,
             'created_at' => $row['created_at'] ?? null,
             'updated_at' => $row['updated_at'] ?? null,
         ];
