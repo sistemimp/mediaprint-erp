@@ -27,9 +27,9 @@ try {
     }
 
     $service = new PreventiviService(new PreventiviRepository(Database::getConnection()));
-    $result = $service->create($payload);
+    $result = $service->sendEmail($payload);
 
-    HttpResponse::json($result, 201);
+    HttpResponse::json($result, 200);
 } catch (RuntimeException $exception) {
     $code = (int) $exception->getCode();
     if ($code < 400 || $code >= 600) {

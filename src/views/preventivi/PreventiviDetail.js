@@ -37,12 +37,15 @@ import {
 } from '@coreui/react'
 import { CStepper } from '@coreui/react-pro'
 import AnagraficaAutocomplete from '../../components/AnagraficaAutocomplete'
+import PreventivoContattiTable from '../../components/PreventivoContattiTable'
+import { normalizePreventivoContact, serializePreventivoContacts } from '../../utils/preventiviContacts'
 import CIcon from '@coreui/icons-react'
-import { cilCheckCircle, cilSave } from '@coreui/icons'
+import { cilCheckCircle, cilSave, cilX, cilEnvelopeClosed } from '@coreui/icons'
+
 
 import { useAuth } from '../../context/AuthContext'
 import { fetchAnagrafiche, fetchAnagraficaDetail } from '../../services/anagrafiche'
-import { createPreventivo, fetchPreventivoDetail, updatePreventivoStatus, logPreventivoStatusChange, fetchPreventivoStatusLog, fetchPreventivoOggettiOptions, createPreventivoOggettoOption } from '../../services/preventivi'
+import { createPreventivo, fetchPreventivoDetail, updatePreventivoStatus, logPreventivoStatusChange, fetchPreventivoStatusLog, fetchPreventivoOggettiOptions, createPreventivoOggettoOption, sendPreventivoEmail } from '../../services/preventivi'
 import { CMultiSelect } from '@coreui/react-pro'
 import {
   fetchCategorieProdotti,
@@ -173,6 +176,7 @@ const PreventiviDetail = () => {
     codiceCliente: null,
     piva: null,
     codiceFiscale: null,
+    email: null,
   })
   const [dataPreventivo, setDataPreventivo] = useState('')
   const [note, setNote] = useState('')
@@ -190,6 +194,17 @@ const PreventiviDetail = () => {
     setPendingOggettoCreate(pendingOggettoCreateCountRef.current > 0)
   }, [])
   const [rifCliente, setRifCliente] = useState('')
+  const [preventivoContatti, setPreventivoContatti] = useState([])
+  const [anagraficaContactOptions, setAnagraficaContactOptions] = useState([])
+  const [emailModalVisible, setEmailModalVisible] = useState(false)
+  const [emailSending, setEmailSending] = useState(false)
+  const [emailTo, setEmailTo] = useState('')
+  const [emailCc, setEmailCc] = useState('')
+  const [emailSubject, setEmailSubject] = useState('')
+  const [emailBody, setEmailBody] = useState('')
+  const [emailError, setEmailError] = useState(null)
+  const [emailSuccess, setEmailSuccess] = useState(null)
+  const [refreshCounter, setRefreshCounter] = useState(0)
   // CIG / Determine
   const [cigList, setCigList] = useState([])
   const [newCig, setNewCig] = useState({ cig: '', data_cig: '', motivazione: '' })
@@ -244,13 +259,15 @@ const PreventiviDetail = () => {
     const nextCodice = existing.codice_cliente ?? null
     const nextPiva = existing.piva ?? null
     const nextCf = existing.codice_fiscale ?? null
+    const nextEmail = existing.email ?? existing.cliente_email ?? null
     setClienteDisplay((prev) => {
       if (
         prev.id === currentId &&
         prev.label === nextLabel &&
         prev.codiceCliente === nextCodice &&
         prev.piva === nextPiva &&
-        prev.codiceFiscale === nextCf
+        prev.codiceFiscale === nextCf &&
+        prev.email === nextEmail
       ) {
         return prev
       }
@@ -260,6 +277,7 @@ const PreventiviDetail = () => {
         codiceCliente: nextCodice,
         piva: nextPiva,
         codiceFiscale: nextCf,
+        email: nextEmail,
       }
     })
   }, [allClientiOptions, idAnagrafica])
@@ -315,6 +333,7 @@ const PreventiviDetail = () => {
         codiceCliente: prefill.cliente.codiceCliente ?? prev.codiceCliente,
         piva: prefill.cliente.piva ?? prev.piva,
         codiceFiscale: prefill.cliente.codiceFiscale ?? prev.codiceFiscale,
+        email: prefill.cliente.email ?? prev.email ?? prefill.clienteEmail ?? null,
       }))
       setAllClientiOptions((prev) => {
         const exists = prev.some(
@@ -329,6 +348,7 @@ const PreventiviDetail = () => {
             codice_cliente: prefill.cliente.codiceCliente ?? null,
             piva: prefill.cliente.piva ?? null,
             codice_fiscale: prefill.cliente.codiceFiscale ?? null,
+            email: prefill.cliente.email ?? prefill.clienteEmail ?? null,
           },
           ...prev,
         ]
@@ -340,6 +360,7 @@ const PreventiviDetail = () => {
         codiceCliente: prev.codiceCliente,
         piva: prev.piva,
         codiceFiscale: prev.codiceFiscale,
+        email: prev.email ?? prefill.clienteEmail ?? null,
       }))
       setAllClientiOptions((prev) => {
         const exists = prev.some(
@@ -358,6 +379,14 @@ const PreventiviDetail = () => {
           ...prev,
         ]
       })
+    }
+
+    if (Array.isArray(prefill.contatti)) {
+      setPreventivoContatti(
+        prefill.contatti
+          .map((c) => normalizePreventivoContact(c, prefill.id_anagrafica ?? null))
+          .filter(Boolean),
+      )
     }
 
     prefillAppliedRef.current = true
@@ -479,7 +508,7 @@ const PreventiviDetail = () => {
       try {
         setStatusError(null)
         setStatusSuccess(null)
-        const { data, editable, righe: righeSrv, cig: cigSrv, determine: determineSrv, statuses, currentStatus: current } = await fetchPreventivoDetail({
+        const { data, editable, righe: righeSrv, cig: cigSrv, determine: determineSrv, contatti: contattiSrv, statuses, currentStatus: current } = await fetchPreventivoDetail({
           token,
           id,
           signal: controller.signal,
@@ -562,6 +591,7 @@ const PreventiviDetail = () => {
             codiceCliente: data.cliente_codice_cliente ?? prev.codiceCliente ?? null,
             piva: data.cliente_piva ?? prev.piva ?? null,
             codiceFiscale: data.cliente_codice_fiscale ?? prev.codiceFiscale ?? null,
+            email: data.cliente_email ?? prev.email ?? null,
           }))
           setAllClientiOptions((prev) => {
             const list = Array.isArray(prev) ? prev : []
@@ -581,6 +611,7 @@ const PreventiviDetail = () => {
                 codice_cliente: data.cliente_codice_cliente ?? null,
                 piva: data.cliente_piva ?? null,
                 codice_fiscale: data.cliente_codice_fiscale ?? null,
+                email: data.cliente_email ?? null,
               },
               ...list,
             ]
@@ -626,6 +657,13 @@ const PreventiviDetail = () => {
           data_determina: d.data_determina ?? '',
           motivazione: d.motivazione ?? '',
         })) : [])
+        setPreventivoContatti(
+          Array.isArray(contattiSrv)
+            ? contattiSrv
+              .map((c) => normalizePreventivoContact(c, data.id_anagrafica))
+              .filter(Boolean)
+            : [],
+        )
       } catch (e) {
         if (e.name === 'AbortError') return
         if (e.status === 401 && logout) {
@@ -640,7 +678,7 @@ const PreventiviDetail = () => {
 
     load()
     return () => controller.abort()
-  }, [token, id])
+  }, [token, id, refreshCounter])
 
   // Carica storico cambi stato
   useEffect(() => {
@@ -683,11 +721,14 @@ const PreventiviDetail = () => {
             codiceCliente: null,
             piva: null,
             codiceFiscale: null,
+            email: null,
           })
+          setAnagraficaContactOptions([])
           return
         }
         const det = await fetchAnagraficaDetail({ token, id: aid })
         const detailData = det?.anagrafica ?? det?.data ?? null
+        setAnagraficaContactOptions(Array.isArray(det?.contatti) ? det.contatti : [])
         if (detailData) {
           setClienteDisplay((prev) => ({
             id: Number(detailData.id_anagrafica ?? detailData.id ?? aid),
@@ -699,6 +740,7 @@ const PreventiviDetail = () => {
             codiceCliente: detailData.codice_cliente ?? prev.codiceCliente ?? null,
             piva: detailData.piva ?? detailData.partita_iva ?? prev.piva ?? null,
             codiceFiscale: detailData.codice_fiscale ?? prev.codiceFiscale ?? null,
+            email: detailData.email ?? prev.email ?? detailData.contatto_email ?? null,
           }))
         }
         const active =
@@ -707,6 +749,7 @@ const PreventiviDetail = () => {
         setAnagraficaDisabled(!active)
       } catch (_e) {
         setAnagraficaDisabled(false)
+        setAnagraficaContactOptions([])
       }
     }
     run()
@@ -1039,6 +1082,82 @@ const PreventiviDetail = () => {
     return { imponibile, totaleIva, totale }
   }, [righe])
 
+  const defaultEmailToValue = useMemo(() => {
+    const seen = new Set()
+    const collected = []
+    const push = (value) => {
+      const email = String(value || '').trim()
+      if (!email) return
+      const key = email.toLowerCase()
+      if (seen.has(key)) return
+      seen.add(key)
+      collected.push(email)
+    }
+    if (Array.isArray(preventivoContatti)) {
+      preventivoContatti.forEach((contact) => push(contact?.email))
+    }
+    return collected.join(', ')
+  }, [preventivoContatti])
+
+  const defaultEmailSubject = useMemo(() => {
+    const segments = []
+    if (header?.numero) {
+      const suffix = header?.anno ? `/${header.anno}` : ''
+      segments.push(`Preventivo ${header.numero}${suffix}`)
+    } else if (header?.anno) {
+      segments.push(`Preventivo ${header.anno}`)
+    } else {
+      segments.push('Preventivo')
+    }
+    if (clienteDisplay?.label) {
+      segments.push(clienteDisplay.label)
+    }
+    return segments.join(' - ')
+  }, [header, clienteDisplay])
+
+  const computedOggettoText = useMemo(() => {
+    const manual = String(oggetto || '').trim()
+    if (manual) return manual
+    const map = new Map(
+      (Array.isArray(oggettiOptions) ? oggettiOptions : []).map((o) => [
+        Number(o?.id ?? o?.value ?? 0),
+        String(o.label || ''),
+      ]),
+    )
+    const labels = (Array.isArray(selectedOggetti) ? selectedOggetti : [])
+      .map((v) => map.get(Number(v)))
+      .filter(Boolean)
+    return labels.join(' - ')
+  }, [oggetto, oggettiOptions, selectedOggetti])
+
+  const defaultEmailBody = useMemo(() => {
+    const clienteName = clienteDisplay?.label || 'Cliente'
+    const numero =
+      header?.numero != null
+        ? `${header.numero}${header?.anno ? `/${header.anno}` : ''}`
+        : `ID ${id}`
+    const docDate = dataPreventivo
+      ? (() => {
+          const parsed = new Date(dataPreventivo)
+          return Number.isFinite(parsed.getTime()) ? parsed.toLocaleDateString('it-IT') : null
+        })()
+      : null
+    const descrizione = (computedOggettoText || oggetto || 'la lavorazione richiesta').trim()
+    const totalFormatted = totals?.totale ? formatCurrency(totals.totale) : formatCurrency(0)
+    const operatorName = user?.name || user?.username || 'Team MediaPrint'
+    return [
+      `Gentile ${clienteName},`,
+      '',
+      `in allegato trova il preventivo n. ${numero}${docDate ? ` del ${docDate}` : ''} relativo a ${descrizione}.`,
+      `Il valore complessivo del documento è ${totalFormatted}.`,
+      '',
+      'Restiamo a disposizione per qualsiasi chiarimento.',
+      '',
+      'Cordiali saluti,',
+      operatorName,
+    ].join('\n')
+  }, [clienteDisplay, header, id, dataPreventivo, computedOggettoText, oggetto, totals, user])
+
   // Carica pacchetti quando apro modal o modifico ricerca
   useEffect(() => {
     if (!token) return
@@ -1160,21 +1279,6 @@ const PreventiviDetail = () => {
   // Stepper usa gestione inline (3 step). Le transizioni 1->bozza, 2->inviato
   // sono gestite direttamente, mentre il passo 3 (Finale) usa la select.
 
-  const computedOggettoText = useMemo(() => {
-    const manual = String(oggetto || '').trim()
-    if (manual) return manual
-    const map = new Map(
-      (Array.isArray(oggettiOptions) ? oggettiOptions : []).map((o) => [
-        Number(o?.id ?? o?.value ?? 0),
-        String(o.label || ''),
-      ]),
-    )
-    const labels = (Array.isArray(selectedOggetti) ? selectedOggetti : [])
-      .map((v) => map.get(Number(v)))
-      .filter(Boolean)
-    return labels.join(' - ')
-  }, [oggetto, oggettiOptions, selectedOggetti])
-
   const buildPayload = () => {
     return {
       id_preventivo: id,
@@ -1186,6 +1290,7 @@ const PreventiviDetail = () => {
       riferimento_cliente: rifCliente,
       cig: cigList.map((c) => ({ cig: c.cig, data_cig: c.data_cig || null, motivazione: c.motivazione || null })),
       determine: determineList.map((d) => ({ determina: d.determina, data_determina: d.data_determina || null, motivazione: d.motivazione || null })),
+      contatti: serializePreventivoContacts(preventivoContatti, Number(idAnagrafica) || null),
       righe,
       totals: {
         imponibile: totals.imponibile,
@@ -1195,6 +1300,58 @@ const PreventiviDetail = () => {
       },
     }
   }
+
+  const handleOpenEmailModal = useCallback(() => {
+    setEmailError(null)
+    setEmailSuccess(null)
+    setEmailModalVisible(true)
+    setEmailTo((prev) => (prev && prev.trim() !== '' ? prev : defaultEmailToValue))
+    setEmailSubject((prev) => (prev && prev.trim() !== '' ? prev : defaultEmailSubject || `Preventivo ${id}`))
+    setEmailBody((prev) => (prev && prev.trim() !== '' ? prev : defaultEmailBody))
+  }, [defaultEmailToValue, defaultEmailSubject, defaultEmailBody, id])
+
+  const handleCloseEmailModal = useCallback(() => {
+    if (emailSending) return
+    setEmailModalVisible(false)
+  }, [emailSending])
+
+  const handleSendPreventivoEmail = useCallback(async () => {
+    if (!token || !id) return
+    const sanitizedTo = String(emailTo || '').trim()
+    if (sanitizedTo === '') {
+      setEmailError(new Error('Indicare almeno un destinatario.'))
+      return
+    }
+    setEmailSending(true)
+    setEmailError(null)
+    setEmailSuccess(null)
+    try {
+        const result = await sendPreventivoEmail({
+          token,
+          id,
+          to: emailTo,
+          cc: emailCc,
+          subject: emailSubject,
+          message: emailBody,
+        })
+        if (!result?.ok) {
+          const error = new Error(result?.message || 'Invio email non riuscito.')
+          error.payload = result
+          throw error
+        }
+        setEmailSuccess('Email inviata con successo.')
+        setEmailModalVisible(false)
+        setRefreshCounter((count) => count + 1)
+      } catch (err) {
+        if (err?.status === 401 && logout) {
+          logout()
+          return
+        }
+      setEmailError(err)
+    } finally {
+      setEmailSending(false)
+    }
+  }, [token, id, emailTo, emailCc, emailSubject, emailBody, logout])
 
   const handleSalvaBozza = async (e) => {
     e.preventDefault()
@@ -1303,18 +1460,31 @@ const PreventiviDetail = () => {
   return (
     <CCard>
       <CCardHeader>
-        <div className="d-flex justify-content-between align-items-center">
+        <div className="d-flex justify-content-between align-items-center flex-wrap gap-3">
           <div>
             <h5 className="mb-0">Preventivi - Dettagli</h5>
             <small className="text-body-secondary">
               Documento {header.anno ?? '-'} / {header.numero ?? '-'}
             </small>
           </div>
-          {header.stato && (
-            <CBadge color={editable ? 'info' : 'secondary'} className="text-uppercase">
-              {header.stato}
-            </CBadge>
-          )}
+          <div className="d-flex align-items-center gap-2">
+            {header.stato && (
+              <CBadge color={editable ? 'info' : 'secondary'} className="text-uppercase">
+                {header.stato}
+              </CBadge>
+            )}
+            <CButton
+              color="primary"
+              variant="outline"
+              size="sm"
+              type="button"
+              onClick={handleOpenEmailModal}
+              disabled={loading || !token}
+            >
+              <CIcon icon={cilEnvelopeClosed} className="me-2" />
+              Invia email
+            </CButton>
+          </div>
         </div>
       </CCardHeader>
       <CCardBody>
@@ -1497,13 +1667,15 @@ const PreventiviDetail = () => {
                         const nextCodice = cliente.codice_cliente ?? null
                         const nextPiva = cliente.piva ?? null
                         const nextCf = cliente.codice_fiscale ?? null
+                        const nextEmail = cliente.email ?? cliente.cliente_email ?? cliente.mail ?? null
                         setClienteDisplay((prev) => {
                           if (
                             prev.id === nextId &&
                             prev.label === nextLabel &&
                             prev.codiceCliente === nextCodice &&
                             prev.piva === nextPiva &&
-                            prev.codiceFiscale === nextCf
+                            prev.codiceFiscale === nextCf &&
+                            prev.email === nextEmail
                           ) {
                             return prev
                           }
@@ -1513,6 +1685,7 @@ const PreventiviDetail = () => {
                             codiceCliente: nextCodice,
                             piva: nextPiva,
                             codiceFiscale: nextCf,
+                            email: nextEmail,
                           }
                         })
                       } else {
@@ -1522,7 +1695,8 @@ const PreventiviDetail = () => {
                             prev.label === '' &&
                             prev.codiceCliente == null &&
                             prev.piva == null &&
-                            prev.codiceFiscale == null
+                            prev.codiceFiscale == null &&
+                            prev.email == null
                           ) {
                             return prev
                           }
@@ -1532,6 +1706,7 @@ const PreventiviDetail = () => {
                             codiceCliente: null,
                             piva: null,
                             codiceFiscale: null,
+                            email: null,
                           }
                         })
                       }
@@ -1697,7 +1872,7 @@ const PreventiviDetail = () => {
                             label: normalized.label,
                           }
                         }
-                      } catch (error) { 
+                      } catch (error) {
                         console.error('Creazione opzione oggetto fallita (dettaglio)', error)
                       }
                       return null
@@ -1708,6 +1883,18 @@ const PreventiviDetail = () => {
                   <CFormLabel>Oggetto:{selectedOggetti}</CFormLabel>
                 </CCol>
               </CRow>
+            </section>
+
+            <section className="mb-4">
+              <h6 className="mb-3 text-body-secondary">Contatti preventivo</h6>
+              <PreventivoContattiTable
+                contatti={preventivoContatti}
+                onChange={setPreventivoContatti}
+                disabled={uiDisabled || submitting}
+                anagraficaContacts={anagraficaContactOptions}
+                canImport={Boolean(Number(idAnagrafica) || 0)}
+                currentAnagraficaId={Number(idAnagrafica) || null}
+              />
             </section>
 
             <section className="mb-4">
@@ -2217,16 +2404,16 @@ const PreventiviDetail = () => {
                 <CTableHead color="light">
                   <CTableRow className="align-middle">
                     <CTableHeaderCell>Descrizione</CTableHeaderCell>
-                    <CTableHeaderCell className="text-end" style={{ width: 120 }}>
+                    <CTableHeaderCell className="text-end" style={{ width: 180 }}>
                       Q.tà
                     </CTableHeaderCell>
-                    <CTableHeaderCell className="text-end" style={{ width: 160 }}>
+                    <CTableHeaderCell className="text-end" style={{ width: 100 }}>
                       Prezzo
                     </CTableHeaderCell>
-                    <CTableHeaderCell className="text-end" style={{ width: 140 }}>
+                    <CTableHeaderCell className="text-end" style={{ width: 80 }}>
                       Sconto %
                     </CTableHeaderCell>
-                    <CTableHeaderCell className="text-end" style={{ width: 120 }}>
+                    <CTableHeaderCell className="text-end" style={{ width: 80 }}>
                       IVA %
                     </CTableHeaderCell>
                     <CTableHeaderCell className="text-end" style={{ width: 200 }}>
@@ -2235,7 +2422,7 @@ const PreventiviDetail = () => {
                     <CTableHeaderCell className="text-end">Imponibile</CTableHeaderCell>
                     <CTableHeaderCell className="text-end">IVA</CTableHeaderCell>
                     <CTableHeaderCell className="text-end">Totale</CTableHeaderCell>
-                    <CTableHeaderCell className="text-center" style={{ width: 64 }}>
+                    <CTableHeaderCell className="text-center">
                       Azioni
                     </CTableHeaderCell>
                   </CTableRow>
@@ -2285,11 +2472,12 @@ const PreventiviDetail = () => {
                         out.push(
                           <CTableRow key={idx} className="align-middle">
                             <CTableDataCell>
-                              <CFormInput
+                              <CFormTextarea
                                 placeholder="Descrizione articolo/servizio"
                                 value={riga.descrizione}
                                 onChange={(e) => updateRiga(idx, { descrizione: e.target.value })}
                                 disabled={uiDisabled}
+                                style={{ fontSize: "10pt", width: "400px" }}
                               />
                             </CTableDataCell>
                             <CTableDataCell className="text-end">
@@ -2310,6 +2498,7 @@ const PreventiviDetail = () => {
                                 value={riga.prezzo}
                                 onChange={(e) => updateRiga(idx, { prezzo: e.target.value })}
                                 disabled={uiDisabled}
+
                               />
                             </CTableDataCell>
                             <CTableDataCell className="text-end">
@@ -2359,7 +2548,7 @@ const PreventiviDetail = () => {
                             <CTableDataCell className="text-end">{formatCurrency(tot)}</CTableDataCell>
                             <CTableDataCell className="text-center">
                               <CButton color="link" size="sm" className="p-0" onClick={() => handleRemoveRiga(idx)} disabled={uiDisabled}>
-                                -
+                                <CIcon icon={cilX} />
                               </CButton>
                             </CTableDataCell>
                           </CTableRow>,
@@ -2423,6 +2612,72 @@ const PreventiviDetail = () => {
             </div>
           </CForm>
         )}
+        <CModal visible={emailModalVisible} onClose={handleCloseEmailModal} size="lg" backdrop="static">
+          <CModalHeader>
+            <CModalTitle>Invia preventivo via email</CModalTitle>
+          </CModalHeader>
+          <CModalBody>
+            {emailError && (
+              <CAlert color="danger">
+                {emailError?.payload?.message || emailError.message || 'Invio email non riuscito.'}
+              </CAlert>
+            )}
+            {emailSuccess && <CAlert color="success">{emailSuccess}</CAlert>}
+            <div className="mb-3">
+              <CFormLabel>Destinatari</CFormLabel>
+              <CFormInput
+                value={emailTo}
+                onChange={(e) => setEmailTo(e.target.value)}
+                placeholder="es. referente@cliente.it"
+                disabled={emailSending}
+              />
+              <div className="form-text">Separare piu' email con virgola o punto e virgola.</div>
+            </div>
+            <div className="mb-3">
+              <CFormLabel>CC (opzionale)</CFormLabel>
+              <CFormInput
+                value={emailCc}
+                onChange={(e) => setEmailCc(e.target.value)}
+                placeholder="es. collega@azienda.it"
+                disabled={emailSending}
+              />
+            </div>
+            <div className="mb-3">
+              <CFormLabel>Oggetto</CFormLabel>
+              <CFormInput
+                value={emailSubject}
+                onChange={(e) => setEmailSubject(e.target.value)}
+                disabled={emailSending}
+              />
+            </div>
+            <div className="mb-0">
+              <CFormLabel>Messaggio</CFormLabel>
+              <CFormTextarea
+                rows={8}
+                value={emailBody}
+                onChange={(e) => setEmailBody(e.target.value)}
+                disabled={emailSending}
+              />
+            </div>
+          </CModalBody>
+          <CModalFooter>
+            <CButton color="secondary" variant="outline" onClick={handleCloseEmailModal} disabled={emailSending}>
+              Annulla
+            </CButton>
+            <CButton color="primary" onClick={handleSendPreventivoEmail} disabled={emailSending}>
+              {emailSending ? (
+                <>
+                  <CSpinner size="sm" className="me-2" /> Invio...
+                </>
+              ) : (
+                <>
+                  <CIcon icon={cilEnvelopeClosed} className="me-2" />
+                  Invia email
+                </>
+              )}
+            </CButton>
+          </CModalFooter>
+        </CModal>
       </CCardBody>
     </CCard>
   )

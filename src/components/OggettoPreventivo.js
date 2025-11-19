@@ -294,6 +294,12 @@ const OggettoPreventivo = ({
     return computedLabels.join(previewSeparator)
   }, [computedLabels, previewSeparator])
 
+  useEffect(() => {
+    if (typeof onOptionsChange === 'function') {
+      onOptionsChange(combinedOptionsWithSelection)
+    }
+  }, [combinedOptionsWithSelection, onOptionsChange])
+
   return (
     <div className={className}>
       {label ? <CFormLabel>{label}</CFormLabel> : null}
@@ -338,8 +344,3 @@ OggettoPreventivo.propTypes = {
 }
 
 export default OggettoPreventivo
-  useEffect(() => {
-    if (typeof onOptionsChange === 'function') {
-      onOptionsChange(combinedOptionsWithSelection)
-    }
-  }, [combinedOptionsWithSelection, onOptionsChange])

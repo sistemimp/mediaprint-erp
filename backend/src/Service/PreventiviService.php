@@ -4,11 +4,188 @@ declare(strict_types=1);
 
 namespace MediaPrint\Service;
 
+use MediaPrint\Backend\Mailer\SmtpMailer;
 use MediaPrint\Repo\PreventiviRepository;
 
 final class PreventiviService
 {
     public function __construct(private PreventiviRepository $repository) {}
+
+    /**
+     * @param mixed $value
+     * @return list<string>
+     */
+    private function normalizeEmailList($value): array
+    {
+        if ($value === null) {
+            return [];
+        }
+        $list = [];
+        if (is_string($value)) {
+            $parts = preg_split('/[;,]+|\r\n|\n|\r/', $value) ?: [];
+            foreach ($parts as $part) {
+                $part = trim($part);
+                if ($part !== '') {
+                    $list[] = $part;
+                }
+            }
+        } elseif (is_array($value)) {
+            foreach ($value as $item) {
+                if (is_string($item)) {
+                    $trimmed = trim($item);
+                    if ($trimmed !== '') {
+                        $list[] = $trimmed;
+                    }
+                }
+            }
+        }
+        $valid = [];
+        foreach ($list as $email) {
+            if (filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                $valid[] = strtolower($email);
+            }
+        }
+        $valid = array_values(array_unique($valid));
+        return $valid;
+    }
+
+    private function getMailerDomain(): string
+    {
+        $envDomain = getenv('SMTP_FROM_DOMAIN');
+        if ($envDomain && filter_var('test@' . $envDomain, FILTER_VALIDATE_EMAIL)) {
+            return $envDomain;
+        }
+        $host = gethostname();
+        if ($host && strpos($host, '.') !== false) {
+            return $host;
+        }
+        return 'mediaprint.it';
+    }
+
+    private function normalizeHtmlMessage(?string $rawMessage, string $cliente, string $numero, ?int $anno, ?string $oggetto, ?float $totale): string
+    {
+        if ($rawMessage !== null && $rawMessage !== '') {
+            $containsHtml = $rawMessage !== strip_tags($rawMessage);
+            if ($containsHtml) {
+                return $rawMessage;
+            }
+            $paragraphs = array_filter(array_map('trim', preg_split("/\r\n|\r|\n/", $rawMessage) ?: []), static fn ($p) => $p !== '');
+            if (!empty($paragraphs)) {
+                $escaped = array_map(static fn ($p) => htmlspecialchars($p, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'), $paragraphs);
+                return '<p>' . implode('</p><p>', $escaped) . '</p>';
+            }
+        }
+
+        $formattedTotale = $totale !== null ? $this->formatCurrency($totale) : 'il totale indicato';
+        $safeCliente = htmlspecialchars($cliente, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+        $safeNumero = htmlspecialchars($numero, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+        $safeAnno = htmlspecialchars($anno !== null ? '/' . $anno : '', ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+        $safeOggetto = htmlspecialchars($oggetto ?? 'la lavorazione richiesta', ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+        $safeTotale = htmlspecialchars($formattedTotale, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+
+        return sprintf(
+            '<p>Gentile %s,</p><p>in allegato trova il preventivo n. <strong>%s%s</strong> relativo a %s. Il valore complessivo del documento è <strong>%s</strong>.</p><p>Restiamo a disposizione per ulteriori informazioni.</p><p>Cordiali saluti,<br />MediaPrint ERP</p>',
+            $safeCliente,
+            $safeNumero,
+            $safeAnno,
+            $safeOggetto,
+            $safeTotale
+        );
+    }
+
+    private function renderPreventivoEmailTemplate(array $info, string $introHtml): string
+    {
+        $styles = <<<CSS
+body { margin:0; font-family:Arial, Helvetica, sans-serif; background:#f5f5f5; color:#212121; }
+.wrapper { max-width:640px; margin:0 auto; background:#ffffff; border:1px solid #e0e0e0; border-radius:12px; overflow:hidden; box-shadow:0 4px 12px rgba(0,0,0,0.08); }
+header { background:#0f62fe; color:#ffffff; padding:24px 32px; }
+header h2 { margin:0; font-size:20px; letter-spacing:0.5px; }
+section { padding:24px 32px; }
+.message p { line-height:1.5; margin-bottom:16px; }
+.summary h3 { margin:0 0 12px 0; font-size:16px; color:#0f62fe; text-transform:uppercase; letter-spacing:0.5px; }
+.summary table { width:100%; border-collapse:collapse; }
+.summary th { text-align:left; width:40%; padding:8px 0; color:#5f6b7c; font-size:14px; }
+.summary td { padding:8px 0; font-weight:600; }
+footer { background:#f0f4ff; color:#44546f; padding:20px 32px; font-size:12px; text-align:center; }
+CSS;
+
+        $rows = [];
+        if (!empty($info['cliente'])) {
+            $rows['Cliente'] = $info['cliente'];
+        }
+        if (!empty($info['numero'])) {
+            $rows['Numero preventivo'] = $info['numero'] . ($info['anno'] ? '/' . $info['anno'] : '');
+        }
+        if (!empty($info['data'])) {
+            $rows['Data preventivo'] = $info['data'];
+        }
+        if (!empty($info['oggetto'])) {
+            $rows['Oggetto'] = $info['oggetto'];
+        }
+        if (!empty($info['riferimento'])) {
+            $rows['Riferimento cliente'] = $info['riferimento'];
+        }
+        if (array_key_exists('totale', $info)) {
+            $rows['Totale'] = $this->formatCurrency($info['totale']);
+        }
+        if (array_key_exists('totale_imponibile', $info)) {
+            $rows['Imponibile'] = $this->formatCurrency($info['totale_imponibile']);
+        }
+        if (array_key_exists('totale_iva', $info)) {
+            $rows['IVA'] = $this->formatCurrency($info['totale_iva']);
+        }
+
+        $rowsHtml = '';
+        foreach ($rows as $label => $value) {
+            $rowsHtml .= sprintf(
+                '<tr><th>%s</th><td>%s</td></tr>',
+                htmlspecialchars($label, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
+                htmlspecialchars($value ?? '-', ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8')
+            );
+        }
+
+        if (trim($introHtml) === '') {
+            $introHtml = '<p>Gentile Cliente,</p><p>in allegato trova il preventivo aggiornato.</p>';
+        }
+
+        return <<<HTML
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>{$styles}</style>
+</head>
+<body>
+  <div class="wrapper">
+    <header>
+      <h2>Aggiornamento preventivo</h2>
+    </header>
+    <section class="message">
+      {$introHtml}
+    </section>
+    <section class="summary">
+      <h3>Dettagli preventivo</h3>
+      <table>
+        {$rowsHtml}
+      </table>
+    </section>
+    <footer>
+      Messaggio generato dal portale MediaPrint ERP. Non rispondere direttamente a questa email.
+    </footer>
+  </div>
+</body>
+</html>
+HTML;
+    }
+
+    private function formatCurrency(?float $value): string
+    {
+        if ($value === null) {
+            return '-';
+        }
+        return number_format($value, 2, ',', '.') . ' €';
+    }
 
     /**
      * @return array<string, mixed>
@@ -29,6 +206,7 @@ final class PreventiviService
         $righe = $this->repository->getLines($id);
         $cig = $this->repository->getCigList($id);
         $determine = $this->repository->getDetermineList($id);
+        $contatti = $this->repository->getContatti($id);
         // Oggetti selezionati (multi-select) e relative etichette
         $selectedOggettiRows = $this->repository->getOggettiForPreventivo($id);
         $selectedOggettiIds = [];
@@ -58,6 +236,7 @@ final class PreventiviService
             'righe' => $righe,
             'cig' => $cig,
             'determine' => $determine,
+            'contatti' => $contatti,
             'meta' => [
                 'editable' => $editable,
                 'statuses' => $statuses,
@@ -249,6 +428,44 @@ final class PreventiviService
             }
         }
 
+        $contactItems = [];
+        if (isset($input['contatti']) && is_array($input['contatti'])) {
+            foreach ($input['contatti'] as $contatto) {
+                if (!is_array($contatto)) {
+                    continue;
+                }
+                $nome = trim((string) ($contatto['nome'] ?? ''));
+                $ruolo = trim((string) ($contatto['ruolo'] ?? ''));
+                $telefono = trim((string) ($contatto['telefono'] ?? ''));
+                $cellulare = trim((string) ($contatto['cellulare'] ?? ''));
+                $email = trim((string) ($contatto['email'] ?? ''));
+                $note = trim((string) ($contatto['note'] ?? ''));
+                if ($nome === '' && $ruolo === '' && $telefono === '' && $cellulare === '' && $email === '' && $note === '') {
+                    continue;
+                }
+                $idContattoAnagrafica = isset($contatto['id_contatto_anagrafica']) ? (int) $contatto['id_contatto_anagrafica'] : null;
+                $idContattoAnagrafica = ($idContattoAnagrafica !== null && $idContattoAnagrafica > 0) ? $idContattoAnagrafica : null;
+                $contactAnagraficaId = isset($contatto['id_anagrafica']) ? (int) $contatto['id_anagrafica'] : null;
+                if ($contactAnagraficaId === null || $contactAnagraficaId <= 0) {
+                    $contactAnagraficaId = $idAnagrafica > 0 ? $idAnagrafica : null;
+                }
+                $origineRaw = strtolower((string) ($contatto['origine'] ?? ''));
+                $origine = $origineRaw === 'anagrafica' ? 'anagrafica' : 'manuale';
+
+                $contactItems[] = [
+                    'nome' => $nome,
+                    'ruolo' => $ruolo,
+                    'telefono' => $telefono,
+                    'cellulare' => $cellulare,
+                    'email' => $email,
+                    'note' => $note,
+                    'origine' => $origine,
+                    'id_contatto_anagrafica' => $idContattoAnagrafica,
+                    'id_anagrafica' => $contactAnagraficaId,
+                ];
+            }
+        }
+
         if ($idPrev > 0) {
             $existing = $this->repository->getById($idPrev);
             if ($existing === null) {
@@ -288,6 +505,7 @@ final class PreventiviService
             // sostituisce CIG e Determine (consente anche svuotamento)
             $this->repository->replaceCig($idPrev, $cigItems);
             $this->repository->replaceDetermine($idPrev, $detItems);
+            $this->repository->replaceContatti($idPrev, $contactItems);
 
             if ($send) {
                 $numbered = $this->repository->confirmAndNumber($idPrev);
@@ -329,6 +547,7 @@ final class PreventiviService
         // Inserisce CIG/Determine per la bozza
         $this->repository->replaceCig($draft['id_preventivo'], $cigItems);
         $this->repository->replaceDetermine($draft['id_preventivo'], $detItems);
+        $this->repository->replaceContatti($draft['id_preventivo'], $contactItems);
 
         if ($send) {
             $numbered = $this->repository->confirmAndNumber($draft['id_preventivo']);
@@ -345,6 +564,112 @@ final class PreventiviService
             'id_preventivo' => $draft['id_preventivo'],
             'anno_preventivo' => $draft['anno_preventivo'] ?? null,
             'numero_documento' => $draft['numero_documento'] ?? null,
+        ];
+    }
+
+    /**
+     * Invia il preventivo via email utilizzando un template predefinito.
+     *
+     * @return array{ok:bool, preview:array<string,mixed>}
+     */
+    public function sendEmail(array $input): array
+    {
+        $id = isset($input['id']) ? (int) $input['id'] : (isset($input['id_preventivo']) ? (int) $input['id_preventivo'] : 0);
+        if ($id <= 0) {
+            throw new \RuntimeException('ID preventivo mancante o non valido per invio email.', 422);
+        }
+
+        $detail = $this->repository->fetchDetail($id);
+        if ($detail === null) {
+            throw new \RuntimeException('Preventivo non trovato.', 404);
+        }
+
+        $toList = $this->normalizeEmailList($input['to'] ?? null);
+        if (empty($toList)) {
+            throw new \RuntimeException('Specificare almeno un destinatario email valido.', 422);
+        }
+        $ccList = $this->normalizeEmailList($input['cc'] ?? null);
+
+        $cliente = $detail['cliente_ragione_sociale'] ?? 'Cliente';
+        $numero = $detail['numero_documento'] ?? null;
+        $anno = $detail['anno_preventivo'] ?? null;
+        $totale = isset($detail['totale']) ? (float) $detail['totale'] : null;
+        $subject = trim((string) ($input['subject'] ?? ''));
+        if ($subject === '') {
+            $subject = sprintf(
+                'Preventivo %s%s - %s',
+                $numero !== null ? $numero : '',
+                $anno !== null ? '/' . $anno : '',
+                $cliente
+            );
+        }
+
+        $rawMessage = trim((string) ($input['message_html'] ?? $input['message'] ?? ''));
+        $introHtml = $this->normalizeHtmlMessage(
+            $rawMessage !== '' ? $rawMessage : null,
+            $cliente,
+            $numero !== null ? (string) $numero : (string) $id,
+            $anno,
+            $detail['oggetto'] ?? 'la lavorazione richiesta',
+            $totale
+        );
+        $messageHtml = $this->renderPreventivoEmailTemplate([
+            'cliente' => $cliente,
+            'numero' => $numero,
+            'anno' => $anno,
+            'data' => $detail['data_preventivo'] ?? null,
+            'oggetto' => $detail['oggetto'] ?? null,
+            'riferimento' => $detail['riferimento_cliente'] ?? null,
+            'totale' => $totale,
+            'totale_imponibile' => $detail['totale_imponibile'] ?? null,
+            'totale_iva' => $detail['totale_iva'] ?? null,
+        ], $introHtml);
+
+        $fromAddress = isset($input['from']) && filter_var($input['from'], FILTER_VALIDATE_EMAIL)
+            ? $input['from']
+            : (getenv('SMTP_FROM_ADDRESS') ?: 'no-reply-mail@' . $this->getMailerDomain());
+        $fromName = isset($input['from_name']) && trim((string) $input['from_name']) !== ''
+            ? trim((string) $input['from_name'])
+            : 'MediaPrint ERP';
+        $mailer = new SmtpMailer();
+        $smtpError = null;
+        try {
+            $sent = $mailer->send($toList, $ccList, $subject, $messageHtml, $fromAddress, $fromName);
+        } catch (\Throwable $e) {
+            $sent = false;
+            $smtpError = $e->getMessage();
+        }
+
+        $updatedDetail = null;
+        if ($sent) {
+            try {
+                $inviatoStatus = $this->repository->findStatusByCode('inviato');
+                if ($inviatoStatus !== null) {
+                    $this->repository->updateStatus($id, (int) $inviatoStatus['id_stato']);
+                }
+            } catch (\Throwable $ignored) {
+                // non bloccare l'invio se l'update dello stato fallisce
+            }
+
+            try {
+                $updatedDetail = $this->detail(['id' => $id]);
+            } catch (\Throwable $ignored) {
+                $updatedDetail = null;
+            }
+        }
+
+        return [
+            'ok' => $sent,
+            'preview' => [
+                'to' => $toList,
+                'cc' => $ccList,
+                'subject' => $subject,
+                'message' => $messageHtml,
+                'sent' => $sent,
+                'error' => $smtpError,
+            ],
+            'status' => $sent ? 'inviato' : 'errore',
+            'preventivo' => $updatedDetail,
         ];
     }
 
@@ -404,6 +729,11 @@ final class PreventiviService
             if (!empty($lines)) {
                 $this->repository->replaceLines($draft['id_preventivo'], $lines);
             }
+        }
+
+        $archivedContacts = $this->repository->getArchivedContacts($id);
+        if (!empty($archivedContacts)) {
+            $this->repository->replaceContatti($draft['id_preventivo'], $archivedContacts);
         }
 
         // Rimuove il preventivo dall'archivio (testata + eventuali righe archiviate)

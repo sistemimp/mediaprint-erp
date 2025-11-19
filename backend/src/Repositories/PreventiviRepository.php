@@ -83,6 +83,47 @@ final class PreventiviRepository
         }
     }
 
+    private function ensureContattiTables(): void
+    {
+        try {
+            $this->pdo->exec(<<<SQL
+                CREATE TABLE IF NOT EXISTS tb_preventivi_contatti (
+                    id_contatto_prev INT AUTO_INCREMENT PRIMARY KEY,
+                    id_preventivo INT NOT NULL,
+                    nome VARCHAR(255) NULL,
+                    ruolo VARCHAR(255) NULL,
+                    telefono VARCHAR(64) NULL,
+                    cellulare VARCHAR(64) NULL,
+                    email VARCHAR(255) NULL,
+                    note TEXT NULL,
+                    origine VARCHAR(32) NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    INDEX idx_prev (id_preventivo)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            SQL);
+
+            $this->pdo->exec(<<<SQL
+                CREATE TABLE IF NOT EXISTS tb_preventivi_contatti_archive (
+                    id_contatto_prev INT NOT NULL PRIMARY KEY,
+                    id_preventivo INT NOT NULL,
+                    nome VARCHAR(255) NULL,
+                    ruolo VARCHAR(255) NULL,
+                    telefono VARCHAR(64) NULL,
+                    cellulare VARCHAR(64) NULL,
+                    email VARCHAR(255) NULL,
+                    note TEXT NULL,
+                    origine VARCHAR(32) NULL,
+                    created_at TIMESTAMP NULL,
+                    updated_at TIMESTAMP NULL,
+                    INDEX idx_prev_arch (id_preventivo)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            SQL);
+        } catch (\Throwable $ignored) {
+            // ignore schema failures, future operations handle absence
+        }
+    }
+
     /**
      * @return list<array{id_oggetto:int,label:string,ordering:int,attivo:int}>
      */
@@ -434,6 +475,137 @@ final class PreventiviRepository
     }
 
     /**
+     * @return list<array{
+     *   id_contatto_prev:int,
+     *   id_preventivo:int,
+     *   nome:?string,
+     *   ruolo:?string,
+     *   telefono:?string,
+     *   cellulare:?string,
+     *   email:?string,
+     *   note:?string,
+     *   origine:?string,
+     *   created_at:?string,
+     *   updated_at:?string
+     * }>
+     */
+    public function getContatti(int $idPreventivo): array
+    {
+        $this->ensureContattiTables();
+        try {
+            $stmt = $this->pdo->prepare(<<<'SQL'
+                SELECT
+                    id_contatto_prev,
+                    id_preventivo,
+                    nome,
+                    ruolo,
+                    telefono,
+                    cellulare,
+                    email,
+                    note,
+                    origine
+                FROM tb_preventivi_contatti
+                WHERE id_preventivo = :id
+                ORDER BY id_contatto_prev ASC
+            SQL);
+            $stmt->bindValue(':id', $idPreventivo, PDO::PARAM_INT);
+            $stmt->execute();
+            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        } catch (\Throwable $e) {
+            return [];
+        }
+
+        $out = [];
+        foreach ($rows as $row) {
+            $out[] = [
+                'id_contatto_prev' => (int) $row['id_contatto_prev'],
+                'id_preventivo' => (int) $row['id_preventivo'],
+                'nome' => $row['nome'] ?? null,
+                'ruolo' => $row['ruolo'] ?? null,
+                'telefono' => $row['telefono'] ?? null,
+                'cellulare' => $row['cellulare'] ?? null,
+                'email' => $row['email'] ?? null,
+                'note' => $row['note'] ?? null,
+                'origine' => $row['origine'] ?? null,
+                'created_at' => $row['created_at'] ?? null,
+                'updated_at' => $row['updated_at'] ?? null,
+            ];
+        }
+        return $out;
+    }
+
+    /**
+     * @param list<array<string,mixed>> $contatti
+     */
+    public function replaceContatti(int $idPreventivo, array $contatti): void
+    {
+        $this->ensureContattiTables();
+        $this->pdo->beginTransaction();
+        try {
+            $del = $this->pdo->prepare('DELETE FROM tb_preventivi_contatti WHERE id_preventivo = :id');
+            $del->bindValue(':id', $idPreventivo, PDO::PARAM_INT);
+            $del->execute();
+
+            if (!empty($contatti)) {
+                $ins = $this->pdo->prepare(<<<'SQL'
+                    INSERT INTO tb_preventivi_contatti (
+                        id_preventivo,
+                        nome,
+                        ruolo,
+                        telefono,
+                        cellulare,
+                        email,
+                        note,
+                        origine
+                    ) VALUES (
+                        :id_preventivo,
+                        :nome,
+                        :ruolo,
+                        :telefono,
+                        :cellulare,
+                        :email,
+                        :note,
+                        :origine
+                    )
+                SQL);
+
+                foreach ($contatti as $contatto) {
+                    if (!is_array($contatto)) {
+                        continue;
+                    }
+                    $nome = trim((string) ($contatto['nome'] ?? ''));
+                    $ruolo = trim((string) ($contatto['ruolo'] ?? ''));
+                    $telefono = trim((string) ($contatto['telefono'] ?? ''));
+                    $cellulare = trim((string) ($contatto['cellulare'] ?? ''));
+                    $email = trim((string) ($contatto['email'] ?? ''));
+                    $note = trim((string) ($contatto['note'] ?? ''));
+                    $origineRaw = strtolower(trim((string) ($contatto['origine'] ?? 'manuale')));
+                    $origine = $origineRaw === 'anagrafica' ? 'anagrafica' : 'manuale';
+
+                    if ($nome === '' && $ruolo === '' && $telefono === '' && $cellulare === '' && $email === '' && $note === '') {
+                        continue;
+                    }
+
+                    $ins->bindValue(':id_preventivo', $idPreventivo, PDO::PARAM_INT);
+                    $ins->bindValue(':nome', $nome === '' ? null : $nome, $nome === '' ? PDO::PARAM_NULL : PDO::PARAM_STR);
+                    $ins->bindValue(':ruolo', $ruolo === '' ? null : $ruolo, $ruolo === '' ? PDO::PARAM_NULL : PDO::PARAM_STR);
+                    $ins->bindValue(':telefono', $telefono === '' ? null : $telefono, $telefono === '' ? PDO::PARAM_NULL : PDO::PARAM_STR);
+                    $ins->bindValue(':cellulare', $cellulare === '' ? null : $cellulare, $cellulare === '' ? PDO::PARAM_NULL : PDO::PARAM_STR);
+                    $ins->bindValue(':email', $email === '' ? null : $email, $email === '' ? PDO::PARAM_NULL : PDO::PARAM_STR);
+                    $ins->bindValue(':note', $note === '' ? null : $note, $note === '' ? PDO::PARAM_NULL : PDO::PARAM_STR);
+                    $ins->bindValue(':origine', $origine, PDO::PARAM_STR);
+                    $ins->execute();
+                }
+            }
+
+            $this->pdo->commit();
+        } catch (\Throwable $e) {
+            $this->pdo->rollBack();
+            throw $e;
+        }
+    }
+
+    /**
      * Top clienti per totale preventivi negli ultimi 12 mesi.
      *
      * @return list<array{id_anagrafica:int|null, ragione_sociale:?string, num_preventivi:int, totale:float}>
@@ -660,6 +832,66 @@ final class PreventiviRepository
     }
 
     /**
+     * @return list<array{
+     *   id_contatto_prev:int,
+     *   id_preventivo:int,
+     *   nome:?string,
+     *   ruolo:?string,
+     *   telefono:?string,
+     *   cellulare:?string,
+     *   email:?string,
+     *   note:?string,
+     *   origine:?string,
+     *   created_at:?string,
+     *   updated_at:?string
+     * }>
+     */
+    public function getArchivedContacts(int $idPreventivo): array
+    {
+        $this->ensureContattiTables();
+        try {
+            $stmt = $this->pdo->prepare(<<<'SQL'
+                SELECT
+                    id_contatto_prev,
+                    id_preventivo,
+                    nome,
+                    ruolo,
+                    telefono,
+                    cellulare,
+                    email,
+                    note,
+                    origine
+                FROM tb_preventivi_contatti_archive
+                WHERE id_preventivo = :id
+                ORDER BY id_contatto_prev ASC
+            SQL);
+            $stmt->bindValue(':id', $idPreventivo, PDO::PARAM_INT);
+            $stmt->execute();
+            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        } catch (\Throwable $e) {
+            return [];
+        }
+
+        $out = [];
+        foreach ($rows as $row) {
+            $out[] = [
+                'id_contatto_prev' => (int) $row['id_contatto_prev'],
+                'id_preventivo' => (int) $row['id_preventivo'],
+                'nome' => $row['nome'] ?? null,
+                'ruolo' => $row['ruolo'] ?? null,
+                'telefono' => $row['telefono'] ?? null,
+                'cellulare' => $row['cellulare'] ?? null,
+                'email' => $row['email'] ?? null,
+                'note' => $row['note'] ?? null,
+                'origine' => $row['origine'] ?? null,
+                'created_at' => $row['created_at'] ?? null,
+                'updated_at' => $row['updated_at'] ?? null,
+            ];
+        }
+        return $out;
+    }
+
+    /**
      * Rimuove un preventivo dall'archivio (testata e righe se presenti).
      */
     public function deleteFromArchive(int $idPreventivo): void
@@ -669,6 +901,13 @@ final class PreventiviRepository
             $delR = $this->pdo->prepare('DELETE FROM tb_preventivi_righe_archive WHERE id_preventivo = :id');
             $delR->bindValue(':id', $idPreventivo, PDO::PARAM_INT);
             $delR->execute();
+        } catch (\Throwable $ignored) {
+            // ignora se la tabella non esiste
+        }
+        try {
+            $delC = $this->pdo->prepare('DELETE FROM tb_preventivi_contatti_archive WHERE id_preventivo = :id');
+            $delC->bindValue(':id', $idPreventivo, PDO::PARAM_INT);
+            $delC->execute();
         } catch (\Throwable $ignored) {
             // ignora se la tabella non esiste
         }
@@ -725,10 +964,56 @@ final class PreventiviRepository
                 // se la tabella non esiste, ignora
             }
 
+            try {
+                $this->ensureContattiTables();
+                $this->pdo->prepare(
+                    "INSERT INTO tb_preventivi_contatti_archive (
+                        id_contatto_prev,
+                        id_preventivo,
+                        nome,
+                        ruolo,
+                        telefono,
+                        cellulare,
+                        email,
+                        note,
+                        origine,
+                        created_at,
+                        updated_at
+                    )
+                    SELECT
+                        c.id_contatto_prev,
+                        c.id_preventivo,
+                        c.nome,
+                        c.ruolo,
+                        c.telefono,
+                        c.cellulare,
+                        c.email,
+                        c.note,
+                        c.origine,
+                        c.created_at,
+                        c.updated_at
+                    FROM tb_preventivi_contatti c
+                    WHERE c.id_preventivo = :id
+                      AND NOT EXISTS (
+                        SELECT 1 FROM tb_preventivi_contatti_archive ca WHERE ca.id_contatto_prev = c.id_contatto_prev
+                      )"
+                )->execute([':id' => $idPreventivo]);
+            } catch (\Throwable $ignored) {
+                // ignora se la tabella non esiste
+            }
+
             // Elimina righe e testata attive
             $delR = $this->pdo->prepare('DELETE FROM tb_preventivi_righe WHERE id_preventivo = :id');
             $delR->bindValue(':id', $idPreventivo, PDO::PARAM_INT);
             $delR->execute();
+
+            try {
+                $delC = $this->pdo->prepare('DELETE FROM tb_preventivi_contatti WHERE id_preventivo = :id');
+                $delC->bindValue(':id', $idPreventivo, PDO::PARAM_INT);
+                $delC->execute();
+            } catch (\Throwable $ignored) {
+                // ignora se la tabella non esiste
+            }
 
             $delP = $this->pdo->prepare('DELETE FROM tb_preventivi WHERE id_preventivo = :id');
             $delP->bindValue(':id', $idPreventivo, PDO::PARAM_INT);

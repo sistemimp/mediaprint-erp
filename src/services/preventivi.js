@@ -54,6 +54,7 @@ export const createPreventivo = async ({
   riferimento_cliente,
   cig,
   determine,
+  contatti,
   righe,
   totals,
   send,
@@ -70,6 +71,7 @@ export const createPreventivo = async ({
     riferimento_cliente,
     cig,
     determine,
+    contatti: Array.isArray(contatti) ? contatti : undefined,
     righe,
     // backend persiste solo testata per ora: passiamo i totali
     totale_imponibile: totals?.imponibile ?? 0,
@@ -100,9 +102,10 @@ export const fetchPreventivoDetail = async ({ token, id, signal } = {}) => {
   const righe = Array.isArray(response?.righe) ? response.righe : []
   const cig = Array.isArray(response?.cig) ? response.cig : []
   const determine = Array.isArray(response?.determine) ? response.determine : []
+  const contatti = Array.isArray(response?.contatti) ? response.contatti : []
   const statuses = Array.isArray(response?.meta?.statuses) ? response.meta.statuses : []
   const currentStatus = response?.meta?.current_status ?? null
-  return { data, editable, righe, cig, determine, statuses, currentStatus }
+  return { data, editable, righe, cig, determine, contatti, statuses, currentStatus }
 }
 
 // Opzioni per la multi-select "Oggetto preventivo"
@@ -278,4 +281,24 @@ export const fetchPreventivoStatusLog = async ({ token, id, signal } = {}) => {
 // Alias semantico per log generico di eventi stato preventivo
 export const logPreventivoEvent = async (args = {}) => {
   return logPreventivoStatusChange(args)
+}
+
+export const sendPreventivoEmail = async ({ token, id, to, cc, subject, message, signal } = {}) => {
+  const numericId = Number(id)
+  const body = {
+    id_preventivo: Number.isFinite(numericId) && numericId > 0 ? numericId : id,
+    to,
+    cc,
+    subject,
+    message,
+  }
+
+  const response = await apiFetch('/preventiviSendEmail.php', {
+    method: 'POST',
+    token,
+    body,
+    signal,
+  })
+
+  return response ?? { ok: false }
 }

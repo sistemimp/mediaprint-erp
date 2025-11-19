@@ -10,6 +10,7 @@ final class Cors
         $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
         $allowedOrigins = [
             'http://localhost:3000',
+            'http://localhost:3001',
             'https://gestionale.mediaprint.it',
         ];
 

@@ -27,13 +27,15 @@ import {
 import CIcon from '@coreui/icons-react'
 import { cilPlus, cilTrash, cilSave, cilCheckCircle } from '@coreui/icons'
 import { useAuth } from '../../context/AuthContext'
-import { fetchAnagrafiche } from '../../services/anagrafiche'
+import { fetchAnagrafiche, fetchAnagraficaDetail } from '../../services/anagrafiche'
 import { createPreventivo, createPreventivoOggettoOption } from '../../services/preventivi'
 import { fetchCategorieProdotti, fetchProdotti, fetchNatureIva, fetchProdottoVariazioni, fetchProdottoPrezziCombinati } from '../../services/prodotti'
 import { fetchPacchetti, fetchPacchettoDetail } from '../../services/pacchetti'
 import { CModal, CModalHeader, CModalTitle, CModalBody, CModalFooter } from '@coreui/react'
 import { CAutocomplete, CStepper } from '@coreui/react-pro'
 import OggettoPreventivo from '../../components/OggettoPreventivo'
+import PreventivoContattiTable from '../../components/PreventivoContattiTable'
+import { serializePreventivoContacts } from '../../utils/preventiviContacts'
 
 const currencyFormatter = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' })
 const formatCurrency = (value) => {
@@ -57,6 +59,8 @@ const PreventiviCreate = () => {
   const [note, setNote] = useState('')
   const [loadError, setLoadError] = useState(null)
   const [idPreventivo, setIdPreventivo] = useState(null)
+  const [preventivoContatti, setPreventivoContatti] = useState([])
+  const [anagraficaContactOptions, setAnagraficaContactOptions] = useState([])
 
   // Sezione: Righe preventivo
   const [righe, setRighe] = useState([])
@@ -182,6 +186,32 @@ const PreventiviCreate = () => {
     load()
     return () => controller.abort()
   }, [token])
+
+  useEffect(() => {
+    let isMounted = true
+    const loadContacts = async () => {
+      const numericId = Number(idAnagrafica)
+      if (!token || !Number.isFinite(numericId) || numericId <= 0) {
+        if (isMounted) {
+          setAnagraficaContactOptions([])
+        }
+        return
+      }
+      try {
+        const detail = await fetchAnagraficaDetail({ token, id: numericId })
+        if (!isMounted) return
+        setAnagraficaContactOptions(Array.isArray(detail?.contatti) ? detail.contatti : [])
+      } catch (error) {
+        if (isMounted) {
+          setAnagraficaContactOptions([])
+        }
+      }
+    }
+    loadContacts()
+    return () => {
+      isMounted = false
+    }
+  }, [token, idAnagrafica])
 
   const clientiOptions = useMemo(() => {
     if (!Array.isArray(allClientiOptions)) return []
@@ -512,7 +542,14 @@ const PreventiviCreate = () => {
           .filter((num) => Number.isFinite(num) && num > 0)
         : [],
       riferimento_cliente: rifCliente,
+      contatti: preventivoContatti,
       clienteLabel: clienteLabel ?? '',
+      clienteEmail:
+        clienteOption?.email ??
+        clienteOption?.clienteEmail ??
+        rawCliente?.email ??
+        rawCliente?.cliente_email ??
+        null,
       cliente: clienteOption
         ? {
           id: Number(clienteOption.value),
@@ -520,6 +557,7 @@ const PreventiviCreate = () => {
           codiceCliente: clienteOption.codiceCliente ?? null,
           piva: clienteOption.piva ?? null,
           codiceFiscale: clienteOption.codiceFiscale ?? null,
+          email: clienteOption.email ?? clienteOption.clienteEmail ?? null,
         }
         : rawCliente
           ? {
@@ -528,6 +566,7 @@ const PreventiviCreate = () => {
             codiceCliente: rawCliente.codice_cliente ?? null,
             piva: rawCliente.piva ?? null,
             codiceFiscale: rawCliente.codice_fiscale ?? null,
+            email: rawCliente.email ?? rawCliente.cliente_email ?? null,
           }
           : null,
     }
@@ -547,6 +586,7 @@ const PreventiviCreate = () => {
       oggetto: computedOggettoText,
       oggetti: oggettiList,
       riferimento_cliente: rifCliente,
+      contatti: serializePreventivoContacts(preventivoContatti, Number(idAnagrafica) || null),
       righe,
       totals: {
         imponibile: totals.imponibile,
@@ -968,6 +1008,18 @@ const PreventiviCreate = () => {
                 />
               </CCol>
             </CRow>
+          </section>
+
+          <section className="mb-4">
+            <h6 className="mb-3 text-body-secondary">Contatti preventivo</h6>
+            <PreventivoContattiTable
+              contatti={preventivoContatti}
+              onChange={setPreventivoContatti}
+              disabled={submitting}
+              anagraficaContacts={anagraficaContactOptions}
+              canImport={Boolean(Number(idAnagrafica) || 0)}
+              currentAnagraficaId={Number(idAnagrafica) || null}
+            />
           </section>
 
           <section className="mb-4">
