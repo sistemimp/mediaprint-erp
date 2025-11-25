@@ -99,14 +99,17 @@ DROP TABLE IF EXISTS `appoggio_pagamenti_fattura`;
 /*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `appoggio_pagamenti_fattura` (
   `id_pag_fattura` int(10) unsigned NOT NULL AUTO_INCREMENT,
-  `id_fattura` int(10) unsigned NOT NULL,
+  `id_fattura` int(10) unsigned DEFAULT NULL,
   `id_metodo` smallint(5) unsigned DEFAULT NULL,
   `data_pagamento` date DEFAULT NULL,
   `importo` decimal(12,2) DEFAULT NULL,
+  `importo_documento` decimal(12,2) DEFAULT NULL,
+  `import_uid` varchar(64) DEFAULT NULL,
   `id_mp` smallint(5) unsigned DEFAULT NULL,
   `note` text DEFAULT NULL,
   PRIMARY KEY (`id_pag_fattura`),
   KEY `idx_app_pf_fatt` (`id_fattura`),
+  KEY `idx_apf_import_uid` (`import_uid`),
   KEY `fk_apf_metodo` (`id_metodo`),
   CONSTRAINT `fk_apf_fatt` FOREIGN KEY (`id_fattura`) REFERENCES `tb_fatture` (`id_fattura`) ON DELETE CASCADE,
   CONSTRAINT `fk_apf_metodo` FOREIGN KEY (`id_metodo`) REFERENCES `cfg_metodi_pagamento` (`id_metodo`) ON DELETE SET NULL

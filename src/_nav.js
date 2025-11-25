@@ -1,6 +1,15 @@
 import React from 'react'
 import CIcon from '@coreui/icons-react'
-import { cilMoney, cilNotes, cilSpeedometer, cilTruck, cilUser, cilTags, cilLibraryAdd } from '@coreui/icons'
+import {
+  cilMoney,
+  cilNotes,
+  cilSpeedometer,
+  cilTruck,
+  cilUser,
+  cilTags,
+  cilLibraryAdd,
+  cilCreditCard,
+} from '@coreui/icons'
 import { CNavGroup, CNavItem } from '@coreui/react'
 
 const _nav = [
@@ -149,6 +158,28 @@ const _nav = [
         component: CNavItem,
         name: 'Dettagli',
         to: '/fatture/dettagli',
+      },
+    ],
+  },
+  {
+    component: CNavGroup,
+    name: 'Pagamenti',
+    icon: <CIcon icon={cilCreditCard} customClassName="nav-icon" />,
+    items: [
+      {
+        component: CNavItem,
+        name: 'Situazione',
+        to: '/pagamenti/lista',
+      },
+      {
+        component: CNavItem,
+        name: 'Importa',
+        to: '/pagamenti/import',
+      },
+      {
+        component: CNavItem,
+        name: 'Dettaglio',
+        to: '/pagamenti/dettaglio',
       },
     ],
   },

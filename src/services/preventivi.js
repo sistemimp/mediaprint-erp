@@ -103,9 +103,11 @@ export const fetchPreventivoDetail = async ({ token, id, signal } = {}) => {
   const cig = Array.isArray(response?.cig) ? response.cig : []
   const determine = Array.isArray(response?.determine) ? response.determine : []
   const contatti = Array.isArray(response?.contatti) ? response.contatti : []
+  const linkedDdt = Array.isArray(response?.linked_ddt) ? response.linked_ddt : []
+  const linkedFatture = Array.isArray(response?.linked_fatture) ? response.linked_fatture : []
   const statuses = Array.isArray(response?.meta?.statuses) ? response.meta.statuses : []
   const currentStatus = response?.meta?.current_status ?? null
-  return { data, editable, righe, cig, determine, contatti, statuses, currentStatus }
+  return { data, editable, righe, cig, determine, contatti, linkedDdt, linkedFatture, statuses, currentStatus }
 }
 
 // Opzioni per la multi-select "Oggetto preventivo"

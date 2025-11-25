@@ -32,6 +32,8 @@ const buildUrl = (path, params) => {
   return url
 }
 
+export const buildApiUrl = (path, params) => buildUrl(path, params)
+
 export const apiFetch = async (path, { method = 'GET', token, body, params, signal } = {}) => {
   const url = buildUrl(path, params)
   const headers = {

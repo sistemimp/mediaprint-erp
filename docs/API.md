@@ -193,11 +193,25 @@ POST `/prodotti/create.php`
 - Body JSON: `{ nome: string, codice?: string, id_categoria?: int, prezzo_listino?: number, id_iva?: int }`
 - Risposta 201: `{ id_prodotto: int }`
 
-### Prodotti — aggiornamento
+### Prodotti - aggiornamento
 POST `/prodotti/update.php`
 
 - Body JSON: `{ id_prodotto: int, nome: string, codice?: string, id_categoria?: int, prezzo_listino?: number, id_iva?: int }`
 - Risposta 200: `{ ok: true }`
+
+## Fatture
+
+### Export XML SdI
+GET `/fattureExportXml.php`
+
+- Query param
+  - `id`: int (obbligatorio) – identificativo della fattura da esportare
+- Risposta 200: viene inviato direttamente l'XML (`Content-Type: application/xml`, `Content-Disposition: attachment; filename="..."`).
+- Errori: JSON `{ message: "..." }` con codici HTTP coerenti (422 su validazione, 404 se non trovata, 500 su errori interni).
+
+Note operative:
+- L'esportazione si basa sulle righe e sui dati fiscali presenti su `tb_fatture`; eventuali campi mancanti generano errori espliciti.
+- È necessario valorizzare in `.env` le variabili `ERP_AZIENDA_*` (denominazione, P.IVA, indirizzo, regime fiscale, ecc.) per compilare le sezioni `CedentePrestatore` e `DatiTrasmissione`.
 
 ### Variazioni — lista
 GET `/prodotti/variazioni/list.php`

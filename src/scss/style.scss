@@ -99,3 +99,47 @@ body {
     }
   }
 }
+
+/* Simple HTML editor styling for email modal */
+.html-editor {
+  border: 1px solid var(--cui-border-color);
+  border-radius: var(--cui-border-radius);
+  background-color: var(--cui-body-bg);
+  overflow: hidden;
+
+  &__toolbar {
+    display: flex;
+    padding: 0.25rem;
+    border-bottom: 1px solid var(--cui-border-color);
+    background-color: var(--cui-secondary-bg);
+    gap: 0.25rem;
+  }
+
+  &__input {
+    padding: 0.75rem;
+    min-height: 220px;
+    outline: none;
+    border: none;
+    font-size: 0.95rem;
+    line-height: 1.4;
+    white-space: pre-wrap;
+    word-break: break-word;
+    background-color: transparent;
+
+    &:focus {
+      outline: none;
+      box-shadow: none;
+    }
+
+    &:empty:before {
+      content: attr(data-placeholder);
+      color: var(--cui-body-color);
+      opacity: 0.65;
+    }
+
+    &[contenteditable='false'] {
+      background-color: var(--cui-tertiary-bg);
+      cursor: not-allowed;
+    }
+  }
+}

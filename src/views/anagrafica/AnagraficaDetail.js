@@ -1,5 +1,5 @@
 /* eslint-disable prettier/prettier */
-import React, { useEffect, useMemo, useState } from "react"
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useLocation, useNavigate } from "react-router-dom"
 import {
   CAlert,
@@ -33,6 +33,7 @@ import { fetchAnagraficaDetail, updateAnagraficaDetail } from "../../services/an
 import { apiFetch } from "../../services/apiClient"
 import BottomToast from "../../components/BottomToast"
 import { useAuth } from "../../context/AuthContext"
+import { useBreadcrumbActions } from "../../context/BreadcrumbActionsContext"
 
 const currencyFormatter = new Intl.NumberFormat("it-IT", {
   style: "currency",
@@ -200,6 +201,7 @@ const AnagraficaDetail = () => {
   const location = useLocation()
   const navigate = useNavigate()
   const { token, logout } = useAuth()
+  const { setBreadcrumbActions, clearBreadcrumbActions } = useBreadcrumbActions()
 
   const [detail, setDetail] = useState(null)
   const [loading, setLoading] = useState(false)
@@ -222,6 +224,8 @@ const AnagraficaDetail = () => {
   const [isEditingFiscal, setIsEditingFiscal] = useState(false)
   const [fiscaleForm, setFiscaleForm] = useState(null)
   const [savingFiscal, setSavingFiscal] = useState(false)
+  const generalFormRef = useRef(null)
+  const fiscalFormRef = useRef(null)
 
   const [editingSedeId, setEditingSedeId] = useState(null)
   const [sedeForm, setSedeForm] = useState(null)
@@ -1038,6 +1042,68 @@ const AnagraficaDetail = () => {
   const anagraficaStatus = String(detail?.anagrafica?.stato || '').toLowerCase()
   const isDisabled = anagraficaStatus === 'disattiva' || Number(detail?.anagrafica?.is_active) !== 1
 
+  const handleGeneralBreadcrumbSave = useCallback(() => {
+    if (generalFormRef.current) {
+      generalFormRef.current.requestSubmit()
+    }
+  }, [])
+
+  const handleFiscalBreadcrumbSave = useCallback(() => {
+    if (fiscalFormRef.current) {
+      fiscalFormRef.current.requestSubmit()
+    }
+  }, [])
+
+  const handleRefreshData = useCallback(() => {
+    setRefreshIndex((prev) => prev + 1)
+  }, [])
+
+  useEffect(() => {
+    if (!recordId) {
+      clearBreadcrumbActions()
+      return
+    }
+    const actions = [
+      {
+        id: 'anagrafica-refresh',
+        icon: cilReload,
+        label: loading ? 'Aggiornamento dati...' : 'Aggiorna dati',
+        onClick: handleRefreshData,
+        disabled: loading,
+      },
+    ]
+    if (isEditingGeneral && !isDisabled) {
+      actions.push({
+        id: 'anagrafica-general-save',
+        label: savingGeneral ? 'Salvataggio anagrafica...' : 'Salva anagrafica',
+        onClick: handleGeneralBreadcrumbSave,
+        disabled: savingGeneral,
+      })
+    } else if (isEditingFiscal && !isDisabled) {
+      actions.push({
+        id: 'anagrafica-fiscale-save',
+        label: savingFiscal ? 'Salvataggio dati fiscali...' : 'Salva dati fiscali',
+        onClick: handleFiscalBreadcrumbSave,
+        disabled: savingFiscal,
+      })
+    }
+    setBreadcrumbActions(actions)
+    return () => clearBreadcrumbActions()
+  }, [
+    clearBreadcrumbActions,
+    handleFiscalBreadcrumbSave,
+    handleGeneralBreadcrumbSave,
+    handleRefreshData,
+    isDisabled,
+    isEditingFiscal,
+    isEditingGeneral,
+    loading,
+    recordId,
+    savingFiscal,
+    savingGeneral,
+    setBreadcrumbActions,
+  ])
+
   const handleReactivateStato = async () => {
     if (!recordId) return
     setMutationError(null)
@@ -1173,7 +1239,11 @@ const AnagraficaDetail = () => {
               </div>
 
               {isEditingGeneral && generalForm ? (
-                <CForm onSubmit={handleGeneralSubmit} className="d-flex flex-column gap-3">
+                <CForm
+                  onSubmit={handleGeneralSubmit}
+                  className="d-flex flex-column gap-3"
+                  ref={generalFormRef}
+                >
                   <CRow className={gridGapClass}>
                     <CCol md={6}>
                       <CFormLabel htmlFor="ragioneSociale">Ragione sociale</CFormLabel>
@@ -1599,7 +1669,11 @@ const AnagraficaDetail = () => {
               </div>
 
               {isEditingFiscal && fiscaleForm ? (
-                <CForm onSubmit={handleFiscalSubmit} className="d-flex flex-column gap-3">
+                <CForm
+                  onSubmit={handleFiscalSubmit}
+                  className="d-flex flex-column gap-3"
+                  ref={fiscalFormRef}
+                >
                   <CRow className="g-3">
                     <CCol md={4}>
                       <CFormLabel htmlFor="pec">PEC</CFormLabel>

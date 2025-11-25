@@ -495,7 +495,7 @@ final class PreventiviRepository
         try {
             $stmt = $this->pdo->prepare(<<<'SQL'
                 SELECT
-                    id_contatto_prev,
+                    id_preventivo_contatto,
                     id_preventivo,
                     nome,
                     ruolo,
@@ -506,7 +506,7 @@ final class PreventiviRepository
                     origine
                 FROM tb_preventivi_contatti
                 WHERE id_preventivo = :id
-                ORDER BY id_contatto_prev ASC
+                ORDER BY  id_preventivo_contatto ASC
             SQL);
             $stmt->bindValue(':id', $idPreventivo, PDO::PARAM_INT);
             $stmt->execute();
@@ -518,7 +518,7 @@ final class PreventiviRepository
         $out = [];
         foreach ($rows as $row) {
             $out[] = [
-                'id_contatto_prev' => (int) $row['id_contatto_prev'],
+                'id_preventivo_contatto' => (int) $row['id_preventivo_contatto'],
                 'id_preventivo' => (int) $row['id_preventivo'],
                 'nome' => $row['nome'] ?? null,
                 'ruolo' => $row['ruolo'] ?? null,
@@ -1227,7 +1227,9 @@ final class PreventiviRepository
      *   cliente_piva:?string,
      *   cliente_codice_fiscale:?string,
      *   created_at:?string,
-     *   updated_at:?string
+     *   updated_at:?string,
+     *   linked_ddt:list<array<string,mixed>>,
+     *   linked_fatture:list<array<string,mixed>>
      * }|null
      */
     public function fetchDetail(int $id): ?array
@@ -1269,7 +1271,7 @@ final class PreventiviRepository
         if ($row === false) {
             return null;
         }
-        return [
+        $detail = [
             'id_preventivo' => (int) $row['id_preventivo'],
             'id_anagrafica' => (int) $row['id_anagrafica'],
             'anno_preventivo' => isset($row['anno_preventivo']) ? (int) $row['anno_preventivo'] : null,
@@ -1291,6 +1293,10 @@ final class PreventiviRepository
             'created_at' => $row['created_at'] ?? null,
             'updated_at' => $row['updated_at'] ?? null,
         ];
+        $detail['linked_ddt'] = $this->getLinkedDdt($id);
+        $detail['linked_fatture'] = $this->getLinkedFatture($id);
+
+        return $detail;
     }
 
     /**
@@ -1340,6 +1346,120 @@ final class PreventiviRepository
             ];
         }
         return $out;
+    }
+
+    /**
+     * @return list<array{
+     *   id_ddt:int,
+     *   id_anagrafica:int|null,
+     *   anno:int|null,
+     *   numero_documento:int|null,
+     *   data_ddt:?string,
+     *   id_causale:int|null,
+     *   causale_label:?string,
+     *   totale_pezzi:float|int|null,
+     *   totale_peso_kg:float|int|null
+     * }>
+     */
+    public function getLinkedDdt(int $idPreventivo): array
+    {
+        $sql = <<<'SQL'
+            SELECT
+                d.id_ddt,
+                d.id_anagrafica,
+                d.anno,
+                d.numero_documento,
+                d.data_ddt,
+                d.id_causale,
+                c.label AS causale_label,
+                d.totale_pezzi,
+                d.totale_peso_kg,
+                d.created_at
+            FROM appoggio_preventivo_ddt apd
+            INNER JOIN tb_ddt d ON d.id_ddt = apd.id_ddt
+            LEFT JOIN cfg_causali_ddt c ON c.id_causale = d.id_causale
+            WHERE apd.id_preventivo = :id
+            ORDER BY COALESCE(d.data_ddt, d.created_at) DESC, d.id_ddt DESC
+        SQL;
+
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->bindValue(':id', $idPreventivo, PDO::PARAM_INT);
+        $stmt->execute();
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+        $linked = [];
+        foreach ($rows as $row) {
+            $linked[] = [
+                'id_ddt' => (int) $row['id_ddt'],
+                'id_anagrafica' => isset($row['id_anagrafica']) ? (int) $row['id_anagrafica'] : null,
+                'anno' => isset($row['anno']) ? (int) $row['anno'] : null,
+                'numero_documento' => isset($row['numero_documento']) ? (int) $row['numero_documento'] : null,
+                'data_ddt' => $row['data_ddt'] ?? null,
+                'id_causale' => isset($row['id_causale']) ? (int) $row['id_causale'] : null,
+                'causale_label' => $row['causale_label'] ?? null,
+                'totale_pezzi' => isset($row['totale_pezzi']) ? (float) $row['totale_pezzi'] : null,
+                'totale_peso_kg' => isset($row['totale_peso_kg']) ? (float) $row['totale_peso_kg'] : null,
+            ];
+        }
+
+        return $linked;
+    }
+
+    /**
+     * @return list<array{
+     *   id_fattura:int,
+     *   id_anagrafica:int|null,
+     *   anno:int|null,
+     *   numero_documento:int|null,
+     *   data_fattura:?string,
+     *   totale:float|int|null,
+     *   saldo:float|int|null,
+     *   id_stato_fatt:int|null,
+     *   stato_label:?string
+     * }>
+     */
+    public function getLinkedFatture(int $idPreventivo): array
+    {
+        $sql = <<<'SQL'
+            SELECT
+                f.id_fattura,
+                f.id_anagrafica,
+                f.anno,
+                f.numero_documento,
+                f.data_fattura,
+                f.totale,
+                f.saldo,
+                f.id_stato_fatt,
+                sf.label AS stato_label,
+                f.created_at
+            FROM appoggio_preventivo_fattura apf
+            INNER JOIN tb_fatture f ON f.id_fattura = apf.id_fattura
+            LEFT JOIN cfg_stati_fattura sf ON sf.id_stato = f.id_stato_fatt
+            WHERE apf.id_preventivo = :id
+            ORDER BY COALESCE(f.data_fattura, f.created_at) DESC, f.id_fattura DESC
+        SQL;
+
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->bindValue(':id', $idPreventivo, PDO::PARAM_INT);
+        $stmt->execute();
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+        $linked = [];
+        foreach ($rows as $row) {
+            $linked[] = [
+                'id_fattura' => (int) $row['id_fattura'],
+                'id_anagrafica' => isset($row['id_anagrafica']) ? (int) $row['id_anagrafica'] : null,
+                'anno' => isset($row['anno']) ? (int) $row['anno'] : null,
+                'numero_documento' => isset($row['numero_documento']) ? (int) $row['numero_documento'] : null,
+                'data_fattura' => $row['data_fattura'] ?? null,
+                'totale' => isset($row['totale']) ? (float) $row['totale'] : null,
+                'saldo' => isset($row['saldo']) ? (float) $row['saldo'] : null,
+                'id_stato_fatt' => isset($row['id_stato_fatt']) ? (int) $row['id_stato_fatt'] : null,
+                'stato_label' => $row['stato_label'] ?? null,
+            ];
+        }
+
+        return $linked;
     }
 
     /**

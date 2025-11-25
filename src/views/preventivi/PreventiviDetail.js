@@ -40,12 +40,22 @@ import AnagraficaAutocomplete from '../../components/AnagraficaAutocomplete'
 import PreventivoContattiTable from '../../components/PreventivoContattiTable'
 import { normalizePreventivoContact, serializePreventivoContacts } from '../../utils/preventiviContacts'
 import CIcon from '@coreui/icons-react'
-import { cilCheckCircle, cilSave, cilX, cilEnvelopeClosed } from '@coreui/icons'
+import {
+  cilCheckCircle,
+  cilSave,
+  cilX,
+  cilEnvelopeClosed,
+  cilReload,
+  cibAdobeAcrobatReader,
+} from '@coreui/icons'
 
 
 import { useAuth } from '../../context/AuthContext'
+import { useBreadcrumbActions } from '../../context/BreadcrumbActionsContext'
 import { fetchAnagrafiche, fetchAnagraficaDetail } from '../../services/anagrafiche'
-import { createPreventivo, fetchPreventivoDetail, updatePreventivoStatus, logPreventivoStatusChange, fetchPreventivoStatusLog, fetchPreventivoOggettiOptions, createPreventivoOggettoOption, sendPreventivoEmail } from '../../services/preventivi'
+import { createPreventivo, fetchPreventivoDetail, updatePreventivoStatus, logPreventivoStatusChange, fetchPreventivoStatusLog, fetchPreventivoOggettiOptions, createPreventivoOggettoOption, sendPreventivoEmail, logPreventivoEvent } from '../../services/preventivi'
+import { fetchDdtCausali, emitPreventivoDdt } from '../../services/ddt'
+import { fetchFattureConfig, emitPreventivoFattura } from '../../services/fatture'
 import { CMultiSelect } from '@coreui/react-pro'
 import {
   fetchCategorieProdotti,
@@ -56,11 +66,25 @@ import {
   fetchProdottoDetail,
 } from '../../services/prodotti'
 import { fetchPacchetti, fetchPacchettoDetail } from '../../services/pacchetti'
+import HtmlEditor from '../../components/HtmlEditor'
 
 const currencyFormatter = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' })
 const formatCurrency = (value) => {
   const n = Number(value)
   return Number.isFinite(n) ? currencyFormatter.format(n) : '-'
+}
+
+const formatNumberValue = (value, decimals = 0) => {
+  const n = Number(value)
+  if (!Number.isFinite(n)) return '-'
+  return decimals > 0 ? n.toFixed(decimals) : String(n)
+}
+
+const formatDate = (value) => {
+  if (!value) return '-'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '-'
+  return date.toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' })
 }
 
 const normalizeOggettoOption = (option) => {
@@ -133,6 +157,14 @@ const DEFAULT_OGGETTO_OPTIONS = [
   { id: 4, id_oggetto: 4, value: '4', label: 'Posta Digitale', attivo: 1 },
 ]
 
+const getTodayIsoDate = () => {
+  const now = new Date()
+  const year = now.getFullYear()
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  const day = String(now.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
 const useQuery = () => new URLSearchParams(useLocation().search)
 
 const PreventiviDetail = () => {
@@ -141,8 +173,10 @@ const PreventiviDetail = () => {
   const query = useQuery()
   const id = Number(query.get('id') || 0)
   const { token, logout, user } = useAuth()
+  const { setBreadcrumbActions, clearBreadcrumbActions } = useBreadcrumbActions()
   const prefill = location.state?.prefill ?? null
   const prefillAppliedRef = useRef(false)
+  const bozzaSaveHandlerRef = useRef(() => {})
 
   // Se non viene passato un ID valido, reindirizza alla lista
   useEffect(() => {
@@ -204,7 +238,36 @@ const PreventiviDetail = () => {
   const [emailBody, setEmailBody] = useState('')
   const [emailError, setEmailError] = useState(null)
   const [emailSuccess, setEmailSuccess] = useState(null)
+  const [ddtModalVisible, setDdtModalVisible] = useState(false)
+  const [ddtCausali, setDdtCausali] = useState([])
+  const [ddtCausaliLoading, setDdtCausaliLoading] = useState(false)
+  const [ddtForm, setDdtForm] = useState(() => ({
+    data_ddt: getTodayIsoDate(),
+    id_causale: '',
+    note: '',
+  }))
+  const [ddtSubmitting, setDdtSubmitting] = useState(false)
+  const [ddtError, setDdtError] = useState(null)
+  const [ddtSuccess, setDdtSuccess] = useState(null)
+  const [ddtResult, setDdtResult] = useState(null)
+  const [fatturaModalVisible, setFatturaModalVisible] = useState(false)
+  const [fatturaConfig, setFatturaConfig] = useState({ sezionali: [], tipi: [], stati: [] })
+  const [fatturaConfigLoading, setFatturaConfigLoading] = useState(false)
+  const [fatturaForm, setFatturaForm] = useState(() => ({
+    data_fattura: getTodayIsoDate(),
+    id_sezionale: '',
+    id_tipo_fatt: '',
+    id_stato_fatt: '',
+    note: '',
+  }))
+  const [fatturaSubmitting, setFatturaSubmitting] = useState(false)
+  const [fatturaError, setFatturaError] = useState(null)
+  const [fatturaSuccess, setFatturaSuccess] = useState(null)
+  const [fatturaResult, setFatturaResult] = useState(null)
+  const [linkedDdt, setLinkedDdt] = useState([])
+  const [linkedFatture, setLinkedFatture] = useState([])
   const [refreshCounter, setRefreshCounter] = useState(0)
+  const handleRefreshData = useCallback(() => setRefreshCounter((prev) => prev + 1), [])
   // CIG / Determine
   const [cigList, setCigList] = useState([])
   const [newCig, setNewCig] = useState({ cig: '', data_cig: '', motivazione: '' })
@@ -393,6 +456,82 @@ const PreventiviDetail = () => {
     navigate(`${location.pathname}${location.search}`, { replace: true, state: null })
   }, [prefill, navigate, location.pathname, location.search])
 
+  useEffect(() => {
+    if (!ddtModalVisible || !token) return
+    if (ddtCausali.length > 0) return
+
+    const controller = new AbortController()
+    setDdtCausaliLoading(true)
+    fetchDdtCausali({ token, signal: controller.signal })
+      .then((items) => {
+        if (controller.signal.aborted) return
+        setDdtCausali(Array.isArray(items) ? items : [])
+      })
+      .catch((error) => {
+        if (controller.signal.aborted) return
+        console.error('Impossibile caricare le causali DDT', error)
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          setDdtCausaliLoading(false)
+        }
+      })
+
+    return () => {
+      controller.abort()
+    }
+  }, [ddtModalVisible, token, ddtCausali.length])
+
+  useEffect(() => {
+    if (!fatturaModalVisible || !token) return
+    if (
+      fatturaConfig.sezionali.length > 0 &&
+      fatturaConfig.tipi.length > 0 &&
+      fatturaConfig.stati.length > 0
+    ) {
+      return
+    }
+    const controller = new AbortController()
+    setFatturaConfigLoading(true)
+    fetchFattureConfig({ token, signal: controller.signal })
+      .then((cfg) => {
+        if (controller.signal.aborted) return
+        setFatturaConfig({
+          sezionali: Array.isArray(cfg?.sezionali) ? cfg.sezionali : [],
+          tipi: Array.isArray(cfg?.tipi) ? cfg.tipi : [],
+          stati: Array.isArray(cfg?.stati) ? cfg.stati : [],
+        })
+      })
+      .catch((error) => {
+        if (controller.signal.aborted) return
+        console.error('Impossibile caricare la configurazione fatture', error)
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          setFatturaConfigLoading(false)
+        }
+      })
+    return () => controller.abort()
+  }, [fatturaModalVisible, token, fatturaConfig.sezionali.length, fatturaConfig.tipi.length, fatturaConfig.stati.length])
+
+  useEffect(() => {
+    if (!fatturaModalVisible) return
+    setFatturaForm((prev) => {
+      const defaults = { ...prev }
+      if (!defaults.id_sezionale && fatturaConfig.sezionali.length > 0) {
+        defaults.id_sezionale = String(fatturaConfig.sezionali[0].id_sezionale)
+      }
+      if (!defaults.id_tipo_fatt && fatturaConfig.tipi.length > 0) {
+        defaults.id_tipo_fatt = String(fatturaConfig.tipi[0].id_tipo)
+      }
+      if (!defaults.id_stato_fatt && fatturaConfig.stati.length > 0) {
+        const emessa = fatturaConfig.stati.find((s) => String(s.code || '').toLowerCase() === 'emessa')
+        defaults.id_stato_fatt = String((emessa ?? fatturaConfig.stati[0]).id_stato)
+      }
+      return defaults
+    })
+  }, [fatturaConfig, fatturaModalVisible])
+
   const loadOggettoOptions = useCallback(
     async ({ signal, extraOptions = [] } = {}) => {
       if (!token) return []
@@ -508,7 +647,18 @@ const PreventiviDetail = () => {
       try {
         setStatusError(null)
         setStatusSuccess(null)
-        const { data, editable, righe: righeSrv, cig: cigSrv, determine: determineSrv, contatti: contattiSrv, statuses, currentStatus: current } = await fetchPreventivoDetail({
+        const {
+          data,
+          editable,
+          righe: righeSrv,
+          cig: cigSrv,
+          determine: determineSrv,
+          contatti: contattiSrv,
+          linkedDdt: linkedDdtSrv,
+          linkedFatture: linkedFattureSrv,
+          statuses,
+          currentStatus: current,
+        } = await fetchPreventivoDetail({
           token,
           id,
           signal: controller.signal,
@@ -664,6 +814,8 @@ const PreventiviDetail = () => {
               .filter(Boolean)
             : [],
         )
+        setLinkedDdt(Array.isArray(linkedDdtSrv) ? linkedDdtSrv : [])
+        setLinkedFatture(Array.isArray(linkedFattureSrv) ? linkedFattureSrv : [])
       } catch (e) {
         if (e.name === 'AbortError') return
         if (e.status === 401 && logout) {
@@ -1138,22 +1290,22 @@ const PreventiviDetail = () => {
         : `ID ${id}`
     const docDate = dataPreventivo
       ? (() => {
-          const parsed = new Date(dataPreventivo)
-          return Number.isFinite(parsed.getTime()) ? parsed.toLocaleDateString('it-IT') : null
-        })()
+        const parsed = new Date(dataPreventivo)
+        return Number.isFinite(parsed.getTime()) ? parsed.toLocaleDateString('it-IT') : null
+      })()
       : null
     const descrizione = (computedOggettoText || oggetto || 'la lavorazione richiesta').trim()
     const totalFormatted = totals?.totale ? formatCurrency(totals.totale) : formatCurrency(0)
-    const operatorName = user?.name || user?.username || 'Team MediaPrint'
+    const id_preventivo = Number(id) || 0
+    const operatorName = user?.name || user?.username || 'MediaPrint S.r.l.'
     return [
-      `Gentile ${clienteName},`,
+      `Gentile ${clienteName},<br>`,
       '',
-      `in allegato trova il preventivo n. ${numero}${docDate ? ` del ${docDate}` : ''} relativo a ${descrizione}.`,
-      `Il valore complessivo del documento è ${totalFormatted}.`,
-      '',
-      'Restiamo a disposizione per qualsiasi chiarimento.',
-      '',
-      'Cordiali saluti,',
+      `Nel seguente link trova il preventivo n. ${numero}${docDate ? ` del ${docDate}` : ''} relativo a ${descrizione}.<br><br>`,
+      `<a href="https://jaspersoft.mediaprint.it/jasperserver/rest_v2/reports/Mediaprint/GestionaleMP/Preventivi.pdf?id_preventivo=${id_preventivo}&j_username=gestionaleMp&j_password=gestionaleMp">Scarica Preventivo #${numero}</a><br><br> `,
+      'Restiamo a disposizione per qualsiasi chiarimento.<br>',
+      '<br>',
+      'Cordiali saluti,<br>',
       operatorName,
     ].join('\n')
   }, [clienteDisplay, header, id, dataPreventivo, computedOggettoText, oggetto, totals, user])
@@ -1301,6 +1453,191 @@ const PreventiviDetail = () => {
     }
   }
 
+  const headerAnno = header?.anno ?? null
+  const headerNumero = header?.numero ?? null
+  const currentStatusLabel = currentStatus?.label ?? null
+  const isConfirmed = useMemo(
+    () => String(currentStatus?.code || '').toLowerCase() === 'confermato',
+    [currentStatus],
+  )
+  const defaultDdtNote = useMemo(() => {
+    if (headerNumero && headerAnno) {
+      return `Documento generato dal preventivo ${headerNumero}/${headerAnno}.`
+    }
+    if (headerNumero) {
+      return `Documento generato dal preventivo n. ${headerNumero}.`
+    }
+    return `Documento generato dal preventivo ID ${id}.`
+  }, [headerNumero, headerAnno, id])
+  const defaultFatturaNote = useMemo(() => {
+    if (headerNumero && headerAnno) {
+      return `Fattura generata dal preventivo ${headerNumero}/${headerAnno}.`
+    }
+    if (headerNumero) {
+      return `Fattura generata dal preventivo n. ${headerNumero}.`
+    }
+    return `Fattura generata dal preventivo ID ${id}.`
+  }, [headerNumero, headerAnno, id])
+  const preventivoHasRighe = useMemo(() => Array.isArray(righe) && righe.length > 0, [righe])
+  const currentUserId = user?.id_user ?? user?.id ?? null
+  const currentUserName = user?.full_name ?? user?.name ?? user?.username ?? user?.nickname ?? null
+
+  const handleOpenDdtModal = useCallback(() => {
+    setDdtError(null)
+    setDdtSuccess(null)
+    setDdtResult(null)
+    setDdtForm((prev) => ({
+      data_ddt: prev?.data_ddt && prev.data_ddt !== '' ? prev.data_ddt : getTodayIsoDate(),
+      id_causale: prev?.id_causale ?? '',
+      note: prev?.note && prev.note.trim() !== '' ? prev.note : defaultDdtNote,
+    }))
+    setDdtModalVisible(true)
+  }, [defaultDdtNote])
+
+  const handleCloseDdtModal = useCallback(() => {
+    if (ddtSubmitting) return
+    setDdtModalVisible(false)
+  }, [ddtSubmitting])
+
+  const handleEmitDdt = useCallback(async () => {
+    if (!token || !id) return
+    if (!preventivoHasRighe) {
+      setDdtError(new Error('Il preventivo non contiene righe da trasferire nel DDT.'))
+      return
+    }
+    setDdtSubmitting(true)
+    setDdtError(null)
+    setDdtSuccess(null)
+    setDdtResult(null)
+    try {
+      const response = await emitPreventivoDdt({
+        token,
+        id,
+        data_ddt: ddtForm?.data_ddt || undefined,
+        id_causale: ddtForm?.id_causale || undefined,
+        note: ddtForm?.note && ddtForm.note.trim() !== '' ? ddtForm.note.trim() : defaultDdtNote,
+      })
+      const numero = response?.ddt?.numero_documento
+      const anno = response?.ddt?.anno
+      const successMessage =
+        numero && anno
+          ? `DDT emesso con numero ${numero}/${anno}.`
+          : 'DDT emesso con successo.'
+      setDdtSuccess(successMessage)
+      setDdtResult(response?.ddt ?? null)
+      setRefreshCounter((count) => count + 1)
+      const docNumber =
+        response?.ddt?.numero_documento && response?.ddt?.anno
+          ? `${response.ddt.numero_documento}/${response.ddt.anno}`
+          : response?.ddt?.numero_documento ?? ''
+      logPreventivoEvent({
+        token,
+        id,
+        description: 'Emissione DDT dal preventivo',
+        note: `Emesso DDT ${docNumber || ''}`.trim(),
+        context: { type: 'ddt', id_ddt: response?.ddt?.id_ddt ?? null },
+        userId: currentUserId,
+        userName: currentUserName,
+      }).catch(() => { })
+    } catch (error) {
+      if (error?.status === 401 && logout) {
+        logout()
+        return
+      }
+      setDdtError(error)
+    } finally {
+      setDdtSubmitting(false)
+    }
+  }, [token, id, preventivoHasRighe, ddtForm, defaultDdtNote, logout])
+
+  const handleOpenFatturaModal = useCallback(() => {
+    setFatturaError(null)
+    setFatturaSuccess(null)
+    setFatturaResult(null)
+    setFatturaForm((prev) => ({
+      data_fattura: prev?.data_fattura && prev.data_fattura !== '' ? prev.data_fattura : getTodayIsoDate(),
+      id_sezionale: prev?.id_sezionale ?? '',
+      id_tipo_fatt: prev?.id_tipo_fatt ?? '',
+      id_stato_fatt: prev?.id_stato_fatt ?? '',
+      note: prev?.note && prev.note.trim() !== '' ? prev.note : defaultFatturaNote,
+    }))
+    setFatturaModalVisible(true)
+  }, [defaultFatturaNote])
+
+  const handleCloseFatturaModal = useCallback(() => {
+    if (fatturaSubmitting) return
+    setFatturaModalVisible(false)
+  }, [fatturaSubmitting])
+
+  const handleEmitFattura = useCallback(async () => {
+    if (!token || !id) return
+    if (!preventivoHasRighe) {
+      setFatturaError(new Error('Il preventivo non contiene righe da trasferire nella fattura.'))
+      return
+    }
+    if (!fatturaForm?.id_sezionale) {
+      setFatturaError(new Error('Selezionare un sezionale valido.'))
+      return
+    }
+    setFatturaSubmitting(true)
+    setFatturaError(null)
+    setFatturaSuccess(null)
+    setFatturaResult(null)
+    try {
+      const response = await emitPreventivoFattura({
+        token,
+        id,
+        data_fattura: fatturaForm?.data_fattura || undefined,
+        id_sezionale: fatturaForm?.id_sezionale || undefined,
+        id_tipo_fatt: fatturaForm?.id_tipo_fatt || undefined,
+        id_stato_fatt: fatturaForm?.id_stato_fatt || undefined,
+        note: fatturaForm?.note && fatturaForm.note.trim() !== '' ? fatturaForm.note.trim() : defaultFatturaNote,
+      })
+      const numero = response?.fattura?.numero_documento
+      const anno = response?.fattura?.anno
+      const successMessage =
+        numero && anno
+          ? `Fattura emessa con numero ${numero}/${anno}.`
+          : 'Fattura emessa con successo.'
+      setFatturaSuccess(successMessage)
+      setFatturaResult(response?.fattura ?? null)
+      setRefreshCounter((count) => count + 1)
+      const docNumber =
+        response?.fattura?.numero_documento && response?.fattura?.anno
+          ? `${response.fattura.numero_documento}/${response.fattura.anno}`
+          : response?.fattura?.numero_documento ?? ''
+      logPreventivoEvent({
+        token,
+        id,
+        description: 'Emissione fattura dal preventivo',
+        note: `Emessa fattura ${docNumber || ''}`.trim(),
+        context: { type: 'fattura', id_fattura: response?.fattura?.id_fattura ?? null },
+        userId: currentUserId,
+        userName: currentUserName,
+      }).catch(() => { })
+    } catch (error) {
+      if (error?.status === 401 && logout) {
+        logout()
+        return
+      }
+      setFatturaError(error)
+    } finally {
+      setFatturaSubmitting(false)
+    }
+  }, [token, id, preventivoHasRighe, fatturaForm, defaultFatturaNote, logout])
+
+
+  const handleOpenPrintPDF = useCallback(() => {
+    if (typeof window === 'undefined') return
+    const idPreventivo = Number(id)
+    if (!Number.isFinite(idPreventivo) || idPreventivo <= 0) return
+    window.open(
+      `https://jaspersoft.mediaprint.it/jasperserver/rest_v2/reports/Mediaprint/GestionaleMP/Preventivi.pdf?id_preventivo=${idPreventivo}&j_username=gestionaleMp&j_password=gestionaleMp`,
+      '_blank',
+      'noopener',
+    )
+  }, [id])
+
   const handleOpenEmailModal = useCallback(() => {
     setEmailError(null)
     setEmailSuccess(null)
@@ -1326,27 +1663,27 @@ const PreventiviDetail = () => {
     setEmailError(null)
     setEmailSuccess(null)
     try {
-        const result = await sendPreventivoEmail({
-          token,
-          id,
-          to: emailTo,
-          cc: emailCc,
-          subject: emailSubject,
-          message: emailBody,
-        })
-        if (!result?.ok) {
-          const error = new Error(result?.message || 'Invio email non riuscito.')
-          error.payload = result
-          throw error
-        }
-        setEmailSuccess('Email inviata con successo.')
-        setEmailModalVisible(false)
-        setRefreshCounter((count) => count + 1)
-      } catch (err) {
-        if (err?.status === 401 && logout) {
-          logout()
-          return
-        }
+      const result = await sendPreventivoEmail({
+        token,
+        id,
+        to: emailTo,
+        cc: emailCc,
+        subject: emailSubject,
+        message: emailBody,
+      })
+      if (!result?.ok) {
+        const error = new Error(result?.message || 'Invio email non riuscito.')
+        error.payload = result
+        throw error
+      }
+      setEmailSuccess('Email inviata con successo.')
+      setEmailModalVisible(false)
+      setRefreshCounter((count) => count + 1)
+    } catch (err) {
+      if (err?.status === 401 && logout) {
+        logout()
+        return
+      }
       setEmailError(err)
     } finally {
       setEmailSending(false)
@@ -1354,7 +1691,9 @@ const PreventiviDetail = () => {
   }, [token, id, emailTo, emailCc, emailSubject, emailBody, logout])
 
   const handleSalvaBozza = async (e) => {
-    e.preventDefault()
+    if (e?.preventDefault) {
+      e.preventDefault()
+    }
     if (!editable || pendingOggettoCreate) return
     setSubmitting(true)
     setSubmitError(null)
@@ -1380,6 +1719,8 @@ const PreventiviDetail = () => {
       setSubmitting(false)
     }
   }
+
+  bozzaSaveHandlerRef.current = handleSalvaBozza
 
   const handleConferma = async (e) => {
     e.preventDefault()
@@ -1448,9 +1789,53 @@ const PreventiviDetail = () => {
     })
   }, [statusOptions])
 
-  const currentStatusLabel = currentStatus?.label ?? null
-
   const uiDisabled = !editable || anagraficaDisabled
+
+  const handleBreadcrumbSave = useCallback(() => {
+    if (uiDisabled || submitting || pendingOggettoCreate) {
+      return
+    }
+    if (typeof bozzaSaveHandlerRef.current === 'function') {
+      bozzaSaveHandlerRef.current()
+    }
+  }, [pendingOggettoCreate, submitting, uiDisabled])
+
+  useEffect(() => {
+    if (!id) {
+      clearBreadcrumbActions()
+      return
+    }
+    const actions = [
+      {
+        id: 'preventivo-refresh',
+        icon: cilReload,
+        label: loading ? 'Aggiornamento dati...' : 'Aggiorna dati',
+        onClick: handleRefreshData,
+        disabled: loading,
+      },
+    ]
+    if (!loading && !loadError) {
+      actions.push({
+        id: 'preventivo-save',
+        label: submitting ? 'Salvataggio preventivo...' : 'Aggiorna bozza',
+        onClick: handleBreadcrumbSave,
+        disabled: uiDisabled || submitting || pendingOggettoCreate,
+      })
+    }
+    setBreadcrumbActions(actions)
+    return () => clearBreadcrumbActions()
+  }, [
+    clearBreadcrumbActions,
+    handleBreadcrumbSave,
+    handleRefreshData,
+    id,
+    loadError,
+    loading,
+    pendingOggettoCreate,
+    setBreadcrumbActions,
+    submitting,
+    uiDisabled,
+  ])
   const formatDateTime = (val) => {
     const d = new Date(val)
     if (Number.isFinite(d.getTime())) return d.toLocaleString('it-IT')
@@ -1467,7 +1852,7 @@ const PreventiviDetail = () => {
               Documento {header.anno ?? '-'} / {header.numero ?? '-'}
             </small>
           </div>
-          <div className="d-flex align-items-center gap-2">
+          <div className="d-flex align-items-center gap-2 flex-wrap">
             {header.stato && (
               <CBadge color={editable ? 'info' : 'secondary'} className="text-uppercase">
                 {header.stato}
@@ -1484,6 +1869,42 @@ const PreventiviDetail = () => {
               <CIcon icon={cilEnvelopeClosed} className="me-2" />
               Invia email
             </CButton>
+            <CButton
+              color="danger"
+              variant="outline"
+              size="sm"
+              type="button"
+              onClick={handleOpenPrintPDF}
+              disabled={loading || !token}
+            >
+              <CIcon icon={cibAdobeAcrobatReader} className="me-2" />
+              Stampa PDF
+            </CButton>
+            {isConfirmed && (
+              <>
+                <CButton
+                  color="success"
+                  variant="outline"
+                  size="sm"
+                  type="button"
+                  onClick={handleOpenDdtModal}
+                  disabled={loading || !token || !preventivoHasRighe}
+                >
+                  <CIcon icon={cilCheckCircle} className="me-2" />
+                  Emetti DDT
+                </CButton>
+                <CButton
+                  color="secondary"
+                  variant="outline"
+                  size="sm"
+                  type="button"
+                  onClick={handleOpenFatturaModal}
+                >
+                  <CIcon icon={cilSave} className="me-2" />
+                  Emetti Fattura
+                </CButton>
+              </>
+            )}
           </div>
         </div>
       </CCardHeader>
@@ -1528,6 +1949,11 @@ const PreventiviDetail = () => {
                 <CNavItem>
                   <CNavLink active={statusTab === 'storico'} role="tab" aria-selected={statusTab === 'storico'} onClick={() => setStatusTab('storico')}>
                     Storico
+                  </CNavLink>
+                </CNavItem>
+                <CNavItem>
+                  <CNavLink active={statusTab === 'documenti'} role="tab" aria-selected={statusTab === 'documenti'} onClick={() => setStatusTab('documenti')}>
+                    Documenti correlati
                   </CNavLink>
                 </CNavItem>
               </CNav>
@@ -1644,6 +2070,104 @@ const PreventiviDetail = () => {
                       </CTable>
                     )
                   )}
+                </CTabPane>
+                <CTabPane visible={statusTab === 'documenti'} role="tabpanel">
+                  <CRow className="g-4">
+                    <CCol md={6}>
+                      <h6 className="text-body-secondary mb-3">DDT collegati</h6>
+                      {linkedDdt.length === 0 ? (
+                        <CAlert color="info" className="mb-0">Nessun DDT collegato al preventivo.</CAlert>
+                      ) : (
+                        <CTable small responsive>
+                          <CTableHead color="light">
+                            <CTableRow>
+                              <CTableHeaderCell>Numero</CTableHeaderCell>
+                              <CTableHeaderCell>Data</CTableHeaderCell>
+                              <CTableHeaderCell>Causale</CTableHeaderCell>
+                              <CTableHeaderCell className="text-end">Pezzi</CTableHeaderCell>
+                              <CTableHeaderCell className="text-end">Peso (kg)</CTableHeaderCell>
+                              <CTableHeaderCell className="text-center">Azioni</CTableHeaderCell>
+                            </CTableRow>
+                          </CTableHead>
+                          <CTableBody>
+                            {linkedDdt.map((doc) => (
+                              <CTableRow key={doc.id_ddt}>
+                                <CTableDataCell>
+                                  {doc.anno ?? '-'}/{doc.numero_documento ?? '-'}
+                                </CTableDataCell>
+                                <CTableDataCell>{formatDate(doc.data_ddt)}</CTableDataCell>
+                                <CTableDataCell>{doc.causale_label || '-'}</CTableDataCell>
+                                <CTableDataCell className="text-end">
+                                  {formatNumberValue(doc.totale_pezzi)}
+                                </CTableDataCell>
+                                <CTableDataCell className="text-end">
+                                  {formatNumberValue(doc.totale_peso_kg, 3)}
+                                </CTableDataCell>
+                                <CTableDataCell className="text-center">
+                                  <CButton
+                                    color="link"
+                                    size="sm"
+                                    className="p-0"
+                                    onClick={() => navigate(`/ddt/dettagli?id=${doc.id_ddt}`)}
+                                  >
+                                    Dettagli
+                                  </CButton>
+                                </CTableDataCell>
+                              </CTableRow>
+                            ))}
+                          </CTableBody>
+                        </CTable>
+                      )}
+                    </CCol>
+                    <CCol md={6}>
+                      <h6 className="text-body-secondary mb-3">Fatture collegate</h6>
+                      {linkedFatture.length === 0 ? (
+                        <CAlert color="info" className="mb-0">Nessuna fattura collegata al preventivo.</CAlert>
+                      ) : (
+                        <CTable small responsive>
+                          <CTableHead color="light">
+                            <CTableRow>
+                              <CTableHeaderCell>Numero</CTableHeaderCell>
+                              <CTableHeaderCell>Data</CTableHeaderCell>
+                              <CTableHeaderCell className="text-end">Totale</CTableHeaderCell>
+                              <CTableHeaderCell className="text-end">Saldo</CTableHeaderCell>
+                              <CTableHeaderCell>Stato</CTableHeaderCell>
+                              <CTableHeaderCell className="text-center">Azioni</CTableHeaderCell>
+                            </CTableRow>
+                          </CTableHead>
+                          <CTableBody>
+                            {linkedFatture.map((doc) => (
+                              <CTableRow key={doc.id_fattura}>
+                                <CTableDataCell>
+                                  {doc.anno ?? '-'}/{doc.numero_documento ?? '-'}
+                                </CTableDataCell>
+                                <CTableDataCell>{formatDate(doc.data_fattura)}</CTableDataCell>
+                                <CTableDataCell className="text-end">{formatCurrency(doc.totale)}</CTableDataCell>
+                                <CTableDataCell className="text-end">{formatCurrency(doc.saldo)}</CTableDataCell>
+                                <CTableDataCell>
+                                  {doc.stato_label ? (
+                                    <CBadge color="secondary">{doc.stato_label}</CBadge>
+                                  ) : (
+                                    <span className="text-body-secondary">-</span>
+                                  )}
+                                </CTableDataCell>
+                                <CTableDataCell className="text-center">
+                                  <CButton
+                                    color="link"
+                                    size="sm"
+                                    className="p-0"
+                                    onClick={() => navigate(`/fatture/dettagli?id=${doc.id_fattura}`)}
+                                  >
+                                    Dettagli
+                                  </CButton>
+                                </CTableDataCell>
+                              </CTableRow>
+                            ))}
+                          </CTableBody>
+                        </CTable>
+                      )}
+                    </CCol>
+                  </CRow>
                 </CTabPane>
               </CTabContent>
             </section>
@@ -2612,6 +3136,329 @@ const PreventiviDetail = () => {
             </div>
           </CForm>
         )}
+        <CModal visible={ddtModalVisible} onClose={handleCloseDdtModal} size="xl" backdrop="static">
+          <CModalHeader>
+            <CModalTitle>Emetti DDT</CModalTitle>
+          </CModalHeader>
+          <CModalBody>
+            {ddtError && (
+              <CAlert color="danger">{ddtError?.message || 'Impossibile emettere il DDT.'}</CAlert>
+            )}
+            {ddtSuccess && <CAlert color="success">{ddtSuccess}</CAlert>}
+            <CRow className="g-3 mb-3">
+              <CCol md={4}>
+                <CFormLabel>Data DDT</CFormLabel>
+                <CFormInput
+                  type="date"
+                  value={ddtForm?.data_ddt || ''}
+                  onChange={(e) =>
+                    setDdtForm((prev) => ({
+                      ...prev,
+                      data_ddt: e.target.value,
+                    }))
+                  }
+                  disabled={ddtSubmitting}
+                />
+              </CCol>
+              <CCol md={4}>
+                <CFormLabel>Causale</CFormLabel>
+                <CFormSelect
+                  value={ddtForm?.id_causale || ''}
+                  onChange={(e) =>
+                    setDdtForm((prev) => ({
+                      ...prev,
+                      id_causale: e.target.value,
+                    }))
+                  }
+                  disabled={ddtSubmitting || ddtCausaliLoading}
+                >
+                  <option value="">Seleziona causale</option>
+                  {ddtCausali.map((causale) => (
+                    <option key={causale.id_causale} value={causale.id_causale}>
+                      {causale.label}
+                    </option>
+                  ))}
+                </CFormSelect>
+                {ddtCausaliLoading && (
+                  <small className="text-body-secondary">Caricamento causali...</small>
+                )}
+              </CCol>
+              <CCol md={12}>
+                <CFormLabel>Note documento</CFormLabel>
+                <CFormTextarea
+                  rows={3}
+                  value={ddtForm?.note ?? ''}
+                  onChange={(e) =>
+                    setDdtForm((prev) => ({
+                      ...prev,
+                      note: e.target.value,
+                    }))
+                  }
+                  disabled={ddtSubmitting}
+                />
+              </CCol>
+            </CRow>
+            <div className="mt-4">
+              <h6 className="mb-2 text-body-secondary">Righe incluse</h6>
+              {preventivoHasRighe ? (
+                <CTable responsive hover small>
+                  <CTableHead color="light">
+                    <CTableRow>
+                      <CTableHeaderCell>Descrizione</CTableHeaderCell>
+                      <CTableHeaderCell className="text-end">Q.tà</CTableHeaderCell>
+                      <CTableHeaderCell className="text-end">Prezzo unitario</CTableHeaderCell>
+                    </CTableRow>
+                  </CTableHead>
+                  <CTableBody>
+                    {righe.map((row, idx) => (
+                      <CTableRow key={row.id_riga ?? idx}>
+                        <CTableDataCell>{row.descrizione}</CTableDataCell>
+                        <CTableDataCell className="text-end">{Number(row.quantita) || 0}</CTableDataCell>
+                        <CTableDataCell className="text-end">
+                          {formatCurrency(row.prezzo_unitario ?? row.totale ?? 0)}
+                        </CTableDataCell>
+                      </CTableRow>
+                    ))}
+                  </CTableBody>
+                </CTable>
+              ) : (
+                <CAlert color="warning" className="mb-0">
+                  Non sono presenti righe nel preventivo.
+                </CAlert>
+              )}
+            </div>
+            {ddtResult && (
+              <div className="border rounded p-3 mt-3 bg-body-tertiary">
+                <div className="d-flex justify-content-between flex-wrap gap-2 mb-2">
+                  <div className="fw-semibold">Ultimo DDT generato</div>
+                  {ddtResult.id_ddt && (
+                    <CButton
+                      color="link"
+                      size="sm"
+                      className="p-0"
+                      onClick={() => navigate(`/ddt/dettagli?id=${ddtResult.id_ddt}`)}
+                    >
+                      Apri dettaglio
+                    </CButton>
+                  )}
+                </div>
+                <div className="d-flex flex-wrap gap-3 small">
+                  <div>
+                    Numero:{' '}
+                    <strong>
+                      {ddtResult.numero_documento ?? '—'}
+                      {ddtResult.anno ? `/${ddtResult.anno}` : ''}
+                    </strong>
+                  </div>
+                  <div>Data: <strong>{ddtResult.data_ddt ?? '-'}</strong></div>
+                  <div>Pezzi: <strong>{ddtResult.totale_pezzi ?? 0}</strong></div>
+                  <div>Peso kg: <strong>{ddtResult.totale_peso_kg ?? 0}</strong></div>
+                </div>
+              </div>
+            )}
+          </CModalBody>
+          <CModalFooter className="d-flex justify-content-between align-items-center">
+            <small className="text-body-secondary">
+              Le righe del preventivo verranno copiate automaticamente nel DDT.
+            </small>
+            <div className="d-flex gap-2">
+              <CButton color="link" onClick={handleCloseDdtModal} disabled={ddtSubmitting}>
+                Annulla
+              </CButton>
+              <CButton
+                color="success"
+                onClick={handleEmitDdt}
+                disabled={ddtSubmitting || !preventivoHasRighe}
+              >
+                {ddtSubmitting ? 'Emissione...' : 'Emetti DDT'}
+              </CButton>
+            </div>
+          </CModalFooter>
+        </CModal>
+        <CModal visible={fatturaModalVisible} onClose={handleCloseFatturaModal} size="xl" backdrop="static">
+          <CModalHeader>
+            <CModalTitle>Emetti fattura</CModalTitle>
+          </CModalHeader>
+          <CModalBody>
+            {fatturaError && (
+              <CAlert color="danger">{fatturaError?.message || 'Impossibile emettere la fattura.'}</CAlert>
+            )}
+            {fatturaSuccess && <CAlert color="success">{fatturaSuccess}</CAlert>}
+            <CRow className="g-3 mb-3">
+              <CCol md={4}>
+                <CFormLabel>Data fattura</CFormLabel>
+                <CFormInput
+                  type="date"
+                  value={fatturaForm?.data_fattura || ''}
+                  onChange={(e) =>
+                    setFatturaForm((prev) => ({
+                      ...prev,
+                      data_fattura: e.target.value,
+                    }))
+                  }
+                  disabled={fatturaSubmitting}
+                />
+              </CCol>
+              <CCol md={4}>
+                <CFormLabel>Sezionale</CFormLabel>
+                <CFormSelect
+                  value={fatturaForm?.id_sezionale || ''}
+                  onChange={(e) =>
+                    setFatturaForm((prev) => ({
+                      ...prev,
+                      id_sezionale: e.target.value,
+                    }))
+                  }
+                  disabled={fatturaSubmitting || fatturaConfigLoading}
+                >
+                  <option value="">Seleziona sezionale</option>
+                  {fatturaConfig.sezionali.map((option) => (
+                    <option key={option.id_sezionale} value={option.id_sezionale}>
+                      {option.label || option.code}
+                    </option>
+                  ))}
+                </CFormSelect>
+              </CCol>
+              <CCol md={4}>
+                <CFormLabel>Tipo fattura</CFormLabel>
+                <CFormSelect
+                  value={fatturaForm?.id_tipo_fatt || ''}
+                  onChange={(e) =>
+                    setFatturaForm((prev) => ({
+                      ...prev,
+                      id_tipo_fatt: e.target.value,
+                    }))
+                  }
+                  disabled={fatturaSubmitting || fatturaConfigLoading}
+                >
+                  <option value="">Seleziona tipo</option>
+                  {fatturaConfig.tipi.map((option) => (
+                    <option key={option.id_tipo} value={option.id_tipo}>
+                      {option.label}
+                    </option>
+                  ))}
+                </CFormSelect>
+              </CCol>
+              <CCol md={4}>
+                <CFormLabel>Stato iniziale</CFormLabel>
+                <CFormSelect
+                  value={fatturaForm?.id_stato_fatt || ''}
+                  onChange={(e) =>
+                    setFatturaForm((prev) => ({
+                      ...prev,
+                      id_stato_fatt: e.target.value,
+                    }))
+                  }
+                  disabled={fatturaSubmitting || fatturaConfigLoading}
+                >
+                  <option value="">Seleziona stato</option>
+                  {fatturaConfig.stati.map((option) => (
+                    <option key={option.id_stato} value={option.id_stato}>
+                      {option.label}
+                    </option>
+                  ))}
+                </CFormSelect>
+              </CCol>
+              <CCol md={12}>
+                <CFormLabel>Note</CFormLabel>
+                <CFormTextarea
+                  rows={3}
+                  value={fatturaForm?.note ?? ''}
+                  onChange={(e) =>
+                    setFatturaForm((prev) => ({
+                      ...prev,
+                      note: e.target.value,
+                    }))
+                  }
+                  disabled={fatturaSubmitting}
+                />
+              </CCol>
+            </CRow>
+
+            <div className="mt-4">
+              <h6 className="mb-2 text-body-secondary">Righe incluse</h6>
+              {preventivoHasRighe ? (
+                <CTable responsive hover small>
+                  <CTableHead color="light">
+                    <CTableRow>
+                      <CTableHeaderCell>Descrizione</CTableHeaderCell>
+                      <CTableHeaderCell className="text-end">Q.tà</CTableHeaderCell>
+                      <CTableHeaderCell className="text-end">Prezzo</CTableHeaderCell>
+                      <CTableHeaderCell className="text-end">IVA %</CTableHeaderCell>
+                      <CTableHeaderCell className="text-end">Totale</CTableHeaderCell>
+                    </CTableRow>
+                  </CTableHead>
+                  <CTableBody>
+                    {righe.map((row, idx) => (
+                      <CTableRow key={row.id_riga ?? idx}>
+                        <CTableDataCell>{row.descrizione}</CTableDataCell>
+                        <CTableDataCell className="text-end">{Number(row.quantita) || 0}</CTableDataCell>
+                        <CTableDataCell className="text-end">
+                          {formatCurrency(row.prezzo_unitario ?? row.totale ?? 0)}
+                        </CTableDataCell>
+                        <CTableDataCell className="text-end">
+                          {row.iva != null ? `${row.iva}%` : '-'}
+                        </CTableDataCell>
+                        <CTableDataCell className="text-end">
+                          {formatCurrency(row.totale ?? row.prezzo_unitario ?? 0)}
+                        </CTableDataCell>
+                      </CTableRow>
+                    ))}
+                  </CTableBody>
+                </CTable>
+              ) : (
+                <CAlert color="warning" className="mb-0">
+                  Non sono presenti righe nel preventivo.
+                </CAlert>
+              )}
+            </div>
+
+            {fatturaResult && (
+              <div className="border rounded p-3 mt-3 bg-body-tertiary">
+                <div className="d-flex justify-content-between flex-wrap gap-2 mb-2">
+                  <div className="fw-semibold">Ultima fattura generata</div>
+                  {fatturaResult.id_fattura && (
+                    <CButton
+                      color="link"
+                      size="sm"
+                      className="p-0"
+                      onClick={() => navigate(`/fatture/dettagli?id=${fatturaResult.id_fattura}`)}
+                    >
+                      Apri dettaglio
+                    </CButton>
+                  )}
+                </div>
+                <div className="d-flex flex-wrap gap-3 small">
+                  <div>
+                    Numero:{' '}
+                    <strong>
+                      {fatturaResult.numero_documento ?? '—'}
+                      {fatturaResult.anno ? `/${fatturaResult.anno}` : ''}
+                    </strong>
+                  </div>
+                  <div>Data: <strong>{fatturaResult.data_fattura ?? '-'}</strong></div>
+                  <div>Totale: <strong>{formatCurrency(fatturaResult.totale)}</strong></div>
+                  <div>Saldo: <strong>{formatCurrency(fatturaResult.saldo)}</strong></div>
+                </div>
+              </div>
+            )}
+          </CModalBody>
+          <CModalFooter className="d-flex justify-content-between align-items-center">
+            <small className="text-body-secondary">Le righe del preventivo verranno copiate automaticamente nella fattura.</small>
+            <div className="d-flex gap-2">
+              <CButton color="link" onClick={handleCloseFatturaModal} disabled={fatturaSubmitting}>
+                Annulla
+              </CButton>
+              <CButton
+                color="primary"
+                onClick={handleEmitFattura}
+                disabled={fatturaSubmitting || !preventivoHasRighe}
+              >
+                {fatturaSubmitting ? 'Emissione...' : 'Emetti fattura'}
+              </CButton>
+            </div>
+          </CModalFooter>
+        </CModal>
         <CModal visible={emailModalVisible} onClose={handleCloseEmailModal} size="lg" backdrop="static">
           <CModalHeader>
             <CModalTitle>Invia preventivo via email</CModalTitle>
@@ -2652,12 +3499,14 @@ const PreventiviDetail = () => {
             </div>
             <div className="mb-0">
               <CFormLabel>Messaggio</CFormLabel>
-              <CFormTextarea
-                rows={8}
+              <HtmlEditor
                 value={emailBody}
-                onChange={(e) => setEmailBody(e.target.value)}
+                onChange={setEmailBody}
                 disabled={emailSending}
+                placeholder="Scrivi il testo dell'email..."
+                minHeight={260}
               />
+              <div className="form-text">Il testo verra' inviato come corpo HTML del messaggio.</div>
             </div>
           </CModalBody>
           <CModalFooter>
@@ -2676,6 +3525,7 @@ const PreventiviDetail = () => {
                 </>
               )}
             </CButton>
+
           </CModalFooter>
         </CModal>
       </CCardBody>

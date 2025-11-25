@@ -5,11 +5,35 @@ declare(strict_types=1);
 namespace MediaPrint\Service;
 
 use MediaPrint\Backend\Mailer\SmtpMailer;
+use MediaPrint\Repo\DdtRepository;
+use MediaPrint\Repo\FattureRepository;
 use MediaPrint\Repo\PreventiviRepository;
 
 final class PreventiviService
 {
-    public function __construct(private PreventiviRepository $repository) {}
+    public function __construct(
+        private PreventiviRepository $repository,
+        private ?DdtRepository $ddtRepository = null,
+        private ?FattureRepository $fattureRepository = null
+    ) {}
+
+    private function requireDdtRepository(): DdtRepository
+    {
+        if ($this->ddtRepository instanceof DdtRepository) {
+            return $this->ddtRepository;
+        }
+
+        throw new \RuntimeException('Funzionalità DDT non disponibile.', 503);
+    }
+
+    private function requireFattureRepository(): FattureRepository
+    {
+        if ($this->fattureRepository instanceof FattureRepository) {
+            return $this->fattureRepository;
+        }
+
+        throw new \RuntimeException('Funzionalità fatture non disponibile.', 503);
+    }
 
     /**
      * @param mixed $value
@@ -159,7 +183,7 @@ CSS;
 <body>
   <div class="wrapper">
     <header>
-      <h2>Aggiornamento preventivo</h2>
+      <h2>Preventivo</h2>
     </header>
     <section class="message">
       {$introHtml}
@@ -202,6 +226,10 @@ HTML;
             throw new \RuntimeException('Preventivo non trovato.', 404);
         }
 
+        $linkedDdt = isset($row['linked_ddt']) && is_array($row['linked_ddt']) ? $row['linked_ddt'] : [];
+        $linkedFatture = isset($row['linked_fatture']) && is_array($row['linked_fatture']) ? $row['linked_fatture'] : [];
+        unset($row['linked_ddt'], $row['linked_fatture']);
+
         $editable = ($row['stato_code'] ?? 'bozza') === 'bozza';
         $righe = $this->repository->getLines($id);
         $cig = $this->repository->getCigList($id);
@@ -237,6 +265,8 @@ HTML;
             'cig' => $cig,
             'determine' => $determine,
             'contatti' => $contatti,
+            'linked_ddt' => $linkedDdt,
+            'linked_fatture' => $linkedFatture,
             'meta' => [
                 'editable' => $editable,
                 'statuses' => $statuses,
@@ -670,6 +700,166 @@ HTML;
             ],
             'status' => $sent ? 'inviato' : 'errore',
             'preventivo' => $updatedDetail,
+        ];
+    }
+
+    /**
+     * Emette un DDT generato dalle righe di un preventivo confermato.
+     *
+     * @return array<string,mixed>
+     */
+    public function emitDdt(array $input): array
+    {
+        $ddtRepository = $this->requireDdtRepository();
+        $id = isset($input['id']) ? (int) $input['id'] : (isset($input['id_preventivo']) ? (int) $input['id_preventivo'] : 0);
+        if ($id <= 0) {
+            throw new \RuntimeException('ID preventivo mancante o non valido per l\'emissione del DDT.', 422);
+        }
+
+        $detail = $this->repository->fetchDetail($id);
+        if ($detail === null) {
+            throw new \RuntimeException('Preventivo non trovato.', 404);
+        }
+
+        $statusCode = strtolower((string) ($detail['stato_code'] ?? ''));
+        if ($statusCode !== 'confermato') {
+            throw new \RuntimeException('È possibile emettere il DDT solo da preventivi confermati.', 422);
+        }
+
+        $idAnagrafica = isset($detail['id_anagrafica']) ? (int) $detail['id_anagrafica'] : 0;
+        if ($idAnagrafica <= 0) {
+            throw new \RuntimeException('Il preventivo non è associato a un\'anagrafica valida.', 422);
+        }
+
+        $lines = $this->repository->getLines($id);
+        if (empty($lines)) {
+            throw new \RuntimeException('Il preventivo non contiene righe da trasferire nel DDT.', 422);
+        }
+
+        $idCausale = null;
+        if (array_key_exists('id_causale', $input) && $input['id_causale'] !== null && $input['id_causale'] !== '') {
+            $candidate = (int) $input['id_causale'];
+            if ($candidate > 0) {
+                $causale = $ddtRepository->findCausaleById($candidate);
+                if ($causale === null) {
+                    throw new \RuntimeException('Causale DDT non valida.', 422);
+                }
+                $idCausale = $candidate;
+            }
+        }
+
+        $rawNote = isset($input['note']) ? trim((string) $input['note']) : '';
+        if ($rawNote === '') {
+            $numero = $detail['numero_documento'] ?? null;
+            $anno = $detail['anno_preventivo'] ?? null;
+            if ($numero !== null && $anno !== null) {
+                $rawNote = sprintf('Documento generato dal preventivo %s/%s.', $numero, $anno);
+            } elseif ($numero !== null) {
+                $rawNote = sprintf('Documento generato dal preventivo n. %s.', $numero);
+            } else {
+                $rawNote = sprintf('Documento generato dal preventivo ID %d.', $id);
+            }
+        }
+
+        $payload = [
+            'id_preventivo' => $detail['id_preventivo'] ?? $id,
+            'id_anagrafica' => $idAnagrafica,
+            'data_ddt' => isset($input['data_ddt']) ? (string) $input['data_ddt'] : null,
+            'id_causale' => $idCausale,
+            'note' => $rawNote,
+        ];
+
+        if (isset($input['id_serie']) && (int) $input['id_serie'] > 0) {
+            $payload['id_serie'] = (int) $input['id_serie'];
+        }
+
+        $ddt = $ddtRepository->createFromPreventivo($payload, $lines);
+
+        return [
+            'ok' => true,
+            'ddt' => $ddt,
+        ];
+    }
+
+    /**
+     * Emette una fattura a partire da un preventivo confermato.
+     *
+     * @return array<string,mixed>
+     */
+    public function emitFattura(array $input): array
+    {
+        $fattureRepository = $this->requireFattureRepository();
+        $id = isset($input['id']) ? (int) $input['id'] : (isset($input['id_preventivo']) ? (int) $input['id_preventivo'] : 0);
+        if ($id <= 0) {
+            throw new \RuntimeException('ID preventivo mancante o non valido per l\'emissione della fattura.', 422);
+        }
+
+        $detail = $this->repository->fetchDetail($id);
+        if ($detail === null) {
+            throw new \RuntimeException('Preventivo non trovato.', 404);
+        }
+
+        $statusCode = strtolower((string) ($detail['stato_code'] ?? ''));
+        if ($statusCode !== 'confermato') {
+            throw new \RuntimeException('È possibile emettere la fattura solo da preventivi confermati.', 422);
+        }
+
+        $idAnagrafica = isset($detail['id_anagrafica']) ? (int) $detail['id_anagrafica'] : 0;
+        if ($idAnagrafica <= 0) {
+            throw new \RuntimeException('Il preventivo non è associato a un\'anagrafica valida.', 422);
+        }
+
+        $lines = $this->repository->getLines($id);
+        if (empty($lines)) {
+            throw new \RuntimeException('Il preventivo non contiene righe da trasferire nella fattura.', 422);
+        }
+
+        $idSezionale = isset($input['id_sezionale']) ? (int) $input['id_sezionale'] : 0;
+        if ($idSezionale <= 0) {
+            throw new \RuntimeException('Selezionare un sezionale valido per la numerazione della fattura.', 422);
+        }
+
+        $idTipoFatt = isset($input['id_tipo_fatt']) ? (int) $input['id_tipo_fatt'] : 2; // default: immediata
+        if ($idTipoFatt <= 0) {
+            $idTipoFatt = 2;
+        }
+        $idStatoFatt = isset($input['id_stato_fatt']) ? (int) $input['id_stato_fatt'] : 2; // default: emessa
+        if ($idStatoFatt <= 0) {
+            $idStatoFatt = 2;
+        }
+
+        $note = isset($input['note']) ? trim((string) $input['note']) : '';
+        if ($note === '') {
+            $numero = $detail['numero_documento'] ?? null;
+            $anno = $detail['anno_preventivo'] ?? null;
+            if ($numero && $anno) {
+                $note = sprintf('Fattura generata dal preventivo %s/%s.', $numero, $anno);
+            } elseif ($numero) {
+                $note = sprintf('Fattura generata dal preventivo n. %s.', $numero);
+            } else {
+                $note = sprintf('Fattura generata dal preventivo ID %d.', $id);
+            }
+        }
+
+        $payload = [
+            'id_preventivo' => $detail['id_preventivo'] ?? $id,
+            'id_anagrafica' => $idAnagrafica,
+            'data_fattura' => isset($input['data_fattura']) ? (string) $input['data_fattura'] : null,
+            'id_sezionale' => $idSezionale,
+            'id_tipo_fatt' => $idTipoFatt,
+            'id_stato_fatt' => $idStatoFatt,
+            'note' => $note,
+            'totale_imponibile' => isset($detail['totale_imponibile']) ? (float) $detail['totale_imponibile'] : 0.0,
+            'totale_sconto' => isset($detail['totale_sconto']) ? (float) $detail['totale_sconto'] : 0.0,
+            'totale_iva' => isset($detail['totale_iva']) ? (float) $detail['totale_iva'] : 0.0,
+            'totale' => isset($detail['totale']) ? (float) $detail['totale'] : 0.0,
+        ];
+
+        $fattura = $fattureRepository->createFromPreventivo($payload, $lines);
+
+        return [
+            'ok' => true,
+            'fattura' => $fattura,
         ];
     }
 

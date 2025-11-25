@@ -44,6 +44,7 @@
 - Prodotti/Categorie: `prodotti/categorie/list.php`, `prodotti/categorie/save.php`
 - Prodotti/Variazioni: `prodotti/variazioni/list.php`, `prodotti/variazioni/save.php`, `prodotti/variazioni/delete.php`, `prodotti/variazioni/prodotto.php`
 - Preventivi: `preventiviList.php`, `preventiviCreate.php`, `preventiviDetail.php`
+- Fatture: `fattureList.php`, `fattureDetail.php`, `fattureUpdate.php`, `fattureConfig.php`, `fattureExportXml.php`
 - Varie: `natureIvaList.php`, `dashboard.php`
 
 ## Stato Moduli UI
@@ -57,6 +58,15 @@
 - Backend
   - `composer install` in `backend/`, impostare `.env` (DB, JWT, CORS).
   - Richiede DB conforme al dump in `sql/`.
+
+### Variabili per esportazione XML SdI
+Per usare l'endpoint `fattureExportXml.php` impostare in `backend/.env` i dati aziendali richiesti dal tracciato SdI:
+- `ERP_AZIENDA_DENOMINAZIONE`, `ERP_AZIENDA_PIVA`, `ERP_AZIENDA_CODICE_FISCALE`
+- `ERP_AZIENDA_INDIRIZZO`, `ERP_AZIENDA_CIVICO`, `ERP_AZIENDA_CAP`, `ERP_AZIENDA_COMUNE`, `ERP_AZIENDA_PROVINCIA`, `ERP_AZIENDA_NAZIONE`
+- `ERP_AZIENDA_REGIME_FISCALE` (es. `RF01`), `ERP_AZIENDA_FORMATO_TRASMISSIONE` (es. `FPR12`), `ERP_AZIENDA_VALUTA`
+- `ERP_AZIENDA_PROGRESSIVO_PREFIX` (prefisso progressivo invio), `ERP_AZIENDA_MODALITA_PAGAMENTO` (es. `MP05`), `ERP_AZIENDA_CONDIZIONI_PAGAMENTO` (es. `TP02`)
+
+Tutti i valori sono obbligatori salvo nota diversa; in assenza il backend risponde con errore esplicativo.
 
 ## Note Tecniche Rilevanti
 - Client HTTP centralizzato (`apiClient.js`) con gestione base URL, query param, JSON e error handling.
@@ -73,4 +83,3 @@
 - Validazioni avanzate lato FE/BE per creazione/aggiornamento preventivi.
 - Test end-to-end minimi (login, CRUD anagrafiche, flusso preventivo).
 - Documentare proxy dev (`/api`) e deployment backend.
-

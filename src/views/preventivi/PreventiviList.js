@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   CBadge,
@@ -18,12 +18,28 @@ import {
   CPaginationItem,
   CRow,
   CCol,
+  CForm,
+  CFormLabel,
+  CFormInput,
+  CModal,
+  CModalHeader,
+  CModalTitle,
+  CModalBody,
+  CModalFooter,
 } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
-import { cilArrowRight, cilDescription, cilEnvelopeClosed, cilPlus, cilPrint } from '@coreui/icons'
+import { cilDescription, cilEnvelopeClosed, cilPlus, cilPrint } from '@coreui/icons'
 
 import { useAuth } from '../../context/AuthContext'
-import { fetchLatestPreventivi, fetchPreventiviArchivio, reactivatePreventivo, archivePreventivo } from '../../services/preventivi'
+import {
+  fetchLatestPreventivi,
+  fetchPreventiviArchivio,
+  reactivatePreventivo,
+  archivePreventivo,
+  sendPreventivoEmail,
+  fetchPreventivoDetail,
+} from '../../services/preventivi'
+import HtmlEditor from '../../components/HtmlEditor'
 
 const currencyFormatter = new Intl.NumberFormat('it-IT', {
   style: 'currency',
@@ -44,9 +60,15 @@ const formatDate = (value) => {
   return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleDateString('it-IT')
 }
 
+const buildPreventivoPdfUrl = (id) => {
+  const numericId = Number(id)
+  if (!Number.isFinite(numericId) || numericId <= 0) return null
+  return `https://jaspersoft.mediaprint.it/jasperserver/rest_v2/reports/Mediaprint/GestionaleMP/Preventivi.pdf?id_preventivo=${numericId}&j_username=gestionaleMp&j_password=gestionaleMp`
+}
+
 const PreventiviList = () => {
   const navigate = useNavigate()
-  const { token, logout } = useAuth()
+  const { token, logout, user } = useAuth()
 
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(false)
@@ -58,6 +80,13 @@ const PreventiviList = () => {
   const [groupBy, setGroupBy] = useState('none') // none | giorno | mese | stato | cliente
   const [viewMode, setViewMode] = useState('attivi') // attivi | archiviati
   const [refreshIndex, setRefreshIndex] = useState(0)
+  const [emailModalVisible, setEmailModalVisible] = useState(false)
+  const [emailModalLoading, setEmailModalLoading] = useState(false)
+  const [emailSending, setEmailSending] = useState(false)
+  const [emailForm, setEmailForm] = useState({ to: '', cc: '', subject: '', body: '' })
+  const [emailError, setEmailError] = useState(null)
+  const [emailSuccess, setEmailSuccess] = useState(null)
+  const [emailTarget, setEmailTarget] = useState(null)
 
   useEffect(() => {
     if (!token) return
@@ -284,8 +313,162 @@ const PreventiviList = () => {
     }
   }
 
+  const handlePrintPDF = (preventivoId) => {
+    if (typeof window === 'undefined') return
+    const url = buildPreventivoPdfUrl(preventivoId)
+    if (!url) return
+    window.open(url, '_blank', 'noopener')
+  }
+
+  const handleOpenEmailModal = useCallback(
+    async (row) => {
+      if (!token) return
+      const rawId = typeof row === 'object' ? row?.id_preventivo ?? row?.id : row
+      const numericId = Number(rawId)
+      if (!Number.isFinite(numericId) || numericId <= 0) return
+      setEmailModalVisible(true)
+      setEmailModalLoading(true)
+      setEmailError(null)
+      setEmailSuccess(null)
+      setEmailForm({ to: '', cc: '', subject: '', body: '' })
+      setEmailTarget({
+        id: numericId,
+        numero: typeof row === 'object' ? row?.numero_documento : null,
+        anno: typeof row === 'object' ? row?.anno_preventivo : null,
+        cliente: typeof row === 'object' ? row?.ragione_sociale : null,
+      })
+      try {
+        const detail = await fetchPreventivoDetail({ token, id: numericId })
+        const header = detail?.data ?? {}
+        const contatti = Array.isArray(detail?.contatti) ? detail.contatti : []
+        const seen = new Set()
+        const emails = []
+        const pushEmail = (value) => {
+          const email = String(value || '').trim()
+          if (!email) return
+          const key = email.toLowerCase()
+          if (seen.has(key)) return
+          seen.add(key)
+          emails.push(email)
+        }
+        contatti.forEach((contact) => pushEmail(contact?.email))
+        pushEmail(header?.email)
+        pushEmail(header?.email_cliente)
+        const numeroDoc = header?.numero_documento ?? row?.numero_documento ?? null
+        const annoDoc = header?.anno_preventivo ?? row?.anno_preventivo ?? null
+        const clienteLabel = header?.ragione_sociale ?? row?.ragione_sociale ?? 'Cliente'
+        const numeroDisplay = numeroDoc ? `${numeroDoc}${annoDoc ? `/${annoDoc}` : ''}` : `ID ${numericId}`
+        const docDate = header?.data_preventivo
+          ? (() => {
+            const parsed = new Date(header.data_preventivo)
+            return Number.isNaN(parsed.getTime()) ? null : parsed.toLocaleDateString('it-IT')
+          })()
+          : null
+        const descrizione = String(header?.oggetto || 'la lavorazione richiesta').trim()
+        const pdfLink = buildPreventivoPdfUrl(numericId)
+        const operatorName = user?.name || user?.username || 'MediaPrint S.r.l.'
+        const totalFormatted = formatCurrency(header?.totale ?? row?.totale ?? 0)
+        const subjectSegments = []
+        if (numeroDoc) {
+          subjectSegments.push(`Preventivo ${numeroDoc}${annoDoc ? `/${annoDoc}` : ''}`)
+        } else if (annoDoc) {
+          subjectSegments.push(`Preventivo ${annoDoc}`)
+        } else {
+          subjectSegments.push(`Preventivo ${numeroDisplay}`)
+        }
+        if (clienteLabel) subjectSegments.push(clienteLabel)
+        const subject = subjectSegments.join(' - ')
+        const bodyLines = [
+          `Gentile ${clienteLabel},<br>`,
+          '',
+          `Nel seguente link trova il preventivo n. ${numeroDisplay}${docDate ? ` del ${docDate}` : ''} relativo a ${descrizione}.<br><br>`,
+          pdfLink ? `<a href="${pdfLink}">Scarica Preventivo #${numeroDisplay}</a><br><br> ` : '',
+          `Totale documento: ${totalFormatted}.<br><br>`,
+          'Restiamo a disposizione per qualsiasi chiarimento.<br>',
+          '<br>',
+          'Cordiali saluti,<br>',
+          operatorName,
+        ].filter(Boolean)
+        setEmailForm({
+          to: emails.join(', '),
+          cc: '',
+          subject,
+          body: bodyLines.join('\n'),
+        })
+        setEmailTarget({
+          id: numericId,
+          numero: numeroDoc,
+          anno: annoDoc,
+          cliente: clienteLabel,
+        })
+      } catch (e) {
+        if (e?.status === 401 && logout) {
+          logout()
+          return
+        }
+        setEmailError(e)
+      } finally {
+        setEmailModalLoading(false)
+      }
+    },
+    [token, logout, user],
+  )
+
+  const handleCloseEmailModal = () => {
+    if (emailSending) return
+    setEmailModalVisible(false)
+    setEmailModalLoading(false)
+    setEmailTarget(null)
+    setEmailForm({ to: '', cc: '', subject: '', body: '' })
+    setEmailError(null)
+    setEmailSuccess(null)
+  }
+
+  const handleEmailFieldChange = (field) => (event) => {
+    const value = event?.target?.value ?? ''
+    setEmailForm((prev) => ({ ...prev, [field]: value }))
+  }
+
+  const handleSendPreventivoEmail = async (event) => {
+    event?.preventDefault?.()
+    if (!token || !emailTarget?.id) return
+    const sanitizedTo = String(emailForm.to || '').trim()
+    if (sanitizedTo === '') {
+      setEmailError(new Error('Indicare almeno un destinatario.'))
+      return
+    }
+    setEmailSending(true)
+    setEmailError(null)
+    setEmailSuccess(null)
+    try {
+      const response = await sendPreventivoEmail({
+        token,
+        id: emailTarget.id,
+        to: emailForm.to,
+        cc: emailForm.cc,
+        subject: emailForm.subject,
+        message: emailForm.body,
+      })
+      if (!response?.ok) {
+        const error = new Error(response?.message || 'Invio email non riuscito.')
+        error.payload = response
+        throw error
+      }
+      setEmailSuccess(response?.message || 'Email inviata con successo.')
+    } catch (e) {
+      if (e?.status === 401 && logout) {
+        logout()
+        return
+      }
+      setEmailError(e)
+    } finally {
+      setEmailSending(false)
+    }
+  }
+
   return (
-    <CCard>
+    <>
+      <CCard>
       <CCardHeader>
         <div className="d-flex justify-content-between align-items-center">
           <div>
@@ -424,20 +607,44 @@ const PreventiviList = () => {
                         )}
                       </CTableDataCell>
                       <CTableDataCell className="text-center">
-                        {viewMode === 'archiviati' ? (
-                          <CButton color="primary" variant="outline" size="sm" onClick={() => handleRestore(r.id_preventivo)}>
-                            Ripristina
+                        <div className="d-inline-flex gap-2 flex-wrap justify-content-center">
+                          <CButton
+                            color="link"
+                            size="sm"
+                            className="p-0"
+                            onClick={() => handleView(r.id_preventivo)}
+                            title="Apri dettaglio"
+                          >
+                            <CIcon icon={cilDescription} />
                           </CButton>
-                        ) : (
-                          <div className="d-inline-flex gap-2">
-                            <CButton color="link" size="sm" className="p-0" onClick={() => handleView(r.id_preventivo)}>
-                              <CIcon icon={cilDescription} />
+                          <CButton
+                            color="link"
+                            size="sm"
+                            className="p-0"
+                            onClick={() => handlePrintPDF(r.id_preventivo)}
+                            title="Stampa PDF"
+                          >
+                            <CIcon icon={cilPrint} />
+                          </CButton>
+                          <CButton
+                            color="link"
+                            size="sm"
+                            className="p-0"
+                            onClick={() => handleOpenEmailModal(r)}
+                            title="Invia PDF via email"
+                          >
+                            <CIcon icon={cilEnvelopeClosed} />
+                          </CButton>
+                          {viewMode === 'archiviati' ? (
+                            <CButton color="primary" variant="outline" size="sm" onClick={() => handleRestore(r.id_preventivo)}>
+                              Ripristina
                             </CButton>
+                          ) : (
                             <CButton color="secondary" variant="outline" size="sm" onClick={() => handleArchive(r.id_preventivo)}>
                               Archivia
                             </CButton>
-                          </div>
-                        )}
+                          )}
+                        </div>
                       </CTableDataCell>
                   </CTableRow>
                 )
@@ -478,7 +685,103 @@ const PreventiviList = () => {
           </>
         )}
       </CCardBody>
-    </CCard>
+      </CCard>
+      <CModal
+        visible={emailModalVisible}
+        onClose={handleCloseEmailModal}
+        alignment="center"
+        size="lg"
+      >
+        <CModalHeader closeButton>
+          <CModalTitle>Invia preventivo via email</CModalTitle>
+        </CModalHeader>
+        <CModalBody>
+          {emailTarget && (
+            <div className="mb-3 small text-body-secondary">
+              Documento:{' '}
+              <strong>
+                {emailTarget.numero ? `${emailTarget.numero}${emailTarget.anno ? `/${emailTarget.anno}` : ''}` : emailTarget.id}
+              </strong>
+              {emailTarget.cliente ? ` - ${emailTarget.cliente}` : ''}
+            </div>
+          )}
+          {emailModalLoading && (
+            <div className="text-center py-4">
+              <CSpinner color="primary" />
+            </div>
+          )}
+          {!emailModalLoading && (
+            <>
+              {emailError && (
+                <CAlert color="danger" className="mb-3">
+                  {emailError?.payload?.message || emailError.message || 'Errore durante il caricamento del preventivo.'}
+                </CAlert>
+              )}
+              {emailSuccess && (
+                <CAlert color="success" className="mb-3">
+                  {emailSuccess}
+                </CAlert>
+              )}
+              <CForm id="preventivi-list-email-form" onSubmit={handleSendPreventivoEmail}>
+                <div className="mb-3">
+                  <CFormLabel htmlFor="preventivi-email-to">Destinatari</CFormLabel>
+                  <CFormInput
+                    id="preventivi-email-to"
+                    type="text"
+                    placeholder="es: cliente@example.com"
+                    value={emailForm.to}
+                    onChange={handleEmailFieldChange('to')}
+                    disabled={emailSending}
+                  />
+                  <small className="text-body-secondary">Separare gli indirizzi con virgola.</small>
+                </div>
+                <div className="mb-3">
+                  <CFormLabel htmlFor="preventivi-email-cc">CC (facoltativo)</CFormLabel>
+                  <CFormInput
+                    id="preventivi-email-cc"
+                    type="text"
+                    value={emailForm.cc}
+                    onChange={handleEmailFieldChange('cc')}
+                    disabled={emailSending}
+                  />
+                </div>
+                <div className="mb-3">
+                  <CFormLabel htmlFor="preventivi-email-subject">Oggetto</CFormLabel>
+                  <CFormInput
+                    id="preventivi-email-subject"
+                    type="text"
+                    value={emailForm.subject}
+                    onChange={handleEmailFieldChange('subject')}
+                    disabled={emailSending}
+                  />
+                </div>
+                <div className="mb-3">
+                  <CFormLabel htmlFor="preventivi-email-body">Messaggio</CFormLabel>
+                  <HtmlEditor
+                    value={emailForm.body}
+                    onChange={(html) => setEmailForm((prev) => ({ ...prev, body: html }))}
+                    disabled={emailSending}
+                    placeholder="Scrivi il messaggio da inviare al cliente..."
+                    minHeight={200}
+                  />
+                  <small className="text-body-secondary">Il messaggio supporta la formattazione HTML di base.</small>
+                </div>
+              </CForm>
+            </>
+          )}
+        </CModalBody>
+        {!emailModalLoading && (
+          <CModalFooter>
+            <CButton color="secondary" variant="outline" onClick={handleCloseEmailModal} disabled={emailSending}>
+              Chiudi
+            </CButton>
+            <CButton color="primary" type="submit" form="preventivi-list-email-form" disabled={emailSending}>
+              {emailSending ? 'Invio in corso...' : 'Invia email'}
+            </CButton>
+          </CModalFooter>
+        )}
+      </CModal>
+    </>
   )
 }
 

@@ -53,18 +53,24 @@ function loadEnv(string $path): void
 }
 
 spl_autoload_register(static function (string $class): void {
-    $prefix = 'MediaPrint\\Backend\\';
-    $baseDir = __DIR__ . '/src/';
+    $prefixes = [
+        'MediaPrint\\Backend\\' => __DIR__ . '/src/',
+        'MediaPrint\\Repo\\' => __DIR__ . '/src/Repositories/',
+    ];
 
-    if (strncmp($prefix, $class, strlen($prefix)) !== 0) {
+    foreach ($prefixes as $prefix => $baseDir) {
+        if (strncmp($prefix, $class, strlen($prefix)) !== 0) {
+            continue;
+        }
+
+        $relative = substr($class, strlen($prefix));
+        $path = $baseDir . str_replace('\\', '/', $relative) . '.php';
+
+        if (is_readable($path)) {
+            require_once $path;
+        }
+
         return;
-    }
-
-    $relative = substr($class, strlen($prefix));
-    $path = $baseDir . str_replace('\\', '/', $relative) . '.php';
-
-    if (is_readable($path)) {
-        require_once $path;
     }
 });
 
