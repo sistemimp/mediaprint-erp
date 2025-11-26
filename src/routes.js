@@ -34,6 +34,8 @@ const PacchettiDetail = React.lazy(() => import('./views/pacchetti/PacchettiDeta
 const PagamentiList = React.lazy(() => import('./views/pagamenti/PagamentiList'))
 const PagamentiDetail = React.lazy(() => import('./views/pagamenti/PagamentiDetail'))
 const PagamentiImport = React.lazy(() => import('./views/pagamenti/PagamentiImport'))
+const LavorazioniList = React.lazy(() => import('./views/lavorazioni/LavorazioniList'))
+const LavorazioneDetail = React.lazy(() => import('./views/lavorazioni/LavorazioneDetail'))
 
 const routes = [
   { path: '/', exact: true, name: 'Home' },
@@ -63,6 +65,8 @@ const routes = [
   { path: '/pagamenti/lista', name: 'Pagamenti - Situazione', element: PagamentiList },
   { path: '/pagamenti/dettaglio', name: 'Pagamenti - Dettaglio', element: PagamentiDetail },
   { path: '/pagamenti/import', name: 'Pagamenti - Import', element: PagamentiImport },
+  { path: '/lavorazioni/lista', name: 'Lavorazioni - Lista', element: LavorazioniList },
+  { path: '/lavorazioni/dettaglio', name: 'Lavorazioni - Dettaglio', element: LavorazioneDetail },
 ]
 
 export default routes

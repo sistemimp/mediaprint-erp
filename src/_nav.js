@@ -9,6 +9,7 @@ import {
   cilTags,
   cilLibraryAdd,
   cilCreditCard,
+  cilViewColumn,
 } from '@coreui/icons'
 import { CNavGroup, CNavItem } from '@coreui/react'
 
@@ -180,6 +181,23 @@ const _nav = [
         component: CNavItem,
         name: 'Dettaglio',
         to: '/pagamenti/dettaglio',
+      },
+    ],
+  },
+  {
+    component: CNavGroup,
+    name: 'Lavorazioni',
+    icon: <CIcon icon={cilViewColumn} customClassName="nav-icon" />,
+    items: [
+      {
+        component: CNavItem,
+        name: 'Planner e lista',
+        to: '/lavorazioni/lista',
+      },
+      {
+        component: CNavItem,
+        name: 'Dettaglio',
+        to: '/lavorazioni/dettaglio',
       },
     ],
   },
