@@ -13,6 +13,9 @@ import {
   CFormLabel,
   CFormSelect,
   CFormTextarea,
+  CNav,
+  CNavItem,
+  CNavLink,
   CModal,
   CModalBody,
   CModalFooter,
@@ -26,6 +29,8 @@ import {
   CTableHead,
   CTableHeaderCell,
   CTableRow,
+  CTabContent,
+  CTabPane,
 } from '@coreui/react'
 import { CStepper } from '@coreui/react-pro'
 import CIcon from '@coreui/icons-react'
@@ -37,15 +42,18 @@ import {
   cilSave,
   cilCloudDownload,
   cilPencil,
+  cilPrint,
 } from '@coreui/icons'
 
 import { useAuth } from '../../context/AuthContext'
 import { useBreadcrumbActions } from '../../context/BreadcrumbActionsContext'
 import {
+  buildFatturaPdfUrl,
   deleteFatturaPagamento,
   exportFatturaXml,
   fetchFatturaDetail,
   fetchFatturaPagamenti,
+  fetchFatturaStatusLog,
   fetchFattureConfig,
   saveFatturaPagamento,
   updateFatturaDetail,
@@ -65,6 +73,19 @@ const formatDate = (value) => {
   if (!value) return '-'
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleDateString('it-IT')
+}
+
+const formatDateTime = (value) => {
+  if (!value) return '-'
+  let raw = value
+  if (typeof raw === 'string' && raw.includes(' ') && !raw.includes('T')) {
+    raw = raw.replace(' ', 'T')
+  }
+  const date = new Date(raw)
+  if (Number.isNaN(date.getTime())) {
+    return String(value)
+  }
+  return date.toLocaleString('it-IT')
 }
 
 const formatCurrency = (value) => {
@@ -117,12 +138,21 @@ const computeRowAmounts = (row) => {
   }
 }
 
+const TIMELINE_BASE_STEPS = [
+  { code: 'bozza', fallbackLabel: 'Bozza' },
+  { code: 'emessa', fallbackLabel: 'Emessa' },
+  { code: 'inviata', fallbackLabel: 'Inviata' },
+]
+
+const CONCLUSIVE_STATUS_IDS = [4, 5, 6, 7]
+const FINAL_STEP_FALLBACK_LABEL = 'Stato conclusivo'
+
 const FattureDetail = () => {
   const navigate = useNavigate()
   const location = useLocation()
   const query = new URLSearchParams(location.search)
   const id = Number(query.get('id') || 0)
-  const { token, logout } = useAuth()
+  const { token, logout, user } = useAuth()
   const { setBreadcrumbActions, clearBreadcrumbActions } = useBreadcrumbActions()
 
   const [record, setRecord] = useState(null)
@@ -198,6 +228,10 @@ const FattureDetail = () => {
   const [paymentDeleteTarget, setPaymentDeleteTarget] = useState(null)
   const [paymentDeleting, setPaymentDeleting] = useState(false)
   const [paymentDeleteError, setPaymentDeleteError] = useState(null)
+  const [statusLog, setStatusLog] = useState([])
+  const [statusLogLoading, setStatusLogLoading] = useState(false)
+  const [statusLogError, setStatusLogError] = useState(null)
+  const [statusTab, setStatusTab] = useState('timeline')
   const formRef = useRef(null)
   const rowCounterRef = useRef(0)
 
@@ -298,6 +332,35 @@ const FattureDetail = () => {
     load()
     return () => controller.abort()
   }, [token, id, logout, paymentsReload])
+
+  useEffect(() => {
+    if (!token || !id) return
+    const controller = new AbortController()
+    const load = async () => {
+      setStatusLogLoading(true)
+      setStatusLogError(null)
+      try {
+        const { items } = await fetchFatturaStatusLog({
+          token,
+          id,
+          signal: controller.signal,
+        })
+        setStatusLog(Array.isArray(items) ? items : [])
+      } catch (err) {
+        if (err?.name === 'AbortError') return
+        if (err?.status === 401 && logout) {
+          logout()
+          return
+        }
+        setStatusLogError(err)
+        setStatusLog([])
+      } finally {
+        setStatusLogLoading(false)
+      }
+    }
+    load()
+    return () => controller.abort()
+  }, [token, id, logout, reloadVersion])
 
   useEffect(() => {
     if (!paymentBanner) return
@@ -568,6 +631,104 @@ const FattureDetail = () => {
     () => (Array.isArray(config?.stati) ? config.stati : []),
     [config],
   )
+  const statiById = useMemo(() => {
+    const map = {}
+    statiOptions.forEach((option) => {
+      const numericId = Number(option?.id_stato)
+      if (Number.isFinite(numericId)) {
+        map[numericId] = option
+      }
+    })
+    return map
+  }, [statiOptions])
+  const statiByCode = useMemo(() => {
+    const map = {}
+    statiOptions.forEach((option) => {
+      if (option?.code) {
+        map[option.code] = option
+      }
+    })
+    return map
+  }, [statiOptions])
+  const currentStatusId = useMemo(() => {
+    if (!record?.id_stato_fatt) return null
+    const numeric = Number(record.id_stato_fatt)
+    return Number.isFinite(numeric) ? numeric : null
+  }, [record])
+  const currentStatusCode = useMemo(() => {
+    if (currentStatusId == null) return null
+    return statiById[currentStatusId]?.code ?? null
+  }, [currentStatusId, statiById])
+  const currentStatusLabel = useMemo(() => {
+    if (record?.stato_label) {
+      return record.stato_label
+    }
+    if (currentStatusId != null && statiById[currentStatusId]?.label) {
+      return statiById[currentStatusId].label
+    }
+    if (currentStatusId != null && CONCLUSIVE_STATUS_IDS.includes(currentStatusId)) {
+      return FINAL_STEP_FALLBACK_LABEL
+    }
+    return null
+  }, [record, currentStatusId, statiById])
+  const finalStepLabel = useMemo(() => {
+    if (currentStatusId != null && CONCLUSIVE_STATUS_IDS.includes(currentStatusId)) {
+      return currentStatusLabel || FINAL_STEP_FALLBACK_LABEL
+    }
+    const fallback = CONCLUSIVE_STATUS_IDS.map((id) => statiById[id]?.label).find(Boolean)
+    return fallback || FINAL_STEP_FALLBACK_LABEL
+  }, [currentStatusId, currentStatusLabel, statiById])
+  const timelineSteps = useMemo(() => {
+    const getIdByCode = (code) => {
+      const match = statiByCode[code]
+      if (match?.id_stato == null) return null
+      const numericId = Number(match.id_stato)
+      return Number.isFinite(numericId) ? numericId : null
+    }
+    const baseSteps = TIMELINE_BASE_STEPS.map((step) => {
+      const matchId = getIdByCode(step.code)
+      return {
+        key: step.code,
+        label: statiByCode[step.code]?.label || step.fallbackLabel,
+        matchIds: matchId ? [matchId] : [],
+      }
+    })
+    baseSteps.push({
+      key: 'conclusione',
+      label: finalStepLabel,
+      matchIds: CONCLUSIVE_STATUS_IDS,
+    })
+    return baseSteps
+  }, [statiByCode, finalStepLabel])
+  const activeStatusStep = useMemo(() => {
+    if (!timelineSteps.length) return 0
+    if (currentStatusId == null) return 1
+    const idx = timelineSteps.findIndex(
+      (step) => Array.isArray(step.matchIds) && step.matchIds.includes(currentStatusId),
+    )
+    return idx >= 0 ? idx + 1 : 1
+  }, [timelineSteps, currentStatusId])
+
+  const finalStatusVariant = useMemo(() => {
+    if (currentStatusId == null || !CONCLUSIVE_STATUS_IDS.includes(currentStatusId)) {
+      return null
+    }
+    if (currentStatusCode === 'scaduta') {
+      return 'scaduta'
+    }
+    if (currentStatusCode === 'pagataparziale') {
+      return 'partial'
+    }
+    return 'paid'
+  }, [currentStatusId, currentStatusCode])
+
+  const timelineStepperClass = useMemo(
+    () =>
+      ['invoice-timeline-stepper', finalStatusVariant ? `invoice-timeline-stepper--${finalStatusVariant}` : null]
+        .filter(Boolean)
+        .join(' '),
+    [finalStatusVariant],
+  )
 
   const sezionaliOptions = useMemo(
     () => (Array.isArray(config?.sezionali) ? config.sezionali : []),
@@ -709,6 +870,9 @@ const FattureDetail = () => {
     }
     return raw
   }, [record])
+  const paymentSchedule = Array.isArray(record?.condizioni_pagamento_rate)
+    ? record.condizioni_pagamento_rate
+    : []
 
   const handleFormChange = (field) => (event) => {
     const value = event?.target?.value ?? ''
@@ -1068,6 +1232,9 @@ const FattureDetail = () => {
     event.preventDefault()
     if (!record || !token) return
 
+    const previousStatusId = record?.id_stato_fatt ? Number(record.id_stato_fatt) : null
+    const desiredStatusId = formValues.id_stato_fatt ? Number(formValues.id_stato_fatt) : null
+
     let linesPayload = []
     try {
       linesPayload = normalizeRowsForSubmit(rows)
@@ -1104,6 +1271,34 @@ const FattureDetail = () => {
       })
       if (updated) {
         setRecord(updated)
+        const updatedStatusId = updated.id_stato_fatt ? Number(updated.id_stato_fatt) : null
+        if (
+          desiredStatusId !== null &&
+          updatedStatusId !== null &&
+          updatedStatusId !== previousStatusId
+        ) {
+          const now = new Date().toISOString()
+          const fromLabel =
+            previousStatusId !== null
+              ? statiById[previousStatusId]?.label || record?.stato_label || `#${previousStatusId}`
+              : 'N.D.'
+          const toLabel =
+            statiById[updatedStatusId]?.label ||
+            updated?.stato_label ||
+            `#${updatedStatusId}`
+          const operatorName = user?.username || user?.name || user?.email || 'Operatore'
+          setStatusLog((prev) => [
+            {
+              at: now,
+              from_status_id: previousStatusId,
+              from_status: fromLabel,
+              to_status_id: updatedStatusId,
+              to_status: toLabel,
+              user_name: operatorName,
+            },
+            ...prev,
+          ])
+        }
       }
       setSaveSuccess('Fattura aggiornata correttamente.')
     } catch (err) {
@@ -1159,6 +1354,17 @@ const FattureDetail = () => {
     }
   }, [logout, record, token])
 
+  const handlePrintPdf = useCallback(() => {
+    if (!record || typeof window === 'undefined') {
+      return
+    }
+    const url = buildFatturaPdfUrl(record.id_fattura)
+    if (!url) {
+      return
+    }
+    window.open(url, '_blank', 'noopener')
+  }, [record])
+
   useEffect(() => {
     if (!id) {
       clearBreadcrumbActions()
@@ -1207,6 +1413,10 @@ const FattureDetail = () => {
               </small>
             </div>
             <div className="d-flex gap-2">
+              <CButton color="secondary" variant="ghost" onClick={handlePrintPdf} disabled={!record}>
+                <CIcon icon={cilPrint} className="me-2" />
+                Stampa PDF
+              </CButton>
               <CButton color="primary" onClick={handleExportXml} disabled={!record || exportingXml}>
                 {exportingXml ? (
                   <>
@@ -1299,6 +1509,106 @@ const FattureDetail = () => {
             </CRow>
 
             <section className="mb-4">
+              <h6 className="mb-3 text-body-secondary">Timeline stato documento</h6>
+              <div className="border rounded p-3 bg-body-tertiary">
+                <CNav variant="tabs" role="tablist" className="mb-3">
+                  <CNavItem>
+                    <CNavLink
+                      role="tab"
+                      aria-selected={statusTab === 'timeline'}
+                      active={statusTab === 'timeline'}
+                      onClick={() => setStatusTab('timeline')}
+                    >
+                      Timeline
+                    </CNavLink>
+                  </CNavItem>
+                  <CNavItem>
+                    <CNavLink
+                      role="tab"
+                      aria-selected={statusTab === 'log'}
+                      active={statusTab === 'log'}
+                      onClick={() => setStatusTab('log')}
+                    >
+                      Log
+                    </CNavLink>
+                  </CNavItem>
+                </CNav>
+                <CTabContent>
+                  <CTabPane visible={statusTab === 'timeline'} role="tabpanel">
+                    {timelineSteps.length > 0 ? (
+                      <>
+                        <div className="d-flex align-items-center gap-2 flex-wrap mb-3">
+                          <small className="text-body-secondary">Stato attuale:</small>
+                          {currentStatusLabel ? (
+                            <CBadge color="secondary">{currentStatusLabel}</CBadge>
+                          ) : (
+                            <span className="text-body-secondary">N.D.</span>
+                          )}
+                        </div>
+                        <div className={timelineStepperClass}>
+                          <CStepper
+                            className="w-100"
+                            activeStepNumber={activeStatusStep || 1}
+                            steps={timelineSteps.map((step) => step.label)}
+                            linear={false}
+                            validation={false}
+                          />
+                        </div>
+                      </>
+                    ) : (
+                      <small className="text-body-secondary">Nessuno stato configurato.</small>
+                    )}
+                  </CTabPane>
+                  <CTabPane visible={statusTab === 'log'} role="tabpanel">
+                    <div className="d-flex align-items-center gap-2 mb-2">
+                      <h6 className="mb-0 text-body-secondary">Log cambi stato</h6>
+                      {statusLogLoading && <CSpinner size="sm" />}
+                    </div>
+                    {statusLogError && (
+                      <CAlert color="danger" className="mb-0">
+                        Impossibile caricare il log degli stati.
+                      </CAlert>
+                    )}
+                    {!statusLogError && statusLog.length === 0 && !statusLogLoading && (
+                      <small className="text-body-secondary">Nessun evento registrato.</small>
+                    )}
+                    {!statusLogError && statusLog.length > 0 && (
+                      <CTable small responsive className="mb-0">
+                        <CTableHead color="light">
+                          <CTableRow>
+                            <CTableHeaderCell>Data</CTableHeaderCell>
+                            <CTableHeaderCell>Transizione</CTableHeaderCell>
+                            <CTableHeaderCell>Operatore</CTableHeaderCell>
+                          </CTableRow>
+                        </CTableHead>
+                        <CTableBody>
+                          {statusLog.map((entry, index) => (
+                            <CTableRow key={`${entry.at || entry.timestamp || entry.created_at || index}-${index}`}>
+                              <CTableDataCell className="text-nowrap">
+                                {formatDateTime(entry.at || entry.timestamp || entry.created_at || entry.ts)}
+                              </CTableDataCell>
+                              <CTableDataCell>
+                                {entry.from_status
+                                  ? `${entry.from_status} → ${entry.to_status || ''}`
+                                  : entry.to_status || '-'}
+                              </CTableDataCell>
+                              <CTableDataCell>
+                                <div>{entry.user_name || entry.username || entry.user || '-'}</div>
+                                {entry.app && (
+                                  <small className="text-body-secondary">{entry.app}</small>
+                                )}
+                              </CTableDataCell>
+                            </CTableRow>
+                          ))}
+                        </CTableBody>
+                      </CTable>
+                    )}
+                  </CTabPane>
+                </CTabContent>
+              </div>
+            </section>
+
+            <section className="mb-4">
               <h6 className="mb-3 text-body-secondary">Dati fiscali cliente</h6>
               <div className="border rounded p-3 bg-body-tertiary">
                 <CRow className="g-3">
@@ -1323,12 +1633,8 @@ const FattureDetail = () => {
                     <div className="fw-semibold">{record.cliente_modalita_pagamento || '-'}</div>
                   </CCol>
                   <CCol md={4}>
-                    <div className="text-body-secondary small">Giorni pagamento</div>
-                    <div className="fw-semibold">
-                      {record.cliente_giorni_pagamento != null
-                        ? record.cliente_giorni_pagamento
-                        : '-'}
-                    </div>
+                    <div className="text-body-secondary small">Condizioni di pagamento</div>
+                    <div className="fw-semibold">{record.cliente_condizioni_pagamento || '-'}</div>
                   </CCol>
                   <CCol md={4}>
                     <div className="text-body-secondary small">Condizione pagamento (ID)</div>
@@ -1351,6 +1657,33 @@ const FattureDetail = () => {
                         </pre>
                       )}
                     </CCol>
+                  )}
+                  {paymentSchedule.length > 0 && (
+                    <div className="mt-3">
+                      <div className="text-body-secondary small mb-2">Rate e scadenze</div>
+                      <CTable bordered responsive size="sm" className="mb-0">
+                        <CTableHead>
+                          <CTableRow>
+                            <CTableHeaderCell scope="col">Rata</CTableHeaderCell>
+                            <CTableHeaderCell scope="col">Data scadenza</CTableHeaderCell>
+                            <CTableHeaderCell scope="col" className="text-end">
+                              Importo
+                            </CTableHeaderCell>
+                          </CTableRow>
+                        </CTableHead>
+                        <CTableBody>
+                          {paymentSchedule.map((item) => (
+                            <CTableRow key={`${item.index}-${item.due_date}`}>
+                              <CTableDataCell>{item.label || `Rata ${item.index}`}</CTableDataCell>
+                              <CTableDataCell>{formatDate(item.due_date)}</CTableDataCell>
+                              <CTableDataCell className="text-end">
+                                {formatCurrency(item.amount)}
+                              </CTableDataCell>
+                            </CTableRow>
+                          ))}
+                        </CTableBody>
+                      </CTable>
+                    </div>
                   )}
                 </CRow>
               </div>
@@ -1442,16 +1775,6 @@ const FattureDetail = () => {
             <section className="mb-4">
               <div className="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
                 <h6 className="mb-0 text-body-secondary">Pagamenti registrati</h6>
-                <CButton
-                  color="primary"
-                  size="sm"
-                  type="button"
-                  onClick={() => openPaymentModal()}
-                  disabled={formDisabled}
-                >
-                  <CIcon icon={cilPlus} className="me-2" />
-                  Registra pagamento
-                </CButton>
               </div>
               {paymentBanner && (
                 <CAlert color="success" className="mb-3">
@@ -1491,6 +1814,7 @@ const FattureDetail = () => {
                 <CTable responsive hover>
                   <CTableHead color="light">
                     <CTableRow className="align-middle">
+                      <CTableHeaderCell className="text-nowrap">ID pagamento</CTableHeaderCell>
                       <CTableHeaderCell>Data</CTableHeaderCell>
                       <CTableHeaderCell>Metodo</CTableHeaderCell>
                       <CTableHeaderCell>Modalità SdI</CTableHeaderCell>
@@ -1502,6 +1826,20 @@ const FattureDetail = () => {
                   <CTableBody>
                     {payments.map((payment) => (
                       <CTableRow key={payment.id_pagamento}>
+                        <CTableDataCell className="text-nowrap">
+                          {payment.id_pagamento ? (
+                            <CButton
+                              color="link"
+                              size="sm"
+                              className="p-0"
+                              onClick={() => navigate(`/pagamenti/dettaglio?id=${payment.id_pagamento}`)}
+                            >
+                              #{payment.id_pagamento}
+                            </CButton>
+                          ) : (
+                            <span className="text-body-secondary">-</span>
+                          )}
+                        </CTableDataCell>
                         <CTableDataCell>{formatDate(payment.data_pagamento)}</CTableDataCell>
                         <CTableDataCell>
                           {payment.metodo_label ? (

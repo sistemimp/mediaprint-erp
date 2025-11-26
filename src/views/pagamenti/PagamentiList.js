@@ -8,6 +8,9 @@ import {
   CCardBody,
   CCardHeader,
   CCol,
+  CPagination,
+  CPaginationItem,
+  CFormCheck,
   CFormInput,
   CFormLabel,
   CNav,
@@ -44,6 +47,7 @@ const PagamentiList = () => {
   const [ledgerLoading, setLedgerLoading] = useState(false)
   const [ledgerError, setLedgerError] = useState(null)
   const [ledgerSearch, setLedgerSearch] = useState('')
+  const [ledgerPage, setLedgerPage] = useState(0)
 
   const [payments, setPayments] = useState([])
   const [paymentsLoading, setPaymentsLoading] = useState(false)
@@ -53,6 +57,7 @@ const PagamentiList = () => {
     date_from: '',
     date_to: '',
   })
+  const [pendingOnlyOpen, setPendingOnlyOpen] = useState(false)
 
   useEffect(() => {
     if (!token) return
@@ -92,7 +97,7 @@ const PagamentiList = () => {
       try {
         const { items } = await fetchPagamentiList({
           token,
-          filters,
+          filters: { ...filters, pending_only_open: pendingOnlyOpen },
           signal: controller.signal,
         })
         setPayments(items)
@@ -110,7 +115,7 @@ const PagamentiList = () => {
     }
     load()
     return () => controller.abort()
-  }, [token, filters, logout])
+  }, [token, filters, pendingOnlyOpen, logout])
 
   const filteredLedger = useMemo(() => {
     if (!ledger || ledger.length === 0) return []
@@ -122,6 +127,13 @@ const PagamentiList = () => {
       ),
     )
   }, [ledger, ledgerSearch])
+  const paginatedLedger = useMemo(() => {
+    const start = ledgerPage * 10
+    return filteredLedger.slice(start, start + 10)
+  }, [filteredLedger, ledgerPage])
+  useEffect(() => {
+    setLedgerPage(0)
+  }, [ledgerSearch])
 
   const handleFiltersChange = (field) => (event) => {
     const value = event?.target?.value ?? ''
@@ -164,7 +176,33 @@ const PagamentiList = () => {
               Pagamenti registrati
             </CNavLink>
           </CNavItem>
+          <CNavItem>
+            <CNavLink active={activeTab === 'imported'} onClick={() => setActiveTab('imported')}>
+              Pagamenti importati
+            </CNavLink>
+          </CNavItem>
         </CNav>
+
+        {activeTab !== 'ledger' && (
+          <CRow className="g-3 mb-3">
+            <CCol md={4}>
+              <CFormLabel>Ricerca</CFormLabel>
+              <CFormInput
+                placeholder="Cliente, fattura o note"
+                value={filters.q}
+                onChange={handleFiltersChange('q')}
+              />
+            </CCol>
+            <CCol xs={6} md={4} lg={3}>
+              <CFormLabel>Dal</CFormLabel>
+              <CFormInput type="date" value={filters.date_from} onChange={handleFiltersChange('date_from')} />
+            </CCol>
+            <CCol xs={6} md={4} lg={3}>
+              <CFormLabel>Al</CFormLabel>
+              <CFormInput type="date" value={filters.date_to} onChange={handleFiltersChange('date_to')} />
+            </CCol>
+          </CRow>
+        )}
 
         {activeTab === 'ledger' && (
           <>
@@ -187,175 +225,190 @@ const PagamentiList = () => {
             ) : filteredLedger.length === 0 ? (
               <CAlert color="info">Nessun cliente trovato.</CAlert>
             ) : (
-              <CTable responsive hover>
-                <CTableHead color="light">
-                  <CTableRow className="align-middle">
-                    <CTableHeaderCell>Cliente</CTableHeaderCell>
-                    <CTableHeaderCell>Partita IVA</CTableHeaderCell>
-                    <CTableHeaderCell className="text-end">Fatturato</CTableHeaderCell>
-                    <CTableHeaderCell className="text-end">Pagato</CTableHeaderCell>
-                    <CTableHeaderCell className="text-end">Residuo</CTableHeaderCell>
-                  </CTableRow>
-                </CTableHead>
-                <CTableBody>
-                  {filteredLedger.map((row) => (
-                    <CTableRow key={row.id_anagrafica}>
-                      <CTableDataCell>{row.ragione_sociale}</CTableDataCell>
-                      <CTableDataCell>{row.piva || row.codice_fiscale || '-'}</CTableDataCell>
-                      <CTableDataCell className="text-end">
-                        {formatCurrency(row.totale_fatturato)}
-                      </CTableDataCell>
-                      <CTableDataCell className="text-end text-success">
-                        {formatCurrency(row.totale_pagato)}
-                      </CTableDataCell>
-                      <CTableDataCell
-                        className={`text-end ${Number(row.saldo_residuo) > 0 ? 'text-danger' : ''}`}
-                      >
-                        {formatCurrency(row.saldo_residuo)}
-                      </CTableDataCell>
+              <>
+                <CTable responsive hover>
+                  <CTableHead color="light">
+                    <CTableRow className="align-middle">
+                      <CTableHeaderCell>Cliente</CTableHeaderCell>
+                      <CTableHeaderCell>Partita IVA</CTableHeaderCell>
+                      <CTableHeaderCell className="text-end">Fatturato</CTableHeaderCell>
+                      <CTableHeaderCell className="text-end">Pagato</CTableHeaderCell>
+                      <CTableHeaderCell className="text-end">Residuo</CTableHeaderCell>
                     </CTableRow>
-                  ))}
-                </CTableBody>
-              </CTable>
+                  </CTableHead>
+                  <CTableBody>
+                    {paginatedLedger.map((row) => (
+                      <CTableRow key={row.id_anagrafica}>
+                        <CTableDataCell>{row.ragione_sociale}</CTableDataCell>
+                        <CTableDataCell>{row.piva || row.codice_fiscale || '-'}</CTableDataCell>
+                        <CTableDataCell className="text-end">
+                          {formatCurrency(row.totale_fatturato)}
+                        </CTableDataCell>
+                        <CTableDataCell className="text-end text-success">
+                          {formatCurrency(row.totale_pagato)}
+                        </CTableDataCell>
+                        <CTableDataCell
+                          className={`text-end ${Number(row.saldo_residuo) > 0 ? 'text-danger' : ''}`}
+                        >
+                          {formatCurrency(row.saldo_residuo)}
+                        </CTableDataCell>
+                      </CTableRow>
+                    ))}
+                  </CTableBody>
+                </CTable>
+                {filteredLedger.length > 10 && (
+                  <div className="d-flex justify-content-center mt-3">
+                    <CPagination size="sm" className="mb-0">
+                      <CPaginationItem
+                        disabled={ledgerPage === 0}
+                        onClick={() => setLedgerPage((prev) => Math.max(prev - 1, 0))}
+                      >
+                        &laquo;
+                      </CPaginationItem>
+                      {Array.from({ length: Math.ceil(filteredLedger.length / 10) }).map((_, index) => (
+                        <CPaginationItem
+                          key={index}
+                          active={index === ledgerPage}
+                          onClick={() => setLedgerPage(index)}
+                        >
+                          {index + 1}
+                        </CPaginationItem>
+                      ))}
+                      <CPaginationItem
+                        disabled={(ledgerPage + 1) * 10 >= filteredLedger.length}
+                        onClick={() =>
+                          setLedgerPage((prev) =>
+                            (prev + 1) * 10 >= filteredLedger.length ? prev : prev + 1,
+                          )
+                        }
+                      >
+                        &raquo;
+                      </CPaginationItem>
+                    </CPagination>
+                  </div>
+                )}
+              </>
             )}
           </>
         )}
 
         {activeTab === 'payments' && (
           <>
-            <CRow className="g-3 mb-3">
-              <CCol md={4}>
-                <CFormLabel>Ricerca</CFormLabel>
-                <CFormInput
-                  placeholder="Cliente, fattura o note"
-                  value={filters.q}
-                  onChange={handleFiltersChange('q')}
-                />
-              </CCol>
-              <CCol xs={6} md={4} lg={3}>
-                <CFormLabel>Dal</CFormLabel>
-                <CFormInput type="date" value={filters.date_from} onChange={handleFiltersChange('date_from')} />
-              </CCol>
-              <CCol xs={6} md={4} lg={3}>
-                <CFormLabel>Al</CFormLabel>
-                <CFormInput type="date" value={filters.date_to} onChange={handleFiltersChange('date_to')} />
-              </CCol>
-            </CRow>
             {paymentsLoading ? (
               <div className="d-flex justify-content-center py-4">
                 <CSpinner color="primary" />
               </div>
             ) : paymentsError ? (
               <CAlert color="danger">{paymentsError.message || 'Errore nel caricamento dei pagamenti.'}</CAlert>
-            ) : !hasPendingPayments && !hasAssignedPayments ? (
+            ) : !hasAssignedPayments ? (
               <CAlert color="info">Nessun pagamento registrato.</CAlert>
             ) : (
-              <>
-                {hasAssignedPayments && (
-                  <CTable responsive hover>
-                    <CTableHead color="light">
-                      <CTableRow className="align-middle">
-                        <CTableHeaderCell>Data</CTableHeaderCell>
-                        <CTableHeaderCell>Cliente</CTableHeaderCell>
-                        <CTableHeaderCell>Fattura</CTableHeaderCell>
-                        <CTableHeaderCell>Riferimento</CTableHeaderCell>
-                        <CTableHeaderCell className="text-end">Importo</CTableHeaderCell>
-                        <CTableHeaderCell>Modalità</CTableHeaderCell>
-                        <CTableHeaderCell>Note</CTableHeaderCell>
-                        <CTableHeaderCell className="text-center text-nowrap">Azioni</CTableHeaderCell>
+              <CTable responsive hover>
+                <CTableHead color="light">
+                  <CTableRow className="align-middle">
+                    <CTableHeaderCell>Data</CTableHeaderCell>
+                    <CTableHeaderCell>Cliente</CTableHeaderCell>
+                    <CTableHeaderCell>Fattura</CTableHeaderCell>
+                    <CTableHeaderCell>Riferimento</CTableHeaderCell>
+                    <CTableHeaderCell className="text-end">Importo</CTableHeaderCell>
+                    <CTableHeaderCell>Modalita</CTableHeaderCell>
+                    <CTableHeaderCell>Note</CTableHeaderCell>
+                    <CTableHeaderCell className="text-center text-nowrap">Azioni</CTableHeaderCell>
+                  </CTableRow>
+                </CTableHead>
+                <CTableBody>
+                  {assignedPayments.map((row) => {
+                    const isUnassigned = !row.id_fattura
+                    const importoRegistrato = Number(row.importo) || 0
+                    const importoDocumento = row.importo_documento != null ? Number(row.importo_documento) : null
+                    const residuoPagamento = row.residuo_pagamento != null ? Number(row.residuo_pagamento) : null
+                    const showResiduo = residuoPagamento != null && Math.abs(residuoPagamento) > 0.009
+                    const displayAmount =
+                      isUnassigned && importoDocumento != null ? importoDocumento : importoRegistrato
+
+                    return (
+                      <CTableRow key={row.id_pagamento}>
+                        <CTableDataCell>{row.data_pagamento || '-'}</CTableDataCell>
+                        <CTableDataCell>{row.cliente || '-'}</CTableDataCell>
+                        <CTableDataCell>
+                          {row.fattura_display || '-'}
+                          {isUnassigned && (
+                            <CBadge color="warning" textColor="dark" className="ms-2">
+                              Da assegnare
+                            </CBadge>
+                          )}
+                        </CTableDataCell>
+                        <CTableDataCell>
+                          <div>{row.reference || '-'}</div>
+                          {row.import_uid && (
+                            <small className="text-body-secondary">UID: {row.import_uid}</small>
+                          )}
+                        </CTableDataCell>
+                        <CTableDataCell className="text-end">
+                          <div>{formatCurrency(displayAmount)}</div>
+                          {showResiduo && (
+                            <small className="text-warning d-block">
+                              Residuo: {formatCurrency(residuoPagamento)}
+                            </small>
+                          )}
+                        </CTableDataCell>
+                        <CTableDataCell>
+                          {row.modalita_code ? (
+                            <>
+                              <div className="fw-semibold">{row.modalita_code}</div>
+                              {row.modalita_label && (
+                                <small className="text-body-secondary d-block">{row.modalita_label}</small>
+                              )}
+                            </>
+                          ) : (
+                            <span className="text-body-secondary">-</span>
+                          )}
+                        </CTableDataCell>
+                        <CTableDataCell className="text-break">
+                          {row.note ? row.note : <span className="text-body-secondary">-</span>}
+                        </CTableDataCell>
+                        <CTableDataCell className="text-center">
+                          <CButton
+                            color="link"
+                            size="sm"
+                            className="p-0"
+                            onClick={() => navigate(`/pagamenti/dettaglio?id=${row.id_pagamento}`)}
+                          >
+                            <CIcon icon={cilArrowRight} />
+                          </CButton>
+                        </CTableDataCell>
                       </CTableRow>
-                    </CTableHead>
-                    <CTableBody>
-                      {assignedPayments.map((row) => {
-                        const isUnassigned = !row.id_fattura
-                        const importoRegistrato = Number(row.importo) || 0
-                        const importoDocumento = row.importo_documento != null ? Number(row.importo_documento) : null
-                        const residuoPagamento =
-                          row.residuo_pagamento != null ? Number(row.residuo_pagamento) : null
-                        const showImportato =
-                          !isUnassigned &&
-                          importoDocumento != null &&
-                          Math.abs(importoDocumento - importoRegistrato) > 0.009
-                        const showResiduo = residuoPagamento != null && Math.abs(residuoPagamento) > 0.009
-                        const displayAmount =
-                          isUnassigned && importoDocumento != null ? importoDocumento : importoRegistrato
-
-                        return (
-                          <CTableRow key={row.id_pagamento}>
-                            <CTableDataCell>{row.data_pagamento || '-'}</CTableDataCell>
-                            <CTableDataCell>{row.cliente || '-'}</CTableDataCell>
-                            <CTableDataCell>
-                              {row.fattura_display || '-'}
-                              {isUnassigned && (
-                                <CBadge color="warning" textColor="dark" className="ms-2">
-                                  Da assegnare
-                                </CBadge>
-                              )}
-                            </CTableDataCell>
-                            <CTableDataCell>
-                              <div>{row.reference || '-'}</div>
-                              {row.import_uid && (
-                                <small className="text-body-secondary">UID: {row.import_uid}</small>
-                              )}
-                            </CTableDataCell>
-                            <CTableDataCell className="text-end">
-                              <div>{formatCurrency(displayAmount)}</div>
-                              {showImportato && importoDocumento != null && (
-                                <small className="text-body-secondary d-block">
-                                  Importato: {formatCurrency(importoDocumento)}
-                                </small>
-                              )}
-                              {showResiduo && (
-                                <small className="text-warning d-block">
-                                  Residuo: {formatCurrency(residuoPagamento)}
-                                </small>
-                              )}
-                            </CTableDataCell>
-                            <CTableDataCell>
-                              {row.modalita_code ? (
-                                <>
-                                  <div className="fw-semibold">{row.modalita_code}</div>
-                                  {row.modalita_label && (
-                                    <small className="text-body-secondary d-block">{row.modalita_label}</small>
-                                  )}
-                                </>
-                              ) : (
-                                <span className="text-body-secondary">-</span>
-                              )}
-                            </CTableDataCell>
-                            <CTableDataCell className="text-break">
-                              {row.note ? row.note : <span className="text-body-secondary">-</span>}
-                            </CTableDataCell>
-                            <CTableDataCell className="text-center">
-                              <CButton
-                                color="link"
-                                size="sm"
-                                className="p-0"
-                                onClick={() => navigate(`/pagamenti/dettaglio?id=${row.id_pagamento}`)}
-                              >
-                                <CIcon icon={cilArrowRight} />
-                              </CButton>
-                            </CTableDataCell>
-                          </CTableRow>
-                        )
-                      })}
-                    </CTableBody>
-                  </CTable>
-                )}
-                {!hasAssignedPayments && (
-                  <CAlert color="info" className="mb-0">
-                    Nessun pagamento assegnato ancora registrato.
-                  </CAlert>
-                )}
-              </>
+                    )
+                  })}
+                </CTableBody>
+              </CTable>
             )}
+          </>
+        )}
 
-            {hasPendingPayments && (
-              <div className="mt-5">
-                <h6 className="text-body-secondary mb-2">Pagamenti importati (tb_pagamenti)</h6>
+        {activeTab === 'imported' && (
+          <>
+            <div className="d-flex justify-content-end mb-3">
+              <CFormCheck
+                id="pendingOnlyOpenToggle"
+                label="Mostra solo pagamenti con residuo da assegnare"
+                checked={pendingOnlyOpen}
+                onChange={(event) => setPendingOnlyOpen(event.target.checked)}
+              />
+            </div>
+            {paymentsLoading ? (
+              <div className="d-flex justify-content-center py-4">
+                <CSpinner color="primary" />
+              </div>
+            ) : paymentsError ? (
+              <CAlert color="danger">{paymentsError.message || 'Errore nel caricamento dei pagamenti.'}</CAlert>
+            ) : !hasPendingPayments ? (
+              <CAlert color="info">Nessun pagamento importato in sospeso.</CAlert>
+            ) : (
+              <>
                 <CAlert color="info" className="mb-3">
                   Questi pagamenti sono stati importati ma non ancora assegnati a una fattura. Utilizza il dettaglio per
-                  completare l&apos;associazione o eliminarli se non più necessari.
+                  completare l'associazione o eliminarli se non piu necessari.
                 </CAlert>
                 <CTable responsive hover>
                   <CTableHead color="light">
@@ -366,14 +419,19 @@ const PagamentiList = () => {
                       <CTableHeaderCell className="text-end">Importo totale</CTableHeaderCell>
                       <CTableHeaderCell className="text-end">Allocato</CTableHeaderCell>
                       <CTableHeaderCell className="text-end">Residuo</CTableHeaderCell>
-                      <CTableHeaderCell>Modalità</CTableHeaderCell>
+                      <CTableHeaderCell>Modalita</CTableHeaderCell>
                       <CTableHeaderCell className="text-center">Azioni</CTableHeaderCell>
                     </CTableRow>
                   </CTableHead>
                   <CTableBody>
                     {stagingPayments.map((row) => {
-                      const residuo = row.residuo_pagamento != null ? Number(row.residuo_pagamento) : null
-                      const allocato = row.importo_allocato != null ? Number(row.importo_allocato) : null
+                      const totaleImporto = Number(row.importo_totale)
+                      const allocatoRaw = Number(row.importo_allocato)
+                      const residuoRaw = row.residuo_pagamento != null ? Number(row.residuo_pagamento) : null
+                      const allocatoValue = Number.isFinite(allocatoRaw) ? allocatoRaw : 0
+                      const residuoValue = Number.isFinite(totaleImporto)
+                        ? Math.max(0, Math.round((totaleImporto - allocatoValue) * 100) / 100)
+                        : residuoRaw
                       return (
                         <CTableRow key={`pending-${row.id_pagamento}`}>
                           <CTableDataCell>{row.data_pagamento || '-'}</CTableDataCell>
@@ -388,10 +446,10 @@ const PagamentiList = () => {
                             {formatCurrency(row.importo_totale)}
                           </CTableDataCell>
                           <CTableDataCell className="text-end">
-                            {formatCurrency(allocato || 0)}
+                            {formatCurrency(allocatoValue)}
                           </CTableDataCell>
                           <CTableDataCell className="text-end">
-                            {residuo != null ? formatCurrency(residuo) : '-'}
+                            {residuoValue != null ? formatCurrency(residuoValue) : '-'}
                           </CTableDataCell>
                           <CTableDataCell>
                             {row.modalita_code ? (
@@ -420,10 +478,11 @@ const PagamentiList = () => {
                     })}
                   </CTableBody>
                 </CTable>
-              </div>
+              </>
             )}
           </>
         )}
+
       </CCardBody>
     </CCard>
   )

@@ -176,6 +176,32 @@ export const fetchFatturaPagamenti = async ({ token, id, signal } = {}) => {
   }
 }
 
+export const fetchFatturaStatusLog = async ({ token, id, limit, offset, signal } = {}) => {
+  const params = { id }
+  if (limit !== undefined) {
+    params.limit = limit
+  }
+  if (offset !== undefined) {
+    params.offset = offset
+  }
+
+  const response = await apiFetch('/fattureStatusLog.php', {
+    token,
+    params,
+    signal,
+  })
+
+  if (Array.isArray(response?.items)) {
+    return { items: response.items, meta: response?.meta ?? null }
+  }
+
+  if (Array.isArray(response)) {
+    return { items: response, meta: null }
+  }
+
+  return { items: [] }
+}
+
 export const saveFatturaPagamento = async ({
   token,
   id_fattura,
@@ -293,4 +319,17 @@ export const exportFatturaXml = async ({ token, id, signal } = {}) => {
   }
 
   return { blob, filename }
+}
+
+export const buildFatturaPdfUrl = (id) => {
+  const numericId = Number(id)
+  if (!Number.isFinite(numericId) || numericId <= 0) {
+    return null
+  }
+  const params = new URLSearchParams({
+    id_fattura: numericId,
+    j_username: 'gestionaleMp',
+    j_password: 'gestionaleMp',
+  })
+  return `https://jaspersoft.mediaprint.it/jasperserver/rest_v2/reports/Mediaprint/GestionaleMP/Fatture.pdf?${params.toString()}`
 }

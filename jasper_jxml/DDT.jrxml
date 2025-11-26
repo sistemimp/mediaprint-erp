@@ -1,0 +1,653 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Created with Jaspersoft Studio version 6.21.3.final utlizzo versione della libreria JasperReports6.21.3-4a3078d20785ebe464f18037d738d12fc98c13cf  -->
+<jasperReport xmlns="http://jasperreports.sourceforge.net/jasperreports" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://jasperreports.sourceforge.net/jasperreports http://jasperreports.sourceforge.net/xsd/jasperreport.xsd" name="DDT" pageWidth="595" pageHeight="842" columnWidth="535" leftMargin="20" rightMargin="20" topMargin="20" bottomMargin="20" uuid="4eedbb89-b4f6-4469-9ab6-f642a1688cf7">
+	<property name="ireport.jasperserver.url" value="https://jaspersoft.mediaprint.it/jasperserver/"/>
+	<property name="ireport.jasperserver.user" value="jasperadmin"/>
+	<property name="ireport.jasperserver.reportUnit" value="/Mediaprint/GestionaleMP/DDT"/>
+	<property name="com.jaspersoft.studio.data.sql.tables" value=""/>
+	<property name="ireport.jasperserver.report.resource" value="/Mediaprint/GestionaleMP/DDT_files/main_jrxml"/>
+	<property name="com.jaspersoft.studio.data.defaultdataadapter" value="DBGestionaleMediaprint"/>
+	<style name="Title" forecolor="#FFFFFF" fontName="Times New Roman" fontSize="50" isBold="false" pdfFontName="Times-Bold"/>
+	<style name="SubTitle" forecolor="#CCCCCC" fontName="Times New Roman" fontSize="18" isBold="false" pdfFontName="Times-Roman"/>
+	<style name="Column header" forecolor="#666666" fontName="Times New Roman" fontSize="14" isBold="true"/>
+	<style name="Detail" mode="Transparent" fontName="Times New Roman"/>
+	<style name="Row" mode="Transparent" fontName="Times New Roman" pdfFontName="Times-Roman">
+		<conditionalStyle>
+			<conditionExpression><![CDATA[$V{REPORT_COUNT}%2 == 0]]></conditionExpression>
+			<style mode="Opaque" backcolor="#EEEFF0"/>
+		</conditionalStyle>
+	</style>
+	<style name="Table">
+		<box>
+			<pen lineWidth="1.0" lineColor="#000000"/>
+			<topPen lineWidth="1.0" lineColor="#000000"/>
+			<leftPen lineWidth="1.0" lineColor="#000000"/>
+			<bottomPen lineWidth="1.0" lineColor="#000000"/>
+			<rightPen lineWidth="1.0" lineColor="#000000"/>
+		</box>
+	</style>
+	<style name="Table_TH" mode="Opaque" backcolor="#FFFFFF">
+		<box>
+			<pen lineWidth="0.5" lineColor="#000000"/>
+			<topPen lineWidth="0.5" lineColor="#000000"/>
+			<leftPen lineWidth="0.5" lineColor="#000000"/>
+			<bottomPen lineWidth="0.5" lineColor="#000000"/>
+			<rightPen lineWidth="0.5" lineColor="#000000"/>
+		</box>
+	</style>
+	<style name="Table_CH" mode="Opaque" backcolor="#CACED0">
+		<box>
+			<pen lineWidth="0.5" lineColor="#000000"/>
+			<topPen lineWidth="0.5" lineColor="#000000"/>
+			<leftPen lineWidth="0.5" lineColor="#000000"/>
+			<bottomPen lineWidth="0.5" lineColor="#000000"/>
+			<rightPen lineWidth="0.5" lineColor="#000000"/>
+		</box>
+	</style>
+	<style name="Table_TD" mode="Opaque" backcolor="#FFFFFF">
+		<box>
+			<pen lineWidth="0.5" lineColor="#000000"/>
+			<topPen lineWidth="0.5" lineColor="#000000"/>
+			<leftPen lineWidth="0.5" lineColor="#000000"/>
+			<bottomPen lineWidth="0.5" lineColor="#000000"/>
+			<rightPen lineWidth="0.5" lineColor="#000000"/>
+		</box>
+		<conditionalStyle>
+			<conditionExpression><![CDATA[$V{REPORT_COUNT}%2 == 0]]></conditionExpression>
+			<style backcolor="#D8D8D8"/>
+		</conditionalStyle>
+	</style>
+	<subDataset name="tableDataset" uuid="f13e6d36-5148-4ecc-bbe3-3035def80980">
+		<queryString>
+			<![CDATA[]]>
+		</queryString>
+	</subDataset>
+	<parameter name="id_ddt" class="java.lang.String"/>
+	<queryString>
+		<![CDATA[SELECT
+                d.id_ddt,
+                d.id_anagrafica,
+                d.anno,
+                d.numero_documento,
+                d.data_ddt,
+                d.id_causale,
+                c.label AS causale_label,
+                d.totale_pezzi,
+                d.totale_peso_kg,
+                d.note,
+                d.created_at,
+                d.updated_at,
+                d.id_sede_destinazione,
+                d.id_destinazione_predefinita,
+                d.stato_documento,
+                a.ragione_sociale AS cliente_ragione_sociale,
+                a.piva AS cliente_piva,
+                a.codice_fiscale AS cliente_codice_fiscale,
+                dm.label AS destinazione_label,
+                dm.indirizzo AS destinazione_indirizzo,
+                dm.cap AS destinazione_cap,
+                dm.comune AS destinazione_comune,
+                dm.provincia AS destinazione_provincia,
+                dm.nazione_iso2 AS destinazione_nazione,
+                dm.note AS destinazione_note,
+                r.id_riga,
+                r.id_prodotto,
+                r.descrizione,
+                r.quantita,
+                r.peso_unitario_kg,
+                r.peso_totale_kg,
+                r.unita_misura,
+                r.note AS note_riga,
+                r.posizione,
+                s.indirizzo as indirizzo_legale,
+                s.cap as cap_legale,
+                s.comune as comune_legale,
+                s.provincia as provincia_legale,
+                d.destinazione_merce,
+                cdm.label as destinazione_nome,
+                cdm.indirizzo as destinazione_indirizzo,
+                cdm.cap as destinazione_cap,
+                cdm.comune as destinazione_comune,
+                cdm.provincia as destinazione_provincia,
+                sd.indirizzo as destinazione_legale_indirizzo,
+                sd.cap as destinazione_legale_cap,
+                sd.comune as destinazione_legale_comune,
+                sd.provincia as destinazione_legale_provincia,
+                d.aspetto,
+                d.numero_colli,
+                d.cura_trasporto,
+                d.data_trasporto,
+                d.vettore
+            FROM tb_ddt AS d
+            LEFT JOIN cfg_causali_ddt c ON c.id_causale = d.id_causale
+            LEFT JOIN tb_anagrafiche a ON a.id_anagrafica = d.id_anagrafica
+            LEFT JOIN cfg_destinazioni_merce dm ON dm.id_destinazione = d.id_destinazione_predefinita
+            LEFT JOIN tb_ddt_righe AS r ON r.id_ddt=d.id_ddt
+            LEFT JOIN tb_sedi as s ON s.id_anagrafica=d.id_anagrafica
+            LEFT JOIN tb_sedi as sd ON d.id_sede_destinazione=sd.id_sede
+            LEFT JOIN cfg_destinazioni_merce AS cdm ON d.id_destinazione_predefinita=cdm.id_destinazione
+            WHERE d.id_ddt = $P{id_ddt}]]>
+	</queryString>
+	<field name="id_ddt" class="java.lang.Long">
+		<property name="com.jaspersoft.studio.field.name" value="id_ddt"/>
+		<property name="com.jaspersoft.studio.field.label" value="id_ddt"/>
+		<property name="com.jaspersoft.studio.field.tree.path" value="tb_ddt"/>
+	</field>
+	<field name="id_anagrafica" class="java.lang.Long">
+		<property name="com.jaspersoft.studio.field.name" value="id_anagrafica"/>
+		<property name="com.jaspersoft.studio.field.label" value="id_anagrafica"/>
+		<property name="com.jaspersoft.studio.field.tree.path" value="tb_ddt"/>
+	</field>
+	<field name="anno" class="java.lang.Integer">
+		<property name="com.jaspersoft.studio.field.name" value="anno"/>
+		<property name="com.jaspersoft.studio.field.label" value="anno"/>
+		<property name="com.jaspersoft.studio.field.tree.path" value="tb_ddt"/>
+	</field>
+	<field name="numero_documento" class="java.lang.Long">
+		<property name="com.jaspersoft.studio.field.name" value="numero_documento"/>
+		<property name="com.jaspersoft.studio.field.label" value="numero_documento"/>
+		<property name="com.jaspersoft.studio.field.tree.path" value="tb_ddt"/>
+	</field>
+	<field name="data_ddt" class="java.sql.Date">
+		<property name="com.jaspersoft.studio.field.name" value="data_ddt"/>
+		<property name="com.jaspersoft.studio.field.label" value="data_ddt"/>
+		<property name="com.jaspersoft.studio.field.tree.path" value="tb_ddt"/>
+	</field>
+	<field name="id_causale" class="java.lang.Integer">
+		<property name="com.jaspersoft.studio.field.name" value="id_causale"/>
+		<property name="com.jaspersoft.studio.field.label" value="id_causale"/>
+		<property name="com.jaspersoft.studio.field.tree.path" value="tb_ddt"/>
+	</field>
+	<field name="causale_label" class="java.lang.String">
+		<property name="com.jaspersoft.studio.field.name" value="label"/>
+		<property name="com.jaspersoft.studio.field.label" value="causale_label"/>
+		<property name="com.jaspersoft.studio.field.tree.path" value="cfg_causali_ddt"/>
+	</field>
+	<field name="totale_pezzi" class="java.lang.Long">
+		<property name="com.jaspersoft.studio.field.name" value="totale_pezzi"/>
+		<property name="com.jaspersoft.studio.field.label" value="totale_pezzi"/>
+		<property name="com.jaspersoft.studio.field.tree.path" value="tb_ddt"/>
+	</field>
+	<field name="totale_peso_kg" class="java.math.BigDecimal">
+		<property name="com.jaspersoft.studio.field.name" value="totale_peso_kg"/>
+		<property name="com.jaspersoft.studio.field.label" value="totale_peso_kg"/>
+		<property name="com.jaspersoft.studio.field.tree.path" value="tb_ddt"/>
+	</field>
+	<field name="note" class="java.lang.String">
+		<property name="com.jaspersoft.studio.field.name" value="note"/>
+		<property name="com.jaspersoft.studio.field.label" value="note"/>
+		<property name="com.jaspersoft.studio.field.tree.path" value="tb_ddt"/>
+	</field>
+	<field name="created_at" class="java.sql.Timestamp">
+		<property name="com.jaspersoft.studio.field.name" value="created_at"/>
+		<property name="com.jaspersoft.studio.field.label" value="created_at"/>
+		<property name="com.jaspersoft.studio.field.tree.path" value="tb_ddt"/>
+	</field>
+	<field name="updated_at" class="java.sql.Timestamp">
+		<property name="com.jaspersoft.studio.field.name" value="updated_at"/>
+		<property name="com.jaspersoft.studio.field.label" value="updated_at"/>
+		<property name="com.jaspersoft.studio.field.tree.path" value="tb_ddt"/>
+	</field>
+	<field name="id_sede_destinazione" class="java.lang.Long">
+		<property name="com.jaspersoft.studio.field.name" value="id_sede_destinazione"/>
+		<property name="com.jaspersoft.studio.field.label" value="id_sede_destinazione"/>
+		<property name="com.jaspersoft.studio.field.tree.path" value="tb_ddt"/>
+	</field>
+	<field name="id_destinazione_predefinita" class="java.lang.Long">
+		<property name="com.jaspersoft.studio.field.name" value="id_destinazione_predefinita"/>
+		<property name="com.jaspersoft.studio.field.label" value="id_destinazione_predefinita"/>
+		<property name="com.jaspersoft.studio.field.tree.path" value="tb_ddt"/>
+	</field>
+	<field name="stato_documento" class="java.lang.Boolean">
+		<property name="com.jaspersoft.studio.field.name" value="stato_documento"/>
+		<property name="com.jaspersoft.studio.field.label" value="stato_documento"/>
+		<property name="com.jaspersoft.studio.field.tree.path" value="tb_ddt"/>
+	</field>
+	<field name="cliente_ragione_sociale" class="java.lang.String">
+		<property name="com.jaspersoft.studio.field.name" value="ragione_sociale"/>
+		<property name="com.jaspersoft.studio.field.label" value="cliente_ragione_sociale"/>
+		<property name="com.jaspersoft.studio.field.tree.path" value="tb_anagrafiche"/>
+	</field>
+	<field name="cliente_piva" class="java.lang.String">
+		<property name="com.jaspersoft.studio.field.name" value="piva"/>
+		<property name="com.jaspersoft.studio.field.label" value="cliente_piva"/>
+		<property name="com.jaspersoft.studio.field.tree.path" value="tb_anagrafiche"/>
+	</field>
+	<field name="cliente_codice_fiscale" class="java.lang.String">
+		<property name="com.jaspersoft.studio.field.name" value="codice_fiscale"/>
+		<property name="com.jaspersoft.studio.field.label" value="cliente_codice_fiscale"/>
+		<property name="com.jaspersoft.studio.field.tree.path" value="tb_anagrafiche"/>
+	</field>
+	<field name="destinazione_label" class="java.lang.String">
+		<property name="com.jaspersoft.studio.field.name" value="label"/>
+		<property name="com.jaspersoft.studio.field.label" value="destinazione_label"/>
+		<property name="com.jaspersoft.studio.field.tree.path" value="cfg_destinazioni_merce"/>
+	</field>
+	<field name="destinazione_indirizzo" class="java.lang.String">
+		<property name="com.jaspersoft.studio.field.name" value="indirizzo"/>
+		<property name="com.jaspersoft.studio.field.label" value="destinazione_indirizzo"/>
+		<property name="com.jaspersoft.studio.field.tree.path" value="cfg_destinazioni_merce"/>
+	</field>
+	<field name="destinazione_cap" class="java.lang.String">
+		<property name="com.jaspersoft.studio.field.name" value="cap"/>
+		<property name="com.jaspersoft.studio.field.label" value="destinazione_cap"/>
+		<property name="com.jaspersoft.studio.field.tree.path" value="cfg_destinazioni_merce"/>
+	</field>
+	<field name="destinazione_comune" class="java.lang.String">
+		<property name="com.jaspersoft.studio.field.name" value="comune"/>
+		<property name="com.jaspersoft.studio.field.label" value="destinazione_comune"/>
+		<property name="com.jaspersoft.studio.field.tree.path" value="cfg_destinazioni_merce"/>
+	</field>
+	<field name="destinazione_provincia" class="java.lang.String">
+		<property name="com.jaspersoft.studio.field.name" value="provincia"/>
+		<property name="com.jaspersoft.studio.field.label" value="destinazione_provincia"/>
+		<property name="com.jaspersoft.studio.field.tree.path" value="cfg_destinazioni_merce"/>
+	</field>
+	<field name="destinazione_nazione" class="java.lang.String">
+		<property name="com.jaspersoft.studio.field.name" value="nazione_iso2"/>
+		<property name="com.jaspersoft.studio.field.label" value="destinazione_nazione"/>
+		<property name="com.jaspersoft.studio.field.tree.path" value="cfg_destinazioni_merce"/>
+	</field>
+	<field name="destinazione_note" class="java.lang.String">
+		<property name="com.jaspersoft.studio.field.name" value="note"/>
+		<property name="com.jaspersoft.studio.field.label" value="destinazione_note"/>
+		<property name="com.jaspersoft.studio.field.tree.path" value="cfg_destinazioni_merce"/>
+	</field>
+	<field name="id_riga" class="java.lang.Long">
+		<property name="com.jaspersoft.studio.field.name" value="id_riga"/>
+		<property name="com.jaspersoft.studio.field.label" value="id_riga"/>
+		<property name="com.jaspersoft.studio.field.tree.path" value="tb_ddt_righe"/>
+	</field>
+	<field name="id_prodotto" class="java.lang.Long">
+		<property name="com.jaspersoft.studio.field.name" value="id_prodotto"/>
+		<property name="com.jaspersoft.studio.field.label" value="id_prodotto"/>
+		<property name="com.jaspersoft.studio.field.tree.path" value="tb_ddt_righe"/>
+	</field>
+	<field name="descrizione" class="java.lang.String">
+		<property name="com.jaspersoft.studio.field.name" value="descrizione"/>
+		<property name="com.jaspersoft.studio.field.label" value="descrizione"/>
+		<property name="com.jaspersoft.studio.field.tree.path" value="tb_ddt_righe"/>
+	</field>
+	<field name="quantita" class="java.lang.Integer">
+		<property name="com.jaspersoft.studio.field.name" value="quantita"/>
+		<property name="com.jaspersoft.studio.field.label" value="quantita"/>
+		<property name="com.jaspersoft.studio.field.tree.path" value="tb_ddt_righe"/>
+	</field>
+	<field name="peso_unitario_kg" class="java.math.BigDecimal">
+		<property name="com.jaspersoft.studio.field.name" value="peso_unitario_kg"/>
+		<property name="com.jaspersoft.studio.field.label" value="peso_unitario_kg"/>
+		<property name="com.jaspersoft.studio.field.tree.path" value="tb_ddt_righe"/>
+	</field>
+	<field name="peso_totale_kg" class="java.math.BigDecimal">
+		<property name="com.jaspersoft.studio.field.name" value="peso_totale_kg"/>
+		<property name="com.jaspersoft.studio.field.label" value="peso_totale_kg"/>
+		<property name="com.jaspersoft.studio.field.tree.path" value="tb_ddt_righe"/>
+	</field>
+	<field name="unita_misura" class="java.lang.String">
+		<property name="com.jaspersoft.studio.field.name" value="unita_misura"/>
+		<property name="com.jaspersoft.studio.field.label" value="unita_misura"/>
+		<property name="com.jaspersoft.studio.field.tree.path" value="tb_ddt_righe"/>
+	</field>
+	<field name="note_riga" class="java.lang.String">
+		<property name="com.jaspersoft.studio.field.name" value="note"/>
+		<property name="com.jaspersoft.studio.field.label" value="note_riga"/>
+		<property name="com.jaspersoft.studio.field.tree.path" value="tb_ddt_righe"/>
+	</field>
+	<field name="posizione" class="java.lang.Long">
+		<property name="com.jaspersoft.studio.field.name" value="posizione"/>
+		<property name="com.jaspersoft.studio.field.label" value="posizione"/>
+		<property name="com.jaspersoft.studio.field.tree.path" value="tb_ddt_righe"/>
+	</field>
+	<field name="indirizzo_legale" class="java.lang.String">
+		<property name="com.jaspersoft.studio.field.name" value="indirizzo"/>
+		<property name="com.jaspersoft.studio.field.label" value="indirizzo_legale"/>
+		<property name="com.jaspersoft.studio.field.tree.path" value="tb_sedi"/>
+	</field>
+	<field name="cap_legale" class="java.lang.String">
+		<property name="com.jaspersoft.studio.field.name" value="cap"/>
+		<property name="com.jaspersoft.studio.field.label" value="cap_legale"/>
+		<property name="com.jaspersoft.studio.field.tree.path" value="tb_sedi"/>
+	</field>
+	<field name="comune_legale" class="java.lang.String">
+		<property name="com.jaspersoft.studio.field.name" value="comune"/>
+		<property name="com.jaspersoft.studio.field.label" value="comune_legale"/>
+		<property name="com.jaspersoft.studio.field.tree.path" value="tb_sedi"/>
+	</field>
+	<field name="provincia_legale" class="java.lang.String">
+		<property name="com.jaspersoft.studio.field.name" value="provincia"/>
+		<property name="com.jaspersoft.studio.field.label" value="provincia_legale"/>
+		<property name="com.jaspersoft.studio.field.tree.path" value="tb_sedi"/>
+	</field>
+	<field name="destinazione_merce" class="java.lang.String">
+		<property name="com.jaspersoft.studio.field.name" value="destinazione_merce"/>
+		<property name="com.jaspersoft.studio.field.label" value="destinazione_merce"/>
+		<property name="com.jaspersoft.studio.field.tree.path" value="tb_ddt"/>
+	</field>
+	<field name="destinazione_nome" class="java.lang.String">
+		<property name="com.jaspersoft.studio.field.name" value="label"/>
+		<property name="com.jaspersoft.studio.field.label" value="destinazione_nome"/>
+		<property name="com.jaspersoft.studio.field.tree.path" value="cfg_destinazioni_merce"/>
+	</field>
+	<field name="COLUMN_41" class="java.lang.String">
+		<property name="com.jaspersoft.studio.field.name" value="indirizzo"/>
+		<property name="com.jaspersoft.studio.field.label" value="destinazione_indirizzo"/>
+		<property name="com.jaspersoft.studio.field.tree.path" value="cfg_destinazioni_merce"/>
+	</field>
+	<field name="COLUMN_42" class="java.lang.String">
+		<property name="com.jaspersoft.studio.field.name" value="cap"/>
+		<property name="com.jaspersoft.studio.field.label" value="destinazione_cap"/>
+		<property name="com.jaspersoft.studio.field.tree.path" value="cfg_destinazioni_merce"/>
+	</field>
+	<field name="COLUMN_43" class="java.lang.String">
+		<property name="com.jaspersoft.studio.field.name" value="comune"/>
+		<property name="com.jaspersoft.studio.field.label" value="destinazione_comune"/>
+		<property name="com.jaspersoft.studio.field.tree.path" value="cfg_destinazioni_merce"/>
+	</field>
+	<field name="COLUMN_44" class="java.lang.String">
+		<property name="com.jaspersoft.studio.field.name" value="provincia"/>
+		<property name="com.jaspersoft.studio.field.label" value="destinazione_provincia"/>
+		<property name="com.jaspersoft.studio.field.tree.path" value="cfg_destinazioni_merce"/>
+	</field>
+	<field name="destinazione_legale_indirizzo" class="java.lang.String">
+		<property name="com.jaspersoft.studio.field.name" value="indirizzo"/>
+		<property name="com.jaspersoft.studio.field.label" value="destinazione_legale_indirizzo"/>
+		<property name="com.jaspersoft.studio.field.tree.path" value="tb_sedi"/>
+	</field>
+	<field name="destinazione_legale_cap" class="java.lang.String">
+		<property name="com.jaspersoft.studio.field.name" value="cap"/>
+		<property name="com.jaspersoft.studio.field.label" value="destinazione_legale_cap"/>
+		<property name="com.jaspersoft.studio.field.tree.path" value="tb_sedi"/>
+	</field>
+	<field name="destinazione_legale_comune" class="java.lang.String">
+		<property name="com.jaspersoft.studio.field.name" value="comune"/>
+		<property name="com.jaspersoft.studio.field.label" value="destinazione_legale_comune"/>
+		<property name="com.jaspersoft.studio.field.tree.path" value="tb_sedi"/>
+	</field>
+	<field name="destinazione_legale_provincia" class="java.lang.String">
+		<property name="com.jaspersoft.studio.field.name" value="provincia"/>
+		<property name="com.jaspersoft.studio.field.label" value="destinazione_legale_provincia"/>
+		<property name="com.jaspersoft.studio.field.tree.path" value="tb_sedi"/>
+	</field>
+	<field name="aspetto" class="java.lang.String">
+		<property name="com.jaspersoft.studio.field.name" value="aspetto"/>
+		<property name="com.jaspersoft.studio.field.label" value="aspetto"/>
+		<property name="com.jaspersoft.studio.field.tree.path" value="tb_ddt"/>
+	</field>
+	<field name="numero_colli" class="java.lang.Long">
+		<property name="com.jaspersoft.studio.field.name" value="numero_colli"/>
+		<property name="com.jaspersoft.studio.field.label" value="numero_colli"/>
+		<property name="com.jaspersoft.studio.field.tree.path" value="tb_ddt"/>
+	</field>
+	<field name="cura_trasporto" class="java.lang.String">
+		<property name="com.jaspersoft.studio.field.name" value="cura_trasporto"/>
+		<property name="com.jaspersoft.studio.field.label" value="cura_trasporto"/>
+		<property name="com.jaspersoft.studio.field.tree.path" value="tb_ddt"/>
+	</field>
+	<field name="data_trasporto" class="java.sql.Date">
+		<property name="com.jaspersoft.studio.field.name" value="data_trasporto"/>
+		<property name="com.jaspersoft.studio.field.label" value="data_trasporto"/>
+		<property name="com.jaspersoft.studio.field.tree.path" value="tb_ddt"/>
+	</field>
+	<field name="vettore" class="java.lang.String">
+		<property name="com.jaspersoft.studio.field.name" value="vettore"/>
+		<property name="com.jaspersoft.studio.field.label" value="vettore"/>
+		<property name="com.jaspersoft.studio.field.tree.path" value="tb_ddt"/>
+	</field>
+	<title>
+		<band height="245" splitType="Stretch">
+			<line>
+				<reportElement x="0" y="80" width="556" height="1" uuid="806ce5df-1219-4876-ae0c-ca7405b1f246">
+					<property name="local_mesure_unitheight" value="pixel"/>
+					<property name="com.jaspersoft.studio.unit.height" value="px"/>
+				</reportElement>
+			</line>
+			<staticText>
+				<reportElement x="310" y="100" width="184" height="20" uuid="139ebe8d-25b0-411e-986c-270015400874">
+					<property name="local_mesure_unitheight" value="pixel"/>
+					<property name="com.jaspersoft.studio.unit.height" value="px"/>
+				</reportElement>
+				<textElement>
+					<font size="11" isBold="true"/>
+				</textElement>
+				<text><![CDATA[Spett.le]]></text>
+			</staticText>
+			<staticText>
+				<reportElement x="430" y="10" width="50" height="20" uuid="0f86baff-6386-4f3f-b3fe-2388707babe8"/>
+				<box rightPadding="4"/>
+				<textElement textAlignment="Right"/>
+				<text><![CDATA[Date:]]></text>
+			</staticText>
+			<textField pattern="dd-MM-yyyy">
+				<reportElement x="480" y="10" width="69" height="20" uuid="bb10dbe1-0a4f-4722-9953-c163b63cf979"/>
+				<textElement textAlignment="Right"/>
+				<textFieldExpression><![CDATA[$F{data_ddt}]]></textFieldExpression>
+			</textField>
+			<image hAlign="Center">
+				<reportElement x="0" y="0" width="230" height="60" uuid="94883631-a913-43e2-b182-ab8d77d0181e"/>
+				<imageExpression><![CDATA["repo:LogoColore2023.png"]]></imageExpression>
+			</image>
+			<textField>
+				<reportElement x="480" y="30" width="69" height="20" uuid="3836ce65-eca3-4cad-a6de-b1818def0a2b"/>
+				<textElement textAlignment="Right"/>
+				<textFieldExpression><![CDATA[$F{numero_documento}+"/"+$F{anno}]]></textFieldExpression>
+			</textField>
+			<staticText>
+				<reportElement x="430" y="30" width="50" height="20" uuid="0b3f9342-da78-4cfa-9fc5-2301c4749678"/>
+				<box rightPadding="4"/>
+				<textElement textAlignment="Right"/>
+				<text><![CDATA[DDT #]]></text>
+			</staticText>
+			<staticText>
+				<reportElement x="0" y="68" width="230" height="15" uuid="b8cc42fd-b569-497d-834d-7e854040ad18"/>
+				<textElement>
+					<font size="9"/>
+				</textElement>
+				<text><![CDATA[0861855073 - www.mediaprint.it - clienti@mediaprint.it]]></text>
+			</staticText>
+			<staticText>
+				<reportElement x="0" y="56" width="230" height="15" uuid="b96f7183-44f8-43ad-ba60-43d8fbf50b6e"/>
+				<textElement>
+					<font size="9"/>
+				</textElement>
+				<text><![CDATA[Zona Ind.Le Contrada Vibrata Snc - 64015 NERETO TE]]></text>
+			</staticText>
+			<textField textAdjust="ScaleFont">
+				<reportElement x="310" y="120" width="231" height="76" uuid="237dad37-c0ea-46c6-96b3-c5343e458efe"/>
+				<textElement markup="html"/>
+				<textFieldExpression><![CDATA[$F{cliente_ragione_sociale}+"<br>"+$F{indirizzo_legale}+"<br>"+$F{cap_legale}+ " "+$F{comune_legale}+ " "+$F{provincia_legale}]]></textFieldExpression>
+			</textField>
+			<staticText>
+				<reportElement x="0" y="81" width="184" height="30" uuid="59844a3f-2344-4b58-877d-8102b8bcf47d">
+					<property name="local_mesure_unitheight" value="pixel"/>
+					<property name="com.jaspersoft.studio.unit.height" value="px"/>
+				</reportElement>
+				<textElement>
+					<font size="16" isBold="true"/>
+				</textElement>
+				<text><![CDATA[Destinazione Merce:]]></text>
+			</staticText>
+			<textField textAdjust="ScaleFont">
+				<reportElement x="0" y="110" width="231" height="76" uuid="1a799394-514e-4259-875c-f86eae6e7dd8"/>
+				<textElement markup="html"/>
+				<textFieldExpression><![CDATA[($F{destinazione_merce}==null?"":$F{destinazione_merce})+($F{destinazione_label}==null?"":$F{destinazione_label}+":<br>"+$F{destinazione_indirizzo}+"<br>"+$F{destinazione_cap}+" "+$F{destinazione_comune}+" "+$F{destinazione_provincia})+
+($F{destinazione_legale_indirizzo}==null?"":$F{cliente_ragione_sociale}+"<br>"+$F{destinazione_legale_indirizzo}+"<br>"+$F{destinazione_legale_cap}+" "+$F{destinazione_legale_comune}+" "+$F{destinazione_legale_provincia})]]></textFieldExpression>
+			</textField>
+			<textField>
+				<reportElement x="0" y="230" width="90" height="14" uuid="435c1200-dc0d-431a-9f03-8d8324338987"/>
+				<textElement verticalAlignment="Bottom"/>
+				<textFieldExpression><![CDATA["Nome Prodotto"]]></textFieldExpression>
+			</textField>
+			<textField>
+				<reportElement x="340" y="230" width="65" height="14" uuid="410e3c62-040e-4598-ac07-4aec54c21a4c"/>
+				<textElement textAlignment="Center" verticalAlignment="Bottom"/>
+				<textFieldExpression><![CDATA["Quantita"]]></textFieldExpression>
+			</textField>
+			<textField>
+				<reportElement x="415" y="230" width="65" height="14" uuid="e359daf3-5019-4e56-aa28-89fc9dcb9275"/>
+				<textElement textAlignment="Center" verticalAlignment="Bottom"/>
+				<textFieldExpression><![CDATA["Peso"]]></textFieldExpression>
+			</textField>
+			<textField>
+				<reportElement x="490" y="230" width="65" height="14" uuid="2f086f18-44c3-4bab-904c-d15deef18c70"/>
+				<textElement textAlignment="Center" verticalAlignment="Bottom"/>
+				<textFieldExpression><![CDATA["Peso Totale"]]></textFieldExpression>
+			</textField>
+		</band>
+	</title>
+	<detail>
+		<band height="17">
+			<textField textAdjust="ScaleFont">
+				<reportElement x="0" y="0" width="330" height="16" uuid="1a87e7aa-2260-4866-98f6-458eaf1997a8"/>
+				<textElement verticalAlignment="Middle"/>
+				<textFieldExpression><![CDATA[$F{descrizione}]]></textFieldExpression>
+			</textField>
+			<textField>
+				<reportElement x="340" y="0" width="65" height="16" uuid="c14e00e9-fc54-471a-be56-e0ae55558b87"/>
+				<textElement textAlignment="Center" verticalAlignment="Middle"/>
+				<textFieldExpression><![CDATA[$F{quantita}]]></textFieldExpression>
+			</textField>
+			<textField>
+				<reportElement x="415" y="0" width="65" height="16" uuid="b0142e82-47db-4d5a-8149-8cacc9449618"/>
+				<textElement textAlignment="Center" verticalAlignment="Middle"/>
+				<textFieldExpression><![CDATA[$F{quantita}]]></textFieldExpression>
+			</textField>
+			<textField>
+				<reportElement x="490" y="0" width="65" height="16" uuid="64b13a07-2cde-4e28-a361-2525a030a670"/>
+				<textElement textAlignment="Center" verticalAlignment="Middle"/>
+				<textFieldExpression><![CDATA[$F{peso_totale_kg}]]></textFieldExpression>
+			</textField>
+		</band>
+	</detail>
+	<pageFooter>
+		<band height="58"/>
+	</pageFooter>
+	<lastPageFooter>
+		<band height="204">
+			<staticText>
+				<reportElement positionType="Float" mode="Opaque" x="0" y="184" width="556" height="20" backcolor="#E6E8E9" uuid="36aa233d-4305-48e6-974a-1bbf89bb3c8f"/>
+				<textElement textAlignment="Center" verticalAlignment="Middle">
+					<font fontName="Serif" size="9" isItalic="true"/>
+				</textElement>
+				<text><![CDATA[THANKYOU FOR YOUR BUSINESS]]></text>
+			</staticText>
+			<textField evaluationTime="Page">
+				<reportElement x="0" y="0" width="190" height="26" uuid="2f2e653e-37e4-4f41-bf5a-b6caf859b96d"/>
+				<box padding="2">
+					<pen lineWidth="1.0" lineStyle="Solid"/>
+					<topPen lineWidth="1.0" lineStyle="Solid" lineColor="#000000"/>
+					<leftPen lineWidth="1.0" lineStyle="Solid" lineColor="#000000"/>
+					<bottomPen lineWidth="1.0" lineStyle="Solid" lineColor="#000000"/>
+					<rightPen lineWidth="1.0" lineStyle="Solid" lineColor="#000000"/>
+				</box>
+				<textElement verticalAlignment="Middle" markup="html"/>
+				<textFieldExpression><![CDATA["Causale Trasporto: "+$F{causale_label}]]></textFieldExpression>
+			</textField>
+			<textField evaluationTime="Page">
+				<reportElement x="190" y="0" width="190" height="26" uuid="73cd322a-1441-43a9-be81-bb70d2a19c8d"/>
+				<box padding="2">
+					<pen lineWidth="1.0" lineStyle="Solid"/>
+					<topPen lineWidth="1.0" lineStyle="Solid" lineColor="#000000"/>
+					<leftPen lineWidth="1.0" lineStyle="Solid" lineColor="#000000"/>
+					<bottomPen lineWidth="1.0" lineStyle="Solid" lineColor="#000000"/>
+					<rightPen lineWidth="1.0" lineStyle="Solid" lineColor="#000000"/>
+				</box>
+				<textElement verticalAlignment="Middle" markup="html"/>
+				<textFieldExpression><![CDATA["Aspetto Esteriore: "+$F{aspetto}]]></textFieldExpression>
+			</textField>
+			<textField evaluationTime="Page">
+				<reportElement x="380" y="0" width="176" height="26" uuid="494ccd00-608a-43db-bba1-6b761b4d5d11"/>
+				<box padding="2">
+					<pen lineWidth="1.0" lineStyle="Solid"/>
+					<topPen lineWidth="1.0" lineStyle="Solid" lineColor="#000000"/>
+					<leftPen lineWidth="1.0" lineStyle="Solid" lineColor="#000000"/>
+					<bottomPen lineWidth="1.0" lineStyle="Solid" lineColor="#000000"/>
+					<rightPen lineWidth="1.0" lineStyle="Solid" lineColor="#000000"/>
+				</box>
+				<textElement verticalAlignment="Middle" markup="html"/>
+				<textFieldExpression><![CDATA["Numero Colli: "+$F{numero_colli}]]></textFieldExpression>
+			</textField>
+			<textField evaluationTime="Page">
+				<reportElement x="0" y="26" width="380" height="26" uuid="903ef713-0700-4b1f-b9bf-ec65390c7780"/>
+				<box padding="2">
+					<pen lineWidth="1.0" lineStyle="Solid"/>
+					<topPen lineWidth="1.0" lineStyle="Solid" lineColor="#000000"/>
+					<leftPen lineWidth="1.0" lineStyle="Solid" lineColor="#000000"/>
+					<bottomPen lineWidth="1.0" lineStyle="Solid" lineColor="#000000"/>
+					<rightPen lineWidth="1.0" lineStyle="Solid" lineColor="#000000"/>
+				</box>
+				<textElement verticalAlignment="Middle" markup="html"/>
+				<textFieldExpression><![CDATA["Trasporto a cura de: "+$F{cura_trasporto}]]></textFieldExpression>
+			</textField>
+			<textField evaluationTime="Page">
+				<reportElement x="380" y="26" width="176" height="26" uuid="ba95aa4c-69d0-4412-8166-f98419291b95"/>
+				<box padding="2">
+					<pen lineWidth="1.0" lineStyle="Solid"/>
+					<topPen lineWidth="1.0" lineStyle="Solid" lineColor="#000000"/>
+					<leftPen lineWidth="1.0" lineStyle="Solid" lineColor="#000000"/>
+					<bottomPen lineWidth="1.0" lineStyle="Solid" lineColor="#000000"/>
+					<rightPen lineWidth="1.0" lineStyle="Solid" lineColor="#000000"/>
+				</box>
+				<textElement verticalAlignment="Middle" markup="html"/>
+				<textFieldExpression><![CDATA["Data Trasporto: "+$F{data_trasporto}]]></textFieldExpression>
+			</textField>
+			<textField evaluationTime="Page">
+				<reportElement x="0" y="52" width="380" height="26" uuid="4ca4f5f4-6d0f-4b11-be1f-b9418af6a44e"/>
+				<box padding="2">
+					<pen lineWidth="1.0" lineStyle="Solid"/>
+					<topPen lineWidth="1.0" lineStyle="Solid" lineColor="#000000"/>
+					<leftPen lineWidth="1.0" lineStyle="Solid" lineColor="#000000"/>
+					<bottomPen lineWidth="1.0" lineStyle="Solid" lineColor="#000000"/>
+					<rightPen lineWidth="1.0" lineStyle="Solid" lineColor="#000000"/>
+				</box>
+				<textElement verticalAlignment="Middle" markup="html"/>
+				<textFieldExpression><![CDATA["Vettore: "+$F{vettore}]]></textFieldExpression>
+			</textField>
+			<textField evaluationTime="Page">
+				<reportElement x="380" y="52" width="176" height="44" uuid="c37150be-32ab-436b-8275-e5ecfb1d3a87"/>
+				<box padding="2">
+					<pen lineWidth="1.0" lineStyle="Solid"/>
+					<topPen lineWidth="1.0" lineStyle="Solid" lineColor="#000000"/>
+					<leftPen lineWidth="1.0" lineStyle="Solid" lineColor="#000000"/>
+					<bottomPen lineWidth="1.0" lineStyle="Solid" lineColor="#000000"/>
+					<rightPen lineWidth="1.0" lineStyle="Solid" lineColor="#000000"/>
+				</box>
+				<textElement verticalAlignment="Top" markup="html">
+					<font size="9"/>
+				</textElement>
+				<textFieldExpression><![CDATA["Firma Conducente"]]></textFieldExpression>
+			</textField>
+			<textField evaluationTime="Page">
+				<reportElement x="380" y="96" width="176" height="44" uuid="53f41455-b11b-47b6-949c-e5e9ae40aa63"/>
+				<box padding="2">
+					<pen lineWidth="1.0" lineStyle="Solid"/>
+					<topPen lineWidth="1.0" lineStyle="Solid" lineColor="#000000"/>
+					<leftPen lineWidth="1.0" lineStyle="Solid" lineColor="#000000"/>
+					<bottomPen lineWidth="1.0" lineStyle="Solid" lineColor="#000000"/>
+					<rightPen lineWidth="1.0" lineStyle="Solid" lineColor="#000000"/>
+				</box>
+				<textElement verticalAlignment="Top" markup="html">
+					<font size="9"/>
+				</textElement>
+				<textFieldExpression><![CDATA["Firma Vettore"]]></textFieldExpression>
+			</textField>
+			<textField evaluationTime="Page">
+				<reportElement x="380" y="140" width="176" height="44" uuid="9c605e1a-1950-4814-b095-4647695bfa3b"/>
+				<box padding="2">
+					<pen lineWidth="1.0" lineStyle="Solid"/>
+					<topPen lineWidth="1.0" lineStyle="Solid" lineColor="#000000"/>
+					<leftPen lineWidth="1.0" lineStyle="Solid" lineColor="#000000"/>
+					<bottomPen lineWidth="1.0" lineStyle="Solid" lineColor="#000000"/>
+					<rightPen lineWidth="1.0" lineStyle="Solid" lineColor="#000000"/>
+				</box>
+				<textElement verticalAlignment="Top" markup="html">
+					<font size="9"/>
+				</textElement>
+				<textFieldExpression><![CDATA["Firma Destinatario"]]></textFieldExpression>
+			</textField>
+			<textField>
+				<reportElement x="0" y="78" width="380" height="106" uuid="c67e385a-7bac-459b-84d1-8f7fffb1886b"/>
+				<textFieldExpression><![CDATA[$F{note}]]></textFieldExpression>
+			</textField>
+		</band>
+	</lastPageFooter>
+</jasperReport>

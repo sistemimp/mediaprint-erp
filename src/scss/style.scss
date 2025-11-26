@@ -143,3 +143,67 @@ body {
     }
   }
 }
+
+/* Timeline stepper indicator overrides for fatture */
+.invoice-timeline-stepper {
+  &--paid,
+  &--partial,
+  &--scaduta {
+    .stepper-step:last-child {
+      .stepper-step-indicator {
+        color: var(--cui-white);
+      }
+
+      .stepper-step-indicator-icon {
+        display: none;
+      }
+
+      .stepper-step-indicator-text {
+        position: relative;
+        color: transparent;
+
+        &::after {
+          content: '';
+          position: absolute;
+          inset: 0;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 1rem;
+          font-weight: 600;
+          color: var(--cui-white);
+        }
+      }
+    }
+  }
+
+  &--paid .stepper-step:last-child .stepper-step-indicator {
+    background-color: var(--cui-success);
+    border-color: var(--cui-success);
+  }
+
+  &--paid .stepper-step:last-child .stepper-step-indicator-text::after {
+    content: '✓';
+  }
+
+  &--partial .stepper-step:last-child .stepper-step-indicator {
+    background-color: var(--cui-warning);
+    border-color: var(--cui-warning);
+    color: var(--cui-body-color);
+  }
+
+  &--partial .stepper-step:last-child .stepper-step-indicator-text::after {
+    content: '|';
+    color: var(--cui-body-color);
+    font-weight: 700;
+  }
+
+  &--scaduta .stepper-step:last-child .stepper-step-indicator {
+    background-color: var(--cui-danger);
+    border-color: var(--cui-danger);
+  }
+
+  &--scaduta .stepper-step:last-child .stepper-step-indicator-text::after {
+    content: '×';
+  }
+}

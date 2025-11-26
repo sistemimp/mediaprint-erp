@@ -4,12 +4,23 @@ declare(strict_types=1);
 namespace MediaPrint\Repo;
 
 use DateTimeImmutable;
+use Firebase\JWT\JWT;
+use Firebase\JWT\Key;
+use MediaPrint\Service\PaymentTerms;
 use PDO;
 use RuntimeException;
 
 final class FattureRepository
 {
     private bool $recalcProcedureEnsured = false;
+    /** @var array<string,int|null> */
+    private array $statoIdCache = [];
+    private bool $statusLogTableEnsured = false;
+    private bool $statusLogTableAvailable = false;
+    /** @var array<int,string|null> */
+    private array $statusLabelCache = [];
+    /** @var list<array<string,mixed>>|null */
+    private ?array $paymentTerms = null;
 
     public function __construct(private PDO $pdo) {}
 
@@ -190,6 +201,18 @@ final class FattureRepository
             return null;
         }
 
+        $clienteTermId = isset($row['cliente_id_cond_pagamento']) ? (int) $row['cliente_id_cond_pagamento'] : null;
+        if ($clienteTermId !== null && $clienteTermId <= 0) {
+            $clienteTermId = null;
+        }
+        $paymentTerms = $this->getPaymentTerms();
+        $paymentSchedule = PaymentTerms::buildSchedule(
+            $clienteTermId,
+            $row['data_fattura'] ?? null,
+            isset($row['totale']) ? (float) $row['totale'] : 0.0,
+            $paymentTerms
+        );
+
         return [
             'id_fattura' => (int) $row['id_fattura'],
             'id_anagrafica' => isset($row['id_anagrafica']) ? (int) $row['id_anagrafica'] : null,
@@ -222,7 +245,8 @@ final class FattureRepository
             'cliente_codice_sdi' => $row['cliente_codice_sdi'] ?? null,
             'cliente_iban' => $row['cliente_iban'] ?? null,
             'cliente_banca' => $row['cliente_banca'] ?? null,
-            'cliente_id_cond_pagamento' => isset($row['cliente_id_cond_pagamento']) ? (int) $row['cliente_id_cond_pagamento'] : null,
+            'cliente_id_cond_pagamento' => $clienteTermId,
+            'cliente_condizioni_pagamento' => PaymentTerms::labelById($clienteTermId, $paymentTerms),
             'cliente_modalita_pagamento' => $row['cliente_modalita_pagamento'] ?? null,
             'cliente_giorni_pagamento' => isset($row['cliente_giorni_pagamento']) ? (int) $row['cliente_giorni_pagamento'] : null,
             'cliente_altri_dati' => $row['cliente_altri_dati'] ?? null,
@@ -232,8 +256,21 @@ final class FattureRepository
             'cliente_comune' => $row['cliente_comune'] ?? null,
             'cliente_provincia' => $row['cliente_provincia'] ?? null,
             'cliente_nazione' => $row['cliente_nazione'] ?? null,
+            'condizioni_pagamento_rate' => $paymentSchedule,
             'righe' => $this->getLines($id),
         ];
+    }
+
+    /**
+     * @return list<array<string,mixed>>
+     */
+    private function getPaymentTerms(): array
+    {
+        if ($this->paymentTerms === null) {
+            $this->paymentTerms = PaymentTerms::all($this->pdo);
+        }
+
+        return $this->paymentTerms;
     }
 
     /**
@@ -379,6 +416,159 @@ final class FattureRepository
                 'attivo' => ((int) ($row['attivo'] ?? 0)) === 1,
             ];
         }
+        return $items;
+    }
+
+    /**
+     * @return list<array<string,mixed>>
+     */
+    public function listStatusLog(int $idFattura, int $limit = 50, int $offset = 0): array
+    {
+        if ($idFattura <= 0) {
+            return [];
+        }
+
+        $limit = max(1, min($limit, 200));
+        $offset = max(0, $offset);
+
+        if ($this->ensureStatusLogTableExists()) {
+            $stmt = $this->pdo->prepare(
+                'SELECT
+                    id_log,
+                    from_status_id,
+                    to_status_id,
+                    from_status_label,
+                    to_status_label,
+                    actor,
+                    created_at
+                 FROM tb_fatture_status_log
+                 WHERE id_fattura = :id
+                 ORDER BY created_at DESC, id_log DESC
+                 LIMIT :limit OFFSET :offset'
+            );
+            $stmt->bindValue(':id', $idFattura, PDO::PARAM_INT);
+            $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+            $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+            $stmt->execute();
+            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+            $items = [];
+            foreach ($rows as $row) {
+                $timestamp = $row['created_at'] ?? null;
+                $isoTimestamp = null;
+                if ($timestamp !== null) {
+                    try {
+                        $isoTimestamp = (new DateTimeImmutable((string) $timestamp))->format(DATE_ATOM);
+                    } catch (\Throwable $ignored) {
+                        try {
+                            $isoTimestamp = (new DateTimeImmutable(str_replace(' ', 'T', (string) $timestamp)))->format(DATE_ATOM);
+                        } catch (\Throwable $ignoredAgain) {
+                            $isoTimestamp = (string) $timestamp;
+                        }
+                    }
+                }
+
+                $fromId = isset($row['from_status_id']) ? (int) $row['from_status_id'] : null;
+                if ($fromId !== null && $fromId <= 0) {
+                    $fromId = null;
+                }
+                $toId = isset($row['to_status_id']) ? (int) $row['to_status_id'] : null;
+                if ($toId !== null && $toId <= 0) {
+                    $toId = null;
+                }
+
+                $items[] = [
+                    'at' => $isoTimestamp,
+                    'from_status_id' => $fromId,
+                    'from_status' => $row['from_status_label'] ?? ($fromId !== null ? '#' . $fromId : null),
+                    'to_status_id' => $toId,
+                    'to_status' => $row['to_status_label'] ?? ($toId !== null ? '#' . $toId : null),
+                    'user_name' => $row['actor'] ?? null,
+                ];
+            }
+
+            return $items;
+        }
+
+        $sql = <<<'SQL'
+            SELECT
+                l.ts,
+                CAST(JSON_UNQUOTE(JSON_EXTRACT(l.row_old, '$.id_stato_fatt')) AS UNSIGNED) AS from_status_id,
+                CAST(JSON_UNQUOTE(JSON_EXTRACT(l.row_new, '$.id_stato_fatt')) AS UNSIGNED) AS to_status_id,
+                so.label AS from_status_label,
+                sn.label AS to_status_label,
+                l.actor
+            FROM tb_audit_log l
+            LEFT JOIN cfg_stati_fattura so ON so.id_stato = CAST(JSON_UNQUOTE(JSON_EXTRACT(l.row_old, '$.id_stato_fatt')) AS UNSIGNED)
+            LEFT JOIN cfg_stati_fattura sn ON sn.id_stato = CAST(JSON_UNQUOTE(JSON_EXTRACT(l.row_new, '$.id_stato_fatt')) AS UNSIGNED)
+            WHERE l.table_name = 'tb_fatture'
+              AND JSON_UNQUOTE(JSON_EXTRACT(l.pk_json, '$.id_fattura')) = :id
+              AND (
+                (JSON_EXTRACT(l.row_old, '$.id_stato_fatt') IS NULL AND JSON_EXTRACT(l.row_new, '$.id_stato_fatt') IS NOT NULL)
+                OR
+                (JSON_EXTRACT(l.row_old, '$.id_stato_fatt') IS NOT NULL AND JSON_EXTRACT(l.row_new, '$.id_stato_fatt') IS NULL)
+                OR
+                JSON_UNQUOTE(JSON_EXTRACT(l.row_old, '$.id_stato_fatt')) <> JSON_UNQUOTE(JSON_EXTRACT(l.row_new, '$.id_stato_fatt'))
+              )
+            ORDER BY l.ts DESC
+            LIMIT :limit OFFSET :offset
+        SQL;
+
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->bindValue(':id', (string) $idFattura, PDO::PARAM_STR);
+        $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+        $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+        $stmt->execute();
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+        $items = [];
+        foreach ($rows as $row) {
+            $timestamp = $row['ts'] ?? null;
+            $isoTimestamp = null;
+            if ($timestamp !== null) {
+                try {
+                    $isoTimestamp = (new DateTimeImmutable((string) $timestamp))->format(DATE_ATOM);
+                } catch (\Throwable $ignored) {
+                    try {
+                        $isoTimestamp = (new DateTimeImmutable(str_replace(' ', 'T', (string) $timestamp)))->format(DATE_ATOM);
+                    } catch (\Throwable $ignoredAgain) {
+                        $isoTimestamp = (string) $timestamp;
+                    }
+                }
+            }
+
+            $fromId = null;
+            if ($row['from_status_id'] !== null) {
+                $value = (int) $row['from_status_id'];
+                $fromId = $value > 0 ? $value : null;
+            }
+
+            $toId = null;
+            if ($row['to_status_id'] !== null) {
+                $value = (int) $row['to_status_id'];
+                $toId = $value > 0 ? $value : null;
+            }
+
+            $fromLabel = $row['from_status_label'] ?? null;
+            if ($fromLabel === null && $fromId !== null) {
+                $fromLabel = '#' . $fromId;
+            }
+
+            $toLabel = $row['to_status_label'] ?? null;
+            if ($toLabel === null && $toId !== null) {
+                $toLabel = '#' . $toId;
+            }
+
+            $items[] = [
+                'at' => $isoTimestamp,
+                'from_status_id' => $fromId,
+                'from_status' => $fromLabel,
+                'to_status_id' => $toId,
+                'to_status' => $toLabel,
+                'user_name' => $row['actor'] ?? null,
+            ];
+        }
+
         return $items;
     }
 
@@ -609,6 +799,8 @@ final class FattureRepository
             throw new RuntimeException('Fattura non trovata.', 404);
         }
 
+        $previousStatusId = isset($existing['id_stato_fatt']) ? (int) $existing['id_stato_fatt'] : null;
+        $newStatusId = null;
         $setClauses = [];
         $params = [':id' => $id];
         $types = [':id' => PDO::PARAM_INT];
@@ -644,6 +836,7 @@ final class FattureRepository
             $setClauses[] = 'id_stato_fatt = :id_stato_fatt';
             $params[':id_stato_fatt'] = $status;
             $types[':id_stato_fatt'] = PDO::PARAM_INT;
+            $newStatusId = $status;
         }
 
         if (array_key_exists('id_sezionale', $data)) {
@@ -685,6 +878,9 @@ final class FattureRepository
             }
             $stmt->execute();
             $hasChanges = true;
+            if ($newStatusId !== null && $newStatusId !== $previousStatusId) {
+                $this->logStatusHistory($id, $previousStatusId, $newStatusId);
+            }
         }
 
         if (array_key_exists('righe', $data)) {
@@ -1018,16 +1214,25 @@ final class FattureRepository
         }
 
         $this->ensureRecalcProcedureExists();
+        $existingPagamento = null;
         if ($idPagamento > 0) {
-            $existing = $this->fetchPagamento($idFattura, $idPagamento);
-            if ($existing === null) {
-                throw new RuntimeException('Pagamento non trovato per questa fattura.', 404);
+            $existingPagamento = $this->fetchPagamento($idFattura, $idPagamento);
+            if ($existingPagamento === null) {
+                $fallbackPending = $this->fetchPendingPaymentByImportUid($importUid);
+                if ($fallbackPending !== null) {
+                    $pendingPaymentId = (int) $fallbackPending['id_pagamento'];
+                    $idPagamento = 0;
+                } else {
+                    throw new RuntimeException('Pagamento non trovato per questa fattura.', 404);
+                }
             }
-            if (!$hasImportoDocumento && isset($existing['importo_documento'])) {
-                $importoDocumento = (float) $existing['importo_documento'];
+        }
+        if ($existingPagamento !== null) {
+            if (!$hasImportoDocumento && isset($existingPagamento['importo_documento'])) {
+                $importoDocumento = (float) $existingPagamento['importo_documento'];
             }
-            if (!$hasImportUid && isset($existing['import_uid']) && $existing['import_uid'] !== null) {
-                $importUid = (string) $existing['import_uid'];
+            if (!$hasImportUid && isset($existingPagamento['import_uid']) && $existingPagamento['import_uid'] !== null) {
+                $importUid = (string) $existingPagamento['import_uid'];
             }
             $stmt = $this->pdo->prepare(
                 'UPDATE appoggio_pagamenti_fattura
@@ -1160,6 +1365,26 @@ final class FattureRepository
         ];
     }
 
+    /**
+     * @return array<string,mixed>|null
+     */
+    private function fetchPendingPaymentByImportUid(?string $importUid): ?array
+    {
+        if ($importUid === null || $importUid === '') {
+            return null;
+        }
+
+        $stmt = $this->pdo->prepare('SELECT id_pagamento FROM tb_pagamenti WHERE import_uid = :uid LIMIT 1');
+        $stmt->bindValue(':uid', $importUid, PDO::PARAM_STR);
+        $stmt->execute();
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($row === false) {
+            return null;
+        }
+
+        return $this->fetchPendingPaymentById((int) $row['id_pagamento']);
+    }
+
     public function deletePagamento(int $idFattura, int $idPagamento): void
     {
         if ($idPagamento <= 0) {
@@ -1172,27 +1397,66 @@ final class FattureRepository
         $stagedStmt->bindValue(':id', $idPagamento, PDO::PARAM_INT);
         $stagedStmt->execute();
         if ($stagedStmt->fetch(PDO::FETCH_ASSOC) !== false) {
-            $deleteStaged = $this->pdo->prepare('DELETE FROM tb_pagamenti WHERE id_pagamento = :id LIMIT 1');
-            $deleteStaged->bindValue(':id', $idPagamento, PDO::PARAM_INT);
-            $deleteStaged->execute();
-            if ($deleteStaged->rowCount() === 0) {
-                throw new RuntimeException('Pagamento non trovato o già eliminato.', 404);
+            $invoiceStmt = $this->pdo->prepare(
+                'SELECT DISTINCT id_fattura FROM appoggio_pagamenti_fattura WHERE id_pagamento = :id AND id_fattura IS NOT NULL'
+            );
+            $invoiceStmt->bindValue(':id', $idPagamento, PDO::PARAM_INT);
+            $invoiceStmt->execute();
+            $invoiceIds = [];
+            foreach ($invoiceStmt->fetchAll(PDO::FETCH_COLUMN) ?: [] as $invoiceId) {
+                $invoiceIds[] = (int) $invoiceId;
             }
+
+            $manageTransaction = !$this->pdo->inTransaction();
+            if ($manageTransaction) {
+                $this->pdo->beginTransaction();
+            }
+
+            try {
+                $deleteAssignments = $this->pdo->prepare('DELETE FROM appoggio_pagamenti_fattura WHERE id_pagamento = :id');
+                $deleteAssignments->bindValue(':id', $idPagamento, PDO::PARAM_INT);
+                $deleteAssignments->execute();
+
+                $deleteStaged = $this->pdo->prepare('DELETE FROM tb_pagamenti WHERE id_pagamento = :id LIMIT 1');
+                $deleteStaged->bindValue(':id', $idPagamento, PDO::PARAM_INT);
+                $deleteStaged->execute();
+                if ($deleteStaged->rowCount() === 0) {
+                    throw new RuntimeException('Pagamento non trovato o già eliminato.', 404);
+                }
+
+                foreach ($invoiceIds as $invoiceId) {
+                    $this->updateSaldoFromPayments($invoiceId);
+                }
+
+                if ($manageTransaction) {
+                    $this->pdo->commit();
+                }
+            } catch (\Throwable $exception) {
+                if ($manageTransaction && $this->pdo->inTransaction()) {
+                    $this->pdo->rollBack();
+                }
+                throw $exception;
+            }
+
             return;
         }
 
         if ($idFattura <= 0) {
+            $assignmentInfo = $this->fetchAssignmentForDeletion($idPagamento, null);
             $stmt = $this->pdo->prepare(
                 'DELETE FROM appoggio_pagamenti_fattura WHERE id_pag_fattura = :id_pagamento LIMIT 1'
             );
             $stmt->bindValue(':id_pagamento', $idPagamento, PDO::PARAM_INT);
             $stmt->execute();
-            if ($stmt->rowCount() === 0) {
-                throw new RuntimeException('Pagamento non trovato o già eliminato.', 404);
+            $deleted = $stmt->rowCount() > 0;
+            if (!$deleted) {
+                throw new RuntimeException('Pagamento non trovato o gi� eliminato.', 404);
             }
+            $this->updatePendingAllocationAfterDelete($assignmentInfo, $deleted);
             return;
         }
 
+        $assignmentInfo = $this->fetchAssignmentForDeletion($idPagamento, $idFattura);
         $stmt = $this->pdo->prepare(
             'DELETE FROM appoggio_pagamenti_fattura WHERE id_pag_fattura = :id_pagamento AND id_fattura = :id_fattura LIMIT 1'
         );
@@ -1200,11 +1464,68 @@ final class FattureRepository
         $stmt->bindValue(':id_fattura', $idFattura, PDO::PARAM_INT);
         $stmt->execute();
 
-        if ($stmt->rowCount() === 0) {
-            throw new RuntimeException('Pagamento non trovato o già eliminato.', 404);
+        $deleted = $stmt->rowCount() > 0;
+        if (!$deleted) {
+            throw new RuntimeException('Pagamento non trovato o gi� eliminato.', 404);
         }
+        $this->updatePendingAllocationAfterDelete($assignmentInfo, $deleted);
 
         $this->updateSaldoFromPayments($idFattura);
+    }
+
+    /**
+     * @return array<string,mixed>|null
+     */
+    private function fetchAssignmentForDeletion(int $idPagamento, ?int $idFattura): ?array
+    {
+        if ($idPagamento <= 0) {
+            return null;
+        }
+
+        $sql = 'SELECT id_pagamento, importo FROM appoggio_pagamenti_fattura WHERE id_pag_fattura = :id';
+        if ($idFattura !== null && $idFattura > 0) {
+            $sql .= ' AND id_fattura = :id_fattura';
+        }
+        $sql .= ' LIMIT 1';
+
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->bindValue(':id', $idPagamento, PDO::PARAM_INT);
+        if ($idFattura !== null && $idFattura > 0) {
+            $stmt->bindValue(':id_fattura', $idFattura, PDO::PARAM_INT);
+        }
+        $stmt->execute();
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($row === false) {
+            return null;
+        }
+
+        return [
+            'id_pagamento' => isset($row['id_pagamento']) ? (int) $row['id_pagamento'] : null,
+            'importo' => isset($row['importo']) ? (float) $row['importo'] : null,
+        ];
+    }
+
+    private function updatePendingAllocationAfterDelete(?array $assignmentInfo, bool $deleted): void
+    {
+        if (!$deleted || $assignmentInfo === null) {
+            return;
+        }
+
+        $pendingId = isset($assignmentInfo['id_pagamento']) ? (int) $assignmentInfo['id_pagamento'] : 0;
+        $importo = isset($assignmentInfo['importo']) ? (float) $assignmentInfo['importo'] : 0.0;
+        if ($pendingId <= 0 || $importo <= 0) {
+            return;
+        }
+
+        $stmt = $this->pdo->prepare(
+            'UPDATE tb_pagamenti
+             SET importo_allocato = GREATEST(0, importo_allocato - :importo), updated_at = NOW()
+             WHERE id_pagamento = :id
+             LIMIT 1'
+        );
+        $stmt->bindValue(':importo', number_format($importo, 2, '.', ''), PDO::PARAM_STR);
+        $stmt->bindValue(':id', $pendingId, PDO::PARAM_INT);
+        $stmt->execute();
     }
 
     private function updateSaldoFromPayments(int $idFattura): void
@@ -1213,25 +1534,55 @@ final class FattureRepository
             return;
         }
 
-        $sql = <<<'SQL'
-            UPDATE tb_fatture f
-            SET
-                f.saldo = GREATEST(
-                    0,
-                    COALESCE(f.totale, 0) - (
-                        SELECT COALESCE(SUM(importo), 0)
-                        FROM appoggio_pagamenti_fattura p
-                        WHERE p.id_fattura = f.id_fattura
-                    )
-                ),
-                f.updated_at = NOW()
-            WHERE f.id_fattura = :id
-            LIMIT 1
-        SQL;
+        $invoiceStmt = $this->pdo->prepare('SELECT totale, id_stato_fatt FROM tb_fatture WHERE id_fattura = :id LIMIT 1');
+        $invoiceStmt->bindValue(':id', $idFattura, PDO::PARAM_INT);
+        $invoiceStmt->execute();
+        $invoice = $invoiceStmt->fetch(PDO::FETCH_ASSOC);
+        if ($invoice === false) {
+            return;
+        }
+
+        $totale = isset($invoice['totale']) ? (float) $invoice['totale'] : 0.0;
+        $currentStatusId = isset($invoice['id_stato_fatt']) ? (int) $invoice['id_stato_fatt'] : null;
+        if ($currentStatusId !== null && $currentStatusId <= 0) {
+            $currentStatusId = null;
+        }
+
+        $paidStmt = $this->pdo->prepare(
+            'SELECT COALESCE(SUM(importo), 0) AS totale_pagato FROM appoggio_pagamenti_fattura WHERE id_fattura = :id'
+        );
+        $paidStmt->bindValue(':id', $idFattura, PDO::PARAM_INT);
+        $paidStmt->execute();
+        $totalePagatoRaw = $paidStmt->fetchColumn();
+        $totalePagato = $totalePagatoRaw !== false ? (float) $totalePagatoRaw : 0.0;
+
+        $saldo = round(max(0.0, $totale - $totalePagato), 2);
+        $newStatusId = null;
+        if ($totale > 0) {
+            if (abs($saldo) < 0.009) {
+                $saldo = 0.0;
+                $newStatusId = $this->getStatoIdByCode('pagata');
+            } elseif ($saldo > 0 && $saldo < $totale) {
+                $newStatusId = $this->getStatoIdByCode('pagataparziale');
+            }
+        }
+
+        $sql = 'UPDATE tb_fatture SET saldo = :saldo, updated_at = NOW()';
+        if ($newStatusId !== null) {
+            $sql .= ', id_stato_fatt = :id_stato';
+        }
+        $sql .= ' WHERE id_fattura = :id LIMIT 1';
 
         $stmt = $this->pdo->prepare($sql);
+        $stmt->bindValue(':saldo', number_format($saldo, 2, '.', ''), PDO::PARAM_STR);
+        if ($newStatusId !== null) {
+            $stmt->bindValue(':id_stato', $newStatusId, PDO::PARAM_INT);
+        }
         $stmt->bindValue(':id', $idFattura, PDO::PARAM_INT);
         $stmt->execute();
+        if ($newStatusId !== null && $newStatusId !== $currentStatusId) {
+            $this->logStatusHistory($idFattura, $currentStatusId, $newStatusId, 'Sistema pagamenti');
+        }
     }
 
     /**
@@ -1297,6 +1648,27 @@ final class FattureRepository
         ];
     }
 
+    private function getStatoIdByCode(string $code): ?int
+    {
+        if (array_key_exists($code, $this->statoIdCache)) {
+            return $this->statoIdCache[$code];
+        }
+
+        $stmt = $this->pdo->prepare('SELECT id_stato FROM cfg_stati_fattura WHERE code = :code LIMIT 1');
+        $stmt->bindValue(':code', $code, PDO::PARAM_STR);
+        $stmt->execute();
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($row === false) {
+            $this->statoIdCache[$code] = null;
+            return null;
+        }
+
+        $id = (int) $row['id_stato'];
+        $this->statoIdCache[$code] = $id > 0 ? $id : null;
+
+        return $this->statoIdCache[$code];
+    }
+
     private function ensureRecalcProcedureExists(): void
     {
         if ($this->recalcProcedureEnsured) {
@@ -1355,5 +1727,177 @@ final class FattureRepository
         } catch (\Throwable $ignored) {
             // best effort: se fallisce, i trigger continueranno ad andare in errore; si segnalerà da altre parti.
         }
+    }
+
+    private function ensureStatusLogTableExists(): bool
+    {
+        if ($this->statusLogTableEnsured) {
+            return $this->statusLogTableAvailable;
+        }
+
+        try {
+            $sql = <<<'SQL'
+                CREATE TABLE IF NOT EXISTS tb_fatture_status_log (
+                    id_log BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                    id_fattura INT NOT NULL,
+                    from_status_id INT NULL,
+                    to_status_id INT NULL,
+                    from_status_label VARCHAR(191) NULL,
+                    to_status_label VARCHAR(191) NULL,
+                    note VARCHAR(500) NULL,
+                    actor VARCHAR(191) NULL,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (id_log),
+                    KEY idx_fsl_fattura (id_fattura),
+                    KEY idx_fsl_created (created_at)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            SQL;
+            $this->pdo->exec($sql);
+            $this->statusLogTableAvailable = true;
+        } catch (\Throwable $ignored) {
+            $this->statusLogTableAvailable = false;
+        }
+
+        $this->statusLogTableEnsured = true;
+        return $this->statusLogTableAvailable;
+    }
+
+    private function logStatusHistory(int $idFattura, ?int $fromStatusId, ?int $toStatusId, ?string $actor = null): void
+    {
+        if ($fromStatusId === $toStatusId) {
+            return;
+        }
+        if (!$this->ensureStatusLogTableExists()) {
+            return;
+        }
+
+        $stmt = $this->pdo->prepare(
+            'INSERT INTO tb_fatture_status_log (
+                id_fattura,
+                from_status_id,
+                to_status_id,
+                from_status_label,
+                to_status_label,
+                actor
+            ) VALUES (
+                :id_fattura,
+                :from_status_id,
+                :to_status_id,
+                :from_label,
+                :to_label,
+                :actor
+            )'
+        );
+        $stmt->bindValue(':id_fattura', $idFattura, PDO::PARAM_INT);
+        if ($fromStatusId !== null) {
+            $stmt->bindValue(':from_status_id', $fromStatusId, PDO::PARAM_INT);
+        } else {
+            $stmt->bindValue(':from_status_id', null, PDO::PARAM_NULL);
+        }
+        if ($toStatusId !== null) {
+            $stmt->bindValue(':to_status_id', $toStatusId, PDO::PARAM_INT);
+        } else {
+            $stmt->bindValue(':to_status_id', null, PDO::PARAM_NULL);
+        }
+        $fromLabel = $this->fetchStatusLabel($fromStatusId);
+        if ($fromLabel !== null) {
+            $stmt->bindValue(':from_label', $fromLabel, PDO::PARAM_STR);
+        } else {
+            $stmt->bindValue(':from_label', null, PDO::PARAM_NULL);
+        }
+        $toLabel = $this->fetchStatusLabel($toStatusId);
+        if ($toLabel !== null) {
+            $stmt->bindValue(':to_label', $toLabel, PDO::PARAM_STR);
+        } else {
+            $stmt->bindValue(':to_label', null, PDO::PARAM_NULL);
+        }
+        $resolvedActor = $actor ?? $this->resolveActorName();
+        if ($resolvedActor !== null) {
+            $stmt->bindValue(':actor', $resolvedActor, PDO::PARAM_STR);
+        } else {
+            $stmt->bindValue(':actor', null, PDO::PARAM_NULL);
+        }
+        $stmt->execute();
+    }
+
+    private function fetchStatusLabel(?int $id): ?string
+    {
+        if ($id === null) {
+            return null;
+        }
+        if (array_key_exists($id, $this->statusLabelCache)) {
+            return $this->statusLabelCache[$id];
+        }
+
+        $stmt = $this->pdo->prepare('SELECT label FROM cfg_stati_fattura WHERE id_stato = :id LIMIT 1');
+        $stmt->bindValue(':id', $id, PDO::PARAM_INT);
+        $stmt->execute();
+        $label = $stmt->fetchColumn();
+        $this->statusLabelCache[$id] = $label !== false ? (string) $label : null;
+
+        return $this->statusLabelCache[$id];
+    }
+
+    private function resolveActorName(): ?string
+    {
+        $tokenActor = $this->resolveActorFromToken();
+        if ($tokenActor !== null && $tokenActor !== '') {
+            return $tokenActor;
+        }
+
+        $candidates = [
+            $_SERVER['HTTP_X_USER_NAME'] ?? null,
+            $_SERVER['HTTP_X_AUTH_USER'] ?? null,
+            $_SERVER['AUTH_USER'] ?? null,
+            $_SERVER['REMOTE_USER'] ?? null,
+            $_SERVER['USER'] ?? null,
+        ];
+
+        foreach ($candidates as $value) {
+            if (is_string($value)) {
+                $trimmed = trim($value);
+                if ($trimmed !== '') {
+                    return $trimmed;
+                }
+            }
+        }
+
+        return 'Sistema';
+    }
+
+    private function resolveActorFromToken(): ?string
+    {
+        $header = $_SERVER['HTTP_AUTHORIZATION'] ?? $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? '';
+        if (!is_string($header) || $header === '') {
+            return null;
+        }
+        if (stripos($header, 'Bearer ') !== 0) {
+            return null;
+        }
+        $token = trim(substr($header, 7));
+        if ($token === '') {
+            return null;
+        }
+        $secret = getenv('JWT_SECRET');
+        if (!$secret) {
+            return null;
+        }
+        try {
+            $payload = JWT::decode($token, new Key($secret, 'HS256'));
+        } catch (\Throwable $exception) {
+            return null;
+        }
+
+        if (isset($payload->username) && is_string($payload->username) && trim($payload->username) !== '') {
+            return trim($payload->username);
+        }
+        if (isset($payload->email) && is_string($payload->email) && trim($payload->email) !== '') {
+            return trim($payload->email);
+        }
+        if (isset($payload->sub) && (is_string($payload->sub) || is_numeric($payload->sub))) {
+            return 'user#' . (string) $payload->sub;
+        }
+
+        return null;
     }
 }

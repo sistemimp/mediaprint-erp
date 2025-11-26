@@ -94,6 +94,7 @@ final class PagamentiRepository
         $assignedWhere = [];
         $pendingWhere = [];
         $params = [];
+        $onlyOpenPending = !empty($filters['pending_only_open']);
 
         if (!empty($filters['id_anagrafica'])) {
             $assignedWhere[] = 'f.id_anagrafica = :id_anagrafica';
@@ -157,6 +158,7 @@ final class PagamentiRepository
                 'assigned' AS source,
                 NULL AS pending_importo_totale,
                 NULL AS pending_importo_allocato,
+                NULL AS pending_allocato_calcolato,
                 NULL AS pending_cliente_hint,
                 NULL AS pending_id_anagrafica,
                 NULL AS pending_reference,
@@ -209,6 +211,7 @@ final class PagamentiRepository
                 'pending' AS source,
                 pag.importo_totale AS pending_importo_totale,
                 pag.importo_allocato AS pending_importo_allocato,
+                pend_alloc.totale_allocato AS pending_allocato_calcolato,
                 pag.cliente_nome_hint AS pending_cliente_hint,
                 pag.id_anagrafica_hint AS pending_id_anagrafica,
                 pag.reference AS pending_reference,
@@ -216,10 +219,20 @@ final class PagamentiRepository
             FROM tb_pagamenti pag
             LEFT JOIN cfg_sdi_modalita_pagamento mp ON mp.id_modalita = pag.id_mp
             LEFT JOIN cfg_metodi_pagamento mt ON mt.id_metodo = pag.id_metodo
+            LEFT JOIN (
+                SELECT
+                    id_pagamento,
+                    COALESCE(SUM(importo), 0) AS totale_allocato
+                FROM appoggio_pagamenti_fattura
+                WHERE id_pagamento IS NOT NULL
+                GROUP BY id_pagamento
+            ) pend_alloc ON pend_alloc.id_pagamento = pag.id_pagamento
 SQL;
 
         $pendingConditions = $pendingWhere ?: [];
-        $pendingConditions[] = '(pag.importo_totale - pag.importo_allocato) > 0.009';
+        if ($onlyOpenPending) {
+            $pendingConditions[] = '(pag.importo_totale - pag.importo_allocato) > 0.009';
+        }
         if ($pendingConditions) {
             $pendingSql .= ' WHERE ' . implode(' AND ', $pendingConditions);
         }
@@ -488,7 +501,11 @@ SQL;
 
         if ($source === 'pending') {
             $importoDocumento = isset($row['pending_importo_totale']) ? (float) $row['pending_importo_totale'] : (isset($row['importo_documento']) ? (float) $row['importo_documento'] : null);
-            $allocato = isset($row['pending_importo_allocato']) ? (float) $row['pending_importo_allocato'] : 0.0;
+            $calcolato = isset($row['pending_allocato_calcolato']) ? (float) $row['pending_allocato_calcolato'] : null;
+            $allocato = $calcolato !== null ? $calcolato : (isset($row['pending_importo_allocato']) ? (float) $row['pending_importo_allocato'] : 0.0);
+            if ($allocato < 0) {
+                $allocato = 0.0;
+            }
             $residuoPagamento = $importoDocumento !== null ? round($importoDocumento - $allocato, 2) : null;
             if ($residuoPagamento !== null && $residuoPagamento < 0) {
                 $residuoPagamento = 0.0;
@@ -832,12 +849,25 @@ SQL;
             return null;
         }
 
-        $residuo = round((float) $row['importo_totale'] - ((float) $row['importo_allocato']), 2);
-        if ($residuo < 0) {
-            $residuo = 0.0;
+        $assignments = $this->fetchAllocazioniByPagamentoId((int) $row['id_pagamento']);
+        $importoTotale = isset($row['importo_totale']) ? (float) $row['importo_totale'] : null;
+        $storedAllocato = isset($row['importo_allocato']) ? (float) $row['importo_allocato'] : 0.0;
+        $calculatedAllocato = 0.0;
+        foreach ($assignments as $assignment) {
+            if (isset($assignment['importo']) && $assignment['importo'] !== null) {
+                $calculatedAllocato += (float) $assignment['importo'];
+            }
+        }
+        $calculatedAllocato = round($calculatedAllocato, 2);
+        $allocatoEffettivo = $calculatedAllocato > 0 ? $calculatedAllocato : $storedAllocato;
+        if ($allocatoEffettivo < 0) {
+            $allocatoEffettivo = 0.0;
         }
 
-        $assignments = $this->fetchAllocazioniByPagamentoId((int) $row['id_pagamento']);
+        $residuo = $importoTotale !== null ? round($importoTotale - $allocatoEffettivo, 2) : null;
+        if ($residuo !== null && $residuo < 0) {
+            $residuo = 0.0;
+        }
 
         return [
             'id_pagamento' => (int) $row['id_pagamento'],
@@ -847,6 +877,7 @@ SQL;
             'data_pagamento' => $row['data_pagamento'] ?? null,
             'importo' => null,
             'importo_documento' => isset($row['importo_totale']) ? (float) $row['importo_totale'] : null,
+            'importo_allocato' => $allocatoEffettivo,
             'import_uid' => $row['import_uid'] ?? null,
             'residuo_pagamento' => $residuo,
             'note' => $row['note'] ?? null,
@@ -867,8 +898,8 @@ SQL;
             'staging' => true,
             'assegnazioni' => $assignments ?: [],
             'assegnazioni_stats' => [
-                'totale' => isset($row['importo_totale']) ? (float) $row['importo_totale'] : null,
-                'allocato' => isset($row['importo_allocato']) ? (float) $row['importo_allocato'] : null,
+                'totale' => $importoTotale,
+                'allocato' => $allocatoEffettivo,
                 'residuo' => $residuo,
             ],
         ];

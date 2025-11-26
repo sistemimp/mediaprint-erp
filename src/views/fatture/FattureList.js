@@ -20,10 +20,10 @@ import {
   CTableRow,
 } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
-import { cilArrowRight, cilReload } from '@coreui/icons'
+import { cilArrowRight, cilPrint, cilReload } from '@coreui/icons'
 
 import { useAuth } from '../../context/AuthContext'
-import { fetchFattureList } from '../../services/fatture'
+import { buildFatturaPdfUrl, fetchFattureList } from '../../services/fatture'
 
 const currencyFormatter = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' })
 
@@ -166,6 +166,13 @@ const FattureList = () => {
     navigate(`/fatture/dettagli?id=${id}`)
   }
 
+  const handlePrintPdf = (id) => {
+    if (typeof window === 'undefined') return
+    const url = buildFatturaPdfUrl(id)
+    if (!url) return
+    window.open(url, '_blank', 'noopener')
+  }
+
   return (
     <CCard>
       <CCardHeader>
@@ -301,9 +308,26 @@ const FattureList = () => {
                     )}
                   </CTableDataCell>
                   <CTableDataCell className="text-center">
-                    <CButton color="link" size="sm" className="p-0" onClick={() => handleView(row.id_fattura)}>
-                      <CIcon icon={cilArrowRight} />
-                    </CButton>
+                    <div className="d-inline-flex gap-2 flex-wrap justify-content-center">
+                      <CButton
+                        color="link"
+                        size="sm"
+                        className="p-0"
+                        onClick={() => handleView(row.id_fattura)}
+                        title="Apri dettaglio"
+                      >
+                        <CIcon icon={cilArrowRight} />
+                      </CButton>
+                      <CButton
+                        color="link"
+                        size="sm"
+                        className="p-0"
+                        onClick={() => handlePrintPdf(row.id_fattura)}
+                        title="Stampa PDF"
+                      >
+                        <CIcon icon={cilPrint} />
+                      </CButton>
+                    </div>
                   </CTableDataCell>
                 </CTableRow>
               ))}

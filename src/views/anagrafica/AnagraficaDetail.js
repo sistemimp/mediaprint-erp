@@ -27,10 +27,21 @@ import {
   CPaginationItem,
 } from "@coreui/react"
 import CIcon from "@coreui/icons-react"
-import { cilArrowLeft, cilReload, cilDescription, cilEnvelopeClosed, cilPrint, cilPlus, cilSettings, cilTrash } from "@coreui/icons"
+import {
+  cilArrowLeft,
+  cilReload,
+  cilDescription,
+  cilEnvelopeClosed,
+  cilPrint,
+  cilPlus,
+  cilSave,
+  cilSettings,
+  cilTrash,
+} from "@coreui/icons"
 
 import { fetchAnagraficaDetail, updateAnagraficaDetail } from "../../services/anagrafiche"
 import { apiFetch } from "../../services/apiClient"
+import { fetchPaymentTerms } from "../../services/paymentTerms"
 import BottomToast from "../../components/BottomToast"
 import { useAuth } from "../../context/AuthContext"
 import { useBreadcrumbActions } from "../../context/BreadcrumbActionsContext"
@@ -160,7 +171,6 @@ const createFiscalForm = (fiscale) => ({
   banca: fiscale?.banca ?? "",
   id_cond_pagamento: fiscale?.id_cond_pagamento ?? "",
   modalita_pagamento: fiscale?.modalita_pagamento ?? "",
-  giorni_pagamento: fiscale?.giorni_pagamento ?? "",
   altri_dati: fiscale?.altri_dati ?? "",
 })
 
@@ -207,6 +217,9 @@ const AnagraficaDetail = () => {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [refreshIndex, setRefreshIndex] = useState(0)
+  const [paymentTerms, setPaymentTerms] = useState([])
+  const [paymentTermsLoading, setPaymentTermsLoading] = useState(false)
+  const [paymentTermsError, setPaymentTermsError] = useState(null)
 
   const [mutationError, setMutationError] = useState(null)
   const [toast, setToast] = useState({ open: false, type: 'success', message: '' })
@@ -234,6 +247,39 @@ const AnagraficaDetail = () => {
   const [editingContactId, setEditingContactId] = useState(null)
   const [contactForm, setContactForm] = useState(null)
   const [savingContactId, setSavingContactId] = useState(null)
+  const sedi = useMemo(() => (Array.isArray(detail?.sedi) ? detail.sedi : []), [detail?.sedi])
+  const contatti = useMemo(
+    () => (Array.isArray(detail?.contatti) ? detail.contatti : []),
+    [detail?.contatti],
+  )
+  const contattiArchiviati = useMemo(
+    () => (Array.isArray(detail?.contatti_archiviati) ? detail.contatti_archiviati : []),
+    [detail?.contatti_archiviati],
+  )
+  const paymentTermsMap = useMemo(() => {
+    const map = new Map()
+    if (Array.isArray(paymentTerms)) {
+      paymentTerms.forEach((term) => {
+        if (term && term.id !== undefined) {
+          map.set(String(term.id), term)
+        }
+      })
+    }
+    return map
+  }, [paymentTerms])
+  const paymentTermOptions = useMemo(() => {
+    if (!Array.isArray(paymentTerms)) {
+      return []
+    }
+    return paymentTerms.map((term) => ({
+      value: String(term.id),
+      label: term.label,
+    }))
+  }, [paymentTerms])
+  const currentPaymentTermSelection =
+    fiscaleForm && fiscaleForm.id_cond_pagamento !== "" && fiscaleForm.id_cond_pagamento !== undefined && fiscaleForm.id_cond_pagamento !== null
+      ? paymentTermsMap.get(String(fiscaleForm.id_cond_pagamento))
+      : null
 
   const locationStateId =
     location && typeof location.state === "object" && location.state !== null
@@ -318,6 +364,43 @@ const AnagraficaDetail = () => {
     }
   }, [token, recordId, refreshIndex, logout])
 
+  useEffect(() => {
+    if (!token) {
+      setPaymentTerms([])
+      return
+    }
+
+    const controller = new AbortController()
+    let isMounted = true
+    setPaymentTermsLoading(true)
+    setPaymentTermsError(null)
+
+    fetchPaymentTerms({ token, signal: controller.signal })
+      .then(({ items }) => {
+        if (!isMounted) {
+          return
+        }
+        setPaymentTerms(Array.isArray(items) ? items : [])
+      })
+      .catch((fetchError) => {
+        if (fetchError.name === "AbortError" || !isMounted) {
+          return
+        }
+        setPaymentTermsError(fetchError)
+        setPaymentTerms([])
+      })
+      .finally(() => {
+        if (isMounted) {
+          setPaymentTermsLoading(false)
+        }
+      })
+
+    return () => {
+      isMounted = false
+      controller.abort()
+    }
+  }, [token])
+
   const handleGoBack = () => {
     if (window.history.length > 1) {
       navigate(-1)
@@ -335,10 +418,10 @@ const AnagraficaDetail = () => {
   const isCompact = !isEditingGeneral && !isEditingFiscal && editingSedeId === null && editingContactId === null
   const gridGapClass = isCompact ? 'g-2' : 'g-3'
 
-  const handleMutationSuccess = (updatedDetail) => {
+  const handleMutationSuccess = useCallback((updatedDetail) => {
     setDetail(updatedDetail)
     setMutationError(null)
-  }
+  }, [])
 
   const startGeneralEditing = () => {
     if (!detail?.anagrafica) {
@@ -483,8 +566,6 @@ const AnagraficaDetail = () => {
       id_cond_pagamento:
         fiscaleForm.id_cond_pagamento === "" ? null : Number(fiscaleForm.id_cond_pagamento),
       modalita_pagamento: fiscaleForm.modalita_pagamento,
-      giorni_pagamento:
-        fiscaleForm.giorni_pagamento === "" ? null : Number(fiscaleForm.giorni_pagamento),
       altri_dati: fiscaleForm.altri_dati,
     }
 
@@ -544,7 +625,7 @@ const AnagraficaDetail = () => {
     }))
   }
 
-  const handleSedeSave = async () => {
+  const handleSedeSave = useCallback(async () => {
     if (!recordId || !sedeForm || editingSedeId === null) {
       return
     }
@@ -665,7 +746,7 @@ const AnagraficaDetail = () => {
     } finally {
       setSavingSedeId(null)
     }
-  }
+  }, [editingSedeId, handleMutationSuccess, logout, recordId, sedeForm, sedi, token])
 
   const handleSedeDelete = async (sedeId) => {
     if (!recordId || !sedeId) {
@@ -763,7 +844,7 @@ const AnagraficaDetail = () => {
       [field]: value,
     }))
   }
-  const handleContactSave = async (contattoId) => {
+  const handleContactSave = useCallback(async (contattoId) => {
     if (!recordId || !contactForm) {
       return
     }
@@ -793,7 +874,7 @@ const AnagraficaDetail = () => {
 
     try {
       if (contattoId === 'new') {
-        const prevIds = (detail?.contatti ?? []).map((c) => c.id_contatto)
+        const prevIds = contatti.map((c) => c.id_contatto)
 
         const createdResp = await updateAnagraficaDetail({
           token,
@@ -825,9 +906,9 @@ const AnagraficaDetail = () => {
         // For updates, include uniqueness enforcement per sede in one batch
         const batch = [{ id_contatto: contattoId, ...payload }]
         if (payload.is_predefinito === 1) {
-          const sedeId = payload.id_sede ?? (detail?.contatti ?? []).find((c) => c.id_contatto === contattoId)?.id_sede
+          const sedeId = payload.id_sede ?? contatti.find((c) => c.id_contatto === contattoId)?.id_sede
           if (sedeId) {
-            const sameSede = (detail?.contatti ?? []).filter(
+            const sameSede = contatti.filter(
               (c) => c.id_contatto !== contattoId && Number(c.id_sede) === Number(sedeId) && Number(c.is_predefinito) === 1,
             )
             sameSede.forEach((c) => batch.push({ id_contatto: c.id_contatto, is_predefinito: 0 }))
@@ -848,9 +929,12 @@ const AnagraficaDetail = () => {
     } finally {
       setSavingContactId(null)
     }
-  }
+  }, [contactForm, contatti, handleMutationSuccess, logout, recordId, token])
 
-  const preventivi = detail?.preventivi ?? []
+  const preventivi = useMemo(
+    () => (Array.isArray(detail?.preventivi) ? detail.preventivi : []),
+    [detail?.preventivi],
+  )
   // Preventivi: ultimi 10 con pager 5/pg
   const [preventiviPage, setPreventiviPage] = useState(0)
   const PREVENTIVI_ROWS_PER_PAGE = 5
@@ -879,9 +963,6 @@ const AnagraficaDetail = () => {
   }
   const ddt = detail?.ddt ?? []
   const fatture = detail?.fatture ?? []
-  const sedi = detail?.sedi ?? []
-  const contatti = detail?.contatti ?? []
-  const contattiArchiviati = detail?.contatti_archiviati ?? []
   const [contactsView, setContactsView] = useState('associati')
 
   const sedeOptions = useMemo(() => {
@@ -1028,6 +1109,8 @@ const AnagraficaDetail = () => {
     }
 
     const fiscale = detail.fiscale
+    const paymentTerm =
+      fiscale.id_cond_pagamento != null ? paymentTermsMap.get(String(fiscale.id_cond_pagamento)) : null
 
     return [
       { label: "PEC", value: fiscale.pec },
@@ -1035,10 +1118,13 @@ const AnagraficaDetail = () => {
       { label: "IBAN", value: fiscale.iban },
       { label: "Banca", value: fiscale.banca },
       { label: "Modalita di pagamento", value: fiscale.modalita_pagamento },
-      { label: "Giorni pagamento", value: fiscale.giorni_pagamento },
+      {
+        label: "Condizioni di pagamento",
+        value: paymentTerm?.label ?? "-",
+      },
       { label: "ID condizione pagamento", value: fiscale.id_cond_pagamento },
     ]
-  }, [detail])
+  }, [detail, paymentTermsMap])
   const anagraficaStatus = String(detail?.anagrafica?.stato || '').toLowerCase()
   const isDisabled = anagraficaStatus === 'disattiva' || Number(detail?.anagrafica?.is_active) !== 1
 
@@ -1075,16 +1161,45 @@ const AnagraficaDetail = () => {
     if (isEditingGeneral && !isDisabled) {
       actions.push({
         id: 'anagrafica-general-save',
+        icon: cilSave,
         label: savingGeneral ? 'Salvataggio anagrafica...' : 'Salva anagrafica',
         onClick: handleGeneralBreadcrumbSave,
-        disabled: savingGeneral,
+        disabled: savingGeneral || !generalForm,
       })
     } else if (isEditingFiscal && !isDisabled) {
       actions.push({
         id: 'anagrafica-fiscale-save',
+        icon: cilSave,
         label: savingFiscal ? 'Salvataggio dati fiscali...' : 'Salva dati fiscali',
         onClick: handleFiscalBreadcrumbSave,
-        disabled: savingFiscal,
+        disabled: savingFiscal || !fiscaleForm,
+      })
+    } else if (!isDisabled && editingSedeId !== null && sedeForm) {
+      const savingCurrentSede = savingSedeId === editingSedeId
+      actions.push({
+        id: 'anagrafica-sede-save',
+        icon: cilSave,
+        label: savingCurrentSede
+          ? 'Salvataggio sede...'
+          : editingSedeId === 'new'
+            ? 'Crea sede'
+            : 'Salva sede',
+        onClick: handleSedeSave,
+        disabled: savingCurrentSede,
+      })
+    } else if (!isDisabled && editingContactId !== null && contactForm) {
+      const savingCurrentContact = savingContactId === editingContactId
+      const isNewContact = editingContactId === 'new'
+      actions.push({
+        id: 'anagrafica-contact-save',
+        icon: cilSave,
+        label: savingCurrentContact
+          ? 'Salvataggio contatto...'
+          : isNewContact
+            ? 'Crea contatto'
+            : 'Salva contatto',
+        onClick: () => handleContactSave(isNewContact ? 'new' : editingContactId),
+        disabled: savingCurrentContact,
       })
     }
     setBreadcrumbActions(actions)
@@ -1094,6 +1209,7 @@ const AnagraficaDetail = () => {
     handleFiscalBreadcrumbSave,
     handleGeneralBreadcrumbSave,
     handleRefreshData,
+    handleContactSave,
     isDisabled,
     isEditingFiscal,
     isEditingGeneral,
@@ -1101,6 +1217,15 @@ const AnagraficaDetail = () => {
     recordId,
     savingFiscal,
     savingGeneral,
+    generalForm,
+    fiscaleForm,
+    editingSedeId,
+    sedeForm,
+    savingSedeId,
+    contactForm,
+    editingContactId,
+    savingContactId,
+    handleSedeSave,
     setBreadcrumbActions,
   ])
 
@@ -1722,24 +1847,31 @@ const AnagraficaDetail = () => {
                       />
                     </CCol>
                     <CCol md={6}>
-                      <CFormLabel htmlFor="idCondPagamento">ID condizione pagamento</CFormLabel>
-                      <CFormInput
+                      <CFormLabel htmlFor="idCondPagamento">Condizioni di pagamento</CFormLabel>
+                      <CFormSelect
                         id="idCondPagamento"
-                        type="number"
                         value={fiscaleForm.id_cond_pagamento}
                         onChange={handleFiscalFieldChange("id_cond_pagamento")}
-                        disabled={savingFiscal || isDisabled}
-                      />
-                    </CCol>
-                    <CCol md={6}>
-                      <CFormLabel htmlFor="giorniPagamento">Giorni pagamento</CFormLabel>
-                      <CFormInput
-                        id="giorniPagamento"
-                        type="number"
-                        value={fiscaleForm.giorni_pagamento}
-                        onChange={handleFiscalFieldChange("giorni_pagamento")}
-                        disabled={savingFiscal || isDisabled}
-                      />
+                        disabled={savingFiscal || isDisabled || paymentTermsLoading}
+                      >
+                        <option value="">Seleziona una condizione</option>
+                        {paymentTermOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </CFormSelect>
+                      {paymentTermsLoading && (
+                        <div className="form-text text-body-secondary">Caricamento condizioni…</div>
+                      )}
+                      {paymentTermsError && !paymentTermsLoading && (
+                        <div className="form-text text-danger">
+                          Impossibile caricare le condizioni: {paymentTermsError.message || "errore sconosciuto"}
+                        </div>
+                      )}
+                      {currentPaymentTermSelection?.description && (
+                        <div className="form-text">{currentPaymentTermSelection.description}</div>
+                      )}
                     </CCol>
                     <CCol xs={12}>
                       <CFormLabel htmlFor="altriDati">Altri dati</CFormLabel>

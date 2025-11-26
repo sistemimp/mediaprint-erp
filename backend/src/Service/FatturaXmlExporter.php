@@ -7,6 +7,7 @@ use DateTimeImmutable;
 use DOMDocument;
 use DOMElement;
 use MediaPrint\Repo\FattureRepository;
+use MediaPrint\Service\PaymentTerms;
 use PDO;
 use RuntimeException;
 
@@ -19,10 +20,16 @@ final class FatturaXmlExporter
      */
     private array $naturaMap;
 
+    /**
+     * @var list<array<string,mixed>>
+     */
+    private array $paymentTerms;
+
     public function __construct(private PDO $pdo)
     {
         $this->repo = new FattureRepository($pdo);
         $this->naturaMap = $this->loadNaturaMap();
+        $this->paymentTerms = PaymentTerms::all($pdo);
     }
 
     /**
@@ -204,22 +211,32 @@ final class FatturaXmlExporter
         $datiPagamento = $doc->createElement('DatiPagamento');
         $body->appendChild($datiPagamento);
         $this->appendTextElement($doc, $datiPagamento, 'CondizioniPagamento', $company['condizioni_pagamento']);
-        $dettaglioPagamento = $doc->createElement('DettaglioPagamento');
-        $datiPagamento->appendChild($dettaglioPagamento);
         $modalitaPagamento = strtoupper((string) ($detail['sdi_mp_code'] ?? $company['modalita_pagamento']));
-        $this->appendTextElement($doc, $dettaglioPagamento, 'ModalitaPagamento', $modalitaPagamento);
-        $this->appendTextElement(
-            $doc,
-            $dettaglioPagamento,
-            'DataScadenzaPagamento',
-            $this->resolveDueDate($documentDate, $detail['cliente_giorni_pagamento'] ?? null)
-        );
-        $this->appendTextElement(
-            $doc,
-            $dettaglioPagamento,
-            'ImportoPagamento',
-            $this->formatAmount($totalDocumento)
-        );
+        $schedule = $detail['condizioni_pagamento_rate'] ?? [];
+        if (!is_array($schedule) || empty($schedule)) {
+            $schedule = PaymentTerms::buildSchedule(
+                isset($detail['cliente_id_cond_pagamento']) ? (int) $detail['cliente_id_cond_pagamento'] : null,
+                $documentDate,
+                $totalDocumento,
+                $this->paymentTerms
+            );
+        }
+        if (empty($schedule)) {
+            $schedule = [[
+                'due_date' => $this->resolveDueDate($documentDate, $detail['cliente_giorni_pagamento'] ?? null),
+                'amount' => $totalDocumento,
+            ]];
+        }
+
+        foreach ($schedule as $item) {
+            $dettaglioPagamento = $doc->createElement('DettaglioPagamento');
+            $datiPagamento->appendChild($dettaglioPagamento);
+            $this->appendTextElement($doc, $dettaglioPagamento, 'ModalitaPagamento', $modalitaPagamento);
+            $dueDate = isset($item['due_date']) ? (string) $item['due_date'] : $documentDate;
+            $this->appendTextElement($doc, $dettaglioPagamento, 'DataScadenzaPagamento', $dueDate);
+            $importo = isset($item['amount']) && is_numeric($item['amount']) ? (float) $item['amount'] : $totalDocumento;
+            $this->appendTextElement($doc, $dettaglioPagamento, 'ImportoPagamento', $this->formatAmount($importo));
+        }
 
         return (string) $doc->saveXML();
     }

@@ -24,6 +24,7 @@ try {
         'id_anagrafica' => isset($_GET['id_anagrafica']) ? (int) $_GET['id_anagrafica'] : null,
         'date_from' => isset($_GET['date_from']) ? trim((string) $_GET['date_from']) : null,
         'date_to' => isset($_GET['date_to']) ? trim((string) $_GET['date_to']) : null,
+        'pending_only_open' => isset($_GET['pending_only_open']) ? (int) $_GET['pending_only_open'] === 1 : false,
     ];
 
     $repo = new PagamentiRepository(Database::getConnection());
@@ -39,4 +40,3 @@ try {
 } catch (Throwable $throwable) {
     HttpResponse::error('Errore interno inatteso.', 500, ['error' => $throwable->getMessage()]);
 }
-

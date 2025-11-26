@@ -21,6 +21,9 @@ export const fetchPagamentiList = async ({ token, filters = {}, signal } = {}) =
   if (filters.id_anagrafica) params.id_anagrafica = filters.id_anagrafica
   if (filters.date_from) params.date_from = filters.date_from
   if (filters.date_to) params.date_to = filters.date_to
+  if (filters.pending_only_open !== undefined) {
+    params.pending_only_open = filters.pending_only_open ? 1 : 0
+  }
 
   const response = await apiFetch('/pagamentiList.php', {
     token,

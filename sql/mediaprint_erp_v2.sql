@@ -1311,6 +1311,8 @@ CREATE TABLE `cfg_termini_pagamento` (
   `id_termine` smallint(5) unsigned NOT NULL AUTO_INCREMENT,
   `code` varchar(32) NOT NULL,
   `label` varchar(128) NOT NULL,
+  `descrizione` text DEFAULT NULL,
+  `config` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`config`)),
   `giorni` smallint(5) unsigned DEFAULT NULL,
   `fine_mese` tinyint(1) NOT NULL DEFAULT 0,
   `rate` tinyint(3) unsigned DEFAULT NULL,
@@ -1327,10 +1329,18 @@ CREATE TABLE `cfg_termini_pagamento` (
 LOCK TABLES `cfg_termini_pagamento` WRITE;
 /*!40000 ALTER TABLE `cfg_termini_pagamento` DISABLE KEYS */;
 INSERT INTO `cfg_termini_pagamento` VALUES
-(1,'immediato','Pagamento immediato',0,0,NULL,1),
-(2,'30gg','30 giorni',30,0,NULL,1),
-(3,'60gg','60 giorni',60,0,NULL,1),
-(4,'fm','Fine mese',0,1,NULL,1);
+(1,'BON_SCAD','Bonifico bancario a scadenza','Saldo unico alla data di emissione.','{\"schedule\":[{\"anchor\":\"invoice_date\",\"offset_days\":0,\"label\":\"Saldo\"}]}',0,0,1,1),
+(2,'30_DF','Pagamento a 30 giorni data fattura','Unica rata 30 giorni dalla data fattura.','{\"schedule\":[{\"anchor\":\"invoice_date\",\"offset_days\":30,\"label\":\"Saldo 30 gg\"}]}',30,0,1,1),
+(3,'60_DF','Pagamento a 60 giorni data fattura','Unica rata 60 giorni dalla data fattura.','{\"schedule\":[{\"anchor\":\"invoice_date\",\"offset_days\":60,\"label\":\"Saldo 60 gg\"}]}',60,0,1,1),
+(4,'90_DF','Pagamento a 90 giorni data fattura','Unica rata 90 giorni dalla data fattura.','{\"schedule\":[{\"anchor\":\"invoice_date\",\"offset_days\":90,\"label\":\"Saldo 90 gg\"}]}',90,0,1,1),
+(5,'FM','Pagamento a fine mese','Saldo al termine del mese di fatturazione.','{\"schedule\":[{\"anchor\":\"end_of_month\",\"offset_days\":0,\"label\":\"Saldo fine mese\"}]}',0,1,1,1),
+(6,'30_FM','Pagamento 30 giorni fine mese','Saldo 30 giorni dopo la fine mese.','{\"schedule\":[{\"anchor\":\"end_of_month\",\"offset_days\":30,\"label\":\"Saldo 30 gg f.m.\"}]}',30,1,1,1),
+(7,'60_DFFM','Pagamento 60 gg d.f.f.m.','Saldo 60 giorni dalla fine del mese di fatturazione.','{\"schedule\":[{\"anchor\":\"end_of_month\",\"offset_days\":60,\"label\":\"Saldo 60 gg f.m.\"}]}',60,1,1,1),
+(8,'90_DFFM','Pagamento 90 gg d.f.f.m.','Saldo 90 giorni dalla fine del mese di fatturazione.','{\"schedule\":[{\"anchor\":\"end_of_month\",\"offset_days\":90,\"label\":\"Saldo 90 gg f.m.\"}]}',90,1,1,1),
+(9,'30_60_DF','Pagamento 30-60 data fattura','Due rate a 30 e 60 giorni dalla data fattura.','{\"schedule\":[{\"anchor\":\"invoice_date\",\"offset_days\":30,\"label\":\"Rata 1 - 30 gg\"},{\"anchor\":\"invoice_date\",\"offset_days\":60,\"label\":\"Rata 2 - 60 gg\"}]}',30,0,2,1),
+(10,'30_60_FM','Pagamento 30-60 fine mese','Due rate a 30 e 60 giorni dalla fine mese.','{\"schedule\":[{\"anchor\":\"end_of_month\",\"offset_days\":30,\"label\":\"Rata 1 - 30 gg fm\"},{\"anchor\":\"end_of_month\",\"offset_days\":60,\"label\":\"Rata 2 - 60 gg fm\"}]}',30,1,2,1),
+(11,'30_60_90_DF','Pagamento 30-60-90 data fattura','Tre rate a 30, 60 e 90 giorni dalla data fattura.','{\"schedule\":[{\"anchor\":\"invoice_date\",\"offset_days\":30,\"label\":\"Rata 1 - 30 gg\"},{\"anchor\":\"invoice_date\",\"offset_days\":60,\"label\":\"Rata 2 - 60 gg\"},{\"anchor\":\"invoice_date\",\"offset_days\":90,\"label\":\"Rata 3 - 90 gg\"}]}',30,0,3,1),
+(12,'30_60_90_FM','Pagamento 30-60-90 fine mese','Tre rate a 30, 60 e 90 giorni dalla fine mese di fatturazione.','{\"schedule\":[{\"anchor\":\"end_of_month\",\"offset_days\":30,\"label\":\"Rata 1 - 30 gg fm\"},{\"anchor\":\"end_of_month\",\"offset_days\":60,\"label\":\"Rata 2 - 60 gg fm\"},{\"anchor\":\"end_of_month\",\"offset_days\":90,\"label\":\"Rata 3 - 90 gg fm\"}]}',30,1,3,1);
 /*!40000 ALTER TABLE `cfg_termini_pagamento` ENABLE KEYS */;
 UNLOCK TABLES;
 

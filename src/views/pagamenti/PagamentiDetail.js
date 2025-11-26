@@ -31,13 +31,68 @@ import { fetchPagamentoDetail, searchPagamentiFatture } from '../../services/pag
 import { deleteFatturaPagamento, saveFatturaPagamento } from '../../services/fatture'
 
 const currencyFormatter = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' })
+const toNumberOrNull = (value) => {
+  if (value === null || value === undefined) {
+    return null
+  }
+  const numeric = Number(value)
+  return Number.isFinite(numeric) ? numeric : null
+}
+const roundCurrencyValue = (value) => {
+  const numeric = toNumberOrNull(value)
+  if (numeric === null) {
+    return null
+  }
+  return Math.round(numeric * 100) / 100
+}
+const extractCustomerHintFromReference = (reference, fallbackName) => {
+  const fallback = typeof fallbackName === 'string' ? fallbackName.trim() : ''
+  if (typeof reference !== 'string') {
+    return fallback
+  }
+  let candidate = reference.replace(/\s+/g, ' ').trim()
+  if (!candidate) {
+    return fallback
+  }
+  const quotedMatch = candidate.match(/["'«“”‘’](.+?)["'»”‘’]/)
+  if (quotedMatch && quotedMatch[1]) {
+    candidate = quotedMatch[1].trim()
+  }
+  const segmented = candidate
+    .split(/[|]/)
+    .map((part) => part.trim())
+    .filter(Boolean)
+  if (segmented.length > 1) {
+    candidate = segmented[segmented.length - 1]
+  }
+  const separatorSplit = candidate
+    .split(/[-–—:]/)
+    .map((part) => part.trim())
+    .filter(Boolean)
+  if (separatorSplit.length > 1) {
+    candidate = separatorSplit[separatorSplit.length - 1]
+  }
+  candidate = candidate.replace(/\b(fattur[aeo]?|fatt\.|doc\.?|pagamento|n°|n\.|nr\.|numero|prot\.)\b.*$/i, '').trim()
+  candidate = candidate.replace(/[()]/g, ' ').replace(/\s+/g, ' ').trim()
+  if (!candidate || candidate.length < 3 || /^[\d#\/.\- ]+$/.test(candidate)) {
+    return fallback
+  }
+  return candidate.length > 120 ? candidate.slice(0, 120).trim() : candidate
+}
 
 const PagamentiDetail = () => {
   const { token, logout } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const query = new URLSearchParams(location.search)
-  const id = Number(query.get('id') || 0)
+  const parsedId = Number(query.get('id'))
+  const id = Number.isFinite(parsedId) && parsedId > 0 ? parsedId : 0
+
+  useEffect(() => {
+    if (!id) {
+      navigate('/pagamenti/lista', { replace: true })
+    }
+  }, [id, navigate])
 
   const [record, setRecord] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -109,22 +164,47 @@ const PagamentiDetail = () => {
     const value = Number(item?.importo)
     return sum + (Number.isFinite(value) ? value : 0)
   }, 0)
-  const assignmentStats = record?.assegnazioni_stats || null
-  const residuoDisponibile = (() => {
-    if (assignmentStats && assignmentStats.residuo != null) {
-      return Number(assignmentStats.residuo)
-    }
-    if (record?.residuo_pagamento != null) {
-      return Number(record.residuo_pagamento)
-    }
-    if (record?.importo != null && assignmentStats?.allocato != null) {
-      return Number(record.importo) - Number(assignmentStats.allocato)
-    }
-    if (record?.importo != null && totalAssignedFromList > 0) {
-      return Number(record.importo) - totalAssignedFromList
+  const assignmentDocumentTotal = (() => {
+    for (const item of assignments) {
+      const numeric = toNumberOrNull(item?.importo_documento)
+      if (numeric !== null) {
+        return numeric
+      }
     }
     return null
   })()
+  const totalePagamento = (() => {
+    const candidates = [
+      assignmentDocumentTotal,
+      record?.importo_documento,
+      record?.importo_totale,
+      record?.importo,
+      record?.assegnazioni_stats?.totale,
+    ]
+    for (const value of candidates) {
+      const numeric = toNumberOrNull(value)
+      if (numeric !== null) {
+        return numeric
+      }
+    }
+    return null
+  })()
+  const totaleAssegnato = roundCurrencyValue(totalAssignedFromList) ?? 0
+  const computedResiduo = totalePagamento !== null ? Math.max(0, roundCurrencyValue(totalePagamento - totaleAssegnato) ?? 0) : null
+  const assignmentStats = (() => {
+    const fallback = record?.assegnazioni_stats || null
+    const totale = totalePagamento ?? toNumberOrNull(fallback?.totale)
+    const allocato =
+      totalePagamento !== null || assignments.length > 0
+        ? totaleAssegnato
+        : toNumberOrNull(fallback?.allocato)
+    const residuo = computedResiduo ?? toNumberOrNull(fallback?.residuo)
+    if (totale === null && allocato === null && residuo === null) {
+      return null
+    }
+    return { totale, allocato, residuo }
+  })()
+  const residuoDisponibile = assignmentStats?.residuo ?? toNumberOrNull(record?.residuo_pagamento)
   const isStaging = Boolean(record?.staging)
   const canAssignMore = Boolean(record)
   const deleteDisabled = deleting || !record
@@ -179,35 +259,19 @@ const PagamentiDetail = () => {
     }
   }
 
-  const openAssignmentModal = () => {
-    if (!record) return
-    const defaultAmount = residuoDisponibile != null ? Number(residuoDisponibile) : null
-    setAssignmentModalOpen(true)
-    setAssignmentSearch('')
-    setAssignmentResults([])
-    setAssignmentError(null)
-    setAssignmentSelected(null)
-    setAssignmentAmount(defaultAmount && defaultAmount > 0 ? defaultAmount.toFixed(2) : '')
-    setAssignmentSubmitError(null)
-  }
-
-  const closeAssignmentModal = () => {
-    setAssignmentModalOpen(false)
-    setAssignmentResults([])
-    setAssignmentError(null)
-    setAssignmentSelected(null)
-    setAssignmentAmount('')
-    setAssignmentSubmitError(null)
-  }
-
-  const performAssignmentSearch = async () => {
+  const performAssignmentSearch = async (overrideQuery) => {
     if (!token) return
+    const queryValue = overrideQuery ?? assignmentSearch
+    const normalizedTerm = typeof queryValue === 'string' ? queryValue.trim() : ''
+    if (overrideQuery !== undefined) {
+      setAssignmentSearch(queryValue || '')
+    }
     setAssignmentLoading(true)
     setAssignmentError(null)
     try {
       const response = await searchPagamentiFatture({
         token,
-        q: assignmentSearch || undefined,
+        q: normalizedTerm || undefined,
         onlyOpen: true,
       })
       setAssignmentResults(Array.isArray(response?.items) ? response.items : [])
@@ -221,6 +285,31 @@ const PagamentiDetail = () => {
     } finally {
       setAssignmentLoading(false)
     }
+  }
+
+  const openAssignmentModal = () => {
+    if (!record) return
+    const defaultAmount = residuoDisponibile != null ? Number(residuoDisponibile) : null
+    const autoSearchTerm = extractCustomerHintFromReference(record.reference, record.cliente)
+    setAssignmentModalOpen(true)
+    setAssignmentSearch(autoSearchTerm || '')
+    setAssignmentResults([])
+    setAssignmentError(null)
+    setAssignmentSelected(null)
+    setAssignmentAmount(defaultAmount && defaultAmount > 0 ? defaultAmount.toFixed(2) : '')
+    setAssignmentSubmitError(null)
+    if (autoSearchTerm && autoSearchTerm.length >= 3) {
+      void performAssignmentSearch(autoSearchTerm)
+    }
+  }
+
+  const closeAssignmentModal = () => {
+    setAssignmentModalOpen(false)
+    setAssignmentResults([])
+    setAssignmentError(null)
+    setAssignmentSelected(null)
+    setAssignmentAmount('')
+    setAssignmentSubmitError(null)
   }
 
   const handleSelectAssignmentInvoice = (invoice) => {
@@ -282,11 +371,7 @@ const PagamentiDetail = () => {
   }
 
   if (!id) {
-    return (
-      <CAlert color="danger" className="mb-0">
-        ID pagamento mancante.
-      </CAlert>
-    )
+    return null
   }
 
   return (
@@ -356,16 +441,15 @@ const PagamentiDetail = () => {
                 <div className="fw-semibold">{record.data_pagamento || '-'}</div>
               </CCol>
               <CCol md={3}>
-                <div className="text-body-secondary small">Importo</div>
-                <div className="fw-semibold">{currencyFormatter.format(Number(record.importo) || 0)}</div>
-                {record.importo_documento != null && (
-                  <small className="text-body-secondary d-block">
-                    Importo importato: {currencyFormatter.format(Number(record.importo_documento))}
-                  </small>
-                )}
-                {record.residuo_pagamento != null && Math.abs(Number(record.residuo_pagamento)) > 0.009 && (
+                <div className="text-body-secondary small">Importo importato</div>
+                <div className="fw-semibold">
+                  {currencyFormatter.format(
+                    record.importo_documento != null ? Number(record.importo_documento) : Number(record.importo) || 0,
+                  )}
+                </div>
+                {residuoDisponibile != null && Math.abs(residuoDisponibile) > 0.009 && (
                   <CBadge color="warning" className="mt-2">
-                    Residuo da assegnare: {currencyFormatter.format(Number(record.residuo_pagamento))}
+                    Residuo da assegnare: {currencyFormatter.format(residuoDisponibile)}
                   </CBadge>
                 )}
               </CCol>
@@ -502,7 +586,19 @@ const PagamentiDetail = () => {
                               )}
                             </td>
                             <td>
-                              <div className="fw-semibold">{item.fattura_display || '-'}</div>
+                              <div className="fw-semibold">
+                                {assignmentUnassigned ? (
+                                  item.fattura_display || '-'
+                                ) : (
+                                  <CButton
+                                    color="link"
+                                    className="p-0 fw-semibold"
+                                    onClick={() => navigate(`/fatture/dettagli?id=${item.id_fattura}`)}
+                                  >
+                                    {item.fattura_display || `Fattura #${item.id_fattura}`}
+                                  </CButton>
+                                )}
+                              </div>
                               {assignmentUnassigned ? (
                                 <CBadge color="warning" textColor="dark" className="mt-1">
                                   Da assegnare
@@ -620,7 +716,7 @@ const PagamentiDetail = () => {
                 }
               }}
             />
-            <CButton color="primary" type="button" onClick={performAssignmentSearch} disabled={assignmentLoading}>
+            <CButton color="primary" type="button" onClick={() => performAssignmentSearch()} disabled={assignmentLoading}>
               Cerca
             </CButton>
           </CInputGroup>
