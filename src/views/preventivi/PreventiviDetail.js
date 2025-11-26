@@ -41,7 +41,9 @@ import PreventivoContattiTable from '../../components/PreventivoContattiTable'
 import { normalizePreventivoContact, serializePreventivoContacts } from '../../utils/preventiviContacts'
 import CIcon from '@coreui/icons-react'
 import {
+  cilArrowRight,
   cilCheckCircle,
+  cilCog,
   cilSave,
   cilX,
   cilEnvelopeClosed,
@@ -53,7 +55,18 @@ import {
 import { useAuth } from '../../context/AuthContext'
 import { useBreadcrumbActions } from '../../context/BreadcrumbActionsContext'
 import { fetchAnagrafiche, fetchAnagraficaDetail } from '../../services/anagrafiche'
-import { createPreventivo, fetchPreventivoDetail, updatePreventivoStatus, logPreventivoStatusChange, fetchPreventivoStatusLog, fetchPreventivoOggettiOptions, createPreventivoOggettoOption, sendPreventivoEmail, logPreventivoEvent } from '../../services/preventivi'
+import {
+  createPreventivo,
+  fetchPreventivoDetail,
+  updatePreventivoStatus,
+  logPreventivoStatusChange,
+  fetchPreventivoStatusLog,
+  fetchPreventivoOggettiOptions,
+  createPreventivoOggettoOption,
+  sendPreventivoEmail,
+  logPreventivoEvent,
+  generateLavorazioneFromPreventivo,
+} from '../../services/preventivi'
 import { fetchDdtCausali, emitPreventivoDdt } from '../../services/ddt'
 import { fetchFattureConfig, emitPreventivoFattura } from '../../services/fatture'
 import { CMultiSelect } from '@coreui/react-pro'
@@ -266,6 +279,10 @@ const PreventiviDetail = () => {
   const [fatturaResult, setFatturaResult] = useState(null)
   const [linkedDdt, setLinkedDdt] = useState([])
   const [linkedFatture, setLinkedFatture] = useState([])
+  const [lavorazioneInfo, setLavorazioneInfo] = useState({ id: null, codice: null, createdAt: null })
+  const [lavorazioneGenerating, setLavorazioneGenerating] = useState(false)
+  const [lavorazioneError, setLavorazioneError] = useState(null)
+  const [lavorazioneSuccess, setLavorazioneSuccess] = useState(null)
   const [refreshCounter, setRefreshCounter] = useState(0)
   const handleRefreshData = useCallback(() => setRefreshCounter((prev) => prev + 1), [])
   // CIG / Determine
@@ -816,6 +833,11 @@ const PreventiviDetail = () => {
         )
         setLinkedDdt(Array.isArray(linkedDdtSrv) ? linkedDdtSrv : [])
         setLinkedFatture(Array.isArray(linkedFattureSrv) ? linkedFattureSrv : [])
+        setLavorazioneInfo({
+          id: data.id_lavorazione_corrente ?? null,
+          codice: data.lavorazione_codice ?? null,
+          createdAt: data.lavorazione_creata_il ?? null,
+        })
       } catch (e) {
         if (e.name === 'AbortError') return
         if (e.status === 401 && logout) {
@@ -1479,8 +1501,60 @@ const PreventiviDetail = () => {
     return `Fattura generata dal preventivo ID ${id}.`
   }, [headerNumero, headerAnno, id])
   const preventivoHasRighe = useMemo(() => Array.isArray(righe) && righe.length > 0, [righe])
+  const hasLinkedLavorazione = Boolean(lavorazioneInfo?.id)
+  const linkedLavorazioneId = lavorazioneInfo?.id ?? null
+  const canGenerateLavorazione = isConfirmed && !hasLinkedLavorazione && preventivoHasRighe
   const currentUserId = user?.id_user ?? user?.id ?? null
   const currentUserName = user?.full_name ?? user?.name ?? user?.username ?? user?.nickname ?? null
+
+  const handleOpenLavorazioneDetail = useCallback(() => {
+    if (!linkedLavorazioneId) return
+    navigate(`/lavorazioni/dettaglio?id=${linkedLavorazioneId}`)
+  }, [navigate, linkedLavorazioneId])
+
+  const handleGenerateLavorazione = useCallback(async () => {
+    if (!token || !id) return
+    setLavorazioneGenerating(true)
+    setLavorazioneError(null)
+    setLavorazioneSuccess(null)
+    const normalizedNote = typeof note === 'string' ? note.trim() : ''
+    try {
+      const titoloLavorazione =
+        (computedOggettoText && computedOggettoText.trim() !== '' ? computedOggettoText : null) ||
+        (oggetto && oggetto.trim() !== '' ? oggetto : null) ||
+        (headerNumero ? `Preventivo ${headerNumero}` : null)
+
+      const payload = await generateLavorazioneFromPreventivo({
+        token,
+        id,
+        titolo: titoloLavorazione ?? undefined,
+        descrizione: normalizedNote || titoloLavorazione || undefined,
+        note: normalizedNote || undefined,
+      })
+
+      const newId = payload?.id_lavorazione ?? payload?.lavorazione?.id_lavorazione ?? null
+      const newCode = payload?.codice ?? payload?.lavorazione?.codice ?? null
+      setLavorazioneInfo({
+        id: newId,
+        codice: newCode,
+        createdAt: new Date().toISOString(),
+      })
+      setLavorazioneSuccess(
+        newCode ? `Lavorazione ${newCode} generata correttamente.` : 'Lavorazione generata correttamente.',
+      )
+    } catch (err) {
+      if (err?.name === 'AbortError') {
+        return
+      }
+      if (err?.status === 401 && logout) {
+        logout()
+        return
+      }
+      setLavorazioneError(err)
+    } finally {
+      setLavorazioneGenerating(false)
+    }
+  }, [token, id, computedOggettoText, oggetto, note, headerNumero, logout])
 
   const handleOpenDdtModal = useCallback(() => {
     setDdtError(null)
@@ -1851,6 +1925,11 @@ const PreventiviDetail = () => {
             <small className="text-body-secondary">
               Documento {header.anno ?? '-'} / {header.numero ?? '-'}
             </small>
+            {hasLinkedLavorazione && (
+              <div className="text-body-secondary small">
+                Lavorazione collegata: {lavorazioneInfo.codice || `ID ${lavorazioneInfo.id}`}
+              </div>
+            )}
           </div>
           <div className="d-flex align-items-center gap-2 flex-wrap">
             {header.stato && (
@@ -1880,8 +1959,33 @@ const PreventiviDetail = () => {
               <CIcon icon={cibAdobeAcrobatReader} className="me-2" />
               Stampa PDF
             </CButton>
+            {hasLinkedLavorazione && (
+              <CButton
+                color="primary"
+                variant="outline"
+                size="sm"
+                type="button"
+                onClick={handleOpenLavorazioneDetail}
+              >
+                <CIcon icon={cilArrowRight} className="me-2" />
+                Apri lavorazione
+              </CButton>
+            )}
             {isConfirmed && (
               <>
+                {canGenerateLavorazione && (
+                  <CButton
+                    color="warning"
+                    variant="outline"
+                    size="sm"
+                    type="button"
+                    onClick={handleGenerateLavorazione}
+                    disabled={lavorazioneGenerating || loading || !token}
+                  >
+                    <CIcon icon={cilCog} className="me-2" />
+                    {lavorazioneGenerating ? 'Generazione...' : 'Genera lavorazione'}
+                  </CButton>
+                )}
                 <CButton
                   color="success"
                   variant="outline"
@@ -1921,6 +2025,22 @@ const PreventiviDetail = () => {
 
         {!loading && !loadError && (
           <CForm onSubmit={handleConferma}>
+            {lavorazioneError && (
+              <CAlert color="danger" className="mb-3">
+                {lavorazioneError?.payload?.message || lavorazioneError.message || 'Impossibile generare la lavorazione.'}
+              </CAlert>
+            )}
+            {lavorazioneSuccess && (
+              <CAlert color="success" className="mb-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <span>{lavorazioneSuccess}</span>
+                {hasLinkedLavorazione && (
+                  <CButton color="success" variant="outline" size="sm" onClick={handleOpenLavorazioneDetail}>
+                    <CIcon icon={cilArrowRight} className="me-2" />
+                    Apri lavorazione
+                  </CButton>
+                )}
+              </CAlert>
+            )}
             {anagraficaDisabled && (
               <CAlert color="warning" className="mb-3">Cliente disattivato: modifiche e conferma disabilitate.</CAlert>
             )}

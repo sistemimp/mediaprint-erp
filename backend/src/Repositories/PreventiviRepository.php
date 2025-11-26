@@ -1055,6 +1055,58 @@ final class PreventiviRepository
     }
 
     /**
+     * @return array{id_lavorazione_corrente:?int, lavorazione_creata_il:?string, lavorazione_codice:?string}
+     */
+    public function getLavorazioneLink(int $id): array
+    {
+        $sql = <<<'SQL'
+            SELECT
+                p.id_lavorazione_corrente,
+                p.lavorazione_creata_il,
+                l.codice AS lavorazione_codice
+            FROM tb_preventivi p
+            LEFT JOIN tb_lavorazioni l ON l.id_lavorazione = p.id_lavorazione_corrente
+            WHERE p.id_preventivo = :id
+            LIMIT 1
+        SQL;
+
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->bindValue(':id', $id, PDO::PARAM_INT);
+        $stmt->execute();
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($row === false) {
+            return [
+                'id_lavorazione_corrente' => null,
+                'lavorazione_creata_il' => null,
+                'lavorazione_codice' => null,
+            ];
+        }
+
+        return [
+            'id_lavorazione_corrente' => isset($row['id_lavorazione_corrente']) ? (int) $row['id_lavorazione_corrente'] : null,
+            'lavorazione_creata_il' => $row['lavorazione_creata_il'] ?? null,
+            'lavorazione_codice' => $row['lavorazione_codice'] ?? null,
+        ];
+    }
+
+    public function linkLavorazione(int $idPreventivo, int $idLavorazione): void
+    {
+        $sql = <<<'SQL'
+            UPDATE tb_preventivi
+            SET
+                id_lavorazione_corrente = :id_lavorazione,
+                lavorazione_creata_il = NOW(),
+                updated_at = NOW()
+            WHERE id_preventivo = :id_preventivo
+        SQL;
+
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->bindValue(':id_lavorazione', $idLavorazione, PDO::PARAM_INT);
+        $stmt->bindValue(':id_preventivo', $idPreventivo, PDO::PARAM_INT);
+        $stmt->execute();
+    }
+
+    /**
      * @param array{id_anagrafica:int, data_preventivo?:string|null, note?:string|null, totale_imponibile?:float|int|null, totale_sconto?:float|int|null, totale_iva?:float|int|null, totale?:float|int|null} $data
      * @return array{id_preventivo:int}
      */
@@ -1248,8 +1300,11 @@ final class PreventiviRepository
                 p.totale_sconto,
                 p.totale_iva,
                 p.totale,
+                p.id_lavorazione_corrente,
+                p.lavorazione_creata_il,
                 sp.code AS stato_code,
                 sp.label AS stato_label,
+                l.codice AS lavorazione_codice,
                 COALESCE(a.ragione_sociale, aa.ragione_sociale) AS cliente_ragione_sociale,
                 COALESCE(a.piva, aa.piva) AS cliente_piva,
                 COALESCE(a.codice_fiscale, aa.codice_fiscale) AS cliente_codice_fiscale,
@@ -1260,6 +1315,7 @@ final class PreventiviRepository
             LEFT JOIN tb_anagrafiche a ON a.id_anagrafica = p.id_anagrafica
             LEFT JOIN tb_anagrafiche_archive aa ON aa.id_anagrafica = p.id_anagrafica
             LEFT JOIN cfg_stati_preventivo sp ON sp.id_stato = p.id_stato_prev
+            LEFT JOIN tb_lavorazioni l ON l.id_lavorazione = p.id_lavorazione_corrente
             WHERE p.id_preventivo = :id
             LIMIT 1
         SQL;
@@ -1292,6 +1348,9 @@ final class PreventiviRepository
             'cliente_is_pa' => isset($row['cliente_is_pa']) ? (int) $row['cliente_is_pa'] : 0,
             'created_at' => $row['created_at'] ?? null,
             'updated_at' => $row['updated_at'] ?? null,
+            'id_lavorazione_corrente' => isset($row['id_lavorazione_corrente']) ? (int) $row['id_lavorazione_corrente'] : null,
+            'lavorazione_creata_il' => $row['lavorazione_creata_il'] ?? null,
+            'lavorazione_codice' => $row['lavorazione_codice'] ?? null,
         ];
         $detail['linked_ddt'] = $this->getLinkedDdt($id);
         $detail['linked_fatture'] = $this->getLinkedFatture($id);

@@ -304,3 +304,31 @@ export const sendPreventivoEmail = async ({ token, id, to, cc, subject, message,
 
   return response ?? { ok: false }
 }
+
+export const generateLavorazioneFromPreventivo = async ({
+  token,
+  id,
+  titolo,
+  descrizione,
+  note,
+  priorita,
+  signal,
+} = {}) => {
+  const numericId = Number(id)
+  const body = {
+    id_preventivo: Number.isFinite(numericId) && numericId > 0 ? numericId : id,
+    titolo,
+    descrizione,
+    note,
+    priorita,
+  }
+
+  const response = await apiFetch('/preventiviGenerateLavorazione.php', {
+    method: 'POST',
+    token,
+    body,
+    signal,
+  })
+
+  return response ?? {}
+}

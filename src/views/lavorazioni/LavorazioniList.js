@@ -27,91 +27,10 @@ import {
   CTableRow,
 } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
-import { cilCalendar, cilFilter, cilList, cilReload, cilViewColumn } from '@coreui/icons'
+import { cilCalendar, cilChevronLeft, cilChevronRight, cilFilter, cilList, cilReload, cilViewColumn } from '@coreui/icons'
 import classNames from 'classnames'
-import { fetchLavorazioniDashboard, fetchLavorazioniList } from '../../services/lavorazioni'
+import { fetchLavorazioniDashboard, fetchLavorazioniList, updateLavorazioneStatus } from '../../services/lavorazioni'
 import { useAuth } from '../../context/AuthContext'
-
-const fallbackLavorazioni = [
-  {
-    id_lavorazione: 1001,
-    codice: 'JOB-2025-001',
-    titolo: 'Campagna tesseramento 2025',
-    cliente: 'Comune di Milano',
-    stato: 'in_produzione',
-    stato_label: 'In produzione',
-    priorita: 'high',
-    percentuale_avanzamento: 45,
-    reparto_label: 'Stampa',
-    data_inizio_prevista: '2025-11-15',
-    data_fine_prevista: '2025-11-25',
-    attivita_aperte: 3,
-    attivita_totali: 5,
-    operatore_principale: 'Luca Bianchi',
-    id_preventivo: 21,
-    numero_preventivo: '2025/021',
-    ritardo_giorni: 2,
-  },
-  {
-    id_lavorazione: 1002,
-    codice: 'JOB-2025-002',
-    titolo: 'Stampa brochure istituzionali',
-    cliente: 'Regione Lombardia',
-    stato: 'pianificata',
-    stato_label: 'Pianificata',
-    priorita: 'medium',
-    percentuale_avanzamento: 10,
-    reparto_label: 'Imbustamento',
-    data_inizio_prevista: '2025-11-28',
-    data_fine_prevista: '2025-12-05',
-    attivita_aperte: 2,
-    attivita_totali: 4,
-    operatore_principale: 'Sara Conti',
-    id_preventivo: 22,
-    numero_preventivo: '2025/022',
-    ritardo_giorni: 0,
-  },
-  {
-    id_lavorazione: 1003,
-    codice: 'JOB-2025-003',
-    titolo: 'Cellophanatura tessere loyalty',
-    cliente: 'ACME S.p.A.',
-    stato: 'aperta',
-    stato_label: 'In attesa',
-    priorita: 'low',
-    percentuale_avanzamento: 0,
-    reparto_label: 'Cellophanatura',
-    data_inizio_prevista: '2025-12-02',
-    data_fine_prevista: '2025-12-10',
-    attivita_aperte: 1,
-    attivita_totali: 3,
-    operatore_principale: 'Team Produzione',
-    id_preventivo: 25,
-    numero_preventivo: '2025/025',
-    ritardo_giorni: 0,
-  },
-]
-
-const fallbackDashboard = {
-  totali: {
-    aperte: 4,
-    in_produzione: 2,
-    completate: 1,
-    ritardo: 1,
-  },
-  performance: {
-    completamento: 68,
-  },
-  workload: {
-    attivita_aperte: 11,
-    attivita_ritardo: 2,
-  },
-  reparti: [
-    { code: 'stampa', label: 'Stampa', attive: 3 },
-    { code: 'imbustamento', label: 'Imbustamento', attive: 2 },
-    { code: 'cellophanatura', label: 'Cellophanatura', attive: 1 },
-  ],
-}
 
 const statoOptions = [
   { value: '', label: 'Tutte' },
@@ -150,6 +69,39 @@ const prioritaBadgeMap = {
   critical: 'danger',
 }
 
+const statoLabelLookup = statoOptions.reduce((acc, option) => {
+  if (option.value) {
+    acc[option.value] = option.label
+  }
+  return acc
+}, {})
+
+const knownStati = statoOptions.map((option) => option.value).filter(Boolean)
+const monthFormatter = new Intl.DateTimeFormat('it-IT', { month: 'long', year: 'numeric' })
+const weekdayLabels = ['Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab', 'Dom']
+
+const parseDate = (value) => {
+  if (!value) {
+    return null
+  }
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return null
+  }
+  date.setHours(0, 0, 0, 0)
+  return date
+}
+
+const formatISODate = (date) => {
+  if (!(date instanceof Date)) {
+    return ''
+  }
+  const year = date.getFullYear()
+  const month = `${date.getMonth() + 1}`.padStart(2, '0')
+  const day = `${date.getDate()}`.padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
 const defaultFilters = {
   search: '',
   stato: '',
@@ -163,6 +115,13 @@ const defaultPagination = {
   total_items: 0,
   total_pages: 1,
 }
+
+const emptyTotals = Object.freeze({
+  aperte: 0,
+  in_produzione: 0,
+  completate: 0,
+  ritardo: 0,
+})
 
 const formatDate = (value) => {
   if (!value) return '-'
@@ -210,6 +169,7 @@ const LavorazioniList = () => {
   const [filters, setFilters] = useState(defaultFilters)
   const [viewMode, setViewMode] = useState('lista')
   const [items, setItems] = useState([])
+  const [calendarDate, setCalendarDate] = useState(() => new Date())
   const [stats, setStats] = useState(null)
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
@@ -217,10 +177,15 @@ const LavorazioniList = () => {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [refreshIndex, setRefreshIndex] = useState(0)
+  const [statusUpdatingJobId, setStatusUpdatingJobId] = useState(null)
+  const [draggedJobId, setDraggedJobId] = useState(null)
+  const [activeDropColumn, setActiveDropColumn] = useState(null)
+  const [kanbanStatusError, setKanbanStatusError] = useState(null)
+  const todayIso = useMemo(() => formatISODate(new Date()), [])
 
   const repartoOptions = useMemo(() => {
     const unique = new Map()
-    const source = Array.isArray(stats?.reparti) && stats.reparti.length > 0 ? stats.reparti : fallbackDashboard.reparti
+    const source = Array.isArray(stats?.reparti) ? stats.reparti : []
     source.forEach((reparto) => {
       if (reparto?.code && !unique.has(reparto.code)) {
         unique.set(reparto.code, reparto.label || reparto.code)
@@ -283,17 +248,14 @@ const LavorazioniList = () => {
         }
         console.error('Impossibile caricare il modulo lavorazioni:', err)
         setError(err)
-        setStats((prev) => prev || fallbackDashboard)
-        setItems((prev) => (prev.length > 0 ? prev : fallbackLavorazioni))
+        setStats((prev) => (prev ? prev : null))
+        setItems((prev) => (prev.length > 0 ? prev : []))
         setServerPagination((prev) =>
           prev?.total_items > 0
             ? prev
             : {
                 ...defaultPagination,
                 page: 1,
-                page_size: fallbackLavorazioni.length,
-                total_items: fallbackLavorazioni.length,
-                total_pages: 1,
               },
         )
       } finally {
@@ -305,30 +267,130 @@ const LavorazioniList = () => {
   }, [token, filters.periodo, filters.reparto, filters.search, filters.stato, page, pageSize, refreshIndex])
 
   const summaryCards = useMemo(() => {
-    const source = stats?.totali || fallbackDashboard.totali
+    const totals = stats?.totali || emptyTotals
     return [
       {
         key: 'aperte',
         label: 'Lavorazioni attive',
-        value: source?.aperte ?? 0,
+        value: totals?.aperte ?? 0,
       },
       {
         key: 'in_produzione',
         label: 'In produzione',
-        value: source?.in_produzione ?? 0,
+        value: totals?.in_produzione ?? 0,
       },
       {
         key: 'completate',
         label: 'Completate (mese)',
-        value: source?.completate ?? 0,
+        value: totals?.completate ?? 0,
       },
       {
         key: 'ritardo',
         label: 'Attivita in ritardo',
-        value: source?.ritardo ?? fallbackDashboard.totali.ritardo,
+        value: totals?.ritardo ?? 0,
       },
     ]
   }, [stats?.totali])
+
+  const kanbanConfig = useMemo(() => {
+    const base = statoOptions
+      .filter((option) => option.value)
+      .map((option) => ({
+        key: option.value,
+        label: option.label,
+      }))
+    const hasOtherStates = items.some((job) => job?.stato && !knownStati.includes(job.stato))
+    return hasOtherStates ? [...base, { key: 'altre', label: 'Altre lavorazioni' }] : base
+  }, [items])
+
+  const kanbanGroups = useMemo(() => {
+    const groups = {}
+    kanbanConfig.forEach((column) => {
+      groups[column.key] = []
+    })
+    items.forEach((job) => {
+      const fallbackState = job?.stato || 'aperta'
+      const targetKey = groups[fallbackState]
+        ? fallbackState
+        : job?.stato && groups.altre
+          ? 'altre'
+          : 'aperta'
+      groups[targetKey] = groups[targetKey] || []
+      groups[targetKey].push(job)
+    })
+    return groups
+  }, [items, kanbanConfig])
+
+  const unscheduledJobs = useMemo(
+    () => items.filter((job) => !job.data_inizio_prevista && !job.data_fine_prevista),
+    [items],
+  )
+
+  const activeCalendarMonth = useMemo(() => {
+    if (calendarDate instanceof Date && !Number.isNaN(calendarDate.getTime())) {
+      return new Date(calendarDate.getFullYear(), calendarDate.getMonth(), 1)
+    }
+    const now = new Date()
+    return new Date(now.getFullYear(), now.getMonth(), 1)
+  }, [calendarDate])
+
+  const calendarLabel = useMemo(() => monthFormatter.format(activeCalendarMonth), [activeCalendarMonth])
+
+  const jobEventsByDay = useMemo(() => {
+    const map = new Map()
+    items.forEach((job) => {
+      const start = parseDate(job.data_inizio_prevista) || parseDate(job.data_fine_prevista)
+      const end = parseDate(job.data_fine_prevista) || start
+      if (!start && !end) {
+        return
+      }
+      let from = start || end
+      let to = end || start
+      if (!from) {
+        return
+      }
+      if (to && from > to) {
+        const tmp = from
+        from = to
+        to = tmp
+      }
+      const cursor = new Date(from)
+      const limit = new Date(to || from)
+      while (cursor <= limit) {
+        const key = formatISODate(cursor)
+        if (!map.has(key)) {
+          map.set(key, [])
+        }
+        map.get(key).push(job)
+        cursor.setDate(cursor.getDate() + 1)
+      }
+    })
+    return map
+  }, [items])
+
+  const calendarWeeks = useMemo(() => {
+    const weeks = []
+    const cursor = new Date(activeCalendarMonth)
+    const startOffset = (cursor.getDay() + 6) % 7
+    cursor.setDate(cursor.getDate() - startOffset)
+    for (let weekIndex = 0; weekIndex < 6; weekIndex += 1) {
+      const days = []
+      for (let dayIndex = 0; dayIndex < 7; dayIndex += 1) {
+        const dayDate = new Date(cursor)
+        const isoKey = formatISODate(dayDate)
+        days.push({
+          date: dayDate,
+          isoKey,
+          inMonth: dayDate.getMonth() === activeCalendarMonth.getMonth(),
+          isToday: isoKey === todayIso,
+          jobs: jobEventsByDay.get(isoKey) || [],
+        })
+        cursor.setDate(cursor.getDate() + 1)
+      }
+      weeks.push(days)
+    }
+    return weeks
+  }, [activeCalendarMonth, jobEventsByDay, todayIso])
 
   const handleFilterChange = (field) => (event) => {
     const value = event?.target ? event.target.value : event
@@ -357,7 +419,113 @@ const LavorazioniList = () => {
     setPage(1)
   }
 
-  const currentItems = items.length > 0 ? items : fallbackLavorazioni
+  const handleCalendarPrev = () => {
+    setCalendarDate((current) => {
+      const base = current instanceof Date && !Number.isNaN(current.getTime()) ? current : new Date()
+      return new Date(base.getFullYear(), base.getMonth() - 1, 1)
+    })
+  }
+
+  const handleCalendarNext = () => {
+    setCalendarDate((current) => {
+      const base = current instanceof Date && !Number.isNaN(current.getTime()) ? current : new Date()
+      return new Date(base.getFullYear(), base.getMonth() + 1, 1)
+    })
+  }
+
+  const handleCalendarToday = () => {
+    setCalendarDate(new Date())
+  }
+
+  const handleKanbanCardDragStart = (job) => (event) => {
+    const jobId = Number(job?.id_lavorazione)
+    if (!Number.isFinite(jobId) || jobId <= 0) {
+      event.preventDefault()
+      return
+    }
+    setDraggedJobId(jobId)
+    if (event.dataTransfer) {
+      event.dataTransfer.effectAllowed = 'move'
+      event.dataTransfer.setData('text/plain', String(jobId))
+    }
+  }
+
+  const handleKanbanCardDragEnd = () => {
+    setDraggedJobId(null)
+    setActiveDropColumn(null)
+  }
+
+  const handleKanbanDragOver = (columnKey) => (event) => {
+    if (!columnKey || columnKey === 'altre' || statusUpdatingJobId !== null) {
+      return
+    }
+    event.preventDefault()
+    if (event.dataTransfer) {
+      event.dataTransfer.dropEffect = 'move'
+    }
+    if (activeDropColumn !== columnKey) {
+      setActiveDropColumn(columnKey)
+    }
+  }
+
+  const handleKanbanDrop = (columnKey) => async (event) => {
+    if (!columnKey || columnKey === 'altre' || !token) {
+      return
+    }
+    event.preventDefault()
+    setActiveDropColumn(null)
+    if (statusUpdatingJobId !== null) {
+      return
+    }
+
+    const transferId = event.dataTransfer?.getData('text/plain')
+    const resolvedId = transferId || (draggedJobId ? String(draggedJobId) : '')
+    const jobId = Number(resolvedId)
+    if (!Number.isFinite(jobId) || jobId <= 0) {
+      return
+    }
+
+    const targetJob = items.find((job) => Number(job?.id_lavorazione) === jobId)
+    if (!targetJob || targetJob.stato === columnKey) {
+      return
+    }
+
+    const previousItems = items
+    setKanbanStatusError(null)
+    setStatusUpdatingJobId(jobId)
+    setItems((current) =>
+      current.map((job) => {
+        if (Number(job?.id_lavorazione) !== jobId) {
+          return job
+        }
+        return {
+          ...job,
+          stato: columnKey,
+          stato_label: statoLabelLookup[columnKey] || job.stato_label || columnKey,
+        }
+      }),
+    )
+
+    try {
+      await updateLavorazioneStatus({
+        token,
+        id: jobId,
+        stato: columnKey,
+      })
+      setRefreshIndex((value) => value + 1)
+    } catch (updateError) {
+      console.error('Impossibile aggiornare lo stato lavorazione:', updateError)
+      setItems(previousItems)
+      const message =
+        updateError?.message || "Errore durante l'aggiornamento dello stato della lavorazione. Riprovare."
+      setKanbanStatusError(message)
+    } finally {
+      setStatusUpdatingJobId(null)
+      setDraggedJobId(null)
+    }
+  }
+
+  const currentItems = items
 
   const pageInfo = `Pagina ${serverPagination.page || page} di ${serverPagination.total_pages || 1}`
 
@@ -404,7 +572,7 @@ const LavorazioniList = () => {
               ))}
             </CButtonGroup>
           </div>
-        </CCardHeader>
+          </CCardHeader>
         <CCardBody>
           <CForm className="row g-3" onSubmit={handleSearchSubmit}>
             <CCol md={4}>
@@ -461,50 +629,258 @@ const LavorazioniList = () => {
               </CButton>
             </CCol>
           </CForm>
-          {viewMode !== 'lista' ? (
-            <CAlert color="warning" className="mt-4 mb-0">
-              Le viste {viewMode} saranno disponibili a breve. Al momento mostriamo l&apos;elenco tabellare per permettere la
-              navigazione e la validazione del backend.
-            </CAlert>
-          ) : null}
         </CCardBody>
       </CCard>
 
-      <CCard>
-        <CCardHeader className="d-flex flex-column flex-md-row gap-3 align-items-md-center justify-content-between">
-          <div>
-            <strong>Elenco lavorazioni</strong>
-            <div className="small text-body-secondary">{pageInfo}</div>
-          </div>
-          <div className="d-flex gap-2 align-items-center">
-            <CFormSelect
-              size="sm"
-              value={pageSize}
-              onChange={handlePageSizeChange}
-              style={{ width: '120px' }}
-              aria-label="Elementi per pagina"
-            >
-              {[10, 20, 50].map((size) => (
-                <option key={size} value={size}>
-                  {size} / pagina
-                </option>
-              ))}
-            </CFormSelect>
-            <CButtonGroup size="sm">
-              <CButton color="outline-primary" disabled={page <= 1} onClick={() => handlePageChange(page - 1)}>
-                «
+      {viewMode === 'kanban' ? (
+        <CCard className="mb-4">
+          <CCardHeader className="d-flex flex-column flex-lg-row gap-3 align-items-lg-center justify-content-between">
+            <div>
+              <strong>Board Kanban</strong>
+              <div className="small text-body-secondary">Visualizza le lavorazioni nei diversi stati operativi.</div>
+            </div>
+            <div className="small text-body-secondary">Totale lavorazioni: {items.length}</div>
+          </CCardHeader>
+          <CCardBody>
+            {error ? (
+              <CAlert color="danger" className="mb-3">
+                {error?.message || 'Errore durante il caricamento delle lavorazioni.'}
+              </CAlert>
+            ) : null}
+            {kanbanStatusError ? (
+              <CAlert color="warning" className="mb-3">
+                {kanbanStatusError}
+              </CAlert>
+            ) : null}
+            <div className="position-relative">
+              {loading ? (
+                <div className="position-absolute top-0 start-0 w-100 h-100 d-flex align-items-center justify-content-center bg-white bg-opacity-75">
+                  <CSpinner color="primary" />
+                </div>
+              ) : null}
+              <div className="d-flex flex-nowrap overflow-auto gap-3 pb-2">
+                {kanbanConfig.map((column) => {
+                  const columnItems = kanbanGroups[column.key] || []
+                  const isDroppableColumn = column.key !== 'altre'
+                  const isActiveColumn = isDroppableColumn && activeDropColumn === column.key
+                  return (
+                    <div
+                      key={column.key}
+                      className={classNames('border rounded-3 bg-body-tertiary flex-grow-1', {
+                        'border-primary border-2 shadow-sm': isActiveColumn,
+                      })}
+                      style={{ minWidth: '280px' }}
+                      onDragOver={isDroppableColumn ? handleKanbanDragOver(column.key) : undefined}
+                      onDrop={isDroppableColumn ? handleKanbanDrop(column.key) : undefined}
+                    >
+                      <div className="p-3 border-bottom d-flex justify-content-between align-items-center">
+                        <span className="fw-semibold">{column.label}</span>
+                        <CBadge color="secondary">{columnItems.length}</CBadge>
+                      </div>
+                      <div className="p-3 d-flex flex-column gap-3" style={{ minHeight: '160px' }}>
+                        {columnItems.length > 0 ? (
+                          columnItems.map((job) => (
+                            <div
+                              key={job.id_lavorazione || job.codice}
+                              role="button"
+                              tabIndex={0}
+                              className="bg-white border rounded-3 shadow-sm p-3 position-relative"
+                              onClick={() => job.id_lavorazione && navigate(`/lavorazioni/dettaglio?id=${job.id_lavorazione}`)}
+                              onKeyDown={(event) => {
+                                if (event.key === 'Enter' || event.key === ' ') {
+                                  job.id_lavorazione && navigate(`/lavorazioni/dettaglio?id=${job.id_lavorazione}`)
+                                }
+                              }}
+                              draggable={Boolean(job.id_lavorazione) && statusUpdatingJobId === null}
+                              onDragStart={handleKanbanCardDragStart(job)}
+                              onDragEnd={handleKanbanCardDragEnd}
+                              aria-grabbed={draggedJobId === Number(job.id_lavorazione)}
+                              style={{
+                                cursor:
+                                  Boolean(job.id_lavorazione) && statusUpdatingJobId === null ? 'grab' : 'pointer',
+                              }}
+                            >
+                              {statusUpdatingJobId === Number(job.id_lavorazione) ? (
+                                <div className="position-absolute top-0 start-0 w-100 h-100 d-flex align-items-center justify-content-center bg-white bg-opacity-75 rounded-3">
+                                  <CSpinner size="sm" color="primary" />
+                                </div>
+                              ) : null}
+                              <div className="d-flex justify-content-between align-items-start gap-2 mb-2">
+                                <div>
+                                  <div className="fw-semibold text-truncate">{job.titolo || job.codice}</div>
+                                  <div className="text-body-secondary small text-truncate">{job.cliente || '-'}</div>
+                                </div>
+                                {renderPrioritaBadge(job.priorita)}
+                              </div>
+                              <div className="d-flex flex-wrap gap-2 align-items-center mb-2">
+                                {renderStatoBadge(job)}
+                                <CBadge color="light" textColor="dark">
+                                  {formatPercent(job.percentuale_avanzamento)}
+                                </CBadge>
+                              </div>
+                              <div className="small text-body-secondary d-flex flex-column gap-1">
+                                <span>
+                                  Inizio: {formatDate(job.data_inizio_prevista)} - Fine: {formatDate(job.data_fine_prevista)}
+                                </span>
+                                <span>Reparto: {job.reparto_label || job.reparto || 'n/d'}</span>
+                                <span>Attivita: {job.attivita_totali ?? '-'} totali</span>
+                              </div>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="text-center text-body-secondary small py-4">Nessuna lavorazione in questa colonna.</div>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          </CCardBody>
+        </CCard>
+      ) : null}
+
+      {viewMode === 'calendario' ? (
+        <CCard className="mb-4">
+          <CCardHeader className="d-flex flex-column flex-lg-row gap-3 align-items-lg-center justify-content-between">
+            <div>
+              <strong>Calendario pianificazione</strong>
+              <div className="small text-body-secondary">Analizza le finestre temporali delle lavorazioni.</div>
+            </div>
+            <div className="d-flex gap-2 align-items-center">
+              <CButtonGroup size="sm">
+                <CButton color="outline-primary" onClick={handleCalendarPrev}>
+                  <CIcon icon={cilChevronLeft} />
+                </CButton>
+                <CButton color="outline-primary" onClick={handleCalendarNext}>
+                  <CIcon icon={cilChevronRight} />
+                </CButton>
+              </CButtonGroup>
+              <CButton color="light" size="sm" onClick={handleCalendarToday}>
+                Oggi
               </CButton>
-              <CButton
-                color="outline-primary"
-                disabled={page >= (serverPagination?.total_pages || 1)}
-                onClick={() => handlePageChange(page + 1)}
+            </div>
+          </CCardHeader>
+          <CCardBody>
+            <div className="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+              <div className="fw-semibold text-capitalize">{calendarLabel}</div>
+              <div className="small text-body-secondary">
+                Lavorazioni pianificate: {items.length - unscheduledJobs.length}
+                {unscheduledJobs.length > 0 ? ` - Senza date: ${unscheduledJobs.length}` : ''}
+              </div>
+            </div>
+            {unscheduledJobs.length > 0 ? (
+              <CAlert color="info">
+                {unscheduledJobs.length === 1
+                  ? 'Una lavorazione non ha ancora date previste e non e mostrata nel calendario.'
+                  : `${unscheduledJobs.length} lavorazioni non hanno date previste e non sono mostrate nel calendario.`}
+              </CAlert>
+            ) : null}
+            {error ? (
+              <CAlert color="danger" className="mb-3">
+                {error?.message || 'Errore durante il caricamento delle lavorazioni.'}
+              </CAlert>
+            ) : null}
+            <div className="table-responsive position-relative">
+              {loading ? (
+                <div className="position-absolute top-0 start-0 w-100 h-100 d-flex align-items-center justify-content-center bg-white bg-opacity-75">
+                  <CSpinner color="primary" />
+                </div>
+              ) : null}
+              <table className="table table-bordered align-middle calendar-table mb-0">
+                <thead className="table-light text-center">
+                  <tr>
+                    {weekdayLabels.map((day) => (
+                      <th key={day} className="text-uppercase small">
+                        {day}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {calendarWeeks.map((week, index) => (
+                    <tr key={`week-${index}`}>
+                      {week.map((day) => (
+                        <td
+                          key={day.isoKey}
+                          className={classNames('align-top', {
+                            'bg-body-tertiary': !day.inMonth,
+                            'border-primary border-2': day.isToday,
+                          })}
+                          style={{ minWidth: '140px', minHeight: '140px' }}
+                        >
+                          <div className={classNames('fw-semibold mb-2 small', { 'text-body-secondary': !day.inMonth })}>
+                            {day.date.getDate()}
+                          </div>
+                          <div className="d-flex flex-column gap-2">
+                            {day.jobs.slice(0, 3).map((job) => (
+                              <div
+                                key={`${day.isoKey}-${job.id_lavorazione || job.codice}`}
+                                className={classNames(
+                                  'border rounded-2 px-2 py-1 small cursor-pointer',
+                                  `border-${statoBadgeMap[job.stato] || 'secondary'}`,
+                                )}
+                                onClick={() =>
+                                  job.id_lavorazione && navigate(`/lavorazioni/dettaglio?id=${job.id_lavorazione}`)
+                                }
+                              >
+                                <div className="fw-semibold text-truncate">{job.titolo || job.codice}</div>
+                                <div className="text-body-secondary text-truncate">{job.cliente || '-'}</div>
+                              </div>
+                            ))}
+                            {day.jobs.length > 3 ? (
+                              <div className="text-body-secondary small">
+                                +{day.jobs.length - 3} altre lavorazioni
+                              </div>
+                            ) : null}
+                          </div>
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </CCardBody>
+        </CCard>
+      ) : null}
+
+      {viewMode === 'lista' ? (
+        <CCard>
+          <CCardHeader className="d-flex flex-column flex-md-row gap-3 align-items-md-center justify-content-between">
+            <div>
+              <strong>Elenco lavorazioni</strong>
+              <div className="small text-body-secondary">{pageInfo}</div>
+            </div>
+            <div className="d-flex gap-2 align-items-center">
+              <CFormSelect
+                size="sm"
+                value={pageSize}
+                onChange={handlePageSizeChange}
+                style={{ width: '120px' }}
+                aria-label="Elementi per pagina"
               >
-                »
-              </CButton>
-            </CButtonGroup>
-          </div>
-        </CCardHeader>
-        <CCardBody className="p-0">
+                {[10, 20, 50].map((size) => (
+                  <option key={size} value={size}>
+                    {size} / pagina
+                  </option>
+                ))}
+              </CFormSelect>
+              <CButtonGroup size="sm">
+                <CButton color="outline-primary" disabled={page <= 1} onClick={() => handlePageChange(page - 1)}>
+                  <CIcon icon={cilChevronLeft} />
+                </CButton>
+                <CButton
+                  color="outline-primary"
+                  disabled={page >= (serverPagination?.total_pages || 1)}
+                  onClick={() => handlePageChange(page + 1)}
+                >
+                  <CIcon icon={cilChevronRight} />
+                </CButton>
+              </CButtonGroup>
+            </div>
+          </CCardHeader>
+          <CCardBody className="p-0">
           {error ? (
             <CAlert color="danger" className="m-3">
               {error?.message || 'Errore durante il caricamento delle lavorazioni.'}
@@ -553,7 +929,7 @@ const LavorazioniList = () => {
                         <CTableDataCell>
                           <div className="fw-semibold">{job.cliente || '-'}</div>
                           <div className="text-body-secondary small">
-                            {job.numero_preventivo ? `Preventivo ${job.numero_preventivo}` : '—'}
+                            {job.numero_preventivo ? `Preventivo ${job.numero_preventivo}` : '-'}
                           </div>
                         </CTableDataCell>
                         <CTableDataCell>{renderStatoBadge(job)}</CTableDataCell>
@@ -581,7 +957,7 @@ const LavorazioniList = () => {
                           <div className="text-body-secondary small">aperte / totali</div>
                         </CTableDataCell>
                         <CTableDataCell>
-                          <div className="fw-semibold">{job.operatore_principale || '—'}</div>
+                          <div className="fw-semibold">{job.operatore_principale || '-'}</div>
                           <div className="text-body-secondary small">+ altri</div>
                         </CTableDataCell>
                       </CTableRow>
@@ -599,6 +975,7 @@ const LavorazioniList = () => {
           </div>
         </CCardBody>
       </CCard>
+      ) : null}
     </>
   )
 }

@@ -180,6 +180,35 @@ CREATE TABLE IF NOT EXISTS `tb_lavorazioni_report_export` (
     CONSTRAINT `fk_report_reparto` FOREIGN KEY (`filtro_reparto`) REFERENCES `cfg_reparti_produttivi` (`id_reparto`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS `cfg_lavorazioni_attivita_template` (
+    `id_template` INT(10) UNSIGNED NOT NULL AUTO_INCREMENT,
+    `titolo` VARCHAR(191) NOT NULL,
+    `descrizione` TEXT DEFAULT NULL,
+    `priorita` ENUM('low','medium','high','critical') NOT NULL DEFAULT 'medium',
+    `id_reparto` SMALLINT(5) UNSIGNED DEFAULT NULL,
+    `durata_predefinita_giorni` SMALLINT(5) UNSIGNED DEFAULT NULL,
+    `attivo` TINYINT(1) NOT NULL DEFAULT 1,
+    `ordering` SMALLINT(5) UNSIGNED DEFAULT 100,
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id_template`),
+    KEY `idx_template_attivo` (`attivo`),
+    KEY `idx_template_reparto` (`id_reparto`),
+    CONSTRAINT `fk_template_reparto` FOREIGN KEY (`id_reparto`) REFERENCES `cfg_reparti_produttivi` (`id_reparto`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT INTO `cfg_lavorazioni_attivita_template` (`titolo`, `descrizione`, `priorita`, `id_reparto`, `ordering`)
+SELECT 'Impaginazione', 'Predisposizione file grafici per la commessa', 'medium', (SELECT id_reparto FROM cfg_reparti_produttivi WHERE code = 'stampa' LIMIT 1), 10
+WHERE NOT EXISTS (SELECT 1 FROM `cfg_lavorazioni_attivita_template` WHERE `titolo` = 'Impaginazione');
+
+INSERT INTO `cfg_lavorazioni_attivita_template` (`titolo`, `descrizione`, `priorita`, `id_reparto`, `ordering`)
+SELECT 'Stampa', 'Produzione in reparto stampa', 'high', (SELECT id_reparto FROM cfg_reparti_produttivi WHERE code = 'stampa' LIMIT 1), 20
+WHERE NOT EXISTS (SELECT 1 FROM `cfg_lavorazioni_attivita_template` WHERE `titolo` = 'Stampa');
+
+INSERT INTO `cfg_lavorazioni_attivita_template` (`titolo`, `descrizione`, `priorita`, `id_reparto`, `ordering`)
+SELECT 'Imbustamento', 'Preparazione e imbustamento del materiale', 'medium', (SELECT id_reparto FROM cfg_reparti_produttivi WHERE code = 'imbustamento' LIMIT 1), 30
+WHERE NOT EXISTS (SELECT 1 FROM `cfg_lavorazioni_attivita_template` WHERE `titolo` = 'Imbustamento');
+
 
 ALTER TABLE `tb_preventivi`
     ADD COLUMN `confermato_il` DATETIME DEFAULT NULL AFTER `note`,

@@ -8,13 +8,15 @@ use MediaPrint\Backend\Mailer\SmtpMailer;
 use MediaPrint\Repo\DdtRepository;
 use MediaPrint\Repo\FattureRepository;
 use MediaPrint\Repo\PreventiviRepository;
+use MediaPrint\Repo\LavorazioniRepository;
 
 final class PreventiviService
 {
     public function __construct(
         private PreventiviRepository $repository,
         private ?DdtRepository $ddtRepository = null,
-        private ?FattureRepository $fattureRepository = null
+        private ?FattureRepository $fattureRepository = null,
+        private ?LavorazioniRepository $lavorazioniRepository = null
     ) {}
 
     private function requireDdtRepository(): DdtRepository
@@ -33,6 +35,15 @@ final class PreventiviService
         }
 
         throw new \RuntimeException('Funzionalità fatture non disponibile.', 503);
+    }
+
+    private function requireLavorazioniRepository(): LavorazioniRepository
+    {
+        if ($this->lavorazioniRepository instanceof LavorazioniRepository) {
+            return $this->lavorazioniRepository;
+        }
+
+        throw new \RuntimeException('Funzionalità lavorazioni non disponibile.', 503);
     }
 
     /**
@@ -704,6 +715,84 @@ HTML;
     }
 
     /**
+     * Genera una lavorazione collegata al preventivo confermato.
+     *
+     * @return array<string, mixed>
+     */
+    public function generateLavorazione(array $input): array
+    {
+        $lavorazioniRepository = $this->requireLavorazioniRepository();
+        $id = isset($input['id']) ? (int) $input['id'] : (isset($input['id_preventivo']) ? (int) $input['id_preventivo'] : 0);
+        if ($id <= 0) {
+            throw new \RuntimeException('ID preventivo mancante o non valido.', 422);
+        }
+
+        $detail = $this->repository->fetchDetail($id);
+        if ($detail === null) {
+            throw new \RuntimeException('Preventivo non trovato.', 404);
+        }
+
+        $statusCode = strtolower((string) ($detail['stato_code'] ?? ''));
+        if ($statusCode !== 'confermato') {
+            throw new \RuntimeException('È possibile generare la lavorazione solo da preventivi confermati.', 422);
+        }
+
+        $link = $this->repository->getLavorazioneLink($id);
+        if (!empty($link['id_lavorazione_corrente'])) {
+            throw new \RuntimeException('Per questo preventivo esiste già una lavorazione collegata.', 409);
+        }
+
+        $idAnagrafica = isset($detail['id_anagrafica']) ? (int) $detail['id_anagrafica'] : 0;
+        if ($idAnagrafica <= 0) {
+            throw new \RuntimeException('Il preventivo non è associato a un\'anagrafica valida.', 422);
+        }
+
+        $titolo = trim((string) ($input['titolo'] ?? $detail['oggetto'] ?? ''));
+        if ($titolo === '') {
+            $titolo = sprintf(
+                'Lavorazione %s',
+                $detail['cliente_ragione_sociale'] ?? sprintf('Preventivo #%d', $id)
+            );
+        }
+
+        $descrizione = trim((string) ($input['descrizione'] ?? ''));
+        if ($descrizione === '') {
+            $descrizione = $detail['oggetto'] ?? $titolo;
+        }
+
+        $note = trim((string) ($input['note'] ?? ''));
+        if ($note === '') {
+            $note = $detail['note'] ?? null;
+        }
+
+        $workData = [
+            'id_preventivo' => $detail['id_preventivo'],
+            'id_anagrafica' => $idAnagrafica,
+            'titolo' => $titolo,
+            'descrizione' => $descrizione,
+            'note' => $note,
+            'priorita' => $this->normalizePriority($input['priorita'] ?? null),
+            'stato' => 'aperta',
+            'id_reparto' => null,
+            'data_inizio_prevista' => $this->sanitizeDate($detail['data_preventivo'] ?? null),
+            'data_fine_prevista' => $this->sanitizeDate($input['data_fine_prevista'] ?? null),
+            'percentuale_avanzamento' => 0,
+            'anno_preventivo' => $detail['anno_preventivo'] ?? null,
+            'numero_preventivo' => $detail['numero_documento'] ?? null,
+        ];
+
+        $job = $lavorazioniRepository->createFromPreventivo($workData, []);
+        $this->repository->linkLavorazione($id, $job['id_lavorazione']);
+
+        return [
+            'ok' => true,
+            'id_lavorazione' => $job['id_lavorazione'],
+            'codice' => $job['codice'],
+            'attivita_create' => $job['attivita_create'],
+        ];
+    }
+
+    /**
      * Emette un DDT generato dalle righe di un preventivo confermato.
      *
      * @return array<string,mixed>
@@ -956,5 +1045,34 @@ HTML;
 
         $this->repository->archiveById($id);
         return ['ok' => true];
+    }
+
+    /**
+     * @param mixed $value
+     */
+    private function normalizePriority($value): string
+    {
+        if (!is_string($value)) {
+            return 'medium';
+        }
+        $normalized = strtolower(trim($value));
+        return in_array($normalized, ['low', 'medium', 'high', 'critical'], true) ? $normalized : 'medium';
+    }
+
+    /**
+     * @param mixed $value
+     */
+    private function sanitizeDate($value): ?string
+    {
+        if (!is_string($value) || trim($value) === '') {
+            return null;
+        }
+
+        try {
+            $dt = new \DateTimeImmutable($value);
+            return $dt->format('Y-m-d');
+        } catch (\Throwable $exception) {
+            return null;
+        }
     }
 }

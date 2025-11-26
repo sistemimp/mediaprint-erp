@@ -65,6 +65,93 @@ final class LavorazioniService
      * @param array<string, mixed> $query
      * @return array<string, mixed>
      */
+    public function assignmentOptions(array $query = []): array
+    {
+        $reparti = array_map(
+            static function (array $row): array {
+                return [
+                    'id' => isset($row['id_reparto']) ? (int) $row['id_reparto'] : null,
+                    'code' => $row['code'] ?? null,
+                    'label' => $row['label'] ?? null,
+                ];
+            },
+            $this->repository->listActiveReparti(),
+        );
+
+        $operatori = array_map(
+            static function (array $row): array {
+                $id = isset($row['id_account']) ? (int) $row['id_account'] : null;
+                if ($id === null || $id <= 0) {
+                    return null;
+                }
+                return [
+                    'id_account' => $id,
+                    'username' => $row['username'] ?? null,
+                    'email' => $row['email'] ?? null,
+                ];
+            },
+            $this->repository->listActiveOperators(),
+        );
+
+        $operatori = array_values(array_filter($operatori));
+
+        return [
+            'reparti' => $reparti,
+            'operatori' => $operatori,
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $input
+     * @return array<string, mixed>
+     */
+    public function changeStatus(array $input): array
+    {
+        $id = $this->sanitizeInt(
+            $input['id'] ?? ($input['id_lavorazione'] ?? ($input['lavorazione_id'] ?? 0)),
+            1,
+            PHP_INT_MAX,
+        );
+        if ($id <= 0) {
+            throw new \RuntimeException('ID lavorazione mancante o non valido.', 422);
+        }
+
+        $rawState = (string) ($input['stato'] ?? ($input['status'] ?? ($input['code'] ?? '')));
+        $stato = $this->filterEnum($rawState, ['aperta', 'pianificata', 'in_produzione', 'completata', 'annullata']);
+        if ($stato === null) {
+            throw new \RuntimeException('Stato lavorazione non valido.', 422);
+        }
+
+        $detail = $this->repository->findDetail($id);
+        if ($detail === null) {
+            throw new \RuntimeException('Lavorazione non trovata.', 404);
+        }
+
+        $currentState = isset($detail['stato']) ? strtolower((string) $detail['stato']) : null;
+        if ($currentState === $stato) {
+            return [
+                'ok' => true,
+                'id_lavorazione' => $id,
+                'stato' => $stato,
+                'lavorazione' => $detail,
+            ];
+        }
+
+        $this->repository->updateStato($id, $stato);
+        $updated = $this->repository->findDetail($id);
+
+        return [
+            'ok' => true,
+            'id_lavorazione' => $id,
+            'stato' => $stato,
+            'lavorazione' => $updated ?? $detail,
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $query
+     * @return array<string, mixed>
+     */
     public function detail(array $query): array
     {
         $id = $this->sanitizeInt($query['id'] ?? ($query['id_lavorazione'] ?? 0), 1, PHP_INT_MAX);
@@ -78,6 +165,282 @@ final class LavorazioniService
         }
 
         return $detail;
+    }
+
+    /**
+     * @param array<string, mixed> $query
+     * @return array<string, mixed>
+     */
+    public function activityTemplates(array $query): array
+    {
+        $all = isset($query['all']) ? (int) $query['all'] === 1 : false;
+        $items = $this->repository->listActivityTemplates(!$all);
+        return ['items' => $items];
+    }
+
+    /**
+     * @param array<string, mixed> $input
+     * @return array<string, mixed>
+     */
+    public function createActivity(array $input): array
+    {
+        $lavorazioneId = $this->sanitizeInt($input['id_lavorazione'] ?? ($input['lavorazione_id'] ?? $input['id'] ?? 0), 1, PHP_INT_MAX);
+        if ($lavorazioneId <= 0) {
+            throw new \RuntimeException('ID lavorazione mancante o non valido.', 422);
+        }
+        if (!$this->repository->existsLavorazione($lavorazioneId)) {
+            throw new \RuntimeException('Lavorazione non trovata.', 404);
+        }
+
+        $templateId = isset($input['id_template']) ? (int) $input['id_template'] : (isset($input['template_id']) ? (int) $input['template_id'] : 0);
+        $template = null;
+        if ($templateId > 0) {
+            $template = $this->repository->findActivityTemplate($templateId);
+            if ($template === null) {
+                throw new \RuntimeException('Template attività non trovato.', 404);
+            }
+            if (isset($template['attivo']) && (int) $template['attivo'] !== 1) {
+                throw new \RuntimeException('Template attività disattivato.', 422);
+            }
+        }
+
+        $titolo = trim((string) ($input['titolo'] ?? ''));
+        if ($titolo === '' && $template !== null) {
+            $titolo = trim((string) ($template['titolo'] ?? ''));
+        }
+        if ($titolo === '') {
+            throw new \RuntimeException('Specificare il titolo dell\'attività.', 422);
+        }
+
+        $descrizione = trim((string) ($input['descrizione'] ?? ''));
+        if ($descrizione === '' && $template !== null) {
+            $descrizione = trim((string) ($template['descrizione'] ?? ''));
+        }
+
+        $priorita = $this->sanitizePriority($input['priorita'] ?? ($template['priorita'] ?? null));
+
+        $idReparto = null;
+        if (array_key_exists('id_reparto', $input)) {
+            $candidate = (int) $input['id_reparto'];
+            $idReparto = $candidate > 0 ? $candidate : null;
+        } elseif (!empty($input['reparto'])) {
+            $idReparto = $this->resolveRepartoId((string) $input['reparto']);
+        } elseif ($template !== null && !empty($template['id_reparto'])) {
+            $idReparto = (int) $template['id_reparto'];
+        }
+
+        $dataScadenza = $this->sanitizeDate($input['data_scadenza'] ?? null);
+        $quantita = null;
+        if (isset($input['quantita_prevista']) && $input['quantita_prevista'] !== '') {
+            $quantita = (float) $input['quantita_prevista'];
+        }
+
+        $operatorIds = $this->normalizeOperatorIds($input['operatori'] ?? ($input['operators'] ?? []));
+        if ($operatorIds !== []) {
+            $operatorIds = $this->repository->filterOperatorIds($operatorIds);
+        }
+
+        $activity = $this->repository->createActivity($lavorazioneId, [
+            'titolo' => $titolo,
+            'descrizione' => $descrizione !== '' ? $descrizione : null,
+            'priorita' => $priorita,
+            'id_reparto' => $idReparto,
+            'data_scadenza' => $dataScadenza,
+            'quantita_prevista' => $quantita,
+            'note' => $input['note'] ?? null,
+            'stato' => 'todo',
+            'operator_ids' => $operatorIds,
+        ]);
+
+        return ['activity' => $activity];
+    }
+
+    /**
+     * @param array<string, mixed> $input
+     * @return array<string, mixed>
+     */
+    public function assignLavorazione(array $input): array
+    {
+        $lavorazioneId = $this->sanitizeInt($input['id_lavorazione'] ?? ($input['lavorazione_id'] ?? ($input['id'] ?? 0)), 1, PHP_INT_MAX);
+        if ($lavorazioneId <= 0) {
+            throw new \RuntimeException('ID lavorazione mancante o non valido.', 422);
+        }
+
+        $detail = $this->repository->findDetail($lavorazioneId);
+        if ($detail === null) {
+            throw new \RuntimeException('Lavorazione non trovata.', 404);
+        }
+
+        $repartoId = null;
+        if (array_key_exists('id_reparto', $input)) {
+            $candidate = (int) $input['id_reparto'];
+            $repartoId = $candidate > 0 ? $candidate : null;
+        } elseif (!empty($input['reparto'])) {
+            $repartoId = $this->resolveRepartoId((string) $input['reparto']);
+        }
+
+        $operatorIds = $this->normalizeOperatorIds($input['operatori'] ?? ($input['operators'] ?? []));
+        if ($operatorIds !== []) {
+            $operatorIds = $this->repository->filterOperatorIds($operatorIds);
+        }
+
+        $this->repository->updateLavorazioneAssignments($lavorazioneId, $repartoId, $operatorIds);
+        $updated = $this->repository->findDetail($lavorazioneId);
+
+        return [
+            'ok' => true,
+            'lavorazione' => $updated ?? $detail,
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $input
+     * @return array<string, mixed>
+     */
+    public function assignActivity(array $input): array
+    {
+        $activityId = $this->sanitizeInt($input['id_attivita'] ?? ($input['attivita_id'] ?? ($input['id'] ?? 0)), 1, PHP_INT_MAX);
+        if ($activityId <= 0) {
+            throw new \RuntimeException('ID attivit� mancante o non valido.', 422);
+        }
+
+        $activity = $this->repository->findActivity($activityId);
+        if ($activity === null) {
+            throw new \RuntimeException('Attivit� non trovata.', 404);
+        }
+
+        $repartoId = null;
+        if (array_key_exists('id_reparto', $input)) {
+            $candidate = (int) $input['id_reparto'];
+            $repartoId = $candidate > 0 ? $candidate : null;
+        } elseif (!empty($input['reparto'])) {
+            $repartoId = $this->resolveRepartoId((string) $input['reparto']);
+        }
+
+        $operatorIds = $this->normalizeOperatorIds($input['operatori'] ?? ($input['operators'] ?? []));
+        if ($operatorIds !== []) {
+            $operatorIds = $this->repository->filterOperatorIds($operatorIds);
+        }
+
+        $this->repository->updateActivityAssignments($activityId, $repartoId, $operatorIds);
+        $updated = $this->repository->findActivity($activityId);
+
+        return [
+            'ok' => true,
+            'activity' => $updated ?? $activity,
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $input
+     * @return array<string, mixed>
+     */
+    public function notifyOperators(array $input): array
+    {
+        $lavorazioneId = $this->sanitizeInt($input['id_lavorazione'] ?? ($input['lavorazione_id'] ?? ($input['id'] ?? 0)), 1, PHP_INT_MAX);
+        if ($lavorazioneId <= 0) {
+            throw new \RuntimeException('ID lavorazione mancante o non valido.', 422);
+        }
+
+        $detail = $this->repository->findDetail($lavorazioneId);
+        if ($detail === null) {
+            throw new \RuntimeException('Lavorazione non trovata.', 404);
+        }
+
+        $activityId = null;
+        if (!empty($input['id_attivita']) || !empty($input['attivita_id'])) {
+            $candidate = $this->sanitizeInt($input['id_attivita'] ?? $input['attivita_id'], 1, PHP_INT_MAX);
+            if ($candidate > 0) {
+                $activity = $this->repository->findActivity($candidate);
+                if ($activity === null) {
+                    throw new \RuntimeException('Attivit� non trovata.', 404);
+                }
+                if ((int) ($activity['id_lavorazione'] ?? 0) !== $lavorazioneId) {
+                    throw new \RuntimeException('Attivit� non appartenente alla lavorazione selezionata.', 422);
+                }
+                $activityId = $candidate;
+            }
+        }
+
+        $title = trim((string) ($input['titolo'] ?? ($input['title'] ?? '')));
+        if ($title === '') {
+            $title = $activityId !== null
+                ? sprintf('Aggiornamento attivit� #%d', $activityId)
+                : sprintf('Aggiornamento lavorazione %s', $detail['codice'] ?? (string) $lavorazioneId);
+        }
+
+        $message = trim((string) ($input['messaggio'] ?? ($input['message'] ?? '')));
+        if ($message === '') {
+            throw new \RuntimeException('Specificare il contenuto della notifica.', 422);
+        }
+
+        $operatorIds = $this->normalizeOperatorIds($input['operatori'] ?? ($input['operators'] ?? []));
+        if ($operatorIds !== []) {
+            $operatorIds = $this->repository->filterOperatorIds($operatorIds);
+        } elseif ($activityId !== null) {
+            $operatorIds = $this->repository->getOperatorIdsForActivity($activityId);
+        } else {
+            $operatorIds = $this->repository->getOperatorIdsForLavorazione($lavorazioneId);
+        }
+
+        if ($operatorIds === []) {
+            throw new \RuntimeException('Nessun operatore valido da notificare.', 422);
+        }
+
+        $inserted = $this->repository->createNotifications($lavorazioneId, $activityId, $operatorIds, $title, $message);
+
+        return [
+            'ok' => true,
+            'notifiche_inserite' => $inserted,
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $query
+     * @return array<string, mixed>
+     */
+    public function notifications(array $query): array
+    {
+        $accountId = $this->sanitizeInt($query['id_account'] ?? ($query['account_id'] ?? 0), 1, PHP_INT_MAX);
+        if ($accountId <= 0) {
+            throw new \RuntimeException('ID account non valido per le notifiche.', 422);
+        }
+
+        $limit = $this->sanitizeInt($query['limit'] ?? 10, 1, 100);
+        $onlyUnread = isset($query['only_unread']) ? (int) $query['only_unread'] === 1 : false;
+
+        $items = $this->repository->listNotificationsForAccount($accountId, $limit, $onlyUnread);
+        $unread = $this->repository->countUnreadNotifications($accountId);
+
+        return [
+            'items' => $items,
+            'unread' => $unread,
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $input
+     * @return array<string, mixed>
+     */
+    public function notificationsMarkRead(array $input): array
+    {
+        $accountId = $this->sanitizeInt($input['id_account'] ?? ($input['account_id'] ?? 0), 1, PHP_INT_MAX);
+        if ($accountId <= 0) {
+            throw new \RuntimeException('ID account non valido per aggiornare le notifiche.', 422);
+        }
+
+        $ids = $input['id_notifiche'] ?? ($input['notifiche'] ?? ($input['ids'] ?? []));
+        $idList = $this->normalizeOperatorIds($ids); // reuse method for array of ints
+        if ($idList === []) {
+            throw new \RuntimeException('Nessuna notifica selezionata.', 422);
+        }
+
+        $updated = $this->repository->markNotificationsRead($accountId, $idList);
+
+        return [
+            'ok' => true,
+            'notifiche_aggiornate' => $updated,
+        ];
     }
 
     /**
@@ -185,5 +548,64 @@ final class LavorazioniService
             default:
                 return ['from' => null, 'to' => null, 'code' => null];
         }
+    }
+
+    /**
+     * @param mixed $value
+     */
+    private function sanitizePriority($value): string
+    {
+        if (!is_string($value)) {
+            return 'medium';
+        }
+        $normalized = strtolower(trim($value));
+        return in_array($normalized, ['low', 'medium', 'high', 'critical'], true) ? $normalized : 'medium';
+    }
+
+    /**
+     * @param mixed $value
+     */
+    private function sanitizeDate($value): ?string
+    {
+        if (!is_string($value) || trim($value) === '') {
+            return null;
+        }
+        try {
+            $dt = new \DateTimeImmutable($value);
+            return $dt->format('Y-m-d');
+        } catch (\Throwable $exception) {
+            return null;
+        }
+    }
+
+    /**
+     * @param mixed $value
+     * @return array<int, int>
+     */
+    private function normalizeOperatorIds($value): array
+    {
+        if ($value === null || $value === '') {
+            return [];
+        }
+        if (is_string($value)) {
+            $parts = array_filter(array_map('trim', explode(',', $value)), static fn ($part) => $part !== '');
+            $value = $parts;
+        }
+        if (!is_array($value)) {
+            return [];
+        }
+        $ids = [];
+        foreach ($value as $item) {
+            if (is_array($item) && isset($item['id_account'])) {
+                $candidate = (int) $item['id_account'];
+            } else {
+                $candidate = (int) $item;
+            }
+            if ($candidate > 0) {
+                $ids[] = $candidate;
+            }
+        }
+
+        return array_values(array_unique($ids));
     }
 }
