@@ -1,5 +1,5 @@
 /* eslint-disable prettier/prettier */
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import classNames from 'classnames'
 
 import {
@@ -19,6 +19,8 @@ import {
   CTableHead,
   CTableHeaderCell,
   CTableRow,
+  CPagination,
+  CPaginationItem,
 } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
 import {
@@ -58,11 +60,15 @@ import UsersWidget from '../widgets/UsersWidget'
 
 import { fetchAnagraficheDash } from '../../services/dashboard'
 
+const MAX_LATEST_PREVENTIVI = 15
+const LATEST_PREVENTIVI_ROWS_PER_PAGE = 5
+
 const Dashboard = () => {
   const [statsJson, setStatsJson] = useState(null)
   const [loadError, setLoadError] = useState(null)
   const [seriesAnag, setSeriesAnag] = useState(null)
   const [kpiAnag, setKpiAnag] = useState(null)
+  const [latestPreventiviPage, setLatestPreventiviPage] = useState(0)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -79,6 +85,46 @@ const Dashboard = () => {
       })()
     return () => controller.abort()
   }, [])
+
+  useEffect(() => {
+    setLatestPreventiviPage(0)
+  }, [statsJson?.ultimi_preventivi])
+
+  const latestPreventivi = useMemo(() => {
+    if (!Array.isArray(statsJson?.ultimi_preventivi)) {
+      return []
+    }
+    return statsJson.ultimi_preventivi.slice(0, MAX_LATEST_PREVENTIVI)
+  }, [statsJson?.ultimi_preventivi])
+
+  const totalLatestPreventivi = latestPreventivi.length
+  const totalLatestPreventiviPages = Math.max(
+    Math.ceil(totalLatestPreventivi / LATEST_PREVENTIVI_ROWS_PER_PAGE),
+    1,
+  )
+
+  useEffect(() => {
+    setLatestPreventiviPage((current) => {
+      const maxIdx = Math.max(totalLatestPreventiviPages - 1, 0)
+      return current > maxIdx ? maxIdx : current
+    })
+  }, [totalLatestPreventiviPages])
+
+  const latestPreventiviPageItems = useMemo(() => {
+    const start = latestPreventiviPage * LATEST_PREVENTIVI_ROWS_PER_PAGE
+    return latestPreventivi.slice(start, start + LATEST_PREVENTIVI_ROWS_PER_PAGE)
+  }, [latestPreventivi, latestPreventiviPage])
+
+  const latestPreventiviPaginationItems = useMemo(() => {
+    const pages = []
+    for (let i = 1; i <= totalLatestPreventiviPages; i += 1) {
+      pages.push(i)
+    }
+    return pages
+  }, [totalLatestPreventiviPages])
+
+  const hasLatestPreventivi = totalLatestPreventivi > 0
+  const showLatestPreventiviPager = hasLatestPreventivi && totalLatestPreventiviPages > 1
 
   const progressExample = [
     { title: 'Visits', value: '29.703 Users', percent: 40, color: 'success' },
@@ -308,7 +354,7 @@ const Dashboard = () => {
         </CCol>
         <CCol md={6}>
           <CCard>
-            <CCardHeader>Ultimi 5 preventivi</CCardHeader>
+            <CCardHeader>Ultimi 15 preventivi</CCardHeader>
             <CCardBody>
               <CTable hover responsive size="sm">
                 <CTableHead>
@@ -320,12 +366,12 @@ const Dashboard = () => {
                   </CTableRow>
                 </CTableHead>
                 <CTableBody>
-                  {Array.isArray(statsJson?.ultimi_preventivi) && statsJson.ultimi_preventivi.length > 0 ? (
-                    statsJson.ultimi_preventivi.map((p) => (
+                  {hasLatestPreventivi ? (
+                    latestPreventiviPageItems.map((p) => (
                       <CTableRow key={p.id_preventivo}>
                         <CTableDataCell>{[p.anno_preventivo, p.numero_documento].filter(Boolean).join('/')}</CTableDataCell>
-                        <CTableDataCell>{p.ragione_sociale || '—'}</CTableDataCell>
-                        <CTableDataCell>{p.data_preventivo || '—'}</CTableDataCell>
+                        <CTableDataCell>{p.ragione_sociale || '-'}</CTableDataCell>
+                        <CTableDataCell>{p.data_preventivo || '-'}</CTableDataCell>
                         <CTableDataCell className="text-end">{Number(p.totale || 0).toLocaleString('it-IT', { style: 'currency', currency: 'EUR' })}</CTableDataCell>
                       </CTableRow>
                     ))
@@ -336,6 +382,38 @@ const Dashboard = () => {
                   )}
                 </CTableBody>
               </CTable>
+              {showLatestPreventiviPager ? (
+                <div className="d-flex justify-content-center mt-3">
+                  <CPagination size="sm" className="mb-0">
+                    <CPaginationItem
+                      aria-label="Pagina precedente"
+                      disabled={latestPreventiviPage <= 0}
+                      onClick={() => latestPreventiviPage > 0 && setLatestPreventiviPage(latestPreventiviPage - 1)}
+                    >
+                      &laquo;
+                    </CPaginationItem>
+                    {latestPreventiviPaginationItems.map((page) => (
+                      <CPaginationItem
+                        key={page}
+                        active={page === latestPreventiviPage + 1}
+                        onClick={() => setLatestPreventiviPage(page - 1)}
+                      >
+                        {page}
+                      </CPaginationItem>
+                    ))}
+                    <CPaginationItem
+                      aria-label="Pagina successiva"
+                      disabled={latestPreventiviPage >= totalLatestPreventiviPages - 1}
+                      onClick={() =>
+                        latestPreventiviPage < totalLatestPreventiviPages - 1 &&
+                        setLatestPreventiviPage(latestPreventiviPage + 1)
+                      }
+                    >
+                      &raquo;
+                    </CPaginationItem>
+                  </CPagination>
+                </div>
+              ) : null}
             </CCardBody>
           </CCard>
         </CCol>

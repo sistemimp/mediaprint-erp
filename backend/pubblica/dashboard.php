@@ -33,7 +33,7 @@ try {
     // Preventivi
     $prevRepo = new PreventiviRepository($pdo);
     $prevByStatus = $prevRepo->countNewByStatusCurrentMonth();
-    $ultimiPrev   = $prevRepo->listLatest(5);
+    $ultimiPrev   = $prevRepo->listLatest(15);
     $topClienti   = $prevRepo->listTopClientsLast12Months(5);
 
     // Fatture (andamento per grafico)
