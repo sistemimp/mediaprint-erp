@@ -469,222 +469,223 @@ const PreventiviList = () => {
   return (
     <>
       <CCard>
-      <CCardHeader>
-        <div className="d-flex justify-content-between align-items-center">
-          <div>
-            <h5 className="mb-0">Preventivi - Elenco {viewMode === 'archiviati' ? '(archiviati)' : ''}</h5>
-            <small className="text-body-secondary">
-              {viewMode === 'archiviati' ? 'Archivio preventivi, ordinati per data decrescente' : 'Ordinati per data decrescente'}
-            </small>
-          </div>
-          <div className="d-flex gap-3 align-items-center">
-            <div className="btn-group" role="group" aria-label="Seleziona elenco">
-              <CButton
-                color={viewMode === 'attivi' ? 'primary' : 'secondary'}
-                variant={viewMode === 'attivi' ? 'solid' : 'outline'}
-                onClick={() => setViewMode('attivi')}
-                disabled={loading || viewMode === 'attivi'}
-              >
-                Attivi
+        <CCardHeader>
+          <div className="d-flex justify-content-between align-items-center">
+            <div>
+              <h5 className="mb-0">Preventivi - Elenco {viewMode === 'archiviati' ? '(archiviati)' : ''}</h5>
+              <small className="text-body-secondary">
+                {viewMode === 'archiviati' ? 'Archivio preventivi, ordinati per data decrescente' : 'Ordinati per data decrescente'}
+              </small>
+            </div>
+            <div className="d-flex gap-3 align-items-center">
+              <div className="btn-group" role="group" aria-label="Seleziona elenco">
+                <CButton
+                  color={viewMode === 'attivi' ? 'primary' : 'secondary'}
+                  variant={viewMode === 'attivi' ? 'solid' : 'outline'}
+                  onClick={() => setViewMode('attivi')}
+                  disabled={loading || viewMode === 'attivi'}
+                >
+                  Attivi
+                </CButton>
+                <CButton
+                  color={viewMode === 'archiviati' ? 'primary' : 'secondary'}
+                  variant={viewMode === 'archiviati' ? 'solid' : 'outline'}
+                  onClick={() => setViewMode('archiviati')}
+                  disabled={loading || viewMode === 'archiviati'}
+                >
+                  Archivio
+                </CButton>
+              </div>
+              <div className="d-flex align-items-center">
+                <span className="me-2 text-body-secondary">Raggruppa per</span>
+                <select
+                  className="form-select form-select-sm"
+                  style={{ width: 150 }}
+                  value={groupBy}
+                  onChange={(e) => { setGroupBy(e.target.value); setPage(0) }}
+                >
+                  <option value="none">Nessuno</option>
+                  <option value="giorno">Giorno</option>
+                  <option value="mese">Mese</option>
+                  <option value="stato">Stato</option>
+                  <option value="cliente">Cliente</option>
+                </select>
+              </div>
+              <div className="d-flex align-items-center">
+                <span className="me-2 text-body-secondary">Righe per pagina</span>
+                <select
+                  className="form-select form-select-sm"
+                  style={{ width: 100 }}
+                  value={rowsPerPage}
+                  onChange={(e) => { setRowsPerPage(Number(e.target.value)); setPage(0) }}
+                >
+                  {perPageOptions.map((n) => (
+                    <option key={n} value={n}>{n}</option>
+                  ))}
+                </select>
+              </div>
+              <CButton color="primary" variant="outline" onClick={() => navigate('/preventivi/crea')}>
+                <CIcon icon={cilPlus} className="me-2" />
+                Nuovo preventivo
               </CButton>
-              <CButton
-                color={viewMode === 'archiviati' ? 'primary' : 'secondary'}
-                variant={viewMode === 'archiviati' ? 'solid' : 'outline'}
-                onClick={() => setViewMode('archiviati')}
-                disabled={loading || viewMode === 'archiviati'}
-              >
-                Archivio
-              </CButton>
             </div>
-            <div className="d-flex align-items-center">
-              <span className="me-2 text-body-secondary">Raggruppa per</span>
-              <select
-                className="form-select form-select-sm"
-                style={{ width: 150 }}
-                value={groupBy}
-                onChange={(e) => { setGroupBy(e.target.value); setPage(0) }}
-              >
-                <option value="none">Nessuno</option>
-                <option value="giorno">Giorno</option>
-                <option value="mese">Mese</option>
-                <option value="stato">Stato</option>
-                <option value="cliente">Cliente</option>
-              </select>
-            </div>
-            <div className="d-flex align-items-center">
-              <span className="me-2 text-body-secondary">Righe per pagina</span>
-              <select
-                className="form-select form-select-sm"
-                style={{ width: 100 }}
-                value={rowsPerPage}
-                onChange={(e) => { setRowsPerPage(Number(e.target.value)); setPage(0) }}
-              >
-                {perPageOptions.map((n) => (
-                  <option key={n} value={n}>{n}</option>
-                ))}
-              </select>
-            </div>
-            <CButton color="primary" variant="outline" onClick={() => navigate('/preventivi/crea')}>
-              <CIcon icon={cilPlus} className="me-2" />
-              Nuovo preventivo
-            </CButton>
           </div>
-        </div>
-      </CCardHeader>
-      <CCardBody>
-        {loading && (
-          <div className="d-flex justify-content-center py-5">
-            <CSpinner color="primary" />
-          </div>
-        )}
+        </CCardHeader>
+        <CCardBody>
+          {loading && (
+            <div className="d-flex justify-content-center py-5">
+              <CSpinner color="primary" />
+            </div>
+          )}
 
-        {!loading && error && (
-          <CAlert color="danger">{error.message || 'Impossibile caricare i preventivi.'}</CAlert>
-        )}
+          {!loading && error && (
+            <CAlert color="danger">{error.message || 'Impossibile caricare i preventivi.'}</CAlert>
+          )}
 
-        {!loading && !error && total === 0 && (
-          <CAlert color="warning">Nessun preventivo disponibile.</CAlert>
-        )}
+          {!loading && !error && total === 0 && (
+            <CAlert color="warning">Nessun preventivo disponibile.</CAlert>
+          )}
 
-        {!loading && !error && total > 0 && (
-          <>
-            <CTable hover responsive>
-              <CTableHead color="light">
-                <CTableRow className="align-middle">
-                  <CTableHeaderCell role="button" onClick={(e) => toggleSort('cliente', e.shiftKey)} className="text-nowrap">
-                    Cliente{sortIndicator('cliente')}
-                  </CTableHeaderCell>
-                  <CTableHeaderCell role="button" onClick={(e) => toggleSort('documento', e.shiftKey)} className="text-nowrap">
-                    Documento{sortIndicator('documento')}
-                  </CTableHeaderCell>
-                  <CTableHeaderCell role="button" onClick={(e) => toggleSort('data', e.shiftKey)} className="text-nowrap">
-                    Data{sortIndicator('data')}
-                  </CTableHeaderCell>
-                  <CTableHeaderCell role="button" onClick={(e) => toggleSort('riferimento', e.shiftKey)} className="text-nowrap">
-                    Rif. cliente{sortIndicator('riferimento')}
-                  </CTableHeaderCell>
-                  <CTableHeaderCell className="text-nowrap">Imponibile</CTableHeaderCell>
-                  <CTableHeaderCell className="text-nowrap">IVA</CTableHeaderCell>
-                  <CTableHeaderCell role="button" onClick={(e) => toggleSort('totale', e.shiftKey)} className="text-nowrap">
-                    Totale{sortIndicator('totale')}
-                  </CTableHeaderCell>
-                  <CTableHeaderCell role="button" onClick={(e) => toggleSort('stato', e.shiftKey)} className="text-center text-nowrap">
-                    Stato{sortIndicator('stato')}
-                  </CTableHeaderCell>
-                  <CTableHeaderCell className="text-center text-nowrap">Azioni</CTableHeaderCell>
-                </CTableRow>
-              </CTableHead>
-              <CTableBody>
-                {pageItems.map((row, idx) => {
-                  if (row.type === 'group') {
+          {!loading && !error && total > 0 && (
+            <>
+              <CTable hover responsive>
+                <CTableHead color="light">
+                  <CTableRow className="align-middle">
+                    <CTableHeaderCell role="button" onClick={(e) => toggleSort('cliente', e.shiftKey)} className="text-nowrap">
+                      Cliente{sortIndicator('cliente')}
+                    </CTableHeaderCell>
+                    <CTableHeaderCell role="button" onClick={(e) => toggleSort('documento', e.shiftKey)} className="text-nowrap">
+                      Documento{sortIndicator('documento')}
+                    </CTableHeaderCell>
+                    <CTableHeaderCell role="button" onClick={(e) => toggleSort('data', e.shiftKey)} className="text-nowrap">
+                      Data{sortIndicator('data')}
+                    </CTableHeaderCell>
+                    <CTableHeaderCell role="button" onClick={(e) => toggleSort('riferimento', e.shiftKey)} className="text-nowrap">
+                      Rif. cliente{sortIndicator('riferimento')}
+                    </CTableHeaderCell>
+                    <CTableHeaderCell className="text-nowrap">Imponibile</CTableHeaderCell>
+                    <CTableHeaderCell className="text-nowrap">IVA</CTableHeaderCell>
+                    <CTableHeaderCell role="button" onClick={(e) => toggleSort('totale', e.shiftKey)} className="text-nowrap">
+                      Totale{sortIndicator('totale')}
+                    </CTableHeaderCell>
+                    <CTableHeaderCell role="button" onClick={(e) => toggleSort('stato', e.shiftKey)} className="text-center text-nowrap">
+                      Stato{sortIndicator('stato')}
+                    </CTableHeaderCell>
+                    <CTableHeaderCell className="text-center text-nowrap">Azioni</CTableHeaderCell>
+                  </CTableRow>
+                </CTableHead>
+                <CTableBody>
+                  {pageItems.map((row, idx) => {
+                    if (row.type === 'group') {
+                      return (
+                        <CTableRow key={`g-${idx}`} className="table-secondary">
+                          <CTableDataCell colSpan={9} className="fw-semibold">
+                            {row.label} — {row.count} elementi
+                          </CTableDataCell>
+                        </CTableRow>
+                      )
+                    }
+                    const r = row.data
                     return (
-                      <CTableRow key={`g-${idx}`} className="table-secondary">
-                        <CTableDataCell colSpan={9} className="fw-semibold">
-                          {row.label} — {row.count} elementi
+                      <CTableRow key={r.id_preventivo ?? idx}>
+                        <CTableDataCell>
+                          {r.ragione_sociale || '-'}
+                        </CTableDataCell>
+                        <CTableDataCell>
+                          {(r.anno_preventivo ?? '-')}/{r.numero_documento ?? '-'}
+                        </CTableDataCell>
+                        <CTableDataCell>{formatDate(r.data_preventivo)}</CTableDataCell>
+                        <CTableDataCell>{r.riferimento_cliente || '-'}</CTableDataCell>
+                        <CTableDataCell>{formatCurrency(r.totale_imponibile)}</CTableDataCell>
+                        <CTableDataCell>{formatCurrency(r.totale_iva)}</CTableDataCell>
+                        <CTableDataCell>{formatCurrency(r.totale)}</CTableDataCell>
+                        <CTableDataCell className="text-center">
+                          {r.stato_label ? (
+                            <CBadge color="secondary">{r.stato_label}</CBadge>
+                          ) : (
+                            <span className="text-body-secondary">-</span>
+                          )}
+                        </CTableDataCell>
+                        <CTableDataCell className="text-center">
+                          <div className="d-inline-flex gap-1 flex-wrap justify-content-center">
+                            <CButton
+                              color="link"
+                              size="sm"
+                              className="p-0"
+                              onClick={() => handleView(r.id_preventivo)}
+                              title="Apri dettaglio"
+                            >
+                              <CIcon icon={cilDescription} />
+                            </CButton>
+                            <CButton
+                              color="link"
+                              size="sm"
+                              className="p-0"
+                              onClick={() => handlePrintPDF(r.id_preventivo)}
+                              title="Stampa PDF"
+                            >
+                              <CIcon icon={cilPrint} />
+                            </CButton>
+                            <CButton
+                              color="link"
+                              size="sm"
+                              className="p-0"
+                              onClick={() => handleOpenEmailModal(r)}
+                              title="Invia PDF via email"
+                            >
+                              <CIcon icon={cilEnvelopeClosed} />
+                            </CButton>
+                            {/* {viewMode === 'archiviati' ? (
+                              <CButton color="primary" variant="outline" size="sm" onClick={() => handleRestore(r.id_preventivo)}>
+                                Ripristina
+                              </CButton>
+                            )
+                              : (
+                                <CButton color="secondary" variant="outline" size="sm" onClick={() => handleArchive(r.id_preventivo)}>
+                                  Archivia
+                                </CButton>
+                              )} */}
+                          </div>
                         </CTableDataCell>
                       </CTableRow>
                     )
-                  }
-                  const r = row.data
-                  return (
-                    <CTableRow key={r.id_preventivo ?? idx}>
-                      <CTableDataCell>
-                        {r.ragione_sociale || '-'}
-                      </CTableDataCell>
-                      <CTableDataCell>
-                        {(r.anno_preventivo ?? '-')}/{r.numero_documento ?? '-'}
-                      </CTableDataCell>
-                      <CTableDataCell>{formatDate(r.data_preventivo)}</CTableDataCell>
-                      <CTableDataCell>{r.riferimento_cliente || '-'}</CTableDataCell>
-                      <CTableDataCell>{formatCurrency(r.totale_imponibile)}</CTableDataCell>
-                      <CTableDataCell>{formatCurrency(r.totale_iva)}</CTableDataCell>
-                      <CTableDataCell>{formatCurrency(r.totale)}</CTableDataCell>
-                      <CTableDataCell className="text-center">
-                        {r.stato_label ? (
-                          <CBadge color="secondary">{r.stato_label}</CBadge>
-                        ) : (
-                          <span className="text-body-secondary">-</span>
-                        )}
-                      </CTableDataCell>
-                      <CTableDataCell className="text-center">
-                        <div className="d-inline-flex gap-2 flex-wrap justify-content-center">
-                          <CButton
-                            color="link"
-                            size="sm"
-                            className="p-0"
-                            onClick={() => handleView(r.id_preventivo)}
-                            title="Apri dettaglio"
-                          >
-                            <CIcon icon={cilDescription} />
-                          </CButton>
-                          <CButton
-                            color="link"
-                            size="sm"
-                            className="p-0"
-                            onClick={() => handlePrintPDF(r.id_preventivo)}
-                            title="Stampa PDF"
-                          >
-                            <CIcon icon={cilPrint} />
-                          </CButton>
-                          <CButton
-                            color="link"
-                            size="sm"
-                            className="p-0"
-                            onClick={() => handleOpenEmailModal(r)}
-                            title="Invia PDF via email"
-                          >
-                            <CIcon icon={cilEnvelopeClosed} />
-                          </CButton>
-                          {viewMode === 'archiviati' ? (
-                            <CButton color="primary" variant="outline" size="sm" onClick={() => handleRestore(r.id_preventivo)}>
-                              Ripristina
-                            </CButton>
-                          ) : (
-                            <CButton color="secondary" variant="outline" size="sm" onClick={() => handleArchive(r.id_preventivo)}>
-                              Archivia
-                            </CButton>
-                          )}
-                        </div>
-                      </CTableDataCell>
-                  </CTableRow>
-                )
-              })}
-              </CTableBody>
-            </CTable>
+                  })}
+                </CTableBody>
+              </CTable>
 
-            <CRow className="mt-3 align-items-center">
-              <CCol className="text-body-secondary">
-                Mostrando {Math.min(total, page * rowsPerPage + 1)} -
-                {' '}
-                {Math.min(total, (page + 1) * rowsPerPage)} di {total} risultati
-              </CCol>
-              <CCol className="d-flex justify-content-end">
-                <CPagination className="mb-0" size="sm">
-                  <CPaginationItem
-                    aria-label="Pagina precedente"
-                    disabled={page <= 0}
-                    onClick={() => page > 0 && setPage(page - 1)}
-                  >
-                    &laquo;
-                  </CPaginationItem>
-                  {paginationItems.map((p) => (
-                    <CPaginationItem key={p} active={p === page + 1} onClick={() => setPage(p - 1)}>
-                      {p}
+              <CRow className="mt-3 align-items-center">
+                <CCol className="text-body-secondary">
+                  Mostrando {Math.min(total, page * rowsPerPage + 1)} -
+                  {' '}
+                  {Math.min(total, (page + 1) * rowsPerPage)} di {total} risultati
+                </CCol>
+                <CCol className="d-flex justify-content-end">
+                  <CPagination className="mb-0" size="sm">
+                    <CPaginationItem
+                      aria-label="Pagina precedente"
+                      disabled={page <= 0}
+                      onClick={() => page > 0 && setPage(page - 1)}
+                    >
+                      &laquo;
                     </CPaginationItem>
-                  ))}
-                  <CPaginationItem
-                    aria-label="Pagina successiva"
-                    disabled={page >= totalPages - 1}
-                    onClick={() => page < totalPages - 1 && setPage(page + 1)}
-                  >
-                    &raquo;
-                  </CPaginationItem>
-                </CPagination>
-              </CCol>
-            </CRow>
-          </>
-        )}
-      </CCardBody>
+                    {paginationItems.map((p) => (
+                      <CPaginationItem key={p} active={p === page + 1} onClick={() => setPage(p - 1)}>
+                        {p}
+                      </CPaginationItem>
+                    ))}
+                    <CPaginationItem
+                      aria-label="Pagina successiva"
+                      disabled={page >= totalPages - 1}
+                      onClick={() => page < totalPages - 1 && setPage(page + 1)}
+                    >
+                      &raquo;
+                    </CPaginationItem>
+                  </CPagination>
+                </CCol>
+              </CRow>
+            </>
+          )}
+        </CCardBody>
       </CCard>
       <CModal
         visible={emailModalVisible}
