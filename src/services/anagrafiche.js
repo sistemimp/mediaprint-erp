@@ -72,10 +72,13 @@ export const fetchAnagrafiche = async ({
   }
 }
 
-export const fetchAnagraficheDashboard = async ({ token, onlyActive, signal } = {}) => {
+export const fetchAnagraficheDashboard = async ({ token, onlyActive, period, signal } = {}) => {
   const params = {}
   if (onlyActive != null) {
     params.only_active = onlyActive ? 1 : 0
+  }
+  if (period) {
+    params.period = period
   }
   const payload = await apiFetch('/anagraficheDashboard.php', { token, params, signal })
   if (!payload?.ok) {

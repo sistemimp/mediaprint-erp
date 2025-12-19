@@ -21,8 +21,12 @@ export const fetchFattureList = async ({ token, limit, signal } = {}) => {
   return { items }
 }
 
-export const fetchFattureDashboard = async ({ token, signal } = {}) => {
-  const payload = await apiFetch('/fattureDashboard.php', { token, signal })
+export const fetchFattureDashboard = async ({ token, period, signal } = {}) => {
+  const params = {}
+  if (period) {
+    params.period = period
+  }
+  const payload = await apiFetch('/fattureDashboard.php', { token, params, signal })
   if (!payload?.ok) {
     throw new Error(payload?.message || 'API error')
   }

@@ -15,8 +15,12 @@ export const fetchProdotti = async ({ token, id_categoria, q, signal } = {}) => 
   return { items }
 }
 
-export const fetchProdottiDashboard = async ({ token, signal } = {}) => {
-  const payload = await apiFetch('/prodottiDashboard.php', { token, signal })
+export const fetchProdottiDashboard = async ({ token, period, signal } = {}) => {
+  const params = {}
+  if (period) {
+    params.period = period
+  }
+  const payload = await apiFetch('/prodottiDashboard.php', { token, params, signal })
   if (!payload?.ok) {
     throw new Error(payload?.message || 'API error')
   }

@@ -16,8 +16,12 @@ export const fetchLatestPreventivi = async ({ token, signal, limit } = {}) => {
   return { items }
 }
 
-export const fetchPreventiviDashboard = async ({ token, signal } = {}) => {
-  const payload = await apiFetch('/preventiviDashboard.php', { token, signal })
+export const fetchPreventiviDashboard = async ({ token, period, signal } = {}) => {
+  const params = {}
+  if (period) {
+    params.period = period
+  }
+  const payload = await apiFetch('/preventiviDashboard.php', { token, params, signal })
   if (!payload?.ok) {
     throw new Error(payload?.message || 'API error')
   }

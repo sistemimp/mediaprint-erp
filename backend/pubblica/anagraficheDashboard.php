@@ -3,27 +3,69 @@ declare(strict_types=1);
 
 use MediaPrint\Backend\Database;
 use MediaPrint\Backend\HttpResponse;
-use MediaPrint\Repo\AnagraficheDashboardRepository;
-use MediaPrint\Service\AnagraficheDashboardService;
 use PDO;
 
 require __DIR__ . '/../bootstrap.php';
 
 header('Content-Type: application/json');
 
+/**
+ * @return array{start:DateTimeImmutable,end:DateTimeImmutable,period:string,months:int}
+ */
+function resolveDashboardPeriod(?string $periodRaw): array
+{
+    $period = strtolower(trim((string) $periodRaw));
+    $allowed = ['monthly', 'quarterly', 'semiannual', 'yearly'];
+    if (!in_array($period, $allowed, true)) {
+        $period = 'monthly';
+    }
+
+    $now = new DateTimeImmutable('now');
+    $year = (int) $now->format('Y');
+    $month = (int) $now->format('n');
+    $months = 1;
+
+    if ($period === 'quarterly') {
+        $quarterIndex = intdiv($month - 1, 3);
+        $startMonth = ($quarterIndex * 3) + 1;
+        $months = 3;
+        $start = new DateTimeImmutable(sprintf('%d-%02d-01 00:00:00', $year, $startMonth));
+    } elseif ($period === 'semiannual') {
+        $startMonth = $month <= 6 ? 1 : 7;
+        $months = 6;
+        $start = new DateTimeImmutable(sprintf('%d-%02d-01 00:00:00', $year, $startMonth));
+    } elseif ($period === 'yearly') {
+        $months = 12;
+        $start = new DateTimeImmutable(sprintf('%d-01-01 00:00:00', $year));
+    } else {
+        $start = new DateTimeImmutable($now->format('Y-m-01 00:00:00'));
+    }
+
+    $end = $start->modify('+' . $months . ' months');
+
+    return [
+        'start' => $start,
+        'end' => $end,
+        'period' => $period,
+        'months' => $months,
+    ];
+}
+
 try {
     $pdo = Database::getConnection();
 
     $onlyActive = isset($_GET['only_active']) && (int) $_GET['only_active'] === 1;
-    $repo = new AnagraficheDashboardRepository($pdo);
-    $service = new AnagraficheDashboardService($repo);
-    $stats = $service->getDashboardStats($onlyActive);
+    $range = resolveDashboardPeriod($_GET['period'] ?? null);
+    $prevStart = $range['start']->modify('-' . $range['months'] . ' months');
+    $prevEnd = $range['start'];
+    $activeWhere = $onlyActive ? " WHERE stato = 'attiva'" : '';
 
     $statusCounts = [];
     try {
         $stmt = $pdo->query(
             'SELECT COALESCE(stato, "sconosciuto") AS stato, COUNT(*) AS totale
              FROM tb_anagrafiche
+             ' . ($onlyActive ? "WHERE stato = 'attiva'" : '') . '
              GROUP BY COALESCE(stato, "sconosciuto")
              ORDER BY totale DESC'
         );
@@ -40,13 +82,18 @@ try {
 
     $latest = [];
     try {
-        $stmt = $pdo->query(
+        $stmt = $pdo->prepare(
             'SELECT id_anagrafica, ragione_sociale, piva, codice_fiscale, stato, created_at
              FROM tb_anagrafiche
+             WHERE created_at >= :start AND created_at < :end'
+            . ($onlyActive ? " AND stato = 'attiva'" : '') . '
              ORDER BY created_at DESC
              LIMIT 10'
         );
-        $rows = $stmt ? ($stmt->fetchAll(PDO::FETCH_ASSOC) ?: []) : [];
+        $stmt->bindValue(':start', $range['start']->format('Y-m-d H:i:s'));
+        $stmt->bindValue(':end', $range['end']->format('Y-m-d H:i:s'));
+        $stmt->execute();
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
         foreach ($rows as $row) {
             $latest[] = [
                 'id_anagrafica' => (int) $row['id_anagrafica'],
@@ -61,10 +108,40 @@ try {
         $latest = [];
     }
 
+    $totalStmt = $pdo->query('SELECT COUNT(*) FROM tb_anagrafiche' . $activeWhere);
+    $totalGenerale = (int) ($totalStmt ? ($totalStmt->fetchColumn() ?: 0) : 0);
+
+    $countStmt = $pdo->prepare(
+        'SELECT COUNT(*) FROM tb_anagrafiche
+         WHERE created_at >= :start AND created_at < :end'
+        . ($onlyActive ? " AND stato = 'attiva'" : '')
+    );
+    $countStmt->bindValue(':start', $range['start']->format('Y-m-d H:i:s'));
+    $countStmt->bindValue(':end', $range['end']->format('Y-m-d H:i:s'));
+    $countStmt->execute();
+    $newCurrent = (int) ($countStmt->fetchColumn() ?: 0);
+
+    $prevStmt = $pdo->prepare(
+        'SELECT COUNT(*) FROM tb_anagrafiche
+         WHERE created_at >= :start AND created_at < :end'
+        . ($onlyActive ? " AND stato = 'attiva'" : '')
+    );
+    $prevStmt->bindValue(':start', $prevStart->format('Y-m-d H:i:s'));
+    $prevStmt->bindValue(':end', $prevEnd->format('Y-m-d H:i:s'));
+    $prevStmt->execute();
+    $newPrev = (int) ($prevStmt->fetchColumn() ?: 0);
+
+    $percChange = $newPrev === 0 ? null : round((($newCurrent - $newPrev) / $newPrev) * 100, 1);
+
     HttpResponse::json([
         'ok' => true,
-        'kpi' => $stats['kpi'] ?? [],
-        'series' => $stats['series'] ?? [],
+        'kpi' => [
+            'totale_generale' => $totalGenerale,
+            'nuovi_mese_corrente' => $newCurrent,
+            'nuovi_mese_precedente' => $newPrev,
+            'perc_change_mom' => $percChange,
+            'period' => $range['period'],
+        ],
         'status_counts' => $statusCounts,
         'latest' => $latest,
     ], 200);

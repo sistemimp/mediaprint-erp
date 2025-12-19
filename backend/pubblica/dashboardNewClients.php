@@ -16,7 +16,7 @@ header('Content-Type: application/json');
 function resolveDashboardPeriod(?string $periodRaw): array
 {
     $period = strtolower(trim((string) $periodRaw));
-    $allowed = ['monthly', 'quarterly', 'yearly'];
+    $allowed = ['monthly', 'quarterly', 'semiannual', 'yearly'];
     if (!in_array($period, $allowed, true)) {
         $period = 'monthly';
     }
@@ -30,6 +30,10 @@ function resolveDashboardPeriod(?string $periodRaw): array
         $startMonth = ($quarterIndex * 3) + 1;
         $start = new \DateTimeImmutable(sprintf('%d-%02d-01 00:00:00', $year, $startMonth));
         $end = $start->modify('+3 months');
+    } elseif ($period === 'semiannual') {
+        $startMonth = $month <= 6 ? 1 : 7;
+        $start = new \DateTimeImmutable(sprintf('%d-%02d-01 00:00:00', $year, $startMonth));
+        $end = $start->modify('+6 months');
     } elseif ($period === 'yearly') {
         $start = new \DateTimeImmutable(sprintf('%d-01-01 00:00:00', $year));
         $end = $start->modify('+1 year');

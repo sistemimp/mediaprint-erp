@@ -15,8 +15,12 @@ export const fetchPagamentiLedger = async ({ token, q, limit, signal } = {}) => 
   }
 }
 
-export const fetchPagamentiDashboard = async ({ token, signal } = {}) => {
-  const payload = await apiFetch('/pagamentiDashboard.php', { token, signal })
+export const fetchPagamentiDashboard = async ({ token, period, signal } = {}) => {
+  const params = {}
+  if (period) {
+    params.period = period
+  }
+  const payload = await apiFetch('/pagamentiDashboard.php', { token, params, signal })
   if (!payload?.ok) {
     throw new Error(payload?.message || 'API error')
   }

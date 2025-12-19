@@ -6,6 +6,7 @@ import {
   CCardBody,
   CCardHeader,
   CCol,
+  CFormSelect,
   CRow,
   CSpinner,
   CTable,
@@ -30,11 +31,19 @@ const renderTablePlaceholder = (text) => (
   <div className="text-center text-body-secondary small py-3">{text}</div>
 )
 
+const PERIOD_OPTIONS = [
+  { value: 'monthly', label: 'Mensile' },
+  { value: 'quarterly', label: 'Trimestrale' },
+  { value: 'semiannual', label: 'Semestrale' },
+  { value: 'yearly', label: 'Annuale' },
+]
+
 const ProdottiDashboard = () => {
   const { token } = useAuth()
   const [payload, setPayload] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [period, setPeriod] = useState('monthly')
 
   useEffect(() => {
     const controller = new AbortController()
@@ -44,7 +53,7 @@ const ProdottiDashboard = () => {
       setLoading(true)
       setError(null)
       try {
-        const data = await fetchProdottiDashboard({ token, signal: controller.signal })
+        const data = await fetchProdottiDashboard({ token, period, signal: controller.signal })
         if (!isMounted) return
         setPayload(data)
       } catch (err) {
@@ -61,7 +70,7 @@ const ProdottiDashboard = () => {
       isMounted = false
       controller.abort()
     }
-  }, [token])
+  }, [token, period])
 
   const kpi = payload?.kpi ?? {}
   const topCategorie = payload?.top_categorie ?? []
@@ -81,10 +90,26 @@ const ProdottiDashboard = () => {
 
   return (
     <>
-      <div className="mb-4">
-        <h2 className="h4 mb-1">Dashboard prodotti</h2>
-        <p className="text-body-secondary mb-0">Sintesi catalogo, categorie e variazioni.</p>
-      </div>
+      <CRow className="mb-4 align-items-end">
+        <CCol>
+          <h2 className="h4 mb-1">Dashboard prodotti</h2>
+          <p className="text-body-secondary mb-0">Sintesi catalogo, categorie e variazioni.</p>
+        </CCol>
+        <CCol xs="auto">
+          <CFormSelect
+            size="sm"
+            value={period}
+            onChange={(event) => setPeriod(event.target.value)}
+            aria-label="Selettore periodo dashboard prodotti"
+          >
+            {PERIOD_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </CFormSelect>
+        </CCol>
+      </CRow>
 
       {error ? (
         <CAlert color="danger" className="text-small">

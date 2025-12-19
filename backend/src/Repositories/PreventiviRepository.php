@@ -364,6 +364,7 @@ final class PreventiviRepository
         $sql = <<<'SQL'
             SELECT
                 p.id_preventivo,
+                p.id_anagrafica,
                 p.anno_preventivo,
                 p.numero_documento,
                 p.data_preventivo,

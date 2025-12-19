@@ -28,6 +28,11 @@ const _nav = [
     items: [
       {
         component: CNavItem,
+        name: 'Dashboard',
+        to: '/prodotti/dashboard',
+      },
+      {
+        component: CNavItem,
         name: 'Crea nuovo',
         to: '/prodotti/crea',
       },
@@ -82,6 +87,11 @@ const _nav = [
     items: [
       {
         component: CNavItem,
+        name: 'Dashboard',
+        to: '/anagrafica/dashboard',
+      },
+      {
+        component: CNavItem,
         name: 'Crea nuova',
         to: '/anagrafica/crea',
       },
@@ -102,6 +112,11 @@ const _nav = [
     name: 'Preventivi',
     icon: <CIcon icon={cilNotes} customClassName="nav-icon" />,
     items: [
+      {
+        component: CNavItem,
+        name: 'Dashboard',
+        to: '/preventivi/dashboard',
+      },
       {
         component: CNavItem,
         name: 'Crea nuovo',
@@ -126,6 +141,11 @@ const _nav = [
     items: [
       {
         component: CNavItem,
+        name: 'Dashboard',
+        to: '/ddt/dashboard',
+      },
+      {
+        component: CNavItem,
         name: 'Crea nuovo',
         to: '/ddt/crea',
       },
@@ -148,6 +168,11 @@ const _nav = [
     items: [
       {
         component: CNavItem,
+        name: 'Dashboard',
+        to: '/fatture/dashboard',
+      },
+      {
+        component: CNavItem,
         name: 'Crea nuova',
         to: '/fatture/crea',
       },
@@ -168,6 +193,11 @@ const _nav = [
     name: 'Pagamenti',
     icon: <CIcon icon={cilCreditCard} customClassName="nav-icon" />,
     items: [
+      {
+        component: CNavItem,
+        name: 'Dashboard',
+        to: '/pagamenti/dashboard',
+      },
       {
         component: CNavItem,
         name: 'Situazione',

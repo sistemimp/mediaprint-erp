@@ -17,7 +17,7 @@ import {
   CTableRow,
 } from '@coreui/react'
 
-import { fetchAnagraficheDashboard } from '../../services/anagrafiche'
+import { fetchDdtDashboard } from '../../services/ddt'
 import { useAuth } from '../../context/AuthContext'
 
 const formatInteger = (value) => {
@@ -27,16 +27,21 @@ const formatInteger = (value) => {
   return Number(value).toLocaleString('it-IT')
 }
 
-const formatPercent = (value) => {
-  if (value === null || value === undefined || Number.isNaN(Number(value))) {
-    return '-'
-  }
-  return `${Number(value).toFixed(1)}%`
-}
-
 const renderTablePlaceholder = (text) => (
   <div className="text-center text-body-secondary small py-3">{text}</div>
 )
+
+const renderClientLink = (name, id) => {
+  const label = name || '-'
+  if (!id) {
+    return label
+  }
+  return (
+    <Link to={`/anagrafica/dettagli?id=${id}`} className="text-decoration-none">
+      {label}
+    </Link>
+  )
+}
 
 const PERIOD_OPTIONS = [
   { value: 'monthly', label: 'Mensile' },
@@ -45,7 +50,7 @@ const PERIOD_OPTIONS = [
   { value: 'yearly', label: 'Annuale' },
 ]
 
-const AnagraficaDashboard = () => {
+const DdtDashboard = () => {
   const { token } = useAuth()
   const [payload, setPayload] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -60,12 +65,12 @@ const AnagraficaDashboard = () => {
       setLoading(true)
       setError(null)
       try {
-        const data = await fetchAnagraficheDashboard({ token, period, signal: controller.signal })
+        const data = await fetchDdtDashboard({ token, period, signal: controller.signal })
         if (!isMounted) return
         setPayload(data)
       } catch (err) {
         if (!isMounted) return
-        setError(err?.message || 'Errore durante il caricamento della dashboard anagrafica.')
+        setError(err?.message || 'Errore durante il caricamento della dashboard DDT.')
       } finally {
         if (isMounted) setLoading(false)
       }
@@ -80,7 +85,7 @@ const AnagraficaDashboard = () => {
   }, [token, period])
 
   const kpi = payload?.kpi ?? {}
-  const statusCounts = payload?.status_counts ?? []
+  const topCausali = payload?.top_causali ?? []
   const latest = payload?.latest ?? []
 
   const periodLabel = useMemo(
@@ -90,14 +95,11 @@ const AnagraficaDashboard = () => {
 
   const summaryCards = useMemo(
     () => [
-      { key: 'totale_generale', label: 'Totale anagrafiche', value: kpi.totale_generale },
-      { key: 'nuovi_mese_corrente', label: `Nuove anagrafiche (${periodLabel})`, value: kpi.nuovi_mese_corrente },
-      {
-        key: 'nuovi_mese_precedente',
-        label: `Nuove anagrafiche (${periodLabel} prec.)`,
-        value: kpi.nuovi_mese_precedente,
-      },
-      { key: 'perc_change_mom', label: 'Variazione periodo su periodo', value: formatPercent(kpi.perc_change_mom) },
+      { key: 'totale', label: 'Totale DDT', value: kpi.totale },
+      { key: 'totale_mese', label: `DDT ${periodLabel.toLowerCase()}`, value: kpi.totale_mese },
+      { key: 'bozze', label: 'DDT bozza', value: kpi.bozze },
+      { key: 'emessi', label: 'DDT emessi', value: kpi.emessi },
+      { key: 'pezzi_mese', label: `Totale pezzi (${periodLabel.toLowerCase()})`, value: kpi.pezzi_mese },
     ],
     [kpi, periodLabel],
   )
@@ -106,15 +108,15 @@ const AnagraficaDashboard = () => {
     <>
       <CRow className="mb-4 align-items-end">
         <CCol>
-          <h2 className="h4 mb-1">Dashboard anagrafica</h2>
-          <p className="text-body-secondary mb-0">Andamento clienti e riepilogo stati.</p>
+          <h2 className="h4 mb-1">Dashboard DDT</h2>
+          <p className="text-body-secondary mb-0">Riepilogo documenti di trasporto e causali.</p>
         </CCol>
         <CCol xs="auto">
           <CFormSelect
             size="sm"
             value={period}
             onChange={(event) => setPeriod(event.target.value)}
-            aria-label="Selettore periodo dashboard anagrafica"
+            aria-label="Selettore periodo dashboard DDT"
           >
             {PERIOD_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>
@@ -133,16 +135,12 @@ const AnagraficaDashboard = () => {
 
       <CRow className="mb-4">
         {summaryCards.map((card) => (
-          <CCol key={card.key} sm={6} lg={3} className="mb-3">
+          <CCol key={card.key} sm={6} lg={4} className="mb-3">
             <CCard className="h-100 border-0 shadow-sm">
               <CCardBody>
                 <div className="text-body-secondary text-uppercase small fw-semibold">{card.label}</div>
                 <div className="fs-3 fw-semibold mt-2">
-                  {loading
-                    ? <CSpinner size="sm" />
-                    : card.key === 'perc_change_mom'
-                      ? card.value
-                      : formatInteger(card.value)}
+                  {loading ? <CSpinner size="sm" /> : formatInteger(card.value)}
                 </div>
               </CCardBody>
             </CCard>
@@ -153,24 +151,24 @@ const AnagraficaDashboard = () => {
       <CRow className="g-4">
         <CCol lg={5}>
           <CCard className="h-100">
-            <CCardHeader>Stato anagrafiche</CCardHeader>
+            <CCardHeader>Top causali ({periodLabel.toLowerCase()})</CCardHeader>
             <CCardBody>
               {loading
                 ? renderTablePlaceholder('Caricamento...')
-                : statusCounts.length === 0
+                : topCausali.length === 0
                   ? renderTablePlaceholder('Nessun dato disponibile.')
                   : (
                     <CTable small hover responsive className="mb-0">
                       <CTableHead>
                         <CTableRow>
-                          <CTableHeaderCell>Stato</CTableHeaderCell>
+                          <CTableHeaderCell>Causale</CTableHeaderCell>
                           <CTableHeaderCell className="text-end">Totale</CTableHeaderCell>
                         </CTableRow>
                       </CTableHead>
                       <CTableBody>
-                        {statusCounts.map((row) => (
-                          <CTableRow key={row.stato}>
-                            <CTableDataCell>{row.stato || '-'}</CTableDataCell>
+                        {topCausali.map((row) => (
+                          <CTableRow key={row.id_causale}>
+                            <CTableDataCell>{row.label || '-'}</CTableDataCell>
                             <CTableDataCell className="text-end">{formatInteger(row.totale)}</CTableDataCell>
                           </CTableRow>
                         ))}
@@ -182,7 +180,7 @@ const AnagraficaDashboard = () => {
         </CCol>
         <CCol lg={7}>
           <CCard className="h-100">
-            <CCardHeader>Nuove anagrafiche</CCardHeader>
+            <CCardHeader>Ultimi DDT</CCardHeader>
             <CCardBody>
               {loading
                 ? renderTablePlaceholder('Caricamento...')
@@ -192,30 +190,34 @@ const AnagraficaDashboard = () => {
                     <CTable small hover responsive className="mb-0">
                       <CTableHead>
                         <CTableRow>
+                          <CTableHeaderCell>DDT</CTableHeaderCell>
                           <CTableHeaderCell>Cliente</CTableHeaderCell>
-                          <CTableHeaderCell>Partita IVA</CTableHeaderCell>
-                          <CTableHeaderCell className="text-end">Creato il</CTableHeaderCell>
+                          <CTableHeaderCell className="text-end">Stato</CTableHeaderCell>
                         </CTableRow>
                       </CTableHead>
                       <CTableBody>
-                        {latest.map((row) => (
-                          <CTableRow key={row.id_anagrafica}>
-                            <CTableDataCell>
-                              {row.id_anagrafica ? (
-                                <Link
-                                  to={`/anagrafica/dettagli?id=${row.id_anagrafica}`}
-                                  className="text-decoration-none"
-                                >
-                                  {row.ragione_sociale || `Cliente #${row.id_anagrafica}`}
-                                </Link>
-                              ) : (
-                                row.ragione_sociale || '-'
-                              )}
-                            </CTableDataCell>
-                            <CTableDataCell>{row.piva || '-'}</CTableDataCell>
-                            <CTableDataCell className="text-end">{row.created_at || '-'}</CTableDataCell>
-                          </CTableRow>
-                        ))}
+                        {latest.map((row) => {
+                          const numero = row.numero_documento ? `${row.anno}/${row.numero_documento}` : '-'
+                          return (
+                            <CTableRow key={row.id_ddt}>
+                              <CTableDataCell>
+                                {row.id_ddt ? (
+                                  <Link to={`/ddt/dettagli?id=${row.id_ddt}`} className="text-decoration-none">
+                                    {numero}
+                                  </Link>
+                                ) : (
+                                  numero
+                                )}
+                              </CTableDataCell>
+                              <CTableDataCell>
+                                {renderClientLink(row.cliente_ragione_sociale, row.id_anagrafica)}
+                              </CTableDataCell>
+                              <CTableDataCell className="text-end">
+                                {row.stato_documento === 2 ? 'Emesso' : 'Bozza'}
+                              </CTableDataCell>
+                            </CTableRow>
+                          )
+                        })}
                       </CTableBody>
                     </CTable>
                   )}
@@ -227,4 +229,4 @@ const AnagraficaDashboard = () => {
   )
 }
 
-export default AnagraficaDashboard
+export default DdtDashboard

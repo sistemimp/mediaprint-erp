@@ -80,6 +80,7 @@ const formatBarSeries = ({ source, labelKey, valueKey, limit = 6, color }) => {
 const PERIOD_OPTIONS = [
   { value: 'monthly', label: 'Mensile' },
   { value: 'quarterly', label: 'Trimestrale' },
+  { value: 'semiannual', label: 'Semestrale' },
   { value: 'yearly', label: 'Annuale' },
 ]
 const NEW_CLIENTS_PAGE_SIZE = 5
@@ -106,6 +107,10 @@ const resolveGroupLabel = (label, period) => {
   if (period === 'quarterly') {
     const quarter = Math.floor((month - 1) / 3) + 1
     return { key: `${year}-Q${quarter}`, label: `${year} Q${quarter}` }
+  }
+  if (period === 'semiannual') {
+    const semester = month <= 6 ? 1 : 2
+    return { key: `${year}-S${semester}`, label: `${year} S${semester}` }
   }
   if (period === 'yearly') {
     return { key: `${year}`, label: `${year}` }
