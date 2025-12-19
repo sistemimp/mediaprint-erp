@@ -72,6 +72,18 @@ export const fetchAnagrafiche = async ({
   }
 }
 
+export const fetchAnagraficheDashboard = async ({ token, onlyActive, signal } = {}) => {
+  const params = {}
+  if (onlyActive != null) {
+    params.only_active = onlyActive ? 1 : 0
+  }
+  const payload = await apiFetch('/anagraficheDashboard.php', { token, params, signal })
+  if (!payload?.ok) {
+    throw new Error(payload?.message || 'API error')
+  }
+  return payload
+}
+
 export const fetchAnagraficheArchiviate = async ({
   token,
   search,

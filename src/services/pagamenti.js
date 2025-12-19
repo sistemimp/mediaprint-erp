@@ -15,6 +15,14 @@ export const fetchPagamentiLedger = async ({ token, q, limit, signal } = {}) => 
   }
 }
 
+export const fetchPagamentiDashboard = async ({ token, signal } = {}) => {
+  const payload = await apiFetch('/pagamentiDashboard.php', { token, signal })
+  if (!payload?.ok) {
+    throw new Error(payload?.message || 'API error')
+  }
+  return payload
+}
+
 export const fetchPagamentiList = async ({ token, filters = {}, signal } = {}) => {
   const params = {}
   if (filters.q) params.q = filters.q
@@ -62,6 +70,30 @@ export const searchPagamentiFatture = async ({ token, q, id_anagrafica, limit, o
   return {
     items: Array.isArray(response?.items) ? response.items : [],
   }
+}
+
+export const assignPagamentoToAnagrafica = async ({ token, id_pagamento, id_anagrafica, signal } = {}) => {
+  const payload = {}
+  const pagamentoId = Number(id_pagamento ?? 0)
+  if (Number.isFinite(pagamentoId) && pagamentoId > 0) {
+    payload.id_pagamento = pagamentoId
+  }
+  if (id_anagrafica !== undefined) {
+    const clienteId = Number(id_anagrafica)
+    payload.id_anagrafica = Number.isFinite(clienteId) && clienteId > 0 ? clienteId : null
+  }
+  if (!payload.id_pagamento) {
+    throw new Error('ID pagamento mancante per l\'assegnazione del cliente.')
+  }
+
+  const response = await apiFetch('/pagamentiAssignAnagrafica.php', {
+    method: 'POST',
+    token,
+    body: payload,
+    signal,
+  })
+
+  return response?.data ?? null
 }
 
 export const uploadPagamentiExcel = async ({ token, file, signal } = {}) => {

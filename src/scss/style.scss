@@ -146,64 +146,145 @@ body {
 
 /* Timeline stepper indicator overrides for fatture */
 .invoice-timeline-stepper {
-  &--paid,
-  &--partial,
-  &--scaduta {
-    .stepper-step:last-child {
-      .stepper-step-indicator {
-        color: var(--cui-white);
-      }
+  .stepper-step-indicator {
+    transition: background-color 0.2s ease, border-color 0.2s ease;
+  }
 
-      .stepper-step-indicator-icon {
-        display: none;
-      }
+  .stepper-step-indicator-text {
+    color: transparent;
+    position: relative;
 
-      .stepper-step-indicator-text {
-        position: relative;
-        color: transparent;
-
-        &::after {
-          content: '';
-          position: absolute;
-          inset: 0;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          font-size: 1rem;
-          font-weight: 600;
-          color: var(--cui-white);
-        }
-      }
+    &::after {
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--cui-white);
+      content: attr(data-icon);
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
   }
+}
 
-  &--paid .stepper-step:last-child .stepper-step-indicator {
-    background-color: var(--cui-success);
-    border-color: var(--cui-success);
-  }
+.chat-card {
+  min-height: 60vh;
+}
 
-  &--paid .stepper-step:last-child .stepper-step-indicator-text::after {
-    content: '✓';
-  }
+.chat-card-body {
+  padding: 0;
+}
 
-  &--partial .stepper-step:last-child .stepper-step-indicator {
-    background-color: var(--cui-warning);
-    border-color: var(--cui-warning);
-    color: var(--cui-body-color);
-  }
+.chat-messages-list {
+  max-height: 52vh;
+  min-height: 42vh;
+  overflow-y: auto;
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
 
-  &--partial .stepper-step:last-child .stepper-step-indicator-text::after {
-    content: '|';
-    color: var(--cui-body-color);
-    font-weight: 700;
-  }
+.chat-message {
+  border-radius: 1rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--cui-border-color);
+  max-width: 65%;
+  word-break: break-word;
+}
 
-  &--scaduta .stepper-step:last-child .stepper-step-indicator {
-    background-color: var(--cui-danger);
-    border-color: var(--cui-danger);
-  }
+.chat-message-remote {
+  align-self: flex-start;
+  background-color: var(--cui-body-bg);
+}
 
-  &--scaduta .stepper-step:last-child .stepper-step-indicator-text::after {
-    content: '×';
+.preventivi-revision-modal {
+  .modal-dialog {
+    width: 90vw;
+    max-width: 90vw;
+    max-height: 90vh;
+    margin: auto;
   }
+  .modal-content {
+    height: 90vh;
+  }
+  .modal-body {
+    max-height: calc(90vh - 120px);
+    overflow-y: auto;
+  }
+}
+
+.chat-message-own {
+  align-self: flex-end;
+  background-color: var(--cui-primary);
+  color: var(--cui-white);
+  border-color: transparent;
+}
+
+.chat-message-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.3rem;
+}
+
+.chat-message-body {
+  font-size: 0.95rem;
+}
+
+.chat-message-attachment {
+  margin-top: 0.35rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.chat-attachment-preview {
+  max-width: 240px;
+  border-radius: 0.5rem;
+  border: 1px solid var(--cui-border-color);
+}
+
+.chat-attachment-link {
+  gap: 0.35rem;
+  text-decoration: none;
+  color: inherit;
+}
+
+.chat-send-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.chat-input {
+  border-radius: 0.75rem;
+  min-height: 110px;
+}
+
+.chat-send-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.chat-attachment-label {
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--cui-primary);
+  font-weight: 600;
+}
+
+.chat-attachment-info {
+  flex: 1;
+  min-width: 200px;
+}
+
+.chat-connection-hint {
+  min-height: 1.1rem;
 }

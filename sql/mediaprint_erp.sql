@@ -1,7 +1,7 @@
 /*M!999999\- enable the sandbox mode */
 -- MariaDB dump 10.19  Distrib 10.11.13-MariaDB, for debian-linux-gnu (x86_64)
 --
--- Host: localhost    Database: mediaprint_erp_v2
+-- Host: localhost    Database: prova
 -- ------------------------------------------------------
 -- Server version	10.11.13-MariaDB-ubu2004
 
@@ -99,6 +99,7 @@ DROP TABLE IF EXISTS `appoggio_pagamenti_fattura`;
 /*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `appoggio_pagamenti_fattura` (
   `id_pag_fattura` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `id_pagamento` int(10) unsigned DEFAULT NULL,
   `id_fattura` int(10) unsigned DEFAULT NULL,
   `id_metodo` smallint(5) unsigned DEFAULT NULL,
   `data_pagamento` date DEFAULT NULL,
@@ -111,9 +112,11 @@ CREATE TABLE `appoggio_pagamenti_fattura` (
   KEY `idx_app_pf_fatt` (`id_fattura`),
   KEY `idx_apf_import_uid` (`import_uid`),
   KEY `fk_apf_metodo` (`id_metodo`),
+  KEY `idx_apf_pagamento` (`id_pagamento`),
   CONSTRAINT `fk_apf_fatt` FOREIGN KEY (`id_fattura`) REFERENCES `tb_fatture` (`id_fattura`) ON DELETE CASCADE,
-  CONSTRAINT `fk_apf_metodo` FOREIGN KEY (`id_metodo`) REFERENCES `cfg_metodi_pagamento` (`id_metodo`) ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  CONSTRAINT `fk_apf_metodo` FOREIGN KEY (`id_metodo`) REFERENCES `cfg_metodi_pagamento` (`id_metodo`) ON DELETE SET NULL,
+  CONSTRAINT `fk_apf_pagamento` FOREIGN KEY (`id_pagamento`) REFERENCES `tb_pagamenti` (`id_pagamento`) ON DELETE SET NULL
+) ENGINE=InnoDB AUTO_INCREMENT=29 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -124,114 +127,6 @@ LOCK TABLES `appoggio_pagamenti_fattura` WRITE;
 /*!40000 ALTER TABLE `appoggio_pagamenti_fattura` DISABLE KEYS */;
 /*!40000 ALTER TABLE `appoggio_pagamenti_fattura` ENABLE KEYS */;
 UNLOCK TABLES;
-/*!50003 SET @saved_cs_client      = @@character_set_client */ ;
-/*!50003 SET @saved_cs_results     = @@character_set_results */ ;
-/*!50003 SET @saved_col_connection = @@collation_connection */ ;
-/*!50003 SET character_set_client  = utf8mb4 */ ;
-/*!50003 SET character_set_results = utf8mb4 */ ;
-/*!50003 SET collation_connection  = utf8mb4_unicode_ci */ ;
-/*!50003 SET @saved_sql_mode       = @@sql_mode */ ;
-/*!50003 SET sql_mode              = 'ERROR_FOR_DIVISION_BY_ZERO,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION' */ ;
-DELIMITER ;;
-/*!50003 CREATE*/ /* 50017 DEFINER=`laravel_mediaprint`@`%`*/ /*!50003 TRIGGER bi_apf_mp_guard
-BEFORE INSERT ON appoggio_pagamenti_fattura
-FOR EACH ROW
-BEGIN
-  IF COALESCE(NEW.importo,0) > 0 THEN
-    IF NEW.id_mp IS NULL THEN
-      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Modalità di pagamento SdI (MPxx) obbligatoria quando importo > 0';
-    END IF;
-  END IF;
-END */;;
-DELIMITER ;
-/*!50003 SET sql_mode              = @saved_sql_mode */ ;
-/*!50003 SET character_set_client  = @saved_cs_client */ ;
-/*!50003 SET character_set_results = @saved_cs_results */ ;
-/*!50003 SET collation_connection  = @saved_col_connection */ ;
-/*!50003 SET @saved_cs_client      = @@character_set_client */ ;
-/*!50003 SET @saved_cs_results     = @@character_set_results */ ;
-/*!50003 SET @saved_col_connection = @@collation_connection */ ;
-/*!50003 SET character_set_client  = utf8mb4 */ ;
-/*!50003 SET character_set_results = utf8mb4 */ ;
-/*!50003 SET collation_connection  = utf8mb4_unicode_ci */ ;
-/*!50003 SET @saved_sql_mode       = @@sql_mode */ ;
-/*!50003 SET sql_mode              = 'ERROR_FOR_DIVISION_BY_ZERO,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION' */ ;
-DELIMITER ;;
-/*!50003 CREATE*/ /* 50017 DEFINER=`laravel_mediaprint`@`%`*/ /*!50003 TRIGGER ai_apf_recalc_fattura
-AFTER INSERT ON appoggio_pagamenti_fattura
-FOR EACH ROW
-BEGIN
-  CALL sp_recalc_fattura(NEW.id_fattura);
-END */;;
-DELIMITER ;
-/*!50003 SET sql_mode              = @saved_sql_mode */ ;
-/*!50003 SET character_set_client  = @saved_cs_client */ ;
-/*!50003 SET character_set_results = @saved_cs_results */ ;
-/*!50003 SET collation_connection  = @saved_col_connection */ ;
-/*!50003 SET @saved_cs_client      = @@character_set_client */ ;
-/*!50003 SET @saved_cs_results     = @@character_set_results */ ;
-/*!50003 SET @saved_col_connection = @@collation_connection */ ;
-/*!50003 SET character_set_client  = utf8mb4 */ ;
-/*!50003 SET character_set_results = utf8mb4 */ ;
-/*!50003 SET collation_connection  = utf8mb4_unicode_ci */ ;
-/*!50003 SET @saved_sql_mode       = @@sql_mode */ ;
-/*!50003 SET sql_mode              = 'ERROR_FOR_DIVISION_BY_ZERO,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION' */ ;
-DELIMITER ;;
-/*!50003 CREATE*/ /* 50017 DEFINER=`laravel_mediaprint`@`%`*/ /*!50003 TRIGGER bu_apf_mp_guard
-BEFORE UPDATE ON appoggio_pagamenti_fattura
-FOR EACH ROW
-BEGIN
-  IF COALESCE(NEW.importo,0) > 0 THEN
-    IF NEW.id_mp IS NULL THEN
-      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Modalità di pagamento SdI (MPxx) obbligatoria quando importo > 0';
-    END IF;
-  END IF;
-END */;;
-DELIMITER ;
-/*!50003 SET sql_mode              = @saved_sql_mode */ ;
-/*!50003 SET character_set_client  = @saved_cs_client */ ;
-/*!50003 SET character_set_results = @saved_cs_results */ ;
-/*!50003 SET collation_connection  = @saved_col_connection */ ;
-/*!50003 SET @saved_cs_client      = @@character_set_client */ ;
-/*!50003 SET @saved_cs_results     = @@character_set_results */ ;
-/*!50003 SET @saved_col_connection = @@collation_connection */ ;
-/*!50003 SET character_set_client  = utf8mb4 */ ;
-/*!50003 SET character_set_results = utf8mb4 */ ;
-/*!50003 SET collation_connection  = utf8mb4_unicode_ci */ ;
-/*!50003 SET @saved_sql_mode       = @@sql_mode */ ;
-/*!50003 SET sql_mode              = 'ERROR_FOR_DIVISION_BY_ZERO,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION' */ ;
-DELIMITER ;;
-/*!50003 CREATE*/ /* 50017 DEFINER=`laravel_mediaprint`@`%`*/ /*!50003 TRIGGER au_apf_recalc_fattura
-AFTER UPDATE ON appoggio_pagamenti_fattura
-FOR EACH ROW
-BEGIN
-  CALL sp_recalc_fattura(NEW.id_fattura);
-END */;;
-DELIMITER ;
-/*!50003 SET sql_mode              = @saved_sql_mode */ ;
-/*!50003 SET character_set_client  = @saved_cs_client */ ;
-/*!50003 SET character_set_results = @saved_cs_results */ ;
-/*!50003 SET collation_connection  = @saved_col_connection */ ;
-/*!50003 SET @saved_cs_client      = @@character_set_client */ ;
-/*!50003 SET @saved_cs_results     = @@character_set_results */ ;
-/*!50003 SET @saved_col_connection = @@collation_connection */ ;
-/*!50003 SET character_set_client  = utf8mb4 */ ;
-/*!50003 SET character_set_results = utf8mb4 */ ;
-/*!50003 SET collation_connection  = utf8mb4_unicode_ci */ ;
-/*!50003 SET @saved_sql_mode       = @@sql_mode */ ;
-/*!50003 SET sql_mode              = 'ERROR_FOR_DIVISION_BY_ZERO,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION' */ ;
-DELIMITER ;;
-/*!50003 CREATE*/ /* 50017 DEFINER=`laravel_mediaprint`@`%`*/ /*!50003 TRIGGER ad_apf_recalc_fattura
-AFTER DELETE ON appoggio_pagamenti_fattura
-FOR EACH ROW
-BEGIN
-  CALL sp_recalc_fattura(OLD.id_fattura);
-END */;;
-DELIMITER ;
-/*!50003 SET sql_mode              = @saved_sql_mode */ ;
-/*!50003 SET character_set_client  = @saved_cs_client */ ;
-/*!50003 SET character_set_results = @saved_cs_results */ ;
-/*!50003 SET collation_connection  = @saved_col_connection */ ;
 
 --
 -- Table structure for table `appoggio_preventivo_ddt`
@@ -257,6 +152,8 @@ CREATE TABLE `appoggio_preventivo_ddt` (
 
 LOCK TABLES `appoggio_preventivo_ddt` WRITE;
 /*!40000 ALTER TABLE `appoggio_preventivo_ddt` DISABLE KEYS */;
+INSERT INTO `appoggio_preventivo_ddt` VALUES
+(33,14);
 /*!40000 ALTER TABLE `appoggio_preventivo_ddt` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -284,6 +181,8 @@ CREATE TABLE `appoggio_preventivo_fattura` (
 
 LOCK TABLES `appoggio_preventivo_fattura` WRITE;
 /*!40000 ALTER TABLE `appoggio_preventivo_fattura` DISABLE KEYS */;
+INSERT INTO `appoggio_preventivo_fattura` VALUES
+(33,12);
 /*!40000 ALTER TABLE `appoggio_preventivo_fattura` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -312,8 +211,16 @@ CREATE TABLE `appoggio_prodotto_variazione` (
 LOCK TABLES `appoggio_prodotto_variazione` WRITE;
 /*!40000 ALTER TABLE `appoggio_prodotto_variazione` DISABLE KEYS */;
 INSERT INTO `appoggio_prodotto_variazione` VALUES
+(6,40,0.0000),
+(6,41,0.0000),
+(6,42,0.0000),
+(8,47,0.0000),
+(8,48,0.0000),
+(8,49,0.0000),
 (11,1,0.0000),
 (11,2,0.0000),
+(11,3,0.0000),
+(11,4,0.0000),
 (11,5,0.0000),
 (11,6,0.0000),
 (11,7,0.0000),
@@ -367,6 +274,13 @@ INSERT INTO `appoggio_prodotto_variazione` VALUES
 (19,12,0.0000),
 (19,13,0.0000),
 (19,14,0.0000),
+(19,31,0.0000),
+(19,32,0.0000),
+(19,33,0.0000),
+(19,43,0.0000),
+(19,44,0.0000),
+(19,45,0.0000),
+(19,46,0.0000),
 (20,1,0.0000),
 (20,2,0.0000),
 (20,8,0.0000),
@@ -382,7 +296,10 @@ INSERT INTO `appoggio_prodotto_variazione` VALUES
 (36,11,0.0000),
 (36,12,0.0000),
 (36,13,0.0500),
-(36,14,0.0500);
+(36,14,0.0500),
+(36,31,0.0000),
+(36,32,0.0000),
+(36,33,0.0000);
 /*!40000 ALTER TABLE `appoggio_prodotto_variazione` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -440,7 +357,7 @@ CREATE TABLE `auth_accounts` (
   KEY `fk_auth_contatto` (`id_contatto`),
   CONSTRAINT `fk_auth_contatto` FOREIGN KEY (`id_contatto`) REFERENCES `tb_sedi_contatti` (`id_contatto`) ON DELETE SET NULL,
   CONSTRAINT `fk_auth_ruolo` FOREIGN KEY (`id_ruolo`) REFERENCES `cfg_auth_ruoli` (`id_ruolo`)
-) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -450,7 +367,8 @@ CREATE TABLE `auth_accounts` (
 LOCK TABLES `auth_accounts` WRITE;
 /*!40000 ALTER TABLE `auth_accounts` DISABLE KEYS */;
 INSERT INTO `auth_accounts` VALUES
-(1,'operatore','admin','alex.o@mediaprint.it','$2y$10$JkB3w1sOK6qwNJ2MJRSJeubmFPXJ5p7swDshAcocO/.jTQ0XtTNDW',1,NULL,1,0,0,NULL,'2025-10-09 10:35:24','2025-10-01 10:41:38','2025-10-09 10:35:24');
+(1,'operatore','Alex Olivieri','alex.o@mediaprint.it','$2y$10$JkB3w1sOK6qwNJ2MJRSJeubmFPXJ5p7swDshAcocO/.jTQ0XtTNDW',1,NULL,1,0,0,NULL,'2025-11-21 16:12:49','2025-10-01 10:41:38','2025-11-21 16:12:49'),
+(2,'operatore','Simona Cappelletti','simona.c@mediaprint.it','$2y$10$z14y/3dYOkBrwAI0AQmIYevXrCN4vyELFDDIt7KyDm2spPmory6l2',2,NULL,1,0,0,NULL,NULL,'2025-10-15 16:18:53','2025-10-15 16:18:53');
 /*!40000 ALTER TABLE `auth_accounts` ENABLE KEYS */;
 UNLOCK TABLES;
 /*!50003 SET @saved_cs_client      = @@character_set_client */ ;
@@ -470,7 +388,7 @@ BEGIN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='Per account cliente è obbligatorio id_contatto';
   END IF;
   IF NEW.account_type='operatore' THEN
-    SET NEW.id_contatto = NULL; -- niente legami per operatori
+    SET NEW.id_contatto = NULL;
   END IF;
 END */;;
 DELIMITER ;
@@ -575,6 +493,12 @@ INSERT INTO `auth_ruolo_permesso` VALUES
 (1,51),
 (1,60),
 (1,61),
+(1,62),
+(1,63),
+(1,64),
+(1,65),
+(1,66),
+(1,67),
 (2,1),
 (2,2),
 (2,10),
@@ -591,11 +515,22 @@ INSERT INTO `auth_ruolo_permesso` VALUES
 (2,50),
 (2,51),
 (2,60),
+(2,62),
+(2,63),
+(2,64),
+(2,65),
+(2,66),
 (3,1),
 (3,10),
 (3,20),
 (3,30),
-(3,50);
+(3,50),
+(4,10),
+(4,20),
+(4,21),
+(4,22),
+(4,62),
+(4,63);
 /*!40000 ALTER TABLE `auth_ruolo_permesso` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -613,7 +548,7 @@ CREATE TABLE `cfg_auth_permessi` (
   `attivo` tinyint(1) NOT NULL DEFAULT 1,
   PRIMARY KEY (`id_permesso`),
   UNIQUE KEY `uq_code` (`code`)
-) ENGINE=InnoDB AUTO_INCREMENT=62 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=68 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -639,7 +574,13 @@ INSERT INTO `cfg_auth_permessi` VALUES
 (50,'pay.view','Visualizzare pagamenti',1),
 (51,'pay.edit','Registrare pagamenti',1),
 (60,'cfg.view','Visualizzare configurazioni',1),
-(61,'cfg.edit','Gestire configurazioni',1);
+(61,'cfg.edit','Gestire configurazioni',1),
+(62,'job.view','Visualizzare lavorazioni e attivita',1),
+(63,'job.manage','Creare e aggiornare lavorazioni e attivita',1),
+(64,'job.assign','Assegnare attivita agli operatori',1),
+(65,'job.report','Generare ed esportare report di produzione',1),
+(66,'job.analytics','Visualizzare dashboard e analytics produzione',1),
+(67,'job.admin','Gestire configurazioni e SLA lavorazioni',1);
 /*!40000 ALTER TABLE `cfg_auth_permessi` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -657,7 +598,7 @@ CREATE TABLE `cfg_auth_ruoli` (
   `attivo` tinyint(1) NOT NULL DEFAULT 1,
   PRIMARY KEY (`id_ruolo`),
   UNIQUE KEY `code` (`code`)
-) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -669,7 +610,8 @@ LOCK TABLES `cfg_auth_ruoli` WRITE;
 INSERT INTO `cfg_auth_ruoli` VALUES
 (1,'admin','Amministratore',1),
 (2,'operatore','Operatore interno',1),
-(3,'cliente','Cliente',1);
+(3,'cliente','Cliente',1),
+(4,'commerciale','Commerciale',1);
 /*!40000 ALTER TABLE `cfg_auth_ruoli` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -706,6 +648,40 @@ INSERT INTO `cfg_causali_ddt` VALUES
 UNLOCK TABLES;
 
 --
+-- Table structure for table `cfg_destinazioni_merce`
+--
+
+DROP TABLE IF EXISTS `cfg_destinazioni_merce`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `cfg_destinazioni_merce` (
+  `id_destinazione` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `label` varchar(150) NOT NULL,
+  `indirizzo` varchar(255) DEFAULT NULL,
+  `cap` varchar(20) DEFAULT NULL,
+  `comune` varchar(100) DEFAULT NULL,
+  `provincia` varchar(50) DEFAULT NULL,
+  `nazione_iso2` varchar(2) DEFAULT NULL,
+  `note` varchar(255) DEFAULT NULL,
+  `attivo` tinyint(1) NOT NULL DEFAULT 1,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id_destinazione`)
+) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `cfg_destinazioni_merce`
+--
+
+LOCK TABLES `cfg_destinazioni_merce` WRITE;
+/*!40000 ALTER TABLE `cfg_destinazioni_merce` DISABLE KEYS */;
+INSERT INTO `cfg_destinazioni_merce` VALUES
+(1,'Poste Italiane - Ascoli Piceno','Centro Operativo Zona Industriale Marino del Tronto','63100','ASCOLI PICENO','AP','IT',NULL,1,'2025-11-21 11:16:20','2025-11-21 11:16:20');
+/*!40000 ALTER TABLE `cfg_destinazioni_merce` ENABLE KEYS */;
+UNLOCK TABLES;
+
+--
 -- Table structure for table `cfg_iva`
 --
 
@@ -736,6 +712,44 @@ INSERT INTO `cfg_iva` VALUES
 (3,'IVA4',4.00,'Aliquota 4%',1),
 (4,'ESENTE',0.00,'Esente/Non imponibile',1);
 /*!40000 ALTER TABLE `cfg_iva` ENABLE KEYS */;
+UNLOCK TABLES;
+
+--
+-- Table structure for table `cfg_lavorazioni_attivita_template`
+--
+
+DROP TABLE IF EXISTS `cfg_lavorazioni_attivita_template`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `cfg_lavorazioni_attivita_template` (
+  `id_template` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `titolo` varchar(191) NOT NULL,
+  `descrizione` text DEFAULT NULL,
+  `priorita` enum('low','medium','high','critical') NOT NULL DEFAULT 'medium',
+  `id_reparto` smallint(5) unsigned DEFAULT NULL,
+  `durata_predefinita_giorni` smallint(5) unsigned DEFAULT NULL,
+  `attivo` tinyint(1) NOT NULL DEFAULT 1,
+  `ordering` smallint(5) unsigned DEFAULT 100,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id_template`),
+  KEY `idx_template_attivo` (`attivo`),
+  KEY `idx_template_reparto` (`id_reparto`),
+  CONSTRAINT `fk_template_reparto` FOREIGN KEY (`id_reparto`) REFERENCES `cfg_reparti_produttivi` (`id_reparto`) ON DELETE SET NULL
+) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `cfg_lavorazioni_attivita_template`
+--
+
+LOCK TABLES `cfg_lavorazioni_attivita_template` WRITE;
+/*!40000 ALTER TABLE `cfg_lavorazioni_attivita_template` DISABLE KEYS */;
+INSERT INTO `cfg_lavorazioni_attivita_template` VALUES
+(1,'Impaginazione','Predisposizione file grafici per la commessa','medium',NULL,NULL,1,10,'2025-11-26 12:22:35','2025-11-26 12:22:35'),
+(2,'Stampa','Produzione in reparto stampa','high',NULL,NULL,1,20,'2025-11-26 12:22:35','2025-11-26 12:22:35'),
+(3,'Imbustamento','Preparazione e imbustamento del materiale','medium',NULL,NULL,1,30,'2025-11-26 12:22:35','2025-11-26 12:22:35');
+/*!40000 ALTER TABLE `cfg_lavorazioni_attivita_template` ENABLE KEYS */;
 UNLOCK TABLES;
 
 --
@@ -771,6 +785,71 @@ INSERT INTO `cfg_metodi_pagamento` VALUES
 (7,'rid','Ri.D.',1),
 (8,'riba','Ri.Ba.',1);
 /*!40000 ALTER TABLE `cfg_metodi_pagamento` ENABLE KEYS */;
+UNLOCK TABLES;
+
+--
+-- Table structure for table `cfg_preventivi_oggetti`
+--
+
+DROP TABLE IF EXISTS `cfg_preventivi_oggetti`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `cfg_preventivi_oggetti` (
+  `id_oggetto` int(11) NOT NULL AUTO_INCREMENT,
+  `label` varchar(255) NOT NULL,
+  `code` varchar(64) DEFAULT NULL,
+  `ordering` int(11) NOT NULL DEFAULT 0,
+  `attivo` tinyint(1) NOT NULL DEFAULT 1,
+  PRIMARY KEY (`id_oggetto`),
+  UNIQUE KEY `label` (`label`),
+  UNIQUE KEY `code` (`code`)
+) ENGINE=InnoDB AUTO_INCREMENT=39 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `cfg_preventivi_oggetti`
+--
+
+LOCK TABLES `cfg_preventivi_oggetti` WRITE;
+/*!40000 ALTER TABLE `cfg_preventivi_oggetti` DISABLE KEYS */;
+INSERT INTO `cfg_preventivi_oggetti` VALUES
+(1,'Stampa','stampa',1,1),
+(2,'Imbustamento','imbustamento',2,1),
+(3,'Cellophanatura','cellophanatura',3,1),
+(4,'Posta Digitale','posta_digitale',4,1);
+/*!40000 ALTER TABLE `cfg_preventivi_oggetti` ENABLE KEYS */;
+UNLOCK TABLES;
+
+--
+-- Table structure for table `cfg_reparti_produttivi`
+--
+
+DROP TABLE IF EXISTS `cfg_reparti_produttivi`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `cfg_reparti_produttivi` (
+  `id_reparto` smallint(5) unsigned NOT NULL AUTO_INCREMENT,
+  `code` varchar(32) NOT NULL,
+  `label` varchar(128) NOT NULL,
+  `ordering` smallint(5) unsigned NOT NULL DEFAULT 100,
+  `attivo` tinyint(1) NOT NULL DEFAULT 1,
+  PRIMARY KEY (`id_reparto`),
+  UNIQUE KEY `uq_cfg_reparti_code` (`code`)
+) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `cfg_reparti_produttivi`
+--
+
+LOCK TABLES `cfg_reparti_produttivi` WRITE;
+/*!40000 ALTER TABLE `cfg_reparti_produttivi` DISABLE KEYS */;
+INSERT INTO `cfg_reparti_produttivi` VALUES
+(1,'CED','Centro Elaborazione Dati',100,1),
+(2,'Produzione','Produzione Posta Network',200,1),
+(3,'UB','Unit Business',300,1),
+(4,'UA','Unit Amministrazione',400,1);
+/*!40000 ALTER TABLE `cfg_reparti_produttivi` ENABLE KEYS */;
 UNLOCK TABLES;
 
 --
@@ -936,7 +1015,7 @@ CREATE TABLE `cfg_sdi_natura_iva` (
 LOCK TABLES `cfg_sdi_natura_iva` WRITE;
 /*!40000 ALTER TABLE `cfg_sdi_natura_iva` DISABLE KEYS */;
 INSERT INTO `cfg_sdi_natura_iva` VALUES
-(1,'N1','Escluse ex art. 15 DPR 633/72',1),
+(1,'N1','Escluse Art.15',1),
 (2,'N2','Non soggette',1),
 (3,'N3','Non imponibili',1),
 (4,'N4','Esenti',1),
@@ -1166,10 +1245,9 @@ CREATE TABLE `cfg_sezionali` (
 LOCK TABLES `cfg_sezionali` WRITE;
 /*!40000 ALTER TABLE `cfg_sezionali` DISABLE KEYS */;
 INSERT INTO `cfg_sezionali` VALUES
-(1,'fattura','MP','Sezionale Fatture Ordinarie A',1),
-(2,'pa','PA','Sezionale Fatture PA 01',1),
-(3,'nota_credito','NC','Sezionale Note di Credito',1),
-(4,'reweicoli','REW','Sezionale reweicoli',1);
+(1,'fattura','MP','Fatture Ordinarie',1),
+(2,'pa','PA','Fatture PA 01',1),
+(3,'reweicoli','REW','Reweicoli',1);
 /*!40000 ALTER TABLE `cfg_sezionali` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -1195,6 +1273,8 @@ CREATE TABLE `cfg_sezionali_progress` (
 
 LOCK TABLES `cfg_sezionali_progress` WRITE;
 /*!40000 ALTER TABLE `cfg_sezionali_progress` DISABLE KEYS */;
+INSERT INTO `cfg_sezionali_progress` VALUES
+(1,2025,12);
 /*!40000 ALTER TABLE `cfg_sezionali_progress` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -1228,8 +1308,7 @@ INSERT INTO `cfg_sezionali_td_allow` VALUES
 (1,17),
 (1,18),
 (2,1),
-(2,4),
-(3,2);
+(2,4);
 /*!40000 ALTER TABLE `cfg_sezionali_td_allow` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -1244,11 +1323,13 @@ CREATE TABLE `cfg_stati_fattura` (
   `id_stato` tinyint(3) unsigned NOT NULL AUTO_INCREMENT,
   `code` varchar(32) NOT NULL,
   `label` varchar(64) NOT NULL,
+  `timeline_color` varchar(32) DEFAULT NULL,
+  `timeline_icon` varchar(32) DEFAULT NULL,
   `ordering` tinyint(3) unsigned NOT NULL DEFAULT 0,
   `attivo` tinyint(1) NOT NULL DEFAULT 1,
   PRIMARY KEY (`id_stato`),
   UNIQUE KEY `uq_fattst_code` (`code`)
-) ENGINE=InnoDB AUTO_INCREMENT=7 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=8 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -1258,12 +1339,13 @@ CREATE TABLE `cfg_stati_fattura` (
 LOCK TABLES `cfg_stati_fattura` WRITE;
 /*!40000 ALTER TABLE `cfg_stati_fattura` DISABLE KEYS */;
 INSERT INTO `cfg_stati_fattura` VALUES
-(1,'bozza','Bozza',10,1),
-(2,'emessa','Emessa',20,1),
-(3,'inviata','Inviata',30,1),
-(4,'pagata','Pagata',40,1),
-(5,'scaduta','Scaduta',50,1),
-(6,'stornata','Stornata',60,1);
+(1,'bozza','Bozza',NULL,NULL,10,1),
+(2,'emessa','Emessa',NULL,NULL,20,1),
+(3,'inviata','Inviata',NULL,NULL,30,1),
+(4,'pagata','Pagata','#198754','✔',40,1),
+(5,'scaduta','Scaduta','#dc3545','⚠',50,1),
+(6,'rifiutata','Rifiutata','#6c757d','✖',60,1),
+(7,'pagataparziale','Parzialmente Pagata','#f0ad4e','◒',41,1);
 /*!40000 ALTER TABLE `cfg_stati_fattura` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -1319,7 +1401,7 @@ CREATE TABLE `cfg_termini_pagamento` (
   `attivo` tinyint(1) NOT NULL DEFAULT 1,
   PRIMARY KEY (`id_termine`),
   UNIQUE KEY `uq_term_code` (`code`)
-) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=13 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -1497,7 +1579,7 @@ CREATE TABLE `tb_anagrafiche` (
   KEY `fk_anag_sdi_rf` (`id_sdi_regime_fiscale`),
   CONSTRAINT `fk_anag_sdi_rf` FOREIGN KEY (`id_sdi_regime_fiscale`) REFERENCES `cfg_sdi_regime_fiscale` (`id_regime`) ON DELETE SET NULL,
   CONSTRAINT `fk_anag_tipologia` FOREIGN KEY (`id_tipologia`) REFERENCES `cfg_tipologia_anagrafica` (`id_tipologia`)
-) ENGINE=InnoDB AUTO_INCREMENT=138 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=139 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -1639,7 +1721,8 @@ INSERT INTO `tb_anagrafiche` VALUES
 (134,1,NULL,0,1,'attiva','PROVA SRL','01234567890','01234567890',NULL,'2025-05-14 10:19:53','2025-05-14 10:19:54'),
 (135,1,NULL,0,1,'attiva','DE LEONI INFORMATICA SRL','02153830597','02153830597',NULL,'2025-07-31 16:19:55','2025-07-31 16:19:56'),
 (136,1,NULL,0,1,'attiva','SELDA SRL','00354060444',NULL,NULL,'2025-07-31 16:24:14','2025-07-31 16:24:15'),
-(137,1,NULL,0,1,'attiva','Alex','01234567890','LVRLXA93H18I348M',NULL,'2025-10-09 15:04:21','2025-10-09 15:04:21');
+(137,1,NULL,0,1,'attiva','Alex','01234567890','LVRLXA93H18I348M',NULL,'2025-10-09 15:04:21','2025-10-09 15:04:21'),
+(138,1,NULL,0,1,'attiva','COMUNE DI COLONNELLA','82001560679','82001560679',NULL,'2025-11-26 17:13:26','2025-11-26 17:13:26');
 /*!40000 ALTER TABLE `tb_anagrafiche` ENABLE KEYS */;
 UNLOCK TABLES;
 /*!50003 SET @saved_cs_client      = @@character_set_client */ ;
@@ -1781,7 +1864,8 @@ CREATE TABLE `tb_anagrafiche_fiscali` (
 LOCK TABLES `tb_anagrafiche_fiscali` WRITE;
 /*!40000 ALTER TABLE `tb_anagrafiche_fiscali` DISABLE KEYS */;
 INSERT INTO `tb_anagrafiche_fiscali` VALUES
-(1,'mediaprint@pec.it',NULL,NULL,NULL,NULL,NULL,NULL,NULL);
+(1,'mediaprint@pec.it','fads','IT08I0200824404000102986727','popolare',12,'Bonifico',30,NULL),
+(138,'comune.colonnella@pec.it','UF4HOB',NULL,NULL,1,'Bonifico',NULL,NULL);
 /*!40000 ALTER TABLE `tb_anagrafiche_fiscali` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -1887,10 +1971,10 @@ CREATE TABLE `tb_categorie` (
 LOCK TABLES `tb_categorie` WRITE;
 /*!40000 ALTER TABLE `tb_categorie` DISABLE KEYS */;
 INSERT INTO `tb_categorie` VALUES
-(1,'GianoSystem.eu',NULL),
+(1,'Servizi Giano System',NULL),
 (2,'Tariffe postali',NULL),
 (3,'Posta Digitale',NULL),
-(4,'Posta Ordinaria Cartacea',NULL);
+(4,'Stampa & Imbustamento',NULL);
 /*!40000 ALTER TABLE `tb_categorie` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -1922,7 +2006,8 @@ LOCK TABLES `tb_contatti_anagrafiche` WRITE;
 INSERT INTO `tb_contatti_anagrafiche` VALUES
 (1613,1,0,'2025-10-03 16:01:54'),
 (1618,1,0,'2025-10-08 14:27:24'),
-(1619,1,0,'2025-10-08 14:31:53');
+(1619,1,0,'2025-10-08 14:31:53'),
+(1620,138,0,'2025-11-26 17:16:05');
 /*!40000 ALTER TABLE `tb_contatti_anagrafiche` ENABLE KEYS */;
 UNLOCK TABLES;
 /*!50003 SET @saved_cs_client      = @@character_set_client */ ;
@@ -1966,9 +2051,18 @@ CREATE TABLE `tb_ddt` (
   `numero_documento` int(10) unsigned NOT NULL,
   `data_ddt` date DEFAULT NULL,
   `id_causale` smallint(5) unsigned DEFAULT NULL,
+  `id_sede_destinazione` int(10) unsigned DEFAULT NULL,
+  `id_destinazione_predefinita` int(10) unsigned DEFAULT NULL,
+  `stato_documento` tinyint(1) unsigned NOT NULL DEFAULT 1,
   `totale_pezzi` int(10) unsigned DEFAULT NULL,
   `totale_peso_kg` decimal(12,3) DEFAULT NULL,
   `note` text DEFAULT NULL,
+  `destinazione_merce` varchar(255) DEFAULT NULL,
+  `aspetto` varchar(255) DEFAULT NULL,
+  `numero_colli` int(10) unsigned DEFAULT NULL,
+  `cura_trasporto` varchar(255) DEFAULT NULL,
+  `data_trasporto` date DEFAULT NULL,
+  `vettore` varchar(255) DEFAULT NULL,
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
   `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
   PRIMARY KEY (`id_ddt`),
@@ -1980,7 +2074,7 @@ CREATE TABLE `tb_ddt` (
   CONSTRAINT `fk_ddt_anag` FOREIGN KEY (`id_anagrafica`) REFERENCES `tb_anagrafiche` (`id_anagrafica`),
   CONSTRAINT `fk_ddt_causale` FOREIGN KEY (`id_causale`) REFERENCES `cfg_causali_ddt` (`id_causale`) ON DELETE SET NULL,
   CONSTRAINT `fk_ddt_serie` FOREIGN KEY (`id_serie`) REFERENCES `cfg_serie_documenti` (`id_serie`) ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=15 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -1989,6 +2083,8 @@ CREATE TABLE `tb_ddt` (
 
 LOCK TABLES `tb_ddt` WRITE;
 /*!40000 ALTER TABLE `tb_ddt` DISABLE KEYS */;
+INSERT INTO `tb_ddt` VALUES
+(14,NULL,137,2025,1,'2025-11-27',1,NULL,1,2,1,10.000,'Documento generato dal preventivo 1/2025.',NULL,'pacchi',1,'mittente',NULL,NULL,'2025-11-27 10:34:39','2025-11-27 10:35:40');
 /*!40000 ALTER TABLE `tb_ddt` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -2008,6 +2104,12 @@ CREATE TABLE `tb_ddt_archive` (
   `causale` varchar(160) DEFAULT NULL,
   `totale_pezzi` int(10) unsigned DEFAULT NULL,
   `note` text DEFAULT NULL,
+  `destinazione_merce` varchar(255) DEFAULT NULL,
+  `aspetto` varchar(255) DEFAULT NULL,
+  `numero_colli` int(10) unsigned DEFAULT NULL,
+  `cura_trasporto` varchar(255) DEFAULT NULL,
+  `data_trasporto` date DEFAULT NULL,
+  `vettore` varchar(255) DEFAULT NULL,
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
   `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
   PRIMARY KEY (`id_ddt`),
@@ -2049,7 +2151,7 @@ CREATE TABLE `tb_ddt_righe` (
   KEY `idx_righeddt_prod` (`id_prodotto`),
   CONSTRAINT `fk_righeddt_ddt` FOREIGN KEY (`id_ddt`) REFERENCES `tb_ddt` (`id_ddt`) ON DELETE CASCADE,
   CONSTRAINT `fk_righeddt_prod` FOREIGN KEY (`id_prodotto`) REFERENCES `tb_prodotti` (`id_prodotto`) ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=189 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -2058,6 +2160,8 @@ CREATE TABLE `tb_ddt_righe` (
 
 LOCK TABLES `tb_ddt_righe` WRITE;
 /*!40000 ALTER TABLE `tb_ddt_righe` DISABLE KEYS */;
+INSERT INTO `tb_ddt_righe` VALUES
+(188,14,NULL,'prova ddt',1.000,10.000,10.000,'1',NULL,1);
 /*!40000 ALTER TABLE `tb_ddt_righe` ENABLE KEYS */;
 UNLOCK TABLES;
 /*!50003 SET @saved_cs_client      = @@character_set_client */ ;
@@ -2186,6 +2290,14 @@ CREATE TABLE `tb_fatture` (
   `id_sdi_tipo_documento` tinyint(3) unsigned DEFAULT NULL,
   `id_sdi_esigibilita` tinyint(3) unsigned DEFAULT NULL,
   `id_sdi_modalita` tinyint(3) unsigned DEFAULT NULL,
+  `cliente_pec` varchar(120) DEFAULT NULL,
+  `cliente_codice_sdi` char(7) DEFAULT NULL,
+  `cliente_iban` varchar(34) DEFAULT NULL,
+  `cliente_banca` varchar(120) DEFAULT NULL,
+  `cliente_id_cond_pagamento` int(11) unsigned DEFAULT NULL,
+  `cliente_modalita_pagamento` varchar(10) DEFAULT NULL,
+  `cliente_giorni_pagamento` smallint(6) DEFAULT NULL,
+  `cliente_altri_dati` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`cliente_altri_dati`)),
   `note` text DEFAULT NULL,
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
   `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
@@ -2219,146 +2331,6 @@ LOCK TABLES `tb_fatture` WRITE;
 /*!40000 ALTER TABLE `tb_fatture` DISABLE KEYS */;
 /*!40000 ALTER TABLE `tb_fatture` ENABLE KEYS */;
 UNLOCK TABLES;
-/*!50003 SET @saved_cs_client      = @@character_set_client */ ;
-/*!50003 SET @saved_cs_results     = @@character_set_results */ ;
-/*!50003 SET @saved_col_connection = @@collation_connection */ ;
-/*!50003 SET character_set_client  = utf8mb4 */ ;
-/*!50003 SET character_set_results = utf8mb4 */ ;
-/*!50003 SET collation_connection  = utf8mb4_unicode_ci */ ;
-/*!50003 SET @saved_sql_mode       = @@sql_mode */ ;
-/*!50003 SET sql_mode              = 'ERROR_FOR_DIVISION_BY_ZERO,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION' */ ;
-DELIMITER ;;
-/*!50003 CREATE*/ /* 50017 DEFINER=`laravel_mediaprint`@`%`*/ /*!50003 TRIGGER bi_fatture_split_guard
-BEFORE INSERT ON tb_fatture
-FOR EACH ROW
-BEGIN
-  DECLARE v_split_id TINYINT;
-  DECLARE v_is_pa TINYINT;
-
-  -- id esigibilità per split payment
-  SELECT id_esig INTO v_split_id
-  FROM cfg_sdi_esigibilita_iva
-  WHERE code='S' LIMIT 1;
-
-  -- flag PA dall'anagrafica
-  SELECT is_pa INTO v_is_pa
-  FROM tb_anagrafiche
-  WHERE id_anagrafica = NEW.id_anagrafica;
-
-  IF NEW.id_sdi_esigibilita = v_split_id AND v_is_pa <> 1 THEN
-    SIGNAL SQLSTATE '45000'
-      SET MESSAGE_TEXT = 'Split payment (S) consentito solo per clienti Pubblica Amministrazione';
-  END IF;
-END */;;
-DELIMITER ;
-/*!50003 SET sql_mode              = @saved_sql_mode */ ;
-/*!50003 SET character_set_client  = @saved_cs_client */ ;
-/*!50003 SET character_set_results = @saved_cs_results */ ;
-/*!50003 SET collation_connection  = @saved_col_connection */ ;
-/*!50003 SET @saved_cs_client      = @@character_set_client */ ;
-/*!50003 SET @saved_cs_results     = @@character_set_results */ ;
-/*!50003 SET @saved_col_connection = @@collation_connection */ ;
-/*!50003 SET character_set_client  = utf8mb4 */ ;
-/*!50003 SET character_set_results = utf8mb4 */ ;
-/*!50003 SET collation_connection  = utf8mb4_unicode_ci */ ;
-/*!50003 SET @saved_sql_mode       = @@sql_mode */ ;
-/*!50003 SET sql_mode              = 'ERROR_FOR_DIVISION_BY_ZERO,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION' */ ;
-DELIMITER ;;
-/*!50003 CREATE*/ /* 50017 DEFINER=`laravel_mediaprint`@`%`*/ /*!50003 TRIGGER bi_fatture_sezionale_numbering
-BEFORE INSERT ON tb_fatture
-FOR EACH ROW
-BEGIN
-  DECLARE v_anno SMALLINT;
-  DECLARE v_next INT;
-  DECLARE v_cnt  INT;
-  DECLARE v_allowed INT;
-
-  -- Richiede il sezionale: lo scegli dall'app
-  IF NEW.id_sezionale IS NULL THEN
-    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'id_sezionale obbligatorio per la numerazione';
-  END IF;
-
-  -- Se il tipo SdI è valorizzato, verifica compatibilità col sezionale (se mappature esistono)
-  IF NEW.id_sdi_tipo_documento IS NOT NULL THEN
-    SELECT COUNT(*) INTO v_allowed
-    FROM cfg_sezionali_td_allow
-    WHERE id_sezionale = NEW.id_sezionale
-      AND id_tipo_sdi  = NEW.id_sdi_tipo_documento;
-    IF v_allowed = 0 THEN
-      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Tipo Documento SdI non consentito per il sezionale scelto';
-    END IF;
-  END IF;
-
-  -- Anno da data_fattura o anno corrente
-  SET v_anno = COALESCE(YEAR(NEW.data_fattura), YEAR(CURDATE()));
-  SET NEW.anno = v_anno;
-
-  -- Se numero già passato dall’app, solo valida univocità all’interno del sezionale
-  IF NEW.numero_documento IS NOT NULL THEN
-    SELECT COUNT(*) INTO v_cnt
-    FROM tb_fatture
-    WHERE anno = v_anno
-      AND id_sezionale = NEW.id_sezionale
-      AND numero_documento = NEW.numero_documento;
-    IF v_cnt > 0 THEN
-      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Numero già esistente per anno e sezionale';
-    END IF;
-  ELSE
-    -- Numerazione automatica thread-safe su cfg_sezionali_progress
-    INSERT IGNORE INTO cfg_sezionali_progress(id_sezionale, anno, next_num)
-    VALUES (NEW.id_sezionale, v_anno, 1);
-
-    SELECT next_num INTO v_next
-    FROM cfg_sezionali_progress
-    WHERE id_sezionale = NEW.id_sezionale AND anno = v_anno
-    FOR UPDATE;
-
-    SET NEW.numero_documento = v_next;
-
-    UPDATE cfg_sezionali_progress
-    SET next_num = v_next + 1
-    WHERE id_sezionale = NEW.id_sezionale AND anno = v_anno;
-  END IF;
-END */;;
-DELIMITER ;
-/*!50003 SET sql_mode              = @saved_sql_mode */ ;
-/*!50003 SET character_set_client  = @saved_cs_client */ ;
-/*!50003 SET character_set_results = @saved_cs_results */ ;
-/*!50003 SET collation_connection  = @saved_col_connection */ ;
-/*!50003 SET @saved_cs_client      = @@character_set_client */ ;
-/*!50003 SET @saved_cs_results     = @@character_set_results */ ;
-/*!50003 SET @saved_col_connection = @@collation_connection */ ;
-/*!50003 SET character_set_client  = utf8mb4 */ ;
-/*!50003 SET character_set_results = utf8mb4 */ ;
-/*!50003 SET collation_connection  = utf8mb4_unicode_ci */ ;
-/*!50003 SET @saved_sql_mode       = @@sql_mode */ ;
-/*!50003 SET sql_mode              = 'ERROR_FOR_DIVISION_BY_ZERO,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION' */ ;
-DELIMITER ;;
-/*!50003 CREATE*/ /* 50017 DEFINER=`laravel_mediaprint`@`%`*/ /*!50003 TRIGGER bu_fatture_split_guard
-BEFORE UPDATE ON tb_fatture
-FOR EACH ROW
-BEGIN
-  DECLARE v_split_id TINYINT;
-  DECLARE v_is_pa TINYINT;
-
-  SELECT id_esig INTO v_split_id
-  FROM cfg_sdi_esigibilita_iva
-  WHERE code='S' LIMIT 1;
-
-  SELECT is_pa INTO v_is_pa
-  FROM tb_anagrafiche
-  WHERE id_anagrafica = NEW.id_anagrafica;
-
-  IF NEW.id_sdi_esigibilita = v_split_id AND v_is_pa <> 1 THEN
-    SIGNAL SQLSTATE '45000'
-      SET MESSAGE_TEXT = 'Split payment (S) consentito solo per clienti Pubblica Amministrazione';
-  END IF;
-END */;;
-DELIMITER ;
-/*!50003 SET sql_mode              = @saved_sql_mode */ ;
-/*!50003 SET character_set_client  = @saved_cs_client */ ;
-/*!50003 SET character_set_results = @saved_cs_results */ ;
-/*!50003 SET collation_connection  = @saved_col_connection */ ;
 
 --
 -- Table structure for table `tb_fatture_archive`
@@ -2371,7 +2343,7 @@ CREATE TABLE `tb_fatture_archive` (
   `id_fattura` int(10) unsigned NOT NULL AUTO_INCREMENT,
   `id_anagrafica` int(10) unsigned NOT NULL,
   `anno` smallint(5) unsigned NOT NULL,
-  `numero_documento` int(10) unsigned NOT NULL,
+  `numero_documento` int(10) unsigned DEFAULT NULL,
   `data_fattura` date DEFAULT NULL,
   `tipo` enum('accompagnatoria','immediata','differita','nota_credito') NOT NULL DEFAULT 'immediata',
   `totale_imponibile` decimal(12,2) DEFAULT NULL,
@@ -2427,7 +2399,7 @@ CREATE TABLE `tb_fatture_righe` (
   CONSTRAINT `fk_righe_sdi_natura` FOREIGN KEY (`id_sdi_natura_iva`) REFERENCES `cfg_sdi_natura_iva` (`id_natura`) ON DELETE SET NULL,
   CONSTRAINT `fk_righefatt_fatt` FOREIGN KEY (`id_fattura`) REFERENCES `tb_fatture` (`id_fattura`) ON DELETE CASCADE,
   CONSTRAINT `fk_righefatt_prod` FOREIGN KEY (`id_prodotto`) REFERENCES `tb_prodotti` (`id_prodotto`) ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=145 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -2436,6 +2408,9 @@ CREATE TABLE `tb_fatture_righe` (
 
 LOCK TABLES `tb_fatture_righe` WRITE;
 /*!40000 ALTER TABLE `tb_fatture_righe` DISABLE KEYS */;
+INSERT INTO `tb_fatture_righe` VALUES
+(143,12,37,'Attivazione Servizio Giano',1.000,22.00,150.0000,0.00,150.00,33.00,NULL,183.00,1),
+(144,12,8,'Rendicontazione - Rendicontazione Postale: Posta Certificata',1.000,22.00,0.6000,0.00,0.60,0.13,NULL,0.73,2);
 /*!40000 ALTER TABLE `tb_fatture_righe` ENABLE KEYS */;
 UNLOCK TABLES;
 /*!50003 SET @saved_cs_client      = @@character_set_client */ ;
@@ -2451,12 +2426,12 @@ DELIMITER ;;
 BEFORE INSERT ON tb_fatture_righe
 FOR EACH ROW
 BEGIN
-  -- BOUNDS: aliquota_iva 0..100
+
   IF NEW.aliquota_iva < 0 OR NEW.aliquota_iva > 100 THEN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'aliquota_iva deve essere compresa tra 0 e 100';
   END IF;
 
-  -- Natura obbligatoria se aliquota=0, altrimenti deve essere NULL
+
   IF NEW.aliquota_iva = 0 THEN
     IF NEW.id_sdi_natura_iva IS NULL THEN
       SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Natura IVA (SdI) obbligatoria quando aliquota_iva=0';
@@ -2562,6 +2537,365 @@ DELIMITER ;
 /*!50003 SET collation_connection  = @saved_col_connection */ ;
 
 --
+-- Table structure for table `tb_fatture_status_log`
+--
+
+DROP TABLE IF EXISTS `tb_fatture_status_log`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `tb_fatture_status_log` (
+  `id_log` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `id_fattura` int(11) NOT NULL,
+  `from_status_id` int(11) DEFAULT NULL,
+  `to_status_id` int(11) DEFAULT NULL,
+  `from_status_label` varchar(191) DEFAULT NULL,
+  `to_status_label` varchar(191) DEFAULT NULL,
+  `note` varchar(500) DEFAULT NULL,
+  `actor` varchar(191) DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id_log`),
+  KEY `idx_fsl_fattura` (`id_fattura`),
+  KEY `idx_fsl_created` (`created_at`)
+) ENGINE=InnoDB AUTO_INCREMENT=15 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `tb_fatture_status_log`
+--
+
+LOCK TABLES `tb_fatture_status_log` WRITE;
+/*!40000 ALTER TABLE `tb_fatture_status_log` DISABLE KEYS */;
+INSERT INTO `tb_fatture_status_log` VALUES
+(1,9,7,1,'Parzialmente Pagata','Bozza',NULL,'ip:84.33.111.245','2025-11-25 15:12:00'),
+(2,9,1,2,'Bozza','Emessa',NULL,'ip:84.33.111.245','2025-11-25 15:12:17'),
+(3,9,2,3,'Emessa','Inviata',NULL,'ip:84.33.111.245','2025-11-25 15:12:21'),
+(4,9,4,3,'Pagata','Inviata',NULL,'mediaprint.it','2025-11-25 16:19:34'),
+(5,9,3,4,'Inviata','Pagata',NULL,'Sistema pagamenti','2025-11-25 16:25:55'),
+(6,9,4,7,'Pagata','Parzialmente Pagata',NULL,'Sistema pagamenti','2025-11-25 16:48:20'),
+(7,9,7,3,'Parzialmente Pagata','Inviata',NULL,'mediaprint.it','2025-11-25 16:48:53'),
+(8,10,2,4,'Emessa','Pagata',NULL,'Sistema pagamenti','2025-11-26 17:05:25'),
+(9,12,1,4,'Bozza','Pagata',NULL,'Sistema pagamenti','2025-11-27 10:50:07'),
+(10,12,4,7,'Pagata','Parzialmente Pagata',NULL,'mediaprint.it','2025-11-27 10:55:54'),
+(11,12,7,5,'Parzialmente Pagata','Scaduta',NULL,'mediaprint.it','2025-11-27 10:55:58'),
+(12,12,5,6,'Scaduta','Stornata',NULL,'mediaprint.it','2025-11-27 10:56:02'),
+(13,12,6,2,'Rifiutata','Emessa',NULL,'mediaprint.it','2025-11-27 10:58:22'),
+(14,12,2,3,'Emessa','Inviata',NULL,'mediaprint.it','2025-11-27 10:58:32');
+/*!40000 ALTER TABLE `tb_fatture_status_log` ENABLE KEYS */;
+UNLOCK TABLES;
+
+--
+-- Table structure for table `tb_lavorazioni`
+--
+
+DROP TABLE IF EXISTS `tb_lavorazioni`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `tb_lavorazioni` (
+  `id_lavorazione` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `id_preventivo` int(10) unsigned NOT NULL,
+  `id_anagrafica` int(10) unsigned NOT NULL,
+  `codice` varchar(64) DEFAULT NULL,
+  `titolo` varchar(255) NOT NULL,
+  `descrizione` text DEFAULT NULL,
+  `stato` enum('aperta','pianificata','in_produzione','completata','annullata','sospesa') NOT NULL DEFAULT 'aperta',
+  `priorita` enum('low','medium','high','critical') NOT NULL DEFAULT 'medium',
+  `id_reparto` smallint(5) unsigned DEFAULT NULL,
+  `data_inizio_prevista` date DEFAULT NULL,
+  `data_fine_prevista` date DEFAULT NULL,
+  `data_avvio_reale` datetime DEFAULT NULL,
+  `data_chiusura` datetime DEFAULT NULL,
+  `quantita_totale_prevista` decimal(12,2) DEFAULT NULL,
+  `quantita_totale_effettiva` decimal(12,2) DEFAULT NULL,
+  `percentuale_avanzamento` tinyint(3) unsigned NOT NULL DEFAULT 0,
+  `note` text DEFAULT NULL,
+  `created_by` bigint(20) unsigned DEFAULT NULL,
+  `updated_by` bigint(20) unsigned DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id_lavorazione`),
+  UNIQUE KEY `uq_lavorazioni_prev` (`id_preventivo`),
+  UNIQUE KEY `uq_lavorazioni_codice` (`codice`),
+  KEY `idx_lavorazioni_stato` (`stato`),
+  KEY `idx_lavorazioni_reparto` (`id_reparto`),
+  KEY `idx_lavorazioni_anagrafica` (`id_anagrafica`),
+  KEY `fk_lavorazioni_created_by` (`created_by`),
+  KEY `fk_lavorazioni_updated_by` (`updated_by`),
+  CONSTRAINT `fk_lavorazioni_anagrafica` FOREIGN KEY (`id_anagrafica`) REFERENCES `tb_anagrafiche` (`id_anagrafica`),
+  CONSTRAINT `fk_lavorazioni_created_by` FOREIGN KEY (`created_by`) REFERENCES `auth_accounts` (`id_account`) ON DELETE SET NULL,
+  CONSTRAINT `fk_lavorazioni_prev` FOREIGN KEY (`id_preventivo`) REFERENCES `tb_preventivi` (`id_preventivo`) ON DELETE CASCADE,
+  CONSTRAINT `fk_lavorazioni_reparto` FOREIGN KEY (`id_reparto`) REFERENCES `cfg_reparti_produttivi` (`id_reparto`) ON DELETE SET NULL,
+  CONSTRAINT `fk_lavorazioni_updated_by` FOREIGN KEY (`updated_by`) REFERENCES `auth_accounts` (`id_account`) ON DELETE SET NULL
+) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `tb_lavorazioni`
+--
+
+LOCK TABLES `tb_lavorazioni` WRITE;
+/*!40000 ALTER TABLE `tb_lavorazioni` DISABLE KEYS */;
+/*!40000 ALTER TABLE `tb_lavorazioni` ENABLE KEYS */;
+UNLOCK TABLES;
+
+--
+-- Table structure for table `tb_lavorazioni_attivita`
+--
+
+DROP TABLE IF EXISTS `tb_lavorazioni_attivita`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `tb_lavorazioni_attivita` (
+  `id_attivita` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `id_lavorazione` int(10) unsigned NOT NULL,
+  `titolo` varchar(255) NOT NULL,
+  `descrizione` text DEFAULT NULL,
+  `stato` enum('todo','in_progress','done','cancelled','sospesa') NOT NULL DEFAULT 'todo',
+  `priorita` enum('low','medium','high','critical') NOT NULL DEFAULT 'medium',
+  `id_reparto` smallint(5) unsigned DEFAULT NULL,
+  `ordine` smallint(5) unsigned NOT NULL DEFAULT 0,
+  `data_creazione` datetime NOT NULL DEFAULT current_timestamp(),
+  `data_scadenza` datetime DEFAULT NULL,
+  `data_completamento` datetime DEFAULT NULL,
+  `quantita_prevista` decimal(12,2) DEFAULT NULL,
+  `quantita_effettiva` decimal(12,2) DEFAULT NULL,
+  `percentuale` tinyint(3) unsigned NOT NULL DEFAULT 0,
+  `note` text DEFAULT NULL,
+  `created_by` bigint(20) unsigned DEFAULT NULL,
+  `updated_by` bigint(20) unsigned DEFAULT NULL,
+  `completed_by` bigint(20) unsigned DEFAULT NULL,
+  PRIMARY KEY (`id_attivita`),
+  KEY `idx_attivita_lavorazione` (`id_lavorazione`),
+  KEY `idx_attivita_stato` (`stato`),
+  KEY `idx_attivita_scadenza` (`data_scadenza`),
+  KEY `fk_attivita_reparto` (`id_reparto`),
+  KEY `fk_attivita_created_by` (`created_by`),
+  KEY `fk_attivita_updated_by` (`updated_by`),
+  KEY `fk_attivita_completed_by` (`completed_by`),
+  CONSTRAINT `fk_attivita_completed_by` FOREIGN KEY (`completed_by`) REFERENCES `auth_accounts` (`id_account`) ON DELETE SET NULL,
+  CONSTRAINT `fk_attivita_created_by` FOREIGN KEY (`created_by`) REFERENCES `auth_accounts` (`id_account`) ON DELETE SET NULL,
+  CONSTRAINT `fk_attivita_lavorazione` FOREIGN KEY (`id_lavorazione`) REFERENCES `tb_lavorazioni` (`id_lavorazione`) ON DELETE CASCADE,
+  CONSTRAINT `fk_attivita_reparto` FOREIGN KEY (`id_reparto`) REFERENCES `cfg_reparti_produttivi` (`id_reparto`) ON DELETE SET NULL,
+  CONSTRAINT `fk_attivita_updated_by` FOREIGN KEY (`updated_by`) REFERENCES `auth_accounts` (`id_account`) ON DELETE SET NULL
+) ENGINE=InnoDB AUTO_INCREMENT=8 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `tb_lavorazioni_attivita`
+--
+
+LOCK TABLES `tb_lavorazioni_attivita` WRITE;
+/*!40000 ALTER TABLE `tb_lavorazioni_attivita` DISABLE KEYS */;
+/*!40000 ALTER TABLE `tb_lavorazioni_attivita` ENABLE KEYS */;
+UNLOCK TABLES;
+
+--
+-- Table structure for table `tb_lavorazioni_attivita_allegati`
+--
+
+DROP TABLE IF EXISTS `tb_lavorazioni_attivita_allegati`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `tb_lavorazioni_attivita_allegati` (
+  `id_allegato` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `id_attivita` bigint(20) unsigned NOT NULL,
+  `nome_file` varchar(255) NOT NULL,
+  `path_file` varchar(512) NOT NULL,
+  `mime_type` varchar(128) DEFAULT NULL,
+  `size_bytes` bigint(20) unsigned DEFAULT NULL,
+  `uploaded_by` bigint(20) unsigned DEFAULT NULL,
+  `uploaded_at` datetime NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id_allegato`),
+  KEY `idx_attivita_allegati_attivita` (`id_attivita`),
+  KEY `fk_attivita_allegati_account` (`uploaded_by`),
+  CONSTRAINT `fk_attivita_allegati_account` FOREIGN KEY (`uploaded_by`) REFERENCES `auth_accounts` (`id_account`) ON DELETE SET NULL,
+  CONSTRAINT `fk_attivita_allegati_attivita` FOREIGN KEY (`id_attivita`) REFERENCES `tb_lavorazioni_attivita` (`id_attivita`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `tb_lavorazioni_attivita_allegati`
+--
+
+LOCK TABLES `tb_lavorazioni_attivita_allegati` WRITE;
+/*!40000 ALTER TABLE `tb_lavorazioni_attivita_allegati` DISABLE KEYS */;
+/*!40000 ALTER TABLE `tb_lavorazioni_attivita_allegati` ENABLE KEYS */;
+UNLOCK TABLES;
+
+--
+-- Table structure for table `tb_lavorazioni_attivita_operatori`
+--
+
+DROP TABLE IF EXISTS `tb_lavorazioni_attivita_operatori`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `tb_lavorazioni_attivita_operatori` (
+  `id_associazione` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `id_attivita` bigint(20) unsigned NOT NULL,
+  `id_account` bigint(20) unsigned NOT NULL,
+  `ruolo` enum('owner','collaboratore') NOT NULL DEFAULT 'owner',
+  `assegnata_il` datetime NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id_associazione`),
+  UNIQUE KEY `uq_attivita_operatore` (`id_attivita`,`id_account`),
+  KEY `idx_attivita_operatore_account` (`id_account`),
+  CONSTRAINT `fk_attivita_operatore_account` FOREIGN KEY (`id_account`) REFERENCES `auth_accounts` (`id_account`) ON DELETE CASCADE,
+  CONSTRAINT `fk_attivita_operatore_attivita` FOREIGN KEY (`id_attivita`) REFERENCES `tb_lavorazioni_attivita` (`id_attivita`) ON DELETE CASCADE
+) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `tb_lavorazioni_attivita_operatori`
+--
+
+LOCK TABLES `tb_lavorazioni_attivita_operatori` WRITE;
+/*!40000 ALTER TABLE `tb_lavorazioni_attivita_operatori` DISABLE KEYS */;
+/*!40000 ALTER TABLE `tb_lavorazioni_attivita_operatori` ENABLE KEYS */;
+UNLOCK TABLES;
+
+--
+-- Table structure for table `tb_lavorazioni_eventi`
+--
+
+DROP TABLE IF EXISTS `tb_lavorazioni_eventi`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `tb_lavorazioni_eventi` (
+  `id_evento` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `id_lavorazione` int(10) unsigned NOT NULL,
+  `id_attivita` bigint(20) unsigned DEFAULT NULL,
+  `evento` varchar(128) NOT NULL,
+  `old_value` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`old_value`)),
+  `new_value` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`new_value`)),
+  `note` text DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `created_by` bigint(20) unsigned DEFAULT NULL,
+  PRIMARY KEY (`id_evento`),
+  KEY `idx_eventi_lavorazione` (`id_lavorazione`),
+  KEY `idx_eventi_attivita` (`id_attivita`),
+  KEY `fk_eventi_account` (`created_by`),
+  CONSTRAINT `fk_eventi_account` FOREIGN KEY (`created_by`) REFERENCES `auth_accounts` (`id_account`) ON DELETE SET NULL,
+  CONSTRAINT `fk_eventi_attivita` FOREIGN KEY (`id_attivita`) REFERENCES `tb_lavorazioni_attivita` (`id_attivita`) ON DELETE SET NULL,
+  CONSTRAINT `fk_eventi_lavorazione` FOREIGN KEY (`id_lavorazione`) REFERENCES `tb_lavorazioni` (`id_lavorazione`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `tb_lavorazioni_eventi`
+--
+
+LOCK TABLES `tb_lavorazioni_eventi` WRITE;
+/*!40000 ALTER TABLE `tb_lavorazioni_eventi` DISABLE KEYS */;
+/*!40000 ALTER TABLE `tb_lavorazioni_eventi` ENABLE KEYS */;
+UNLOCK TABLES;
+
+--
+-- Table structure for table `tb_lavorazioni_notifiche`
+--
+
+DROP TABLE IF EXISTS `tb_lavorazioni_notifiche`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `tb_lavorazioni_notifiche` (
+  `id_notifica` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `id_lavorazione` int(10) unsigned DEFAULT NULL,
+  `id_attivita` bigint(20) unsigned DEFAULT NULL,
+  `id_account` bigint(20) unsigned NOT NULL,
+  `tipo` enum('email','dashboard') NOT NULL DEFAULT 'dashboard',
+  `titolo` varchar(191) DEFAULT NULL,
+  `messaggio` text DEFAULT NULL,
+  `payload` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`payload`)),
+  `stato` enum('pending','queued','sent','failed','read') NOT NULL DEFAULT 'pending',
+  `scheduled_at` datetime DEFAULT NULL,
+  `sent_at` datetime DEFAULT NULL,
+  `read_at` datetime DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id_notifica`),
+  KEY `idx_notifiche_account` (`id_account`),
+  KEY `idx_notifiche_stato` (`stato`),
+  KEY `fk_notifiche_lavorazione` (`id_lavorazione`),
+  KEY `fk_notifiche_attivita` (`id_attivita`),
+  CONSTRAINT `fk_notifiche_account` FOREIGN KEY (`id_account`) REFERENCES `auth_accounts` (`id_account`) ON DELETE CASCADE,
+  CONSTRAINT `fk_notifiche_attivita` FOREIGN KEY (`id_attivita`) REFERENCES `tb_lavorazioni_attivita` (`id_attivita`) ON DELETE SET NULL,
+  CONSTRAINT `fk_notifiche_lavorazione` FOREIGN KEY (`id_lavorazione`) REFERENCES `tb_lavorazioni` (`id_lavorazione`) ON DELETE CASCADE
+) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `tb_lavorazioni_notifiche`
+--
+
+LOCK TABLES `tb_lavorazioni_notifiche` WRITE;
+/*!40000 ALTER TABLE `tb_lavorazioni_notifiche` DISABLE KEYS */;
+/*!40000 ALTER TABLE `tb_lavorazioni_notifiche` ENABLE KEYS */;
+UNLOCK TABLES;
+
+--
+-- Table structure for table `tb_lavorazioni_operatori`
+--
+
+DROP TABLE IF EXISTS `tb_lavorazioni_operatori`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `tb_lavorazioni_operatori` (
+  `id_associazione` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `id_lavorazione` int(10) unsigned NOT NULL,
+  `id_account` bigint(20) unsigned NOT NULL,
+  `ruolo` enum('owner','collaboratore') NOT NULL DEFAULT 'owner',
+  `assegnata_il` datetime NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id_associazione`),
+  UNIQUE KEY `uq_lavorazione_operatore` (`id_lavorazione`,`id_account`),
+  KEY `idx_lavorazione_operatore_account` (`id_account`),
+  CONSTRAINT `fk_lavorazione_operatore_account` FOREIGN KEY (`id_account`) REFERENCES `auth_accounts` (`id_account`) ON DELETE CASCADE,
+  CONSTRAINT `fk_lavorazione_operatore_job` FOREIGN KEY (`id_lavorazione`) REFERENCES `tb_lavorazioni` (`id_lavorazione`) ON DELETE CASCADE
+) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `tb_lavorazioni_operatori`
+--
+
+LOCK TABLES `tb_lavorazioni_operatori` WRITE;
+/*!40000 ALTER TABLE `tb_lavorazioni_operatori` DISABLE KEYS */;
+/*!40000 ALTER TABLE `tb_lavorazioni_operatori` ENABLE KEYS */;
+UNLOCK TABLES;
+
+--
+-- Table structure for table `tb_lavorazioni_report_export`
+--
+
+DROP TABLE IF EXISTS `tb_lavorazioni_report_export`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `tb_lavorazioni_report_export` (
+  `id_export` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `formato` enum('pdf','xlsx') NOT NULL,
+  `filtro_periodo_da` date DEFAULT NULL,
+  `filtro_periodo_a` date DEFAULT NULL,
+  `filtro_id_anagrafica` int(10) unsigned DEFAULT NULL,
+  `filtro_stato_lavorazione` varchar(32) DEFAULT NULL,
+  `filtro_reparto` smallint(5) unsigned DEFAULT NULL,
+  `rows_count` int(10) unsigned NOT NULL DEFAULT 0,
+  `file_name` varchar(255) DEFAULT NULL,
+  `file_path` varchar(512) DEFAULT NULL,
+  `id_account` bigint(20) unsigned DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id_export`),
+  KEY `idx_report_account` (`id_account`),
+  KEY `fk_report_reparto` (`filtro_reparto`),
+  CONSTRAINT `fk_report_account` FOREIGN KEY (`id_account`) REFERENCES `auth_accounts` (`id_account`) ON DELETE SET NULL,
+  CONSTRAINT `fk_report_reparto` FOREIGN KEY (`filtro_reparto`) REFERENCES `cfg_reparti_produttivi` (`id_reparto`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `tb_lavorazioni_report_export`
+--
+
+LOCK TABLES `tb_lavorazioni_report_export` WRITE;
+/*!40000 ALTER TABLE `tb_lavorazioni_report_export` DISABLE KEYS */;
+/*!40000 ALTER TABLE `tb_lavorazioni_report_export` ENABLE KEYS */;
+UNLOCK TABLES;
+
+--
 -- Table structure for table `tb_movimenti`
 --
 
@@ -2613,7 +2947,7 @@ CREATE TABLE `tb_pacchetti` (
   `updated_at` datetime DEFAULT NULL,
   PRIMARY KEY (`id_pacchetto`),
   UNIQUE KEY `uq_tb_pacchetti_codice` (`codice`)
-) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=6 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -2623,7 +2957,10 @@ CREATE TABLE `tb_pacchetti` (
 LOCK TABLES `tb_pacchetti` WRITE;
 /*!40000 ALTER TABLE `tb_pacchetti` DISABLE KEYS */;
 INSERT INTO `tb_pacchetti` VALUES
-(2,'PM<20','Posta Massiva fino a 20gr',NULL,1,'2025-10-13 14:41:12','2025-10-13 14:44:17');
+(2,'PM<20 C-80','Posta Massiva fino a 20gr Carta 80gr',NULL,1,'2025-10-13 14:41:12','2025-11-26 16:15:26'),
+(3,'COM-01','TARI',NULL,1,'2025-10-13 15:48:23','2025-10-13 15:54:10'),
+(4,'AR<20','Raccomandate sotto i 20gr',NULL,1,'2025-11-25 14:29:02','2025-11-26 16:04:54'),
+(5,'RP-01','Rendicontazione','Servizio giano di rendicontazione della corrispondenza',1,'2025-11-27 10:22:53','2025-11-27 10:22:53');
 /*!40000 ALTER TABLE `tb_pacchetti` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -2652,7 +2989,7 @@ CREATE TABLE `tb_pacchetti_righe` (
   KEY `idx_pacchetti_righe_posizione` (`posizione`),
   KEY `idx_pacchetti_righe_id_categoria` (`id_categoria`),
   CONSTRAINT `fk_pacchetti_righe_pacchetto` FOREIGN KEY (`id_pacchetto`) REFERENCES `tb_pacchetti` (`id_pacchetto`) ON DELETE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=59 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=149 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -2662,13 +2999,80 @@ CREATE TABLE `tb_pacchetti_righe` (
 LOCK TABLES `tb_pacchetti_righe` WRITE;
 /*!40000 ALTER TABLE `tb_pacchetti_righe` DISABLE KEYS */;
 INSERT INTO `tb_pacchetti_righe` VALUES
-(53,2,11,2,'Tariffe postali','Posta Massiva - Peso: Fino a 20 gr ; Tipo Spedizione: Omologato ; Destinazione: AM',1.00,0.3400,0.00,0.00,1,1),
-(54,2,11,2,'Tariffe postali','Posta Massiva - Peso: Fino a 20 gr ; Tipo Spedizione: Omologato ; Destinazione: CP',1.00,0.5200,0.00,0.00,1,2),
-(55,2,11,2,'Tariffe postali','Posta Massiva - Peso: Fino a 20 gr ; Tipo Spedizione: Omologato ; Destinazione: EU',1.00,0.6500,0.00,0.00,1,3),
-(56,2,20,2,'Tariffe postali','Posta 4 (internazionale) - Peso: Fino a 20 gr ; Destinazione: EX Zona 1',1.00,1.3500,0.00,0.00,1,4),
-(57,2,20,2,'Tariffe postali','Posta 4 (internazionale) - Peso: Fino a 20 gr ; Destinazione: EX Zona 2',1.00,2.5500,0.00,0.00,1,5),
-(58,2,20,2,'Tariffe postali','Posta 4 (internazionale) - Peso: Fino a 20 gr ; Destinazione: EX Zona 3',1.00,3.3500,0.00,0.00,1,6);
+(86,3,11,2,'Tariffe postali','Posta Massiva - Peso: Fino a 20 gr ; Altro: 3 ; Destinazione: AM',1.00,0.3400,0.00,0.00,1,1),
+(87,3,11,2,'Tariffe postali','Posta Massiva - Peso: Fino a 20 gr ; Altro: 3 ; Destinazione: CP',1.00,0.5200,0.00,0.00,1,2),
+(88,3,11,2,'Tariffe postali','Posta Massiva - Peso: Fino a 20 gr ; Altro: 3 ; Destinazione: EU',1.00,0.6500,0.00,0.00,1,3),
+(89,3,11,2,'Tariffe postali','Posta Massiva - Peso: Oltre 20g fino a 50gr ; Tipo Spedizione: Omologato ; Destinazione: AM',1.00,0.6200,0.00,0.00,1,4),
+(90,3,11,2,'Tariffe postali','Posta Massiva - Peso: Oltre 20g fino a 50gr ; Tipo Spedizione: Omologato ; Destinazione: CP',1.00,0.9200,0.00,0.00,1,5),
+(91,3,11,2,'Tariffe postali','Posta Massiva - Peso: Oltre 20g fino a 50gr ; Tipo Spedizione: Omologato ; Destinazione: EU',1.00,1.2200,0.00,0.00,1,6),
+(92,3,20,2,'Tariffe postali','Posta Mail Internationale - Peso: Fino a 20 gr ; Destinazione: EX Zona 1',1.00,1.3500,0.00,22.00,NULL,7),
+(93,3,20,2,'Tariffe postali','Posta Mail Internationale - Peso: Fino a 20 gr ; Destinazione: EX Zona 2',1.00,2.5500,0.00,22.00,NULL,8),
+(94,3,20,2,'Tariffe postali','Posta Mail Internationale - Peso: Fino a 20 gr ; Destinazione: EX Zona 3',1.00,3.3500,0.00,22.00,NULL,9),
+(95,3,19,4,'Posta Ordinaria Cartacea','Posta Massiva',1.00,0.0000,0.00,22.00,NULL,10),
+(115,4,12,2,'Tariffe postali','Raccomandata AR Smart - Peso: Fino a 20 gr ; Destinazione: AM',1.00,2.8100,0.00,22.00,NULL,1),
+(116,4,12,2,'Tariffe postali','Raccomandata AR Smart - Peso: Fino a 20 gr ; Destinazione: CP',1.00,3.1800,0.00,22.00,NULL,2),
+(117,4,12,2,'Tariffe postali','Raccomandata AR Smart - Peso: Fino a 20 gr ; Destinazione: EU',1.00,4.0300,0.00,22.00,NULL,3),
+(118,4,14,2,'Tariffe postali','Raccomandata AR Internazionale - Peso: Fino a 20 gr ; Destinazione: EX Zona 1',1.00,7.6500,0.00,22.00,NULL,4),
+(119,4,14,2,'Tariffe postali','Raccomandata AR Internazionale - Peso: Fino a 20 gr ; Destinazione: EX Zona 2',1.00,9.0500,0.00,22.00,NULL,5),
+(120,4,14,2,'Tariffe postali','Raccomandata AR Internazionale - Peso: Fino a 20 gr ; Destinazione: EX Zona 3',1.00,9.7000,0.00,22.00,NULL,6),
+(136,2,11,2,'Tariffe postali','Posta Massiva - Peso: Fino a 20 gr ; Tipo Spedizione: Omologato ; Destinazione: AM',1.00,0.3400,0.00,0.00,1,1),
+(137,2,11,2,'Tariffe postali','Posta Massiva - Peso: Fino a 20 gr ; Tipo Spedizione: Omologato ; Destinazione: CP',1.00,0.5200,0.00,0.00,1,2),
+(138,2,11,2,'Tariffe postali','Posta Massiva - Peso: Fino a 20 gr ; Tipo Spedizione: Omologato ; Destinazione: EU',1.00,0.6500,0.00,0.00,1,3),
+(139,2,20,2,'Tariffe postali','Posta 4 (internazionale) - Peso: Fino a 20 gr ; Destinazione: EX Zona 1',1.00,1.3500,0.00,0.00,1,4),
+(140,2,20,2,'Tariffe postali','Posta 4 (internazionale) - Peso: Fino a 20 gr ; Destinazione: EX Zona 2',1.00,2.5500,0.00,0.00,1,5),
+(141,2,20,2,'Tariffe postali','Posta 4 (internazionale) - Peso: Fino a 20 gr ; Destinazione: EX Zona 3',1.00,3.3500,0.00,0.00,1,6),
+(142,2,6,1,'GianoSystem.eu','Centro Elaborazione Dati - File Dati: PDF-Omologato',1.00,50.0000,0.00,22.00,NULL,7),
+(143,2,6,1,'GianoSystem.eu','Centro Elaborazione Dati - File Dati: PDF-Non Omologato',1.00,150.0000,0.00,22.00,NULL,8),
+(144,2,6,1,'GianoSystem.eu','Centro Elaborazione Dati - File Dati: Dati grezzi da elaborare',1.00,150.0000,0.00,22.00,NULL,9),
+(145,5,37,1,'Servizi Giano System','Attivazione Servizio Giano',1.00,150.0000,0.00,22.00,NULL,1),
+(146,5,8,1,'Servizi Giano System','Rendicontazione - Rendicontazione Postale: Posta Ordinaria',1.00,0.4500,0.00,22.00,NULL,2),
+(147,5,8,1,'Servizi Giano System','Rendicontazione - Rendicontazione Postale: Posta Certificata',1.00,0.6000,0.00,22.00,NULL,3),
+(148,5,8,1,'Servizi Giano System','Rendicontazione - Rendicontazione Postale: Posta Digitale',1.00,0.4000,0.00,22.00,NULL,4);
 /*!40000 ALTER TABLE `tb_pacchetti_righe` ENABLE KEYS */;
+UNLOCK TABLES;
+
+--
+-- Table structure for table `tb_pagamenti`
+--
+
+DROP TABLE IF EXISTS `tb_pagamenti`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `tb_pagamenti` (
+  `id_pagamento` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `import_uid` varchar(64) NOT NULL,
+  `reference` varchar(191) DEFAULT NULL,
+  `data_pagamento` date NOT NULL,
+  `importo_totale` decimal(12,2) NOT NULL,
+  `importo_allocato` decimal(12,2) NOT NULL DEFAULT 0.00,
+  `id_metodo` smallint(5) unsigned DEFAULT NULL,
+  `id_mp` tinyint(3) unsigned NOT NULL,
+  `note` text DEFAULT NULL,
+  `id_anagrafica_hint` int(10) unsigned DEFAULT NULL,
+  `cliente_nome_hint` varchar(255) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id_pagamento`),
+  UNIQUE KEY `uniq_tb_pagamenti_import_uid` (`import_uid`),
+  KEY `idx_tb_pagamenti_id_mp` (`id_mp`),
+  KEY `idx_tb_pagamenti_id_metodo` (`id_metodo`),
+  KEY `idx_tb_pagamenti_cliente_hint` (`id_anagrafica_hint`),
+  CONSTRAINT `fk_tb_pagamenti_cliente_hint` FOREIGN KEY (`id_anagrafica_hint`) REFERENCES `tb_anagrafiche` (`id_anagrafica`) ON DELETE SET NULL,
+  CONSTRAINT `fk_tb_pagamenti_metodo` FOREIGN KEY (`id_metodo`) REFERENCES `cfg_metodi_pagamento` (`id_metodo`) ON DELETE SET NULL,
+  CONSTRAINT `fk_tb_pagamenti_modalita` FOREIGN KEY (`id_mp`) REFERENCES `cfg_sdi_modalita_pagamento` (`id_modalita`)
+) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `tb_pagamenti`
+--
+
+LOCK TABLES `tb_pagamenti` WRITE;
+/*!40000 ALTER TABLE `tb_pagamenti` DISABLE KEYS */;
+INSERT INTO `tb_pagamenti` VALUES
+(3,'4a81d26f8b370bd9','BONIFICO A VOSTRO FAVORE BONIFICO SEPA DA  SUOLO E SALUTE SRL PER  PAG. FT. N. 243 DEL 20 05 2025 COMM              0,00 SPESE              0,00 TRN 1001251564002485','2025-05-06',377.06,377.06,NULL,3,'Rif: BONIFICO A VOSTRO FAVORE BONIFICO SEPA DA  SUOLO E SALUTE SRL PER  PAG. FT. N. 243 DEL 20 05 2025 COMM              0,00 SPESE              0,00 TRN 1001251564002485',NULL,NULL,'2025-11-25 13:58:59','2025-11-25 13:59:26'),
+(4,'4f3069cb0000d796','BONIFICO A VOSTRO FAVORE BONIFICO SEPA DA  COMUNE DI MACHERIO PER  CUP CIGB701B826E9 CODICE INTERNO 11 3575 TRN 1001251564037722','2025-05-06',2363.29,1848.51,NULL,3,'Rif: BONIFICO A VOSTRO FAVORE BONIFICO SEPA DA  COMUNE DI MACHERIO PER  CUP CIGB701B826E9 CODICE INTERNO 11 3575 TRN 1001251564037722',NULL,NULL,'2025-11-25 14:04:43','2025-11-27 10:52:56');
+/*!40000 ALTER TABLE `tb_pagamenti` ENABLE KEYS */;
 UNLOCK TABLES;
 
 --
@@ -2693,6 +3097,10 @@ CREATE TABLE `tb_preventivi` (
   `totale_iva` decimal(12,2) DEFAULT NULL,
   `totale` decimal(12,2) DEFAULT NULL,
   `note` text DEFAULT NULL,
+  `confermato_il` datetime DEFAULT NULL,
+  `confermato_da_account` bigint(20) unsigned DEFAULT NULL,
+  `id_lavorazione_corrente` int(10) unsigned DEFAULT NULL,
+  `lavorazione_creata_il` datetime DEFAULT NULL,
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
   `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
   PRIMARY KEY (`id_preventivo`),
@@ -2701,10 +3109,15 @@ CREATE TABLE `tb_preventivi` (
   KEY `idx_prev_data` (`data_preventivo`),
   KEY `fk_prev_stato` (`id_stato_prev`),
   KEY `fk_prev_serie` (`id_serie`),
+  KEY `idx_prev_confermato_il` (`confermato_il`),
+  KEY `idx_prev_lavorazione_corrente` (`id_lavorazione_corrente`),
+  KEY `fk_prev_confermato_da` (`confermato_da_account`),
   CONSTRAINT `fk_prev_anag` FOREIGN KEY (`id_anagrafica`) REFERENCES `tb_anagrafiche` (`id_anagrafica`),
+  CONSTRAINT `fk_prev_confermato_da` FOREIGN KEY (`confermato_da_account`) REFERENCES `auth_accounts` (`id_account`) ON DELETE SET NULL,
+  CONSTRAINT `fk_prev_lavorazione_corrente` FOREIGN KEY (`id_lavorazione_corrente`) REFERENCES `tb_lavorazioni` (`id_lavorazione`) ON DELETE SET NULL,
   CONSTRAINT `fk_prev_serie` FOREIGN KEY (`id_serie`) REFERENCES `cfg_serie_documenti` (`id_serie`) ON DELETE SET NULL,
   CONSTRAINT `fk_prev_stato` FOREIGN KEY (`id_stato_prev`) REFERENCES `cfg_stati_preventivo` (`id_stato`)
-) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=34 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -2714,10 +3127,32 @@ CREATE TABLE `tb_preventivi` (
 LOCK TABLES `tb_preventivi` WRITE;
 /*!40000 ALTER TABLE `tb_preventivi` DISABLE KEYS */;
 INSERT INTO `tb_preventivi` VALUES
-(1,NULL,1,2025,1,'2025-10-08',NULL,NULL,1,8.76,0.00,0.00,8.76,'prova','2025-10-08 16:27:43','2025-10-13 15:18:35'),
-(3,NULL,1,2025,2,'2025-10-09',NULL,NULL,1,8.76,0.00,0.00,8.76,'','2025-10-09 07:08:11','2025-10-13 15:30:52');
+(33,NULL,137,2025,1,'2025-11-27',NULL,'',3,150.60,0.00,44.00,183.73,'',NULL,NULL,NULL,NULL,'2025-11-27 10:10:25','2025-11-27 10:31:52');
 /*!40000 ALTER TABLE `tb_preventivi` ENABLE KEYS */;
 UNLOCK TABLES;
+
+--
+-- Table structure for table `tb_preventivi_revisioni`
+--
+
+DROP TABLE IF EXISTS `tb_preventivi_revisioni`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `tb_preventivi_revisioni` (
+  `id_revisione` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `id_preventivo` int(10) unsigned NOT NULL,
+  `numero_revision` int(10) unsigned NOT NULL,
+  `label` varchar(32) NOT NULL,
+  `note` text DEFAULT NULL,
+  `operatore` varchar(255) DEFAULT NULL,
+  `payload` json DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id_revisione`),
+  KEY `idx_rev_preventivo` (`id_preventivo`),
+  UNIQUE KEY `uniq_rev_prev_numero` (`id_preventivo`,`numero_revision`),
+  CONSTRAINT `fk_rev_prev_preventivo` FOREIGN KEY (`id_preventivo`) REFERENCES `tb_preventivi` (`id_preventivo`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
 
 --
 -- Table structure for table `tb_preventivi_archive`
@@ -2732,7 +3167,7 @@ CREATE TABLE `tb_preventivi_archive` (
   `anno_preventivo` smallint(5) unsigned NOT NULL,
   `numero_documento` int(10) unsigned NOT NULL,
   `data_preventivo` date DEFAULT NULL,
-  `stato` enum('bozza','inviato','confermato','rifiutato_cliente','annullato') NOT NULL DEFAULT 'bozza',
+  `stato` enum('bozza','inviato','accettato','rifiutato','scaduto') NOT NULL DEFAULT 'bozza',
   `totale_imponibile` decimal(12,2) DEFAULT NULL,
   `totale_sconto` decimal(12,2) DEFAULT NULL,
   `totale_iva` decimal(12,2) DEFAULT NULL,
@@ -2740,13 +3175,22 @@ CREATE TABLE `tb_preventivi_archive` (
   `oggetto` varchar(255) DEFAULT NULL,
   `riferimento_cliente` varchar(255) DEFAULT NULL,
   `note` text DEFAULT NULL,
+  `confermato_il` datetime DEFAULT NULL,
+  `confermato_da_account` bigint(20) unsigned DEFAULT NULL,
+  `id_lavorazione_corrente` int(10) unsigned DEFAULT NULL,
+  `lavorazione_creata_il` datetime DEFAULT NULL,
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
   `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
   PRIMARY KEY (`id_preventivo`),
   UNIQUE KEY `uq_prev_numero` (`anno_preventivo`,`numero_documento`),
   KEY `idx_prev_anag` (`id_anagrafica`),
-  KEY `idx_prev_data` (`data_preventivo`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  KEY `idx_prev_data` (`data_preventivo`),
+  KEY `idx_prev_arch_confermato_il` (`confermato_il`),
+  KEY `idx_prev_arch_lavorazione` (`id_lavorazione_corrente`),
+  KEY `fk_prev_arch_confermato_da` (`confermato_da_account`),
+  CONSTRAINT `fk_prev_arch_confermato_da` FOREIGN KEY (`confermato_da_account`) REFERENCES `auth_accounts` (`id_account`) ON DELETE SET NULL,
+  CONSTRAINT `fk_prev_arch_lavorazione` FOREIGN KEY (`id_lavorazione_corrente`) REFERENCES `tb_lavorazioni` (`id_lavorazione`) ON DELETE SET NULL
+) ENGINE=InnoDB AUTO_INCREMENT=8 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -2756,6 +3200,194 @@ CREATE TABLE `tb_preventivi_archive` (
 LOCK TABLES `tb_preventivi_archive` WRITE;
 /*!40000 ALTER TABLE `tb_preventivi_archive` DISABLE KEYS */;
 /*!40000 ALTER TABLE `tb_preventivi_archive` ENABLE KEYS */;
+UNLOCK TABLES;
+
+--
+-- Table structure for table `tb_preventivi_cig`
+--
+
+DROP TABLE IF EXISTS `tb_preventivi_cig`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `tb_preventivi_cig` (
+  `id_cig` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `id_preventivo` int(10) unsigned NOT NULL,
+  `cig` varchar(50) NOT NULL,
+  `data_cig` date DEFAULT NULL,
+  `motivazione` text DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id_cig`),
+  KEY `idx_prev_cig_prev` (`id_preventivo`),
+  KEY `idx_prev_cig_code` (`cig`),
+  CONSTRAINT `fk_prev_cig_prev` FOREIGN KEY (`id_preventivo`) REFERENCES `tb_preventivi` (`id_preventivo`) ON DELETE CASCADE
+) ENGINE=InnoDB AUTO_INCREMENT=75 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `tb_preventivi_cig`
+--
+
+LOCK TABLES `tb_preventivi_cig` WRITE;
+/*!40000 ALTER TABLE `tb_preventivi_cig` DISABLE KEYS */;
+/*!40000 ALTER TABLE `tb_preventivi_cig` ENABLE KEYS */;
+UNLOCK TABLES;
+
+--
+-- Table structure for table `tb_preventivi_contatti`
+--
+
+DROP TABLE IF EXISTS `tb_preventivi_contatti`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `tb_preventivi_contatti` (
+  `id_preventivo_contatto` int(11) NOT NULL AUTO_INCREMENT,
+  `id_preventivo` int(11) NOT NULL,
+  `id_contatto` int(11) DEFAULT NULL,
+  `nome` varchar(255) NOT NULL,
+  `ruolo` varchar(255) DEFAULT NULL,
+  `telefono` varchar(64) DEFAULT NULL,
+  `cellulare` varchar(64) DEFAULT NULL,
+  `email` varchar(255) DEFAULT NULL,
+  `note` text DEFAULT NULL,
+  `origine` varchar(64) DEFAULT NULL,
+  `created_at` datetime DEFAULT current_timestamp(),
+  `updated_at` datetime DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id_preventivo_contatto`),
+  KEY `idx_preventivi_contatti_prev` (`id_preventivo`)
+) ENGINE=InnoDB AUTO_INCREMENT=28 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `tb_preventivi_contatti`
+--
+
+LOCK TABLES `tb_preventivi_contatti` WRITE;
+/*!40000 ALTER TABLE `tb_preventivi_contatti` DISABLE KEYS */;
+INSERT INTO `tb_preventivi_contatti` VALUES
+(17,3,NULL,'alex','Tecnico','3487426325',NULL,'nexus.olivieri@gmail.com',NULL,'anagrafica','2025-11-19 16:30:27','2025-11-19 16:30:27'),
+(20,10,NULL,'alex','Tecnico',NULL,NULL,'alex.o@mediaprint.it',NULL,'anagrafica','2025-11-20 15:52:08','2025-11-20 15:52:08'),
+(21,10,NULL,'daria',NULL,NULL,NULL,'colli.d@mediaprint.it',NULL,'manuale','2025-11-20 15:52:08','2025-11-20 15:52:08'),
+(23,11,NULL,'Alex Olivieri',NULL,'3487426325',NULL,'sistemi@mediaprint.it',NULL,'manuale','2025-11-21 16:28:41','2025-11-21 16:28:41'),
+(24,13,NULL,'alex','Tecnico',NULL,NULL,'alex.o@mediaprint.it',NULL,'anagrafica','2025-11-26 10:37:04','2025-11-26 10:37:04'),
+(26,32,NULL,'alex','Tecnico',NULL,NULL,'alex.o@mediaprint.it',NULL,'anagrafica','2025-11-27 09:55:35','2025-11-27 09:55:35'),
+(27,33,NULL,'alex olivieri',NULL,'3487426325',NULL,'nexus.olivieri@gmail.com',NULL,'manuale','2025-11-27 10:24:09','2025-11-27 10:24:09');
+/*!40000 ALTER TABLE `tb_preventivi_contatti` ENABLE KEYS */;
+UNLOCK TABLES;
+
+--
+-- Table structure for table `tb_preventivi_contatti_archive`
+--
+
+DROP TABLE IF EXISTS `tb_preventivi_contatti_archive`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `tb_preventivi_contatti_archive` (
+  `id_record` int(11) NOT NULL AUTO_INCREMENT,
+  `id_preventivo` int(11) NOT NULL,
+  `id_contatto` int(11) DEFAULT NULL,
+  `nome` varchar(255) NOT NULL,
+  `ruolo` varchar(255) DEFAULT NULL,
+  `telefono` varchar(64) DEFAULT NULL,
+  `cellulare` varchar(64) DEFAULT NULL,
+  `email` varchar(255) DEFAULT NULL,
+  `note` text DEFAULT NULL,
+  `origine` varchar(64) DEFAULT NULL,
+  `created_at` datetime DEFAULT NULL,
+  `updated_at` datetime DEFAULT NULL,
+  PRIMARY KEY (`id_record`),
+  KEY `idx_prev_contatti_arch_prev` (`id_preventivo`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `tb_preventivi_contatti_archive`
+--
+
+LOCK TABLES `tb_preventivi_contatti_archive` WRITE;
+/*!40000 ALTER TABLE `tb_preventivi_contatti_archive` DISABLE KEYS */;
+/*!40000 ALTER TABLE `tb_preventivi_contatti_archive` ENABLE KEYS */;
+UNLOCK TABLES;
+
+--
+-- Table structure for table `tb_preventivi_determina`
+--
+
+DROP TABLE IF EXISTS `tb_preventivi_determina`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `tb_preventivi_determina` (
+  `id_determina` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `id_preventivo` int(10) unsigned NOT NULL,
+  `determina` varchar(100) NOT NULL,
+  `data_determina` date DEFAULT NULL,
+  `motivazione` text DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id_determina`),
+  KEY `idx_prev_det_prev` (`id_preventivo`),
+  KEY `idx_prev_det_code` (`determina`),
+  CONSTRAINT `fk_prev_det_prev` FOREIGN KEY (`id_preventivo`) REFERENCES `tb_preventivi` (`id_preventivo`) ON DELETE CASCADE
+) ENGINE=InnoDB AUTO_INCREMENT=38 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `tb_preventivi_determina`
+--
+
+LOCK TABLES `tb_preventivi_determina` WRITE;
+/*!40000 ALTER TABLE `tb_preventivi_determina` DISABLE KEYS */;
+/*!40000 ALTER TABLE `tb_preventivi_determina` ENABLE KEYS */;
+UNLOCK TABLES;
+
+--
+-- Table structure for table `tb_preventivi_oggetti_map`
+--
+
+DROP TABLE IF EXISTS `tb_preventivi_oggetti_map`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `tb_preventivi_oggetti_map` (
+  `id_preventivo` int(11) NOT NULL,
+  `id_oggetto` int(11) NOT NULL,
+  PRIMARY KEY (`id_preventivo`,`id_oggetto`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `tb_preventivi_oggetti_map`
+--
+
+LOCK TABLES `tb_preventivi_oggetti_map` WRITE;
+/*!40000 ALTER TABLE `tb_preventivi_oggetti_map` DISABLE KEYS */;
+INSERT INTO `tb_preventivi_oggetti_map` VALUES
+(1,1),
+(3,1),
+(6,1),
+(6,2),
+(8,1),
+(9,1),
+(9,2),
+(10,1),
+(11,1),
+(12,1),
+(12,2),
+(13,1),
+(14,1),
+(14,2),
+(15,1),
+(15,2),
+(16,1),
+(17,1),
+(17,2),
+(18,1),
+(18,2),
+(22,1),
+(31,1),
+(31,2),
+(32,1),
+(32,2);
+/*!40000 ALTER TABLE `tb_preventivi_oggetti_map` ENABLE KEYS */;
 UNLOCK TABLES;
 
 --
@@ -2785,7 +3417,7 @@ CREATE TABLE `tb_preventivi_righe` (
   CONSTRAINT `fk_prev_righe_sdi_natura` FOREIGN KEY (`id_sdi_natura_iva`) REFERENCES `cfg_sdi_natura_iva` (`id_natura`) ON DELETE SET NULL,
   CONSTRAINT `fk_righeprev_prev` FOREIGN KEY (`id_preventivo`) REFERENCES `tb_preventivi` (`id_preventivo`) ON DELETE CASCADE,
   CONSTRAINT `fk_righeprev_prod` FOREIGN KEY (`id_prodotto`) REFERENCES `tb_prodotti` (`id_prodotto`) ON DELETE SET NULL
-) ENGINE=InnoDB AUTO_INCREMENT=38 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=1060 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -2795,18 +3427,8 @@ CREATE TABLE `tb_preventivi_righe` (
 LOCK TABLES `tb_preventivi_righe` WRITE;
 /*!40000 ALTER TABLE `tb_preventivi_righe` DISABLE KEYS */;
 INSERT INTO `tb_preventivi_righe` VALUES
-(26,1,11,'Posta Massiva - Peso: Fino a 20 gr ; Tipo Spedizione: Omologato ; Destinazione: AM',1.000,0.3400,0.00,0.34,0.00,1,0.34,1),
-(27,1,11,'Posta Massiva - Peso: Fino a 20 gr ; Tipo Spedizione: Omologato ; Destinazione: CP',1.000,0.5200,0.00,0.52,0.00,1,0.52,2),
-(28,1,11,'Posta Massiva - Peso: Fino a 20 gr ; Tipo Spedizione: Omologato ; Destinazione: EU',1.000,0.6500,0.00,0.65,0.00,1,0.65,3),
-(29,1,20,'Posta 4 (internazionale) - Peso: Fino a 20 gr ; Destinazione: EX Zona 1',1.000,1.3500,0.00,1.35,0.00,1,1.35,4),
-(30,1,20,'Posta 4 (internazionale) - Peso: Fino a 20 gr ; Destinazione: EX Zona 2',1.000,2.5500,0.00,2.55,0.00,1,2.55,5),
-(31,1,20,'Posta 4 (internazionale) - Peso: Fino a 20 gr ; Destinazione: EX Zona 3',1.000,3.3500,0.00,3.35,0.00,1,3.35,6),
-(32,3,11,'Posta Massiva - Peso: Fino a 20 gr ; Tipo Spedizione: Omologato ; Destinazione: AM',1.000,0.3400,0.00,0.34,0.00,1,0.34,1),
-(33,3,11,'Posta Massiva - Peso: Fino a 20 gr ; Tipo Spedizione: Omologato ; Destinazione: CP',1.000,0.5200,0.00,0.52,0.00,1,0.52,2),
-(34,3,11,'Posta Massiva - Peso: Fino a 20 gr ; Tipo Spedizione: Omologato ; Destinazione: EU',1.000,0.6500,0.00,0.65,0.00,1,0.65,3),
-(35,3,20,'Posta 4 (internazionale) - Peso: Fino a 20 gr ; Destinazione: EX Zona 1',1.000,1.3500,0.00,1.35,0.00,1,1.35,4),
-(36,3,20,'Posta 4 (internazionale) - Peso: Fino a 20 gr ; Destinazione: EX Zona 2',1.000,2.5500,0.00,2.55,0.00,1,2.55,5),
-(37,3,20,'Posta 4 (internazionale) - Peso: Fino a 20 gr ; Destinazione: EX Zona 3',1.000,3.3500,0.00,3.35,0.00,1,3.35,6);
+(1058,33,37,'Attivazione Servizio Giano',1.000,150.0000,0.00,150.00,22.00,NULL,183.00,1),
+(1059,33,8,'Rendicontazione - Rendicontazione Postale: Posta Certificata',1.000,0.6000,0.00,0.60,22.00,NULL,0.73,2);
 /*!40000 ALTER TABLE `tb_preventivi_righe` ENABLE KEYS */;
 UNLOCK TABLES;
 /*!50003 SET @saved_cs_client      = @@character_set_client */ ;
@@ -2972,7 +3594,7 @@ CREATE TABLE `tb_prezzi_variazioni` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uniq_prod_combo` (`id_prodotto`,`combo_key`),
   CONSTRAINT `fk_prezzi_var_prod` FOREIGN KEY (`id_prodotto`) REFERENCES `tb_prodotti` (`id_prodotto`) ON DELETE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=109 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=133 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -3079,9 +3701,28 @@ INSERT INTO `tb_prezzi_variazioni` VALUES
 (102,15,'22',14.9000),
 (103,15,'24',16.4000),
 (104,15,'23',16.4000),
-(105,6,'31',50.0000),
-(106,6,'32',150.0000),
-(108,6,'33',150.0000);
+(109,19,'11+13+31',0.0000),
+(110,19,'11+14+31',0.0000),
+(111,19,'12+13+31',0.0000),
+(112,19,'12+14+31',0.0000),
+(113,19,'11+13+33',0.0000),
+(114,19,'11+14+33',0.0000),
+(115,19,'12+13+33',0.0000),
+(116,19,'12+14+33',0.0000),
+(117,36,'11+13+31',0.0000),
+(118,36,'11+14+31',0.0000),
+(119,36,'12+13+31',0.0000),
+(120,36,'12+14+31',0.0000),
+(121,36,'11+13+33',0.0000),
+(122,36,'11+14+33',0.0000),
+(123,36,'12+13+33',0.0000),
+(124,36,'12+14+33',0.0000),
+(125,6,'40',50.0000),
+(126,6,'41',150.0000),
+(127,6,'42',150.0000),
+(129,8,'48',0.6000),
+(130,8,'47',0.4500),
+(132,8,'49',0.4000);
 /*!40000 ALTER TABLE `tb_prezzi_variazioni` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -3114,7 +3755,7 @@ CREATE TABLE `tb_prodotti` (
   CONSTRAINT `fk_prod_iva` FOREIGN KEY (`id_iva`) REFERENCES `cfg_iva` (`id_iva`) ON DELETE SET NULL,
   CONSTRAINT `fk_prod_um` FOREIGN KEY (`id_unita`) REFERENCES `cfg_unita_misura` (`id_unita`) ON DELETE SET NULL,
   CONSTRAINT `fk_prodotti_categoria` FOREIGN KEY (`id_categoria`) REFERENCES `tb_categorie` (`id_categoria`) ON DELETE SET NULL
-) ENGINE=InnoDB AUTO_INCREMENT=37 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=38 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -3124,13 +3765,13 @@ CREATE TABLE `tb_prodotti` (
 LOCK TABLES `tb_prodotti` WRITE;
 /*!40000 ALTER TABLE `tb_prodotti` DISABLE KEYS */;
 INSERT INTO `tb_prodotti` VALUES
-(5,1,'GS-3','Posta Ordinaria','Area web all time, copie conformi all’originale, servizi reportistica',NULL,90.0000,NULL,NULL,1,'2025-10-03 16:53:17','2025-10-09 08:37:21'),
-(6,1,'GS-1','Centro Elaborazione Dati','Elaborazioni, controlli, modifiche eseguite da personale informatico',NULL,NULL,NULL,NULL,1,'2025-10-03 16:53:17','2025-10-13 15:22:11'),
+(5,1,'GS-3','Rendicontazione Posta Ordinaria','Area web all time, copie conformi all’originale, servizi reportistica',NULL,0.5000,1,NULL,0,'2025-10-03 16:53:17','2025-11-27 10:15:31'),
+(6,1,'GS-1','Centro Elaborazione Dati','Elaborazioni, controlli, modifiche eseguite da personale informatico',NULL,0.0000,1,NULL,1,'2025-10-03 16:53:17','2025-11-26 16:12:01'),
 (7,3,'PD-1','Elaborazione',NULL,NULL,0.0000,NULL,NULL,1,'2025-10-03 16:53:17','2025-10-09 08:32:10'),
-(8,1,'GS-2','Posta Certificata','Include: Casella postale per accettazione posta di ritorno, area web all time, real time, immagine di tutti documenti inviati (copia conforme) immagini dei documenti di ritorno, cartolina corredata della firma e data di ritiro*,  busta inesitata corredata di data e motivazione dell’inesito*,  servizio archiviazione fisica e digitale (accessorio).\r\n* informazioni disponibili solo su lavorazioni eseguite e se presenti sui documenti forniti dall’operatore postale.',NULL,135.0000,NULL,NULL,1,'2025-10-03 16:53:17','2025-10-09 08:31:27'),
+(8,1,'GS-2','Rendicontazione','Include: Casella postale per accettazione posta di ritorno, area web all time, real time, immagine di tutti documenti inviati (copia conforme) immagini dei documenti di ritorno, cartolina corredata della firma e data di ritiro*,  busta inesitata corredata di data e motivazione dell’inesito*,  servizio archiviazione fisica e digitale (accessorio).\r\n* informazioni disponibili solo su lavorazioni eseguite e se presenti sui documenti forniti dall’operatore postale.',NULL,0.0000,1,NULL,1,'2025-10-03 16:53:17','2025-11-27 10:21:08'),
 (9,2,'TP-06','Posta Light',NULL,NULL,0.5900,NULL,NULL,1,'2025-10-03 16:53:17','2025-10-09 09:05:52'),
 (10,1,'GS-4','Utilizzo di terzi','utilizzo di documenti di terze parti su app GianoSystem',NULL,0.0200,NULL,NULL,1,'2025-10-03 16:53:17','2025-10-09 08:37:39'),
-(11,2,'TP-01','Posta Massiva',NULL,NULL,0.0000,NULL,NULL,1,'2025-10-03 16:53:17','2025-10-09 08:54:22'),
+(11,2,'TP-01','Posta Massiva',NULL,NULL,0.0000,4,1,1,'2025-10-03 16:53:17','2025-10-13 15:51:05'),
 (12,2,'TP-02-01','Raccomandata AR Smart',NULL,NULL,0.0000,NULL,NULL,1,'2025-10-03 16:53:17','2025-10-09 09:01:01'),
 (13,4,'SI-02','Raccomandata AR','Fornitura Busta 3 Finestre • Cartolina • Stampa F/R • Imbustamento',NULL,0.0000,NULL,NULL,1,'2025-10-03 16:53:17','2025-10-09 08:39:32'),
 (14,2,'TP-02-02','Raccomandata AR Internazionale',NULL,NULL,0.0000,NULL,NULL,1,'2025-10-03 16:53:17','2025-10-09 09:01:13'),
@@ -3141,7 +3782,8 @@ INSERT INTO `tb_prodotti` VALUES
 (19,4,'SI-01','Posta Massiva','Fornitura Busta 2 Finestre • Stampa F/R • Imbustamento',NULL,0.0000,NULL,NULL,1,'2025-10-03 16:53:17','2025-10-09 08:38:33'),
 (20,2,'TP-05','Posta Mail Internationale',NULL,NULL,0.0000,NULL,NULL,1,'2025-10-03 16:53:17','2025-10-09 09:01:50'),
 (21,2,'TP-99','Servizio InfoDelivery',NULL,NULL,0.0200,NULL,NULL,1,'2025-10-03 16:53:17','2025-10-09 08:53:27'),
-(36,4,'SI-99','Foglio Aggiuntivo',NULL,NULL,0.0500,NULL,NULL,1,'2025-10-09 08:24:28','2025-10-09 08:42:20');
+(36,4,'SI-99','Foglio Aggiuntivo',NULL,NULL,0.0500,NULL,NULL,1,'2025-10-09 08:24:28','2025-10-09 08:42:20'),
+(37,1,'GS-5','Attivazione Servizio Giano',NULL,NULL,150.0000,1,NULL,1,'2025-11-27 10:02:25','2025-11-27 10:20:00');
 /*!40000 ALTER TABLE `tb_prodotti` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -3183,7 +3825,7 @@ CREATE TABLE `tb_sedi` (
   KEY `idx_nazione` (`nazione_iso2`),
   CONSTRAINT `fk_sedi_anagrafica` FOREIGN KEY (`id_anagrafica`) REFERENCES `tb_anagrafiche` (`id_anagrafica`) ON DELETE CASCADE,
   CONSTRAINT `fk_sedi_tipo` FOREIGN KEY (`id_tipo`) REFERENCES `cfg_sedi_tipo` (`id_tipo`)
-) ENGINE=InnoDB AUTO_INCREMENT=2206 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=2208 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -3334,7 +3976,8 @@ INSERT INTO `tb_sedi` VALUES
 (2128,134,1,NULL,'via certosa 1',NULL,'64015','NERETO','TE','IT',NULL,NULL,NULL,1,1,134,134,'2025-09-30 15:43:39','2025-09-30 15:43:39'),
 (2135,2,1,NULL,'G.D’ANNUNZIO 7',NULL,'64015','NERETO','TE','IT',NULL,NULL,NULL,1,1,2,2,'2025-09-30 15:43:39','2025-09-30 15:43:39'),
 (2192,1,1,'SEDE NERETO','ZONA INDUSTRIALE VIA CERTOSA',NULL,'64015','NERETO','TE','IT',NULL,NULL,NULL,1,1,1,1,'2025-09-30 15:43:39','2025-10-08 15:17:49'),
-(2199,1,2,'SEDE MARTINSICURO','VIA LEOPARDI 44',NULL,'64014','MARTINSICURO','TE','IT',NULL,NULL,NULL,0,0,NULL,NULL,'2025-09-30 15:43:39','2025-10-08 15:17:49');
+(2199,1,2,'SEDE MARTINSICURO','VIA LEOPARDI 44',NULL,'64014','MARTINSICURO','TE','IT',NULL,NULL,NULL,0,0,NULL,NULL,'2025-09-30 15:43:39','2025-10-08 15:17:49'),
+(2207,138,1,NULL,'Via Roma','2','64010','COLONNELLA','TE','IT',NULL,NULL,NULL,1,0,138,NULL,'2025-11-26 17:14:19','2025-11-26 17:14:19');
 /*!40000 ALTER TABLE `tb_sedi` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -3419,7 +4062,7 @@ CREATE TABLE `tb_sedi_contatti` (
   KEY `idx_contatti_email` (`email`),
   KEY `idx_contatti_telefono` (`telefono`),
   CONSTRAINT `fk_contatti_sede` FOREIGN KEY (`id_sede`) REFERENCES `tb_sedi` (`id_sede`) ON DELETE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=1620 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=1621 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -5012,7 +5655,8 @@ INSERT INTO `tb_sedi_contatti` VALUES
 (1606,0,'Alex','Amministrativo',NULL,'3487426325','nexus.olivieri@gmail.com','Attivo',0,NULL,'2025-09-09 10:52:13','2025-09-09 10:52:13'),
 (1613,2192,'Alessio','Tecnico','+39','+39',NULL,'Attivo',1,2192,'2025-09-19 11:59:32','2025-10-08 15:24:30'),
 (1618,2199,'alex','Tecnico',NULL,NULL,'alex.o@mediaprint.it','Attivo',1,2199,'2025-10-08 14:27:24','2025-10-08 15:46:21'),
-(1619,2192,'Ernesto','CEO',NULL,NULL,NULL,'Attivo',0,NULL,'2025-10-08 14:31:53','2025-10-08 15:45:59');
+(1619,2192,'Ernesto','CEO',NULL,NULL,NULL,'Attivo',0,NULL,'2025-10-08 14:31:53','2025-10-08 15:45:59'),
+(1620,2207,'Loredana Alfonsi','Uff. Tributi','0861743433',NULL,'tributi@comune.colonnella.te.it','Attivo',1,2207,'2025-11-26 17:16:05','2025-11-26 17:16:10');
 /*!40000 ALTER TABLE `tb_sedi_contatti` ENABLE KEYS */;
 UNLOCK TABLES;
 /*!50003 SET @saved_cs_client      = @@character_set_client */ ;
@@ -5029,7 +5673,7 @@ AFTER INSERT ON tb_sedi_contatti
 FOR EACH ROW
 BEGIN
   DECLARE v_anag INT UNSIGNED;
-  -- ricava l'anagrafica dalla sede
+
   SELECT s.id_anagrafica INTO v_anag
   FROM tb_sedi AS s
   WHERE s.id_sede = NEW.id_sede;
@@ -5136,7 +5780,7 @@ CREATE TABLE `tb_variazioni` (
   PRIMARY KEY (`id_variazione`),
   UNIQUE KEY `uq_variazioni_nome` (`nome`),
   UNIQUE KEY `uq_variazioni_codice` (`codice`)
-) ENGINE=InnoDB AUTO_INCREMENT=31 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=50 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -5146,8 +5790,8 @@ CREATE TABLE `tb_variazioni` (
 LOCK TABLES `tb_variazioni` WRITE;
 /*!40000 ALTER TABLE `tb_variazioni` DISABLE KEYS */;
 INSERT INTO `tb_variazioni` VALUES
-(1,'Fino a 20 gr','P-01','Peso',0.0000,'2025-10-09 08:18:07','2025-10-09 09:30:18'),
-(2,'Oltre 20g fino a 50gr','P-02','Peso',0.0000,'2025-10-09 08:18:32','2025-10-09 09:30:27'),
+(1,'Fino a 20 gr','P-01','Peso Plico',0.0000,'2025-10-09 08:18:07','2025-11-26 15:56:50'),
+(2,'Oltre 20g fino a 50gr','P-02','Peso Plico',0.0000,'2025-10-09 08:18:32','2025-11-26 15:56:40'),
 (3,'Omologato','SP-01','Tipo Spedizione',0.0000,'2025-10-09 08:19:24','2025-10-09 09:31:55'),
 (4,'Non Omologato','SP-02','Tipo Spedizione',0.0000,'2025-10-09 08:19:33','2025-10-09 09:31:49'),
 (5,'AM','D-01','Destinazione',0.0000,'2025-10-09 08:19:51','2025-10-09 09:29:22'),
@@ -5160,17 +5804,36 @@ INSERT INTO `tb_variazioni` VALUES
 (12,'Colore','CS-02','Colore Stampa',0.0000,'2025-10-09 08:20:45','2025-10-09 09:29:13'),
 (13,'Fronte','TS-01','Tipo Stampa',0.0000,'2025-10-09 08:21:03','2025-10-09 09:32:06'),
 (14,'Fronte/Retro','TS-02','Tipo Stampa',0.0000,'2025-10-09 08:21:11','2025-10-09 09:32:11'),
-(20,'Oltre 50g fino a 100gr','P-03','Peso',0.0000,'2025-10-09 09:10:40','2025-10-09 09:30:35'),
-(21,'Oltre 100gr fino a 250gr','P-04','Peso',0.0000,'2025-10-09 09:10:53','2025-10-09 09:30:54'),
-(22,'Oltre 250g fino a 350g','P-05','Peso',0.0000,'2025-10-09 09:20:20','2025-10-09 09:31:04'),
-(23,'Oltre 350g fino a 1000g','P-06','Peso',0.0000,'2025-10-09 09:20:37','2025-10-09 09:31:11'),
-(24,'Oltre 1000g fino a 2000g','P-07','Peso',0.0000,'2025-10-09 09:20:54','2025-10-09 09:31:19'),
+(20,'Oltre 50g fino a 100gr','P-03','Peso Plico',0.0000,'2025-10-09 09:10:40','2025-11-26 15:56:57'),
+(21,'Oltre 100gr fino a 250gr','P-04','Peso Plico',0.0000,'2025-10-09 09:10:53','2025-11-26 15:57:01'),
+(22,'Oltre 250g fino a 350g','P-05','Peso Plico',0.0000,'2025-10-09 09:20:20','2025-11-26 15:57:05'),
+(23,'Oltre 350g fino a 1000g','P-06','Peso Plico',0.0000,'2025-10-09 09:20:37','2025-11-26 15:57:12'),
+(24,'Oltre 1000g fino a 2000g','P-07','Peso Plico',0.0000,'2025-10-09 09:20:54','2025-11-26 15:57:08'),
 (25,'Card','PT-01','Posta Target',NULL,'2025-10-09 09:37:27','2025-10-09 09:37:27'),
 (26,'Basic','PT-02','Posta Target',NULL,'2025-10-09 09:37:39','2025-10-09 09:37:39'),
 (27,'Creative','PT-03','Posta Target',NULL,'2025-10-09 09:37:56','2025-10-09 09:37:56'),
 (28,'Catalog','PT-04','Posta Target',NULL,'2025-10-09 09:38:20','2025-10-09 09:38:20'),
 (29,'Magazine','PT-05','Posta Target',NULL,'2025-10-09 09:38:35','2025-10-09 09:38:35'),
-(30,'Gold','PT-06','Posta Target',NULL,'2025-10-09 09:38:49','2025-10-09 09:38:49');
+(30,'Gold','PT-06','Posta Target',NULL,'2025-10-09 09:38:49','2025-10-09 09:38:49'),
+(31,'Carta 60 gr','C-60','Peso Carta',0.0000,'2025-11-26 15:54:51','2025-11-26 15:55:00'),
+(32,'Carta 70 gr','C-70','Peso Carta',NULL,'2025-11-26 15:55:30','2025-11-26 15:55:30'),
+(33,'Carta 80 gr','C-80','Peso Carta',NULL,'2025-11-26 15:55:53','2025-11-26 15:55:53'),
+(34,'Carta 100 gr','C-100','Peso Carta',NULL,'2025-11-26 15:57:37','2025-11-26 15:57:37'),
+(35,'Carta 120 gr','C-120','Peso Carta',NULL,'2025-11-26 15:57:48','2025-11-26 15:57:48'),
+(36,'Carta 180 gr','C-180','Peso Carta',NULL,'2025-11-26 15:58:05','2025-11-26 15:58:05'),
+(37,'Carta 200 gr','C-200','Peso Carta',NULL,'2025-11-26 15:58:19','2025-11-26 15:58:19'),
+(38,'Carta 250 gr','C-250','Peso Carta',NULL,'2025-11-26 15:58:31','2025-11-26 15:58:31'),
+(39,'Carta 300 gr','C-300','Peso Carta',NULL,'2025-11-26 15:58:42','2025-11-26 15:58:42'),
+(40,'PDF-Omologato','FD-01','File Dati',50.0000,'2025-11-26 16:08:55','2025-11-26 16:08:55'),
+(41,'PDF-Non Omologato','FD-02','File Dati',150.0000,'2025-11-26 16:09:49','2025-11-26 16:09:49'),
+(42,'Dati grezzi da elaborare','FD-03','File Dati',150.0000,'2025-11-26 16:10:14','2025-11-26 16:11:08'),
+(43,'1 Elemento','EP-01','Elementi Plico',NULL,'2025-11-26 16:16:46','2025-11-26 16:16:46'),
+(44,'2 Elementi','EP-02','Elementi Plico',NULL,'2025-11-26 16:16:59','2025-11-26 16:16:59'),
+(45,'3 Elementi','EP-03','Elementi Plico',NULL,'2025-11-26 16:17:09','2025-11-26 16:17:09'),
+(46,'4 Elementi','EP-04','Elementi Plico',NULL,'2025-11-26 16:17:24','2025-11-26 16:17:24'),
+(47,'Posta Ordinaria','RP-02','Rendicontazione Postale',0.4000,'2025-11-27 10:07:53','2025-11-27 10:08:38'),
+(48,'Posta Certificata','RP-01','Rendicontazione Postale',0.5000,'2025-11-27 10:08:17','2025-11-27 10:08:17'),
+(49,'Posta Digitale','RP-03','Rendicontazione Postale',NULL,'2025-11-27 10:20:54','2025-11-27 10:20:54');
 /*!40000 ALTER TABLE `tb_variazioni` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -5437,7 +6100,7 @@ SET character_set_client = utf8mb4;
 SET character_set_client = @saved_cs_client;
 
 --
--- Dumping routines for database 'mediaprint_erp_v2'
+-- Dumping routines for database 'prova'
 --
 /*!50003 SET @saved_sql_mode       = @@sql_mode */ ;
 /*!50003 SET sql_mode              = 'ERROR_FOR_DIVISION_BY_ZERO,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION' */ ;
@@ -5459,17 +6122,17 @@ BEGIN
 
   SET v_anno = COALESCE(p_anno, YEAR(CURDATE()));
 
-  -- reading from progress table (authoritative for numbering trigger)
+
   SELECT next_num INTO v_from_prog
   FROM cfg_sezionali_progress
   WHERE id_sezionale = p_id_sezionale AND anno = v_anno;
 
-  -- fallback from existing docs, +1
+
   SELECT COALESCE(MAX(numero_documento), 0) + 1 INTO v_from_docs
   FROM tb_fatture
   WHERE id_sezionale = p_id_sezionale AND anno = v_anno;
 
-  -- Choose progress if exists, else fallback to docs (at least 1)
+
   SET v_next = COALESCE(v_from_prog, v_from_docs);
   IF v_next < 1 THEN
     SET v_next = 1;
@@ -5549,7 +6212,7 @@ BEGIN
   DECLARE v_cur_anno SMALLINT;
   DECLARE v_maxnum INT;
 
-  -- Cursor over target rows
+
   DECLARE cur CURSOR FOR
     SELECT s.id_sezionale, y.anno
     FROM cfg_sezionali s
@@ -5569,17 +6232,17 @@ BEGIN
       LEAVE read_loop;
     END IF;
 
-    -- Get MAX numero_documento +1
+
     SELECT COALESCE(MAX(numero_documento),0)+1
     INTO v_maxnum
     FROM tb_fatture
     WHERE id_sezionale = v_cur_id AND anno = v_cur_anno;
 
-    -- Ensure row exists in progress
+
     INSERT IGNORE INTO cfg_sezionali_progress(id_sezionale, anno, next_num)
     VALUES (v_cur_id, v_cur_anno, v_maxnum);
 
-    -- Update to aligned value
+
     UPDATE cfg_sezionali_progress
     SET next_num = v_maxnum
     WHERE id_sezionale = v_cur_id AND anno = v_cur_anno;
@@ -5604,7 +6267,7 @@ DELIMITER ;;
 CREATE  /* DEFINER=`laravel_mediaprint`@`%` */ PROCEDURE `sp_archive_anagrafiche_inattive_2y`(IN dry_run TINYINT(1))
 BEGIN
   IF dry_run = 1 THEN
-    -- Solo anteprima
+
     SELECT i.*, i.inactive_since, i.last_document_date
     FROM v_anagrafiche_inattive_2y i
     WHERE NOT EXISTS (
@@ -5612,7 +6275,7 @@ BEGIN
     )
     ORDER BY COALESCE(i.last_document_date, i.inactive_since) ASC;
   ELSE
-    -- Archiviazione: inserisce solo quelle non ancora archiviate
+
     INSERT INTO tb_anagrafiche_archive
       SELECT
         i.*,
@@ -5624,13 +6287,13 @@ BEGIN
       WHERE NOT EXISTS (
         SELECT 1 FROM tb_anagrafiche_archive ar WHERE ar.id_anagrafica = i.id_anagrafica
       );
-    -- Facoltativo: disattiva nella tabella live (se esiste un flag)
-    -- UPDATE tb_anagrafiche a
-    -- JOIN v_anagrafiche_inattive_2y i USING (id_anagrafica)
-    -- SET a.is_active = 0
-    -- WHERE a.is_active <> 0;
 
-    -- Output riepilogo
+
+
+
+
+
+
     SELECT 'OK' AS esito, ROW_COUNT() AS righe_archiviate;
   END IF;
 END ;;
@@ -5651,9 +6314,9 @@ DELIMITER ;
 DELIMITER ;;
 CREATE  /* DEFINER=`laravel_mediaprint`@`%` */ PROCEDURE `sp_archive_rollback_batch`(
   IN p_batch_id CHAR(36),
-  IN p_dry_run TINYINT(1),             -- 1 = anteprima, 0 = esegui
-  IN p_overwrite_if_exists TINYINT(1), -- 1 = UPDATE se già esiste
-  IN p_delete_from_archive TINYINT(1)  -- 1 = DELETE dagli archive dopo ripristino (se non dry_run)
+  IN p_dry_run TINYINT(1),
+  IN p_overwrite_if_exists TINYINT(1),
+  IN p_delete_from_archive TINYINT(1)
 )
 BEGIN
   DECLARE v_restored_anag INT DEFAULT 0;
@@ -5665,9 +6328,9 @@ BEGIN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'archive_batch_id obbligatorio';
   END IF;
 
-  /* ========== DRY RUN ========== */
+
   IF p_dry_run = 1 THEN
-    -- Conteggi
+
     SELECT 'ANAGRAFICHE' AS entity, COUNT(*) AS to_restore
     FROM tb_anagrafiche_archive WHERE archive_batch_id = p_batch_id
     UNION ALL
@@ -5677,17 +6340,17 @@ BEGIN
     UNION ALL
     SELECT 'CONTATTI_SEDE', COUNT(*) FROM tb_sedi_contatti_archive WHERE archive_batch_id = p_batch_id;
 
-    -- Sample (prime 20 righe)
+
     SELECT * FROM tb_anagrafiche_archive WHERE archive_batch_id = p_batch_id LIMIT 20;
     SELECT * FROM tb_anagrafiche_fiscali_archive WHERE archive_batch_id = p_batch_id LIMIT 20;
     SELECT * FROM tb_sedi_archive           WHERE archive_batch_id = p_batch_id LIMIT 20;
     SELECT * FROM tb_sedi_contatti_archive  WHERE archive_batch_id = p_batch_id LIMIT 20;
 
   ELSE
-  /* ========== ESECUZIONE ========== */
+
     START TRANSACTION;
 
-    /* 1) ANAGRAFICHE */
+
     INSERT INTO tb_anagrafiche
     SELECT
       a.id_anagrafica, a.ragione_sociale, a.nome, a.cognome, a.piva, a.cf,
@@ -5729,7 +6392,7 @@ BEGIN
     SET l.is_active = 1
     WHERE a.archive_batch_id = p_batch_id;
 
-    /* 2) FISCALI */
+
     INSERT INTO tb_anagrafiche_fiscali
     SELECT
       f.id_anagrafica, f.pec, f.codice_sdi, f.iban, f.banca,
@@ -5757,7 +6420,7 @@ BEGIN
       SET v_restored_fisc = v_restored_fisc + ROW_COUNT();
     END IF;
 
-    /* 3) SEDI */
+
     INSERT INTO tb_sedi
     SELECT
       s.id_sede, s.id_anagrafica, s.id_tipo, s.denominazione,
@@ -5793,7 +6456,7 @@ BEGIN
       SET v_restored_sedi = v_restored_sedi + ROW_COUNT();
     END IF;
 
-    /* 4) CONTATTI SEDE */
+
     INSERT INTO tb_sedi_contatti
     SELECT
       c.id_contatto, c.id_sede, c.nome, c.cognome, c.ruolo,
@@ -5819,7 +6482,7 @@ BEGIN
       SET v_restored_cont = v_restored_cont + ROW_COUNT();
     END IF;
 
-    /* 5) Pulizia archive (opzionale) */
+
     IF p_delete_from_archive = 1 THEN
       DELETE FROM tb_sedi_contatti_archive WHERE archive_batch_id = p_batch_id;
       DELETE FROM tb_sedi_archive           WHERE archive_batch_id = p_batch_id;
@@ -5835,7 +6498,7 @@ BEGIN
            v_restored_fisc AS fiscali_ripristinate_o_aggiornate,
            v_restored_sedi AS sedi_ripristinate_o_aggiornate,
            v_restored_cont AS contatti_ripristinati_o_aggiornati;
-  END IF; -- fine ramo esecuzione
+  END IF;
 END ;;
 DELIMITER ;
 /*!50003 SET sql_mode              = @saved_sql_mode */ ;
@@ -5856,12 +6519,12 @@ CREATE  /* DEFINER=`laravel_mediaprint`@`%` */ PROCEDURE `sp_audit_partitions_en
 BEGIN
   DECLARE d DATE;
   DECLARE stop DATE;
-  SET d    = DATE_FORMAT(CURDATE(), '%Y-%m-01');                         -- mese corrente
+  SET d    = DATE_FORMAT(CURDATE(), '%Y-%m-01');
   SET stop = DATE_FORMAT(DATE_ADD(CURDATE(), INTERVAL p_months_ahead MONTH), '%Y-%m-01');
 
   WHILE d <= stop DO
     SET @pname = CONCAT('p', DATE_FORMAT(d, '%Y%m'));
-    -- esiste già?
+
     SELECT COUNT(*) INTO @exists
     FROM INFORMATION_SCHEMA.PARTITIONS
     WHERE TABLE_SCHEMA = DATABASE()
@@ -5898,7 +6561,7 @@ DELIMITER ;
 DELIMITER ;;
 CREATE  /* DEFINER=`laravel_mediaprint`@`%` */ PROCEDURE `sp_audit_prune_older_than`(IN p_keep_months INT)
 BEGIN
-  -- elimina partizioni intere più vecchie del bordo inferiore di retention
+
   DECLARE cutoff DATE;
   SET cutoff = DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL p_keep_months MONTH), '%Y-%m-01');
 
@@ -5909,7 +6572,7 @@ BEGIN
     WHERE TABLE_SCHEMA = DATABASE()
       AND TABLE_NAME   = 'tb_audit_log'
       AND PARTITION_NAME REGEXP '^p[0-9]{6}$'
-      AND PARTITION_DESCRIPTION < QUOTE(cutoff)    -- upper bound < cutoff
+      AND PARTITION_DESCRIPTION < QUOTE(cutoff)
     ORDER BY PARTITION_DESCRIPTION
     LIMIT 1;
 
@@ -5946,7 +6609,7 @@ BEGIN
   DECLARE v_id_contatto BIGINT UNSIGNED;
   DECLARE v_is_cliente  INT DEFAULT 0;
 
-  /* verifica account cliente + recupera contatto */
+
   SELECT (a.account_type='cliente') AS is_cli, a.id_contatto
     INTO v_is_cliente, v_id_contatto
   FROM auth_accounts a
@@ -5960,7 +6623,7 @@ BEGIN
     INSERT IGNORE INTO tb_contatti_anagrafiche (id_contatto, id_anagrafica, is_predefinita)
     VALUES (v_id_contatto, p_id_anagrafica, IFNULL(p_predefinita,0));
 
-    /* Se richiesta come predefinita, azzera le altre del contatto */
+
     IF IFNULL(p_predefinita,0) = 1 THEN
       UPDATE tb_contatti_anagrafiche
       SET is_predefinita = 0
@@ -5973,7 +6636,7 @@ BEGIN
     END IF;
 
   ELSE
-    /* revoca accesso */
+
     DELETE FROM tb_contatti_anagrafiche
     WHERE id_contatto = v_id_contatto
       AND id_anagrafica = p_id_anagrafica;
@@ -6007,7 +6670,7 @@ BEGIN
   DECLARE v_id_ruolo TINYINT UNSIGNED DEFAULT 3;
   DECLARE v_id_anag INT UNSIGNED;
 
-  /* 1) Controllo contatto */
+
   SELECT COUNT(*) INTO v_exists
   FROM tb_sedi_contatti c
   WHERE c.id_contatto = p_id_contatto;
@@ -6016,7 +6679,7 @@ BEGIN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Contatto inesistente';
   END IF;
 
-  /* 2) Se non ha legami su tb_contatti_anagrafiche, prova a seed-are da sede */
+
   SELECT COUNT(*) INTO v_exists
   FROM tb_contatti_anagrafiche ca
   WHERE ca.id_contatto = p_id_contatto;
@@ -6035,7 +6698,7 @@ BEGIN
     END IF;
   END IF;
 
-  /* 3) Crea account */
+
   INSERT INTO auth_accounts (
     account_type, username, email, password_hash, id_ruolo,
     id_contatto, is_active, must_change_pwd
@@ -6088,22 +6751,22 @@ DELIMITER ;
 DELIMITER ;;
 CREATE  /* DEFINER=`laravel_mediaprint`@`%` */ PROCEDURE `sp_install_audit_triggers`(
   IN p_table VARCHAR(64),
-  IN p_pk_columns VARCHAR(255),        -- es: 'id_fattura' o 'id_ddt' ecc.
-  IN p_app VARCHAR(64)                 -- es: 'ERP-Backend'
+  IN p_pk_columns VARCHAR(255),
+  IN p_app VARCHAR(64)
 )
 BEGIN
   DECLARE cols LONGTEXT;
   DECLARE pk_json LONGTEXT;
   DECLARE q TEXT;
 
-  -- Costruisce JSON_OBJECT('col1', NEW.col1, 'col2', NEW.col2, ...)
+
   SELECT GROUP_CONCAT(CONCAT("'",COLUMN_NAME,"'",', NEW.',COLUMN_NAME) ORDER BY ORDINAL_POSITION SEPARATOR ', ')
   INTO cols
   FROM INFORMATION_SCHEMA.COLUMNS
   WHERE TABLE_SCHEMA = DATABASE()
     AND TABLE_NAME   = p_table;
 
-  -- Costruisce JSON PK per NEW/OLD
+
   SELECT GROUP_CONCAT(CONCAT("'",TRIM(c),"'",', NEW.',TRIM(c)) SEPARATOR ', ')
   INTO @pk_new
   FROM (SELECT TRIM(SUBSTRING_INDEX(SUBSTRING_INDEX(p_pk_columns, ',', n.n), ',', -1)) c
@@ -6120,7 +6783,7 @@ BEGIN
         WHERE n.n <= 10) t
   WHERE c <> '';
 
-  -- DROP safety
+
   SET @drop_ai = CONCAT('DROP TRIGGER IF EXISTS ai_', p_table, '_audit');
   SET @drop_au = CONCAT('DROP TRIGGER IF EXISTS au_', p_table, '_audit');
   SET @drop_ad = CONCAT('DROP TRIGGER IF EXISTS ad_', p_table, '_audit');
@@ -6128,7 +6791,7 @@ BEGIN
   PREPARE s FROM @drop_au; EXECUTE s; DEALLOCATE PREPARE s;
   PREPARE s FROM @drop_ad; EXECUTE s; DEALLOCATE PREPARE s;
 
-  -- AFTER INSERT
+
   SET q = CONCAT(
     'CREATE TRIGGER ai_', p_table, '_audit AFTER INSERT ON ', p_table, ' FOR EACH ROW ',
     'BEGIN ',
@@ -6138,7 +6801,7 @@ BEGIN
   );
   PREPARE s FROM q; EXECUTE s; DEALLOCATE PREPARE s;
 
-  -- AFTER UPDATE
+
   SET q = CONCAT(
     'CREATE TRIGGER au_', p_table, '_audit AFTER UPDATE ON ', p_table, ' FOR EACH ROW ',
     'BEGIN ',
@@ -6148,7 +6811,7 @@ BEGIN
   );
   PREPARE s FROM q; EXECUTE s; DEALLOCATE PREPARE s;
 
-  -- AFTER DELETE
+
   SET q = CONCAT(
     'CREATE TRIGGER ad_', p_table, '_audit AFTER DELETE ON ', p_table, ' FOR EACH ROW ',
     'BEGIN ',
@@ -6180,7 +6843,7 @@ BEGIN
 
   SET v_td24 = fn_td24_id();
 
-  -- if fattura hasn't SdI tipo yet, set to TD24 (best-effort)
+
   SELECT id_sdi_tipo_documento INTO v_current_td
   FROM tb_fatture WHERE id_fattura = p_id_fattura;
 
@@ -6190,7 +6853,7 @@ BEGIN
     WHERE id_fattura = p_id_fattura;
   END IF;
 
-  -- Recalc monetary totals/saldo
+
   CALL sp_recalc_fattura(p_id_fattura);
 END ;;
 DELIMITER ;
@@ -6230,44 +6893,6 @@ DELIMITER ;
 /*!50003 SET character_set_client  = @saved_cs_client */ ;
 /*!50003 SET character_set_results = @saved_cs_results */ ;
 /*!50003 SET collation_connection  = @saved_col_connection */ ;
-/*!50003 SET @saved_sql_mode       = @@sql_mode */ ;
-/*!50003 SET sql_mode              = 'STRICT_TRANS_TABLES,ERROR_FOR_DIVISION_BY_ZERO,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION' */ ;
-/*!50003 DROP PROCEDURE IF EXISTS `sp_recalc_preventivo` */;
-/*!50003 SET @saved_cs_client      = @@character_set_client */ ;
-/*!50003 SET @saved_cs_results     = @@character_set_results */ ;
-/*!50003 SET @saved_col_connection = @@collation_connection */ ;
-/*!50003 SET character_set_client  = utf8mb4 */ ;
-/*!50003 SET character_set_results = utf8mb4 */ ;
-/*!50003 SET collation_connection  = utf8mb4_unicode_ci */ ;
-DELIMITER ;;
-CREATE  /* DEFINER=`laravel_mediaprint`@`%` */ PROCEDURE `sp_recalc_preventivo`(p_id INT)
-BEGIN
-  DECLARE v_imponibile DECIMAL(12,2) DEFAULT 0;
-  DECLARE v_sconto     DECIMAL(12,2) DEFAULT 0;
-  DECLARE v_iva        DECIMAL(12,2) DEFAULT 0;
-  DECLARE v_totale     DECIMAL(12,2) DEFAULT 0;
-
-  SELECT
-    COALESCE(SUM(importo_scontato),0),
-    COALESCE(SUM(sconto),0),
-    COALESCE(SUM(iva),0),
-    COALESCE(SUM(totale),0)
-  INTO v_imponibile, v_sconto, v_iva, v_totale
-  FROM tb_preventivi_righe
-  WHERE id_preventivo = p_id;
-
-  UPDATE tb_preventivi
-  SET totale_imponibile = v_imponibile,
-      totale_sconto     = v_sconto,
-      totale_iva        = v_iva,
-      totale            = v_totale
-  WHERE id_preventivo = p_id;
-END ;;
-DELIMITER ;
-/*!50003 SET sql_mode              = @saved_sql_mode */ ;
-/*!50003 SET character_set_client  = @saved_cs_client */ ;
-/*!50003 SET character_set_results = @saved_cs_results */ ;
-/*!50003 SET collation_connection  = @saved_col_connection */ ;
 
 --
 -- Final view structure for view `v_account_cliente_anagrafica_predefinita`
@@ -6279,10 +6904,10 @@ DELIMITER ;
 /*!50001 SET @saved_col_connection     = @@collation_connection */;
 /*!50001 SET character_set_client      = utf8mb4 */;
 /*!50001 SET character_set_results     = utf8mb4 */;
-/*!50001 SET collation_connection      = utf8mb4_unicode_ci */;
+/*!50001 SET collation_connection      = utf8mb4_general_ci */;
 /*!50001 CREATE ALGORITHM=UNDEFINED */
 /* 50013 DEFINER=`laravel_mediaprint`@`%` SQL SECURITY DEFINER */
-/*!50001 VIEW `v_account_cliente_anagrafica_predefinita` AS select `a`.`id_account` AS `id_account`,`a`.`username` AS `username`,`a`.`id_contatto` AS `id_contatto`,(select `ca1`.`id_anagrafica` from `tb_contatti_anagrafiche` `ca1` where `ca1`.`id_contatto` = `a`.`id_contatto` order by `ca1`.`is_predefinita` desc,`ca1`.`created_at` desc,`ca1`.`id_anagrafica` limit 1) AS `id_anagrafica_predefinita` from `auth_accounts` `a` where `a`.`account_type` = 'cliente' */;
+/*!50001 VIEW `v_account_cliente_anagrafica_predefinita` AS select 1 AS `id_account`,1 AS `username`,1 AS `id_contatto`,1 AS `id_anagrafica_predefinita` */;
 /*!50001 SET character_set_client      = @saved_cs_client */;
 /*!50001 SET character_set_results     = @saved_cs_results */;
 /*!50001 SET collation_connection      = @saved_col_connection */;
@@ -6297,10 +6922,10 @@ DELIMITER ;
 /*!50001 SET @saved_col_connection     = @@collation_connection */;
 /*!50001 SET character_set_client      = utf8mb4 */;
 /*!50001 SET character_set_results     = utf8mb4 */;
-/*!50001 SET collation_connection      = utf8mb4_unicode_ci */;
+/*!50001 SET collation_connection      = utf8mb4_general_ci */;
 /*!50001 CREATE ALGORITHM=UNDEFINED */
 /* 50013 DEFINER=`laravel_mediaprint`@`%` SQL SECURITY DEFINER */
-/*!50001 VIEW `v_account_cliente_anagrafiche` AS select `a`.`id_account` AS `id_account`,`a`.`username` AS `username`,`a`.`id_contatto` AS `id_contatto`,`ca`.`id_anagrafica` AS `id_anagrafica` from (`auth_accounts` `a` join `tb_contatti_anagrafiche` `ca` on(`ca`.`id_contatto` = `a`.`id_contatto`)) where `a`.`account_type` = 'cliente' */;
+/*!50001 VIEW `v_account_cliente_anagrafiche` AS select 1 AS `id_account`,1 AS `username`,1 AS `id_contatto`,1 AS `id_anagrafica` */;
 /*!50001 SET character_set_client      = @saved_cs_client */;
 /*!50001 SET character_set_results     = @saved_cs_results */;
 /*!50001 SET collation_connection      = @saved_col_connection */;
@@ -6315,10 +6940,10 @@ DELIMITER ;
 /*!50001 SET @saved_col_connection     = @@collation_connection */;
 /*!50001 SET character_set_client      = utf8mb4 */;
 /*!50001 SET character_set_results     = utf8mb4 */;
-/*!50001 SET collation_connection      = utf8mb4_unicode_ci */;
+/*!50001 SET collation_connection      = utf8mb4_general_ci */;
 /*!50001 CREATE ALGORITHM=UNDEFINED */
 /* 50013 DEFINER=`laravel_mediaprint`@`%` SQL SECURITY DEFINER */
-/*!50001 VIEW `v_anagrafiche_inattive_2y` AS select `a`.`id_anagrafica` AS `id_anagrafica`,`a`.`id_tipologia` AS `id_tipologia`,`a`.`id_sdi_regime_fiscale` AS `id_sdi_regime_fiscale`,`a`.`is_pa` AS `is_pa`,`a`.`ragione_sociale` AS `ragione_sociale`,`a`.`piva` AS `piva`,`a`.`codice_fiscale` AS `codice_fiscale`,`a`.`note` AS `note`,`a`.`created_at` AS `created_at`,`a`.`updated_at` AS `updated_at`,nullif(`ld`.`last_document_date`,'1000-01-01') AS `last_document_date`,case when `ld`.`last_document_date` = '1000-01-01' then curdate() - interval 24 month else `ld`.`last_document_date` end AS `inactive_since` from (`tb_anagrafiche` `a` join `v_anagrafiche_lastdoc` `ld` on(`ld`.`id_anagrafica` = `a`.`id_anagrafica`)) where `ld`.`last_document_date` = '1000-01-01' or `ld`.`last_document_date` < curdate() - interval 24 month */;
+/*!50001 VIEW `v_anagrafiche_inattive_2y` AS select 1 AS `id_anagrafica`,1 AS `id_tipologia`,1 AS `id_sdi_regime_fiscale`,1 AS `is_pa`,1 AS `ragione_sociale`,1 AS `piva`,1 AS `codice_fiscale`,1 AS `note`,1 AS `created_at`,1 AS `updated_at`,1 AS `last_document_date`,1 AS `inactive_since` */;
 /*!50001 SET character_set_client      = @saved_cs_client */;
 /*!50001 SET character_set_results     = @saved_cs_results */;
 /*!50001 SET collation_connection      = @saved_col_connection */;
@@ -6333,10 +6958,10 @@ DELIMITER ;
 /*!50001 SET @saved_col_connection     = @@collation_connection */;
 /*!50001 SET character_set_client      = utf8mb4 */;
 /*!50001 SET character_set_results     = utf8mb4 */;
-/*!50001 SET collation_connection      = utf8mb4_unicode_ci */;
+/*!50001 SET collation_connection      = utf8mb4_general_ci */;
 /*!50001 CREATE ALGORITHM=UNDEFINED */
 /* 50013 DEFINER=`laravel_mediaprint`@`%` SQL SECURITY DEFINER */
-/*!50001 VIEW `v_anagrafiche_lastdoc` AS select `a`.`id_anagrafica` AS `id_anagrafica`,greatest(coalesce(`p`.`max_data_preventivo`,'1000-01-01'),coalesce(`d`.`max_data_ddt`,'1000-01-01'),coalesce(`f`.`max_data_fattura`,'1000-01-01')) AS `last_document_date` from (((`tb_anagrafiche` `a` left join (select `tb_preventivi`.`id_anagrafica` AS `id_anagrafica`,max(`tb_preventivi`.`data_preventivo`) AS `max_data_preventivo` from `tb_preventivi` group by `tb_preventivi`.`id_anagrafica`) `p` on(`p`.`id_anagrafica` = `a`.`id_anagrafica`)) left join (select `tb_ddt`.`id_anagrafica` AS `id_anagrafica`,max(`tb_ddt`.`data_ddt`) AS `max_data_ddt` from `tb_ddt` group by `tb_ddt`.`id_anagrafica`) `d` on(`d`.`id_anagrafica` = `a`.`id_anagrafica`)) left join (select `tb_fatture`.`id_anagrafica` AS `id_anagrafica`,max(`tb_fatture`.`data_fattura`) AS `max_data_fattura` from `tb_fatture` group by `tb_fatture`.`id_anagrafica`) `f` on(`f`.`id_anagrafica` = `a`.`id_anagrafica`)) */;
+/*!50001 VIEW `v_anagrafiche_lastdoc` AS select 1 AS `id_anagrafica`,1 AS `last_document_date` */;
 /*!50001 SET character_set_client      = @saved_cs_client */;
 /*!50001 SET character_set_results     = @saved_cs_results */;
 /*!50001 SET collation_connection      = @saved_col_connection */;
@@ -6351,10 +6976,10 @@ DELIMITER ;
 /*!50001 SET @saved_col_connection     = @@collation_connection */;
 /*!50001 SET character_set_client      = utf8mb4 */;
 /*!50001 SET character_set_results     = utf8mb4 */;
-/*!50001 SET collation_connection      = utf8mb4_unicode_ci */;
+/*!50001 SET collation_connection      = utf8mb4_general_ci */;
 /*!50001 CREATE ALGORITHM=UNDEFINED */
 /* 50013 DEFINER=`laravel_mediaprint`@`%` SQL SECURITY DEFINER */
-/*!50001 VIEW `v_anagrafiche_sede_legale` AS select `a`.`id_anagrafica` AS `id_anagrafica`,`a`.`ragione_sociale` AS `ragione_sociale`,`a`.`piva` AS `piva`,`a`.`stato` AS `stato`,`s`.`indirizzo` AS `indirizzo`,`s`.`civico` AS `civico`,`s`.`cap` AS `cap`,`s`.`comune` AS `citta`,`s`.`provincia` AS `provincia` from (`tb_anagrafiche` `a` join `tb_sedi` `s` on(`a`.`id_anagrafica` = `s`.`id_anagrafica` and `s`.`is_legale` = 1)) */;
+/*!50001 VIEW `v_anagrafiche_sede_legale` AS select 1 AS `id_anagrafica`,1 AS `ragione_sociale`,1 AS `piva`,1 AS `stato`,1 AS `indirizzo`,1 AS `civico`,1 AS `cap`,1 AS `citta`,1 AS `provincia` */;
 /*!50001 SET character_set_client      = @saved_cs_client */;
 /*!50001 SET character_set_results     = @saved_cs_results */;
 /*!50001 SET collation_connection      = @saved_col_connection */;
@@ -6369,10 +6994,10 @@ DELIMITER ;
 /*!50001 SET @saved_col_connection     = @@collation_connection */;
 /*!50001 SET character_set_client      = utf8mb4 */;
 /*!50001 SET character_set_results     = utf8mb4 */;
-/*!50001 SET collation_connection      = utf8mb4_unicode_ci */;
+/*!50001 SET collation_connection      = utf8mb4_general_ci */;
 /*!50001 CREATE ALGORITHM=UNDEFINED */
 /* 50013 DEFINER=`laravel_mediaprint`@`%` SQL SECURITY DEFINER */
-/*!50001 VIEW `v_archive_batches` AS select `x`.`archive_batch_id` AS `archive_batch_id`,min(`x`.`archived_at`) AS `started_at`,max(`x`.`archived_at`) AS `finished_at`,count(0) AS `records_total`,group_concat(distinct `x`.`archived_by` order by `x`.`archived_by` ASC separator ',') AS `by_users` from (select `tb_anagrafiche_archive`.`archive_batch_id` AS `archive_batch_id`,`tb_anagrafiche_archive`.`archived_at` AS `archived_at`,`tb_anagrafiche_archive`.`archived_by` AS `archived_by` from `tb_anagrafiche_archive` union all select `tb_anagrafiche_fiscali_archive`.`archive_batch_id` AS `archive_batch_id`,`tb_anagrafiche_fiscali_archive`.`archived_at` AS `archived_at`,`tb_anagrafiche_fiscali_archive`.`archived_by` AS `archived_by` from `tb_anagrafiche_fiscali_archive` union all select `tb_sedi_archive`.`archive_batch_id` AS `archive_batch_id`,`tb_sedi_archive`.`archived_at` AS `archived_at`,`tb_sedi_archive`.`archived_by` AS `archived_by` from `tb_sedi_archive` union all select `tb_sedi_contatti_archive`.`archive_batch_id` AS `archive_batch_id`,`tb_sedi_contatti_archive`.`archived_at` AS `archived_at`,`tb_sedi_contatti_archive`.`archived_by` AS `archived_by` from `tb_sedi_contatti_archive`) `x` group by `x`.`archive_batch_id` */;
+/*!50001 VIEW `v_archive_batches` AS select 1 AS `archive_batch_id`,1 AS `started_at`,1 AS `finished_at`,1 AS `records_total`,1 AS `by_users` */;
 /*!50001 SET character_set_client      = @saved_cs_client */;
 /*!50001 SET character_set_results     = @saved_cs_results */;
 /*!50001 SET collation_connection      = @saved_col_connection */;
@@ -6387,10 +7012,10 @@ DELIMITER ;
 /*!50001 SET @saved_col_connection     = @@collation_connection */;
 /*!50001 SET character_set_client      = utf8mb4 */;
 /*!50001 SET character_set_results     = utf8mb4 */;
-/*!50001 SET collation_connection      = utf8mb4_unicode_ci */;
+/*!50001 SET collation_connection      = utf8mb4_general_ci */;
 /*!50001 CREATE ALGORITHM=UNDEFINED */
 /* 50013 DEFINER=`laravel_mediaprint`@`%` SQL SECURITY DEFINER */
-/*!50001 VIEW `v_ddt_all` AS select `d`.`id_ddt` AS `id_ddt`,`d`.`id_anagrafica` AS `id_anagrafica`,`d`.`anno` AS `anno`,`d`.`numero_documento` AS `numero_documento`,`d`.`data_ddt` AS `data_ddt`,`d`.`totale_pezzi` AS `totale_pezzi`,`d`.`totale_peso_kg` AS `totale_peso_kg`,`d`.`note` AS `note`,`d`.`id_causale` AS `id_causale`,`c`.`label` AS `causale_label`,`d`.`id_serie` AS `id_serie`,`s`.`code` AS `serie_code`,`d`.`created_at` AS `created_at`,`d`.`updated_at` AS `updated_at`,'tb_ddt' AS `source_table` from ((`tb_ddt` `d` left join `cfg_causali_ddt` `c` on(`c`.`id_causale` = `d`.`id_causale`)) left join `cfg_serie_documenti` `s` on(`s`.`id_serie` = `d`.`id_serie`)) union all select `a`.`id_ddt` AS `id_ddt`,`a`.`id_anagrafica` AS `id_anagrafica`,`a`.`anno` AS `anno`,`a`.`numero_documento` AS `numero_documento`,`a`.`data_ddt` AS `data_ddt`,`a`.`totale_pezzi` AS `totale_pezzi`,NULL AS `totale_peso_kg`,`a`.`note` AS `note`,NULL AS `id_causale`,`a`.`causale` AS `causale_label`,NULL AS `id_serie`,NULL AS `serie_code`,`a`.`created_at` AS `created_at`,`a`.`updated_at` AS `updated_at`,'tb_ddt_archive' AS `source_table` from `tb_ddt_archive` `a` */;
+/*!50001 VIEW `v_ddt_all` AS select 1 AS `id_ddt`,1 AS `id_anagrafica`,1 AS `anno`,1 AS `numero_documento`,1 AS `data_ddt`,1 AS `totale_pezzi`,1 AS `totale_peso_kg`,1 AS `note`,1 AS `id_causale`,1 AS `causale_label`,1 AS `id_serie`,1 AS `serie_code`,1 AS `created_at`,1 AS `updated_at`,1 AS `source_table` */;
 /*!50001 SET character_set_client      = @saved_cs_client */;
 /*!50001 SET character_set_results     = @saved_cs_results */;
 /*!50001 SET collation_connection      = @saved_col_connection */;
@@ -6405,10 +7030,10 @@ DELIMITER ;
 /*!50001 SET @saved_col_connection     = @@collation_connection */;
 /*!50001 SET character_set_client      = utf8mb4 */;
 /*!50001 SET character_set_results     = utf8mb4 */;
-/*!50001 SET collation_connection      = utf8mb4_unicode_ci */;
+/*!50001 SET collation_connection      = utf8mb4_general_ci */;
 /*!50001 CREATE ALGORITHM=UNDEFINED */
 /* 50013 DEFINER=`laravel_mediaprint`@`%` SQL SECURITY DEFINER */
-/*!50001 VIEW `v_ddt_slim` AS select `d`.`id_ddt` AS `id_ddt`,`d`.`id_anagrafica` AS `id_anagrafica`,`d`.`anno` AS `anno`,`d`.`numero_documento` AS `numero_documento`,`d`.`data_ddt` AS `data_ddt`,`d`.`totale_pezzi` AS `totale_pezzi`,`d`.`note` AS `note`,`d`.`created_at` AS `created_at`,`d`.`updated_at` AS `updated_at` from `tb_ddt` `d` union all select `a`.`id_ddt` AS `id_ddt`,`a`.`id_anagrafica` AS `id_anagrafica`,`a`.`anno` AS `anno`,`a`.`numero_documento` AS `numero_documento`,`a`.`data_ddt` AS `data_ddt`,`a`.`totale_pezzi` AS `totale_pezzi`,`a`.`note` AS `note`,`a`.`created_at` AS `created_at`,`a`.`updated_at` AS `updated_at` from `tb_ddt_archive` `a` */;
+/*!50001 VIEW `v_ddt_slim` AS select 1 AS `id_ddt`,1 AS `id_anagrafica`,1 AS `anno`,1 AS `numero_documento`,1 AS `data_ddt`,1 AS `totale_pezzi`,1 AS `note`,1 AS `created_at`,1 AS `updated_at` */;
 /*!50001 SET character_set_client      = @saved_cs_client */;
 /*!50001 SET character_set_results     = @saved_cs_results */;
 /*!50001 SET collation_connection      = @saved_col_connection */;
@@ -6423,10 +7048,10 @@ DELIMITER ;
 /*!50001 SET @saved_col_connection     = @@collation_connection */;
 /*!50001 SET character_set_client      = utf8mb4 */;
 /*!50001 SET character_set_results     = utf8mb4 */;
-/*!50001 SET collation_connection      = utf8mb4_unicode_ci */;
+/*!50001 SET collation_connection      = utf8mb4_general_ci */;
 /*!50001 CREATE ALGORITHM=UNDEFINED */
 /* 50013 DEFINER=`laravel_mediaprint`@`%` SQL SECURITY DEFINER */
-/*!50001 VIEW `v_fatture_all` AS select `f`.`id_fattura` AS `id_fattura`,`f`.`id_anagrafica` AS `id_anagrafica`,`f`.`anno` AS `anno`,`f`.`numero_documento` AS `numero_documento`,`f`.`data_fattura` AS `data_fattura`,`f`.`totale_imponibile` AS `totale_imponibile`,`f`.`totale_sconto` AS `totale_sconto`,`f`.`totale_iva` AS `totale_iva`,`f`.`totale` AS `totale`,`f`.`saldo` AS `saldo`,`f`.`note` AS `note`,`f`.`id_stato_fatt` AS `id_stato`,`sf`.`label` AS `stato_label`,`f`.`id_tipo_fatt` AS `id_tipo`,`tf`.`label` AS `tipo_label`,`f`.`id_sezionale` AS `id_sezionale`,`sz`.`code` AS `sezionale_code`,`f`.`id_serie` AS `id_serie`,`sd`.`code` AS `serie_code`,`f`.`id_sdi_tipo_documento` AS `id_sdi_tipo_documento`,`td`.`code` AS `sdi_td_code`,`f`.`id_sdi_esigibilita` AS `id_sdi_esigibilita`,`es`.`code` AS `sdi_esig_code`,`f`.`id_sdi_modalita` AS `id_sdi_modalita`,`mp`.`code` AS `sdi_mp_code`,`f`.`created_at` AS `created_at`,`f`.`updated_at` AS `updated_at`,'tb_fatture' AS `source_table` from (((((((`tb_fatture` `f` left join `cfg_stati_fattura` `sf` on(`sf`.`id_stato` = `f`.`id_stato_fatt`)) left join `cfg_tipi_fattura` `tf` on(`tf`.`id_tipo` = `f`.`id_tipo_fatt`)) left join `cfg_serie_documenti` `sd` on(`sd`.`id_serie` = `f`.`id_serie`)) left join `cfg_sezionali` `sz` on(`sz`.`id_sezionale` = `f`.`id_sezionale`)) left join `cfg_sdi_tipo_documento` `td` on(`td`.`id_tipo` = `f`.`id_sdi_tipo_documento`)) left join `cfg_sdi_esigibilita_iva` `es` on(`es`.`id_esig` = `f`.`id_sdi_esigibilita`)) left join `cfg_sdi_modalita_pagamento` `mp` on(`mp`.`id_modalita` = `f`.`id_sdi_modalita`)) union all select `a`.`id_fattura` AS `id_fattura`,`a`.`id_anagrafica` AS `id_anagrafica`,`a`.`anno` AS `anno`,`a`.`numero_documento` AS `numero_documento`,`a`.`data_fattura` AS `data_fattura`,`a`.`totale_imponibile` AS `totale_imponibile`,`a`.`totale_sconto` AS `totale_sconto`,`a`.`totale_iva` AS `totale_iva`,`a`.`totale` AS `totale`,`a`.`saldo` AS `saldo`,`a`.`note` AS `note`,NULL AS `id_stato`,`a`.`stato` AS `stato_label`,NULL AS `id_tipo`,`a`.`tipo` AS `tipo_label`,NULL AS `id_sezionale`,NULL AS `sezionale_code`,NULL AS `id_serie`,NULL AS `serie_code`,NULL AS `id_sdi_tipo_documento`,NULL AS `sdi_td_code`,NULL AS `id_sdi_esigibilita`,NULL AS `sdi_esig_code`,NULL AS `id_sdi_modalita`,NULL AS `sdi_mp_code`,`a`.`created_at` AS `created_at`,`a`.`updated_at` AS `updated_at`,'tb_fatture_archive' AS `source_table` from `tb_fatture_archive` `a` */;
+/*!50001 VIEW `v_fatture_all` AS select 1 AS `id_fattura`,1 AS `id_anagrafica`,1 AS `anno`,1 AS `numero_documento`,1 AS `data_fattura`,1 AS `totale_imponibile`,1 AS `totale_sconto`,1 AS `totale_iva`,1 AS `totale`,1 AS `saldo`,1 AS `note`,1 AS `id_stato`,1 AS `stato_label`,1 AS `id_tipo`,1 AS `tipo_label`,1 AS `id_sezionale`,1 AS `sezionale_code`,1 AS `id_serie`,1 AS `serie_code`,1 AS `id_sdi_tipo_documento`,1 AS `sdi_td_code`,1 AS `id_sdi_esigibilita`,1 AS `sdi_esig_code`,1 AS `id_sdi_modalita`,1 AS `sdi_mp_code`,1 AS `created_at`,1 AS `updated_at`,1 AS `source_table` */;
 /*!50001 SET character_set_client      = @saved_cs_client */;
 /*!50001 SET character_set_results     = @saved_cs_results */;
 /*!50001 SET collation_connection      = @saved_col_connection */;
@@ -6441,10 +7066,10 @@ DELIMITER ;
 /*!50001 SET @saved_col_connection     = @@collation_connection */;
 /*!50001 SET character_set_client      = utf8mb4 */;
 /*!50001 SET character_set_results     = utf8mb4 */;
-/*!50001 SET collation_connection      = utf8mb4_unicode_ci */;
+/*!50001 SET collation_connection      = utf8mb4_general_ci */;
 /*!50001 CREATE ALGORITHM=UNDEFINED */
 /* 50013 DEFINER=`laravel_mediaprint`@`%` SQL SECURITY DEFINER */
-/*!50001 VIEW `v_fatture_slim` AS select `f`.`id_fattura` AS `id_fattura`,`f`.`id_anagrafica` AS `id_anagrafica`,`f`.`anno` AS `anno`,`f`.`numero_documento` AS `numero_documento`,`f`.`data_fattura` AS `data_fattura`,`f`.`totale_imponibile` AS `totale_imponibile`,`f`.`totale_sconto` AS `totale_sconto`,`f`.`totale_iva` AS `totale_iva`,`f`.`totale` AS `totale`,`f`.`saldo` AS `saldo`,`f`.`note` AS `note`,`f`.`created_at` AS `created_at`,`f`.`updated_at` AS `updated_at` from `tb_fatture` `f` union all select `a`.`id_fattura` AS `id_fattura`,`a`.`id_anagrafica` AS `id_anagrafica`,`a`.`anno` AS `anno`,`a`.`numero_documento` AS `numero_documento`,`a`.`data_fattura` AS `data_fattura`,`a`.`totale_imponibile` AS `totale_imponibile`,`a`.`totale_sconto` AS `totale_sconto`,`a`.`totale_iva` AS `totale_iva`,`a`.`totale` AS `totale`,`a`.`saldo` AS `saldo`,`a`.`note` AS `note`,`a`.`created_at` AS `created_at`,`a`.`updated_at` AS `updated_at` from `tb_fatture_archive` `a` */;
+/*!50001 VIEW `v_fatture_slim` AS select 1 AS `id_fattura`,1 AS `id_anagrafica`,1 AS `anno`,1 AS `numero_documento`,1 AS `data_fattura`,1 AS `totale_imponibile`,1 AS `totale_sconto`,1 AS `totale_iva`,1 AS `totale`,1 AS `saldo`,1 AS `note`,1 AS `created_at`,1 AS `updated_at` */;
 /*!50001 SET character_set_client      = @saved_cs_client */;
 /*!50001 SET character_set_results     = @saved_cs_results */;
 /*!50001 SET collation_connection      = @saved_col_connection */;
@@ -6459,10 +7084,10 @@ DELIMITER ;
 /*!50001 SET @saved_col_connection     = @@collation_connection */;
 /*!50001 SET character_set_client      = utf8mb4 */;
 /*!50001 SET character_set_results     = utf8mb4 */;
-/*!50001 SET collation_connection      = utf8mb4_unicode_ci */;
+/*!50001 SET collation_connection      = utf8mb4_general_ci */;
 /*!50001 CREATE ALGORITHM=UNDEFINED */
 /* 50013 DEFINER=`laravel_mediaprint`@`%` SQL SECURITY DEFINER */
-/*!50001 VIEW `v_preventivi_all` AS select `p`.`id_preventivo` AS `id_preventivo`,`p`.`id_anagrafica` AS `id_anagrafica`,`p`.`anno_preventivo` AS `anno_preventivo`,`p`.`numero_documento` AS `numero_documento`,`p`.`data_preventivo` AS `data_preventivo`,`p`.`totale_imponibile` AS `totale_imponibile`,`p`.`totale_sconto` AS `totale_sconto`,`p`.`totale_iva` AS `totale_iva`,`p`.`totale` AS `totale`,`p`.`note` AS `note`,`p`.`id_stato_prev` AS `id_stato`,`sp`.`label` AS `stato_label`,`p`.`id_serie` AS `id_serie`,`sd`.`code` AS `serie_code`,`p`.`created_at` AS `created_at`,`p`.`updated_at` AS `updated_at`,'tb_preventivi' AS `source_table` from ((`tb_preventivi` `p` left join `cfg_stati_preventivo` `sp` on(`sp`.`id_stato` = `p`.`id_stato_prev`)) left join `cfg_serie_documenti` `sd` on(`sd`.`id_serie` = `p`.`id_serie`)) union all select `a`.`id_preventivo` AS `id_preventivo`,`a`.`id_anagrafica` AS `id_anagrafica`,`a`.`anno_preventivo` AS `anno_preventivo`,`a`.`numero_documento` AS `numero_documento`,`a`.`data_preventivo` AS `data_preventivo`,`a`.`totale_imponibile` AS `totale_imponibile`,`a`.`totale_sconto` AS `totale_sconto`,`a`.`totale_iva` AS `totale_iva`,`a`.`totale` AS `totale`,`a`.`note` AS `note`,NULL AS `id_stato`,`a`.`stato` AS `stato_label`,NULL AS `id_serie`,NULL AS `serie_code`,`a`.`created_at` AS `created_at`,`a`.`updated_at` AS `updated_at`,'tb_preventivi_archive' AS `source_table` from `tb_preventivi_archive` `a` */;
+/*!50001 VIEW `v_preventivi_all` AS select 1 AS `id_preventivo`,1 AS `id_anagrafica`,1 AS `anno_preventivo`,1 AS `numero_documento`,1 AS `data_preventivo`,1 AS `totale_imponibile`,1 AS `totale_sconto`,1 AS `totale_iva`,1 AS `totale`,1 AS `note`,1 AS `id_stato`,1 AS `stato_label`,1 AS `id_serie`,1 AS `serie_code`,1 AS `created_at`,1 AS `updated_at`,1 AS `source_table` */;
 /*!50001 SET character_set_client      = @saved_cs_client */;
 /*!50001 SET character_set_results     = @saved_cs_results */;
 /*!50001 SET collation_connection      = @saved_col_connection */;
@@ -6477,10 +7102,10 @@ DELIMITER ;
 /*!50001 SET @saved_col_connection     = @@collation_connection */;
 /*!50001 SET character_set_client      = utf8mb4 */;
 /*!50001 SET character_set_results     = utf8mb4 */;
-/*!50001 SET collation_connection      = utf8mb4_unicode_ci */;
+/*!50001 SET collation_connection      = utf8mb4_general_ci */;
 /*!50001 CREATE ALGORITHM=UNDEFINED */
 /* 50013 DEFINER=`laravel_mediaprint`@`%` SQL SECURITY DEFINER */
-/*!50001 VIEW `v_preventivi_slim` AS select `p`.`id_preventivo` AS `id_preventivo`,`p`.`id_anagrafica` AS `id_anagrafica`,`p`.`anno_preventivo` AS `anno_preventivo`,`p`.`numero_documento` AS `numero_documento`,`p`.`data_preventivo` AS `data_preventivo`,`p`.`totale_imponibile` AS `totale_imponibile`,`p`.`totale_sconto` AS `totale_sconto`,`p`.`totale_iva` AS `totale_iva`,`p`.`totale` AS `totale`,`p`.`note` AS `note`,`p`.`created_at` AS `created_at`,`p`.`updated_at` AS `updated_at` from `tb_preventivi` `p` union all select `a`.`id_preventivo` AS `id_preventivo`,`a`.`id_anagrafica` AS `id_anagrafica`,`a`.`anno_preventivo` AS `anno_preventivo`,`a`.`numero_documento` AS `numero_documento`,`a`.`data_preventivo` AS `data_preventivo`,`a`.`totale_imponibile` AS `totale_imponibile`,`a`.`totale_sconto` AS `totale_sconto`,`a`.`totale_iva` AS `totale_iva`,`a`.`totale` AS `totale`,`a`.`note` AS `note`,`a`.`created_at` AS `created_at`,`a`.`updated_at` AS `updated_at` from `tb_preventivi_archive` `a` */;
+/*!50001 VIEW `v_preventivi_slim` AS select 1 AS `id_preventivo`,1 AS `id_anagrafica`,1 AS `anno_preventivo`,1 AS `numero_documento`,1 AS `data_preventivo`,1 AS `totale_imponibile`,1 AS `totale_sconto`,1 AS `totale_iva`,1 AS `totale`,1 AS `note`,1 AS `created_at`,1 AS `updated_at` */;
 /*!50001 SET character_set_client      = @saved_cs_client */;
 /*!50001 SET character_set_results     = @saved_cs_results */;
 /*!50001 SET collation_connection      = @saved_col_connection */;
@@ -6494,4 +7119,4 @@ DELIMITER ;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2025-10-13 17:36:37
+-- Dump completed on 2025-11-27 12:17:44

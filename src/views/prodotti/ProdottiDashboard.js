@@ -1,0 +1,186 @@
+import React, { useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
+import {
+  CAlert,
+  CCard,
+  CCardBody,
+  CCardHeader,
+  CCol,
+  CRow,
+  CSpinner,
+  CTable,
+  CTableBody,
+  CTableDataCell,
+  CTableHead,
+  CTableHeaderCell,
+  CTableRow,
+} from '@coreui/react'
+
+import { fetchProdottiDashboard } from '../../services/prodotti'
+import { useAuth } from '../../context/AuthContext'
+
+const formatInteger = (value) => {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) {
+    return '-'
+  }
+  return Number(value).toLocaleString('it-IT')
+}
+
+const renderTablePlaceholder = (text) => (
+  <div className="text-center text-body-secondary small py-3">{text}</div>
+)
+
+const ProdottiDashboard = () => {
+  const { token } = useAuth()
+  const [payload, setPayload] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+
+  useEffect(() => {
+    const controller = new AbortController()
+    let isMounted = true
+
+    const load = async () => {
+      setLoading(true)
+      setError(null)
+      try {
+        const data = await fetchProdottiDashboard({ token, signal: controller.signal })
+        if (!isMounted) return
+        setPayload(data)
+      } catch (err) {
+        if (!isMounted) return
+        setError(err?.message || 'Errore durante il caricamento della dashboard prodotti.')
+      } finally {
+        if (isMounted) setLoading(false)
+      }
+    }
+
+    load()
+
+    return () => {
+      isMounted = false
+      controller.abort()
+    }
+  }, [token])
+
+  const kpi = payload?.kpi ?? {}
+  const topCategorie = payload?.top_categorie ?? []
+  const latest = payload?.latest ?? []
+
+  const summaryCards = useMemo(
+    () => [
+      { key: 'totale_prodotti', label: 'Totale prodotti', value: kpi.totale_prodotti },
+      { key: 'prodotti_attivi', label: 'Prodotti attivi', value: kpi.prodotti_attivi },
+      { key: 'prodotti_disattivi', label: 'Prodotti disattivi', value: kpi.prodotti_disattivi },
+      { key: 'categorie', label: 'Categorie', value: kpi.categorie },
+      { key: 'variazioni', label: 'Variazioni', value: kpi.variazioni },
+      { key: 'prezzi_combinati', label: 'Prezzi combinati', value: kpi.prezzi_combinati },
+    ],
+    [kpi],
+  )
+
+  return (
+    <>
+      <div className="mb-4">
+        <h2 className="h4 mb-1">Dashboard prodotti</h2>
+        <p className="text-body-secondary mb-0">Sintesi catalogo, categorie e variazioni.</p>
+      </div>
+
+      {error ? (
+        <CAlert color="danger" className="text-small">
+          {error}
+        </CAlert>
+      ) : null}
+
+      <CRow className="mb-4">
+        {summaryCards.map((card) => (
+          <CCol key={card.key} sm={6} lg={4} className="mb-3">
+            <CCard className="h-100 border-0 shadow-sm">
+              <CCardBody>
+                <div className="text-body-secondary text-uppercase small fw-semibold">{card.label}</div>
+                <div className="fs-3 fw-semibold mt-2">
+                  {loading ? <CSpinner size="sm" /> : formatInteger(card.value)}
+                </div>
+              </CCardBody>
+            </CCard>
+          </CCol>
+        ))}
+      </CRow>
+
+      <CRow className="g-4">
+        <CCol lg={6}>
+          <CCard className="h-100">
+            <CCardHeader>Top categorie per numero prodotti</CCardHeader>
+            <CCardBody>
+              {loading
+                ? renderTablePlaceholder('Caricamento...')
+                : topCategorie.length === 0
+                  ? renderTablePlaceholder('Nessun dato disponibile.')
+                  : (
+                    <CTable small hover responsive className="mb-0">
+                      <CTableHead>
+                        <CTableRow>
+                          <CTableHeaderCell>Categoria</CTableHeaderCell>
+                          <CTableHeaderCell className="text-end">Totale</CTableHeaderCell>
+                        </CTableRow>
+                      </CTableHead>
+                      <CTableBody>
+                        {topCategorie.map((row) => (
+                          <CTableRow key={row.id_categoria}>
+                            <CTableDataCell>{row.nome || '-'}</CTableDataCell>
+                            <CTableDataCell className="text-end">{formatInteger(row.totale)}</CTableDataCell>
+                          </CTableRow>
+                        ))}
+                      </CTableBody>
+                    </CTable>
+                  )}
+            </CCardBody>
+          </CCard>
+        </CCol>
+        <CCol lg={6}>
+          <CCard className="h-100">
+            <CCardHeader>Ultimi prodotti</CCardHeader>
+            <CCardBody>
+              {loading
+                ? renderTablePlaceholder('Caricamento...')
+                : latest.length === 0
+                  ? renderTablePlaceholder('Nessun dato disponibile.')
+                  : (
+                    <CTable small hover responsive className="mb-0">
+                      <CTableHead>
+                        <CTableRow>
+                          <CTableHeaderCell>Prodotto</CTableHeaderCell>
+                          <CTableHeaderCell>Categoria</CTableHeaderCell>
+                          <CTableHeaderCell className="text-end">Stato</CTableHeaderCell>
+                        </CTableRow>
+                      </CTableHead>
+                      <CTableBody>
+                        {latest.map((row) => (
+                          <CTableRow key={row.id_prodotto}>
+                            <CTableDataCell>
+                              {row.id_prodotto ? (
+                                <Link to={`/prodotti/dettagli?id=${row.id_prodotto}`} className="text-decoration-none">
+                                  {row.nome || row.codice || `Prodotto #${row.id_prodotto}`}
+                                </Link>
+                              ) : (
+                                row.nome || row.codice || '-'
+                              )}
+                            </CTableDataCell>
+                            <CTableDataCell>{row.categoria || '-'}</CTableDataCell>
+                            <CTableDataCell className="text-end">
+                              {row.attivo === 1 ? 'Attivo' : 'Disattivo'}
+                            </CTableDataCell>
+                          </CTableRow>
+                        ))}
+                      </CTableBody>
+                    </CTable>
+                  )}
+            </CCardBody>
+          </CCard>
+        </CCol>
+      </CRow>
+    </>
+  )
+}
+
+export default ProdottiDashboard

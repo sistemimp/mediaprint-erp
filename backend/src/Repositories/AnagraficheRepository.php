@@ -64,13 +64,15 @@ final class AnagraficheRepository
             $params[':needle_piva'] = $like;
             $params[':needle_cf'] = $like;
 
-            // Estende la ricerca con normalizzazione P.IVA (senza spazi/punti/trattini) e CF case-insensitive
+            // Estende la ricerca con normalizzazione P.IVA (senza spazi/punti/trattini) e CF/ragione case-insensitive
             $where[] = '(
                 REPLACE(REPLACE(REPLACE(piva, " ", ""), ".", ""), "-", "") LIKE REPLACE(REPLACE(REPLACE(:needle_piva_norm, " ", ""), ".", ""), "-", "")
                 OR UPPER(codice_fiscale) LIKE UPPER(:needle_cf_norm)
+                OR UPPER(ragione_sociale) LIKE UPPER(:needle_rs_norm)
             )';
             $params[':needle_piva_norm'] = $like;
             $params[':needle_cf_norm'] = $like;
+            $params[':needle_rs_norm'] = $like;
         }
 
         // Nasconde per default le anagrafiche disattivate/archiviate

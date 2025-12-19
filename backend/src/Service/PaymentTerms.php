@@ -159,6 +159,10 @@ final class PaymentTerms
                 }
             }
 
+            if ($anchor === 'end_of_month') {
+                $dueDate = self::endOfMonth($dueDate);
+            }
+
             $amount = $index < $installments - 1 ? $baseQuota : round($remaining, 2);
             $remaining = round($remaining - $amount, 2);
 

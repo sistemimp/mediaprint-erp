@@ -8,6 +8,7 @@ use Firebase\JWT\JWT;
 use Firebase\JWT\Key;
 use MediaPrint\Service\PaymentTerms;
 use PDO;
+use PDOException;
 use RuntimeException;
 
 final class FattureRepository
@@ -21,6 +22,10 @@ final class FattureRepository
     private array $statusLabelCache = [];
     /** @var list<array<string,mixed>>|null */
     private ?array $paymentTerms = null;
+    /** @var array<string,int|null> */
+    private array $tipoFatturaIdCache = [];
+    /** @var array<int,int|null> */
+    private array $preventivoLinkCache = [];
 
     public function __construct(private PDO $pdo) {}
 
@@ -63,6 +68,74 @@ final class FattureRepository
                 'pagate' => (float) $r['pagate'],
             ];
         }
+        return $out;
+    }
+
+    public function fetchCurrentMonthRevenue(): float
+    {
+        $sql = <<<'SQL'
+            WITH params AS (
+              SELECT
+                DATE_FORMAT(CURDATE(), '%Y-%m-01') AS start_month,
+                DATE_ADD(DATE_FORMAT(CURDATE(), '%Y-%m-01'), INTERVAL 1 MONTH) AS next_month
+            )
+            SELECT
+              COALESCE(SUM(f.totale), 0) AS fatturato
+            FROM params p
+            LEFT JOIN tb_fatture f
+              ON COALESCE(f.data_fattura, f.created_at) >= p.start_month
+             AND COALESCE(f.data_fattura, f.created_at) < p.next_month
+            LEFT JOIN cfg_stati_fattura sf ON sf.id_stato = f.id_stato_fatt
+            WHERE sf.code IS NULL OR sf.code <> 'bozza'
+        SQL;
+
+        $stmt = $this->pdo->query($sql);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$row) {
+            return 0.0;
+        }
+
+        return isset($row['fatturato']) ? (float) $row['fatturato'] : 0.0;
+    }
+
+    /**
+     * @return list<array{id_anagrafica:int|null, ragione_sociale:?string, fatturato:float}>
+     */
+    public function listTopClientsByRevenue(string $startDate, string $endDate, int $limit = 5): array
+    {
+        $effectiveLimit = max(1, $limit);
+        $sql = <<<'SQL'
+            SELECT
+              a.id_anagrafica,
+              a.ragione_sociale,
+              COALESCE(SUM(f.totale), 0) AS fatturato
+            FROM tb_fatture f
+            LEFT JOIN tb_anagrafiche a ON a.id_anagrafica = f.id_anagrafica
+            LEFT JOIN cfg_stati_fattura sf ON sf.id_stato = f.id_stato_fatt
+            WHERE COALESCE(f.data_fattura, f.created_at) >= :start
+              AND COALESCE(f.data_fattura, f.created_at) < :end
+              AND (sf.code IS NULL OR sf.code <> 'bozza')
+            GROUP BY a.id_anagrafica, a.ragione_sociale
+            ORDER BY fatturato DESC
+            LIMIT :limit
+        SQL;
+
+        $sql = str_replace('LIMIT :limit', 'LIMIT ' . (int) $effectiveLimit, $sql);
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->bindValue(':start', $startDate);
+        $stmt->bindValue(':end', $endDate);
+        $stmt->execute();
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+        $out = [];
+        foreach ($rows as $row) {
+            $out[] = [
+                'id_anagrafica' => isset($row['id_anagrafica']) ? (int) $row['id_anagrafica'] : null,
+                'ragione_sociale' => $row['ragione_sociale'] ?? null,
+                'fatturato' => (float) ($row['fatturato'] ?? 0),
+            ];
+        }
+
         return $out;
     }
 
@@ -133,6 +206,206 @@ final class FattureRepository
     }
 
     /**
+     * @param string $code
+     * @return int|null
+     */
+    private function getTipoFatturaIdByCode(string $code): ?int
+    {
+        if (array_key_exists($code, $this->tipoFatturaIdCache)) {
+            return $this->tipoFatturaIdCache[$code];
+        }
+
+        $stmt = $this->pdo->prepare('SELECT id_tipo FROM cfg_tipi_fattura WHERE code = :code LIMIT 1');
+        $stmt->bindValue(':code', $code, PDO::PARAM_STR);
+        $stmt->execute();
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($row === false) {
+            $this->tipoFatturaIdCache[$code] = null;
+            return null;
+        }
+
+        $id = isset($row['id_tipo']) ? (int) $row['id_tipo'] : null;
+        $this->tipoFatturaIdCache[$code] = $id > 0 ? $id : null;
+        return $this->tipoFatturaIdCache[$code];
+    }
+
+    /**
+     * @param int $invoiceId
+     * @return int|null
+     */
+    private function getPreventivoIdForInvoice(int $invoiceId): ?int
+    {
+        if (isset($this->preventivoLinkCache[$invoiceId])) {
+            return $this->preventivoLinkCache[$invoiceId];
+        }
+
+        $stmt = $this->pdo->prepare('SELECT id_preventivo FROM appoggio_preventivo_fattura WHERE id_fattura = :id LIMIT 1');
+        $stmt->bindValue(':id', $invoiceId, PDO::PARAM_INT);
+        $stmt->execute();
+        $value = $stmt->fetchColumn();
+        if ($value === false) {
+            $this->preventivoLinkCache[$invoiceId] = null;
+            return null;
+        }
+
+        $preventivoId = (int) $value;
+        $this->preventivoLinkCache[$invoiceId] = $preventivoId > 0 ? $preventivoId : null;
+        return $this->preventivoLinkCache[$invoiceId];
+    }
+
+    /**
+     * @param string|null $current
+     * @param string $suffix
+     * @return string
+     */
+    private function mergeNoteWithSuffix(?string $current, string $suffix): string
+    {
+        $trimmed = $current !== null ? trim($current) : '';
+        if ($trimmed !== '' && stripos($trimmed, $suffix) !== false) {
+            return $trimmed;
+        }
+        if ($trimmed === '') {
+            return $suffix;
+        }
+        return $trimmed . "\n" . $suffix;
+    }
+
+    /**
+     * @param string|null $rawDate
+     * @return string
+     */
+    private function formatDocumentDate(?string $rawDate): string
+    {
+        if (empty($rawDate)) {
+            return 'sconosciuta';
+        }
+        try {
+            $dt = new DateTimeImmutable((string) $rawDate);
+            return $dt->format('d/m/Y');
+        } catch (\Throwable $exception) {
+            return (string) $rawDate;
+        }
+    }
+
+    /**
+     * @param array<string,mixed> $creditNote
+     * @return string
+     */
+    private function buildCreditNoteReferenceMessage(array $creditNote): string
+    {
+        $number = isset($creditNote['numero_documento']) ? (int) $creditNote['numero_documento'] : null;
+        $date = $creditNote['data_fattura'] ?? null;
+        $formattedDate = $this->formatDocumentDate($date);
+        $numberLabel = $number !== null && $number > 0 ? (string) $number : 'sconosciuto';
+        return sprintf('Generata nota credito n. %s del %s', $numberLabel, $formattedDate);
+    }
+
+    /**
+     * @param array<string,mixed> $invoiceDetail
+     * @return string
+     */
+    private function buildCreditNoteOriginMessage(array $invoiceDetail): string
+    {
+        $number = isset($invoiceDetail['numero_documento']) ? (int) $invoiceDetail['numero_documento'] : null;
+        $date = $invoiceDetail['data_fattura'] ?? null;
+        $formattedDate = $this->formatDocumentDate($date);
+        $numberLabel = $number !== null && $number > 0 ? (string) $number : 'sconosciuto';
+        return sprintf('Generata da fattura %s del %s', $numberLabel, $formattedDate);
+    }
+
+    /**
+     * @param int $invoiceId
+     * @param string $note
+     */
+    private function updateInvoiceNoteField(int $invoiceId, string $note): void
+    {
+        $stmt = $this->pdo->prepare('UPDATE tb_fatture SET note = :note, updated_at = NOW() WHERE id_fattura = :id LIMIT 1');
+        $stmt->bindValue(':note', trim($note), PDO::PARAM_STR);
+        $stmt->bindValue(':id', $invoiceId, PDO::PARAM_INT);
+        $stmt->execute();
+    }
+
+    /**
+     * @param array<string,mixed> $invoiceDetail
+     * @param int|null $preventivoId
+     * @return array<string,mixed>
+     */
+    private function createCreditNoteForRejectedInvoice(array $invoiceDetail, ?int $preventivoId): array
+    {
+        $creditTypeId = $this->getTipoFatturaIdByCode('nota_credito');
+        if ($creditTypeId === null) {
+            throw new RuntimeException('Tipo fattura nota credito non configurato.', 500);
+        }
+        $statusInviataId = $this->getStatoIdByCode('inviata');
+        if ($statusInviataId === null) {
+            throw new RuntimeException('Stato "inviata" non configurato.', 500);
+        }
+
+        $today = new DateTimeImmutable();
+        $currentNote = $invoiceDetail['note'] ?? null;
+        $originMessage = $this->buildCreditNoteOriginMessage($invoiceDetail);
+        $creditNoteNote = $this->mergeNoteWithSuffix($currentNote, $originMessage);
+
+        $data = [
+            'id_anagrafica' => isset($invoiceDetail['id_anagrafica']) ? (int) $invoiceDetail['id_anagrafica'] : 0,
+            'id_sezionale' => isset($invoiceDetail['id_sezionale']) ? (int) $invoiceDetail['id_sezionale'] : 0,
+            'data_fattura' => $today->format('Y-m-d'),
+            'note' => $creditNoteNote,
+            'id_tipo_fatt' => $creditTypeId,
+            'id_stato_fatt' => $statusInviataId,
+            'totale_imponibile' => $invoiceDetail['totale_imponibile'] ?? 0.0,
+            'totale_sconto' => $invoiceDetail['totale_sconto'] ?? 0.0,
+            'totale_iva' => $invoiceDetail['totale_iva'] ?? 0.0,
+            'totale' => $invoiceDetail['totale'] ?? 0.0,
+            'saldo' => $invoiceDetail['saldo'] ?? $invoiceDetail['totale'] ?? 0.0,
+            'id_sdi_tipo_documento' => $invoiceDetail['id_sdi_tipo_documento'] ?? null,
+            'id_sdi_esigibilita' => $invoiceDetail['id_sdi_esigibilita'] ?? null,
+            'id_sdi_modalita' => $invoiceDetail['id_sdi_modalita'] ?? null,
+            'cliente_pec' => $invoiceDetail['cliente_pec'] ?? null,
+            'cliente_codice_sdi' => $invoiceDetail['cliente_codice_sdi'] ?? null,
+            'cliente_iban' => $invoiceDetail['cliente_iban'] ?? null,
+            'cliente_banca' => $invoiceDetail['cliente_banca'] ?? null,
+            'cliente_modalita_pagamento' => $invoiceDetail['cliente_modalita_pagamento'] ?? null,
+            'cliente_id_cond_pagamento' => $invoiceDetail['cliente_id_cond_pagamento'] ?? null,
+            'cliente_giorni_pagamento' => $invoiceDetail['cliente_giorni_pagamento'] ?? null,
+            'id_preventivo' => $preventivoId ?? 0,
+        ];
+        $lines = $invoiceDetail['righe'] ?? [];
+        $creditLines = $this->buildCreditNoteLines($lines);
+        return $this->createFromPreventivo($data, $creditLines);
+    }
+
+    /**
+     * @param array<string,mixed> $lines
+     * @return list<array<string,mixed>>
+     */
+    private function buildCreditNoteLines(array $lines): array
+    {
+        $result = [];
+        foreach ($lines as $line) {
+            if (!is_array($line)) {
+                continue;
+            }
+            $quantity = isset($line['quantita']) ? (float) $line['quantita'] : 0.0;
+            if ($quantity <= 0) {
+                continue;
+            }
+            $price = isset($line['prezzo_unitario']) ? (float) $line['prezzo_unitario'] : 0.0;
+            $negativePrice = $price !== 0.0 ? -abs($price) : 0.0;
+            $result[] = [
+                'descrizione' => $line['descrizione'] ?? '',
+                'quantita' => $quantity,
+                'prezzo_unitario' => $negativePrice,
+                'sconto' => $line['sconto'] ?? null,
+                'aliquota_iva' => $line['aliquota_iva'] ?? null,
+                'id_prodotto' => isset($line['id_prodotto']) ? (int) $line['id_prodotto'] : null,
+                'id_sdi_natura_iva' => isset($line['id_sdi_natura_iva']) ? (int) $line['id_sdi_natura_iva'] : null,
+            ];
+        }
+        return $result;
+    }
+
+    /**
      * @return array<string,mixed>|null
      */
     public function fetchDetail(int $id): ?array
@@ -166,14 +439,14 @@ final class FattureRepository
                 a.ragione_sociale AS cliente_ragione_sociale,
                 a.piva AS cliente_piva,
                 a.codice_fiscale AS cliente_codice_fiscale,
-                af.pec AS cliente_pec,
-                af.codice_sdi AS cliente_codice_sdi,
-                af.iban AS cliente_iban,
-                af.banca AS cliente_banca,
-                af.id_cond_pagamento AS cliente_id_cond_pagamento,
-                af.modalita_pagamento AS cliente_modalita_pagamento,
-                af.giorni_pagamento AS cliente_giorni_pagamento,
-                af.altri_dati AS cliente_altri_dati,
+                COALESCE(f.cliente_pec, af.pec) AS cliente_pec,
+                COALESCE(f.cliente_codice_sdi, af.codice_sdi) AS cliente_codice_sdi,
+                COALESCE(f.cliente_iban, af.iban) AS cliente_iban,
+                COALESCE(f.cliente_banca, af.banca) AS cliente_banca,
+                COALESCE(f.cliente_id_cond_pagamento, af.id_cond_pagamento) AS cliente_id_cond_pagamento,
+                COALESCE(f.cliente_modalita_pagamento, af.modalita_pagamento) AS cliente_modalita_pagamento,
+                COALESCE(f.cliente_giorni_pagamento, af.giorni_pagamento) AS cliente_giorni_pagamento,
+                COALESCE(f.cliente_altri_dati, af.altri_dati) AS cliente_altri_dati,
                 s.indirizzo AS cliente_indirizzo,
                 s.civico AS cliente_civico,
                 s.cap AS cliente_cap,
@@ -368,7 +641,7 @@ final class FattureRepository
      */
     public function listStati(): array
     {
-        $stmt = $this->pdo->query('SELECT id_stato, code, label FROM cfg_stati_fattura WHERE attivo = 1 ORDER BY ordering ASC, id_stato ASC');
+        $stmt = $this->pdo->query('SELECT id_stato, code, label, timeline_color, timeline_icon FROM cfg_stati_fattura WHERE attivo = 1 ORDER BY ordering ASC, id_stato ASC');
         $rows = $stmt ? $stmt->fetchAll(PDO::FETCH_ASSOC) : [];
         $items = [];
         foreach ($rows as $row) {
@@ -376,6 +649,9 @@ final class FattureRepository
                 'id_stato' => (int) $row['id_stato'],
                 'code' => (string) ($row['code'] ?? ''),
                 'label' => (string) ($row['label'] ?? ''),
+                'timeline_color' => $row['timeline_color'] ?? null,
+                'timeline_icon' => $row['timeline_icon'] ?? null,
+                'colore' => $row['colore'] ?? null,
             ];
         }
         return $items;
@@ -586,6 +862,89 @@ final class FattureRepository
     }
 
     /**
+     * @return array{anno:int,numero:int}
+     */
+    private function reserveNumeroDocumenti(int $idSezionale, DateTimeImmutable $date): array
+    {
+        $anno = (int) $date->format('Y');
+        if ($anno <= 0) {
+            throw new RuntimeException('Anno fattura non valido.', 422);
+        }
+
+        $baseNext = $this->fetchMaxNumeroDocumenti($idSezionale, $anno) + 1;
+        if ($baseNext < 1) {
+            $baseNext = 1;
+        }
+
+        while (true) {
+            $select = $this->pdo->prepare(
+                'SELECT next_num FROM cfg_sezionali_progress WHERE id_sezionale = :id_sezionale AND anno = :anno FOR UPDATE'
+            );
+            $select->bindValue(':id_sezionale', $idSezionale, PDO::PARAM_INT);
+            $select->bindValue(':anno', $anno, PDO::PARAM_INT);
+            $select->execute();
+            $row = $select->fetch(PDO::FETCH_ASSOC);
+            if ($row !== false) {
+                $current = isset($row['next_num']) ? (int) $row['next_num'] : 1;
+                $candidate = max($current, $baseNext);
+                $desired = $candidate + 1;
+
+                $update = $this->pdo->prepare(
+                    'UPDATE cfg_sezionali_progress SET next_num = :next WHERE id_sezionale = :id_sezionale AND anno = :anno'
+                );
+                $update->bindValue(':next', $desired, PDO::PARAM_INT);
+                $update->bindValue(':id_sezionale', $idSezionale, PDO::PARAM_INT);
+                $update->bindValue(':anno', $anno, PDO::PARAM_INT);
+                $update->execute();
+                return ['anno' => $anno, 'numero' => $candidate];
+            }
+
+            try {
+                $insert = $this->pdo->prepare(
+                    'INSERT INTO cfg_sezionali_progress (id_sezionale, anno, next_num) VALUES (:id_sezionale, :anno, :next)'
+                );
+                $insert->bindValue(':id_sezionale', $idSezionale, PDO::PARAM_INT);
+                $insert->bindValue(':anno', $anno, PDO::PARAM_INT);
+                $insert->bindValue(':next', $baseNext + 1, PDO::PARAM_INT);
+                $insert->execute();
+                return ['anno' => $anno, 'numero' => $baseNext];
+            } catch (PDOException $exception) {
+                if ($this->isDuplicateEntryException($exception, 'cfg_sezionali_progress')) {
+                    continue;
+                }
+                throw $exception;
+            }
+        }
+    }
+
+    private function fetchMaxNumeroDocumenti(int $idSezionale, int $anno): int
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT COALESCE(MAX(numero_documento), 0) AS max_num FROM tb_fatture WHERE id_sezionale = :id_sezionale AND anno = :anno'
+        );
+        $stmt->bindValue(':id_sezionale', $idSezionale, PDO::PARAM_INT);
+        $stmt->bindValue(':anno', $anno, PDO::PARAM_INT);
+        $stmt->execute();
+        $value = $stmt->fetchColumn();
+        return is_numeric($value) ? (int) $value : 0;
+    }
+
+    private function isDuplicateEntryException(PDOException $exception, string $needle = ''): bool
+    {
+        $info = $exception->errorInfo;
+        if (!is_array($info)) {
+            return false;
+        }
+        if (($info[0] ?? '') !== '23000' || ($info[1] ?? 0) !== 1062) {
+            return false;
+        }
+        if ($needle === '') {
+            return true;
+        }
+        return str_contains((string) ($info[2] ?? ''), $needle);
+    }
+
+    /**
      * @param array<string,mixed> $data
      * @param list<array<string,mixed>> $righe
      * @return array<string,mixed>
@@ -624,8 +983,14 @@ final class FattureRepository
         $idPreventivo = isset($data['id_preventivo']) ? (int) $data['id_preventivo'] : 0;
 
         $this->ensureRecalcProcedureExists();
-        $this->pdo->beginTransaction();
+        $manageTransaction = !$this->pdo->inTransaction();
+        if ($manageTransaction) {
+            $this->pdo->beginTransaction();
+        }
         try {
+            $numbering = $this->reserveNumeroDocumenti($idSezionale, $date);
+            $annoFattura = $numbering['anno'];
+            $numeroDocumento = $numbering['numero'];
             $stmt = $this->pdo->prepare(
                 'INSERT INTO tb_fatture (
                     id_sezionale,
@@ -651,8 +1016,8 @@ final class FattureRepository
                     :id_sezionale,
                     NULL,
                     :id_anagrafica,
-                    0,
-                    NULL,
+                    :anno,
+                    :numero_documento,
                     :data_fattura,
                     :id_tipo_fatt,
                     :totale_imponibile,
@@ -671,6 +1036,8 @@ final class FattureRepository
             );
             $stmt->bindValue(':id_sezionale', $idSezionale, PDO::PARAM_INT);
             $stmt->bindValue(':id_anagrafica', $idAnagrafica, PDO::PARAM_INT);
+            $stmt->bindValue(':anno', $annoFattura, PDO::PARAM_INT);
+            $stmt->bindValue(':numero_documento', $numeroDocumento, PDO::PARAM_INT);
             $stmt->bindValue(':data_fattura', $dateValue, PDO::PARAM_STR);
             $stmt->bindValue(':id_tipo_fatt', $idTipoFatt, PDO::PARAM_INT);
             $stmt->bindValue(':totale_imponibile', $totImponibile, PDO::PARAM_STR);
@@ -762,9 +1129,13 @@ final class FattureRepository
                 $linkStmt->execute();
             }
 
-            $this->pdo->commit();
+            if ($manageTransaction && $this->pdo->inTransaction()) {
+                $this->pdo->commit();
+            }
         } catch (\Throwable $exception) {
-            $this->pdo->rollBack();
+            if ($manageTransaction && $this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
             throw $exception;
         }
 
@@ -805,6 +1176,8 @@ final class FattureRepository
         $params = [':id' => $id];
         $types = [':id' => PDO::PARAM_INT];
         $hasChanges = false;
+        $rifiutataStatusId = $this->getStatoIdByCode('rifiutata');
+        $shouldCreateCreditNote = false;
 
         if (array_key_exists('data_fattura', $data)) {
             $rawDate = $data['data_fattura'];
@@ -837,6 +1210,9 @@ final class FattureRepository
             $params[':id_stato_fatt'] = $status;
             $types[':id_stato_fatt'] = PDO::PARAM_INT;
             $newStatusId = $status;
+            if ($rifiutataStatusId !== null && $status === $rifiutataStatusId && $previousStatusId !== $status) {
+                $shouldCreateCreditNote = true;
+            }
         }
 
         if (array_key_exists('id_sezionale', $data)) {
@@ -864,29 +1240,157 @@ final class FattureRepository
             }
         }
 
-        if (!empty($setClauses)) {
-            $setClauses[] = 'updated_at = NOW()';
-            $sql = 'UPDATE tb_fatture SET ' . implode(', ', $setClauses) . ' WHERE id_fattura = :id LIMIT 1';
-            $stmt = $this->pdo->prepare($sql);
-            foreach ($params as $placeholder => $value) {
-                $type = $types[$placeholder] ?? PDO::PARAM_STR;
-                if ($value === null) {
-                    $stmt->bindValue($placeholder, null, PDO::PARAM_NULL);
-                } else {
-                    $stmt->bindValue($placeholder, $value, $type);
-                }
-            }
-            $stmt->execute();
-            $hasChanges = true;
-            if ($newStatusId !== null && $newStatusId !== $previousStatusId) {
-                $this->logStatusHistory($id, $previousStatusId, $newStatusId);
+        if (array_key_exists('cliente_pec', $data)) {
+            $raw = $data['cliente_pec'];
+            $value = $raw === null ? '' : trim((string) $raw);
+            if ($value === '') {
+                $setClauses[] = 'cliente_pec = NULL';
+            } else {
+                $setClauses[] = 'cliente_pec = :cliente_pec';
+                $params[':cliente_pec'] = $value;
+                $types[':cliente_pec'] = PDO::PARAM_STR;
             }
         }
 
-        if (array_key_exists('righe', $data)) {
-            $lines = is_array($data['righe']) ? $data['righe'] : [];
-            $this->replaceLines($id, $lines);
-            $hasChanges = true;
+        if (array_key_exists('cliente_codice_sdi', $data)) {
+            $raw = $data['cliente_codice_sdi'];
+            $value = $raw === null ? '' : trim((string) $raw);
+            if ($value === '') {
+                $setClauses[] = 'cliente_codice_sdi = NULL';
+            } else {
+                $setClauses[] = 'cliente_codice_sdi = :cliente_codice_sdi';
+                $params[':cliente_codice_sdi'] = $value;
+                $types[':cliente_codice_sdi'] = PDO::PARAM_STR;
+            }
+        }
+
+        if (array_key_exists('cliente_iban', $data)) {
+            $raw = $data['cliente_iban'];
+            $value = $raw === null ? '' : trim((string) $raw);
+            if ($value === '') {
+                $setClauses[] = 'cliente_iban = NULL';
+            } else {
+                $setClauses[] = 'cliente_iban = :cliente_iban';
+                $params[':cliente_iban'] = $value;
+                $types[':cliente_iban'] = PDO::PARAM_STR;
+            }
+        }
+
+        if (array_key_exists('cliente_banca', $data)) {
+            $raw = $data['cliente_banca'];
+            $value = $raw === null ? '' : trim((string) $raw);
+            if ($value === '') {
+                $setClauses[] = 'cliente_banca = NULL';
+            } else {
+                $setClauses[] = 'cliente_banca = :cliente_banca';
+                $params[':cliente_banca'] = $value;
+                $types[':cliente_banca'] = PDO::PARAM_STR;
+            }
+        }
+
+        if (array_key_exists('cliente_modalita_pagamento', $data)) {
+            $raw = $data['cliente_modalita_pagamento'];
+            $value = $raw === null ? '' : trim((string) $raw);
+            if ($value === '') {
+                $setClauses[] = 'cliente_modalita_pagamento = NULL';
+            } else {
+                $setClauses[] = 'cliente_modalita_pagamento = :cliente_modalita_pagamento';
+                $params[':cliente_modalita_pagamento'] = $value;
+                $types[':cliente_modalita_pagamento'] = PDO::PARAM_STR;
+            }
+        }
+
+        if (array_key_exists('cliente_id_cond_pagamento', $data)) {
+            $raw = $data['cliente_id_cond_pagamento'];
+            if ($raw === null || $raw === '') {
+                $setClauses[] = 'cliente_id_cond_pagamento = NULL';
+            } else {
+                if (!is_numeric($raw)) {
+                    throw new RuntimeException('Condizione pagamento non valida.', 422);
+                }
+                $termId = (int) $raw;
+                if ($termId <= 0) {
+                    $setClauses[] = 'cliente_id_cond_pagamento = NULL';
+                } else {
+                    $setClauses[] = 'cliente_id_cond_pagamento = :cliente_id_cond_pagamento';
+                    $params[':cliente_id_cond_pagamento'] = $termId;
+                    $types[':cliente_id_cond_pagamento'] = PDO::PARAM_INT;
+                }
+            }
+        }
+
+        if (array_key_exists('cliente_giorni_pagamento', $data)) {
+            $raw = $data['cliente_giorni_pagamento'];
+            if ($raw === null || $raw === '') {
+                $setClauses[] = 'cliente_giorni_pagamento = NULL';
+            } else {
+                if (!is_numeric($raw)) {
+                    throw new RuntimeException('Giorni pagamento non validi.', 422);
+                }
+                $days = (int) $raw;
+                if ($days < 0) {
+                    throw new RuntimeException('Giorni pagamento non validi.', 422);
+                }
+                $setClauses[] = 'cliente_giorni_pagamento = :cliente_giorni_pagamento';
+                $params[':cliente_giorni_pagamento'] = $days;
+                $types[':cliente_giorni_pagamento'] = PDO::PARAM_INT;
+            }
+        }
+
+        $manageTransaction = !$this->pdo->inTransaction();
+        if ($manageTransaction) {
+            $this->pdo->beginTransaction();
+        }
+        try {
+            if (!empty($setClauses)) {
+                $setClauses[] = 'updated_at = NOW()';
+                $sql = 'UPDATE tb_fatture SET ' . implode(', ', $setClauses) . ' WHERE id_fattura = :id LIMIT 1';
+                $stmt = $this->pdo->prepare($sql);
+                foreach ($params as $placeholder => $value) {
+                    $type = $types[$placeholder] ?? PDO::PARAM_STR;
+                    if ($value === null) {
+                        $stmt->bindValue($placeholder, null, PDO::PARAM_NULL);
+                    } else {
+                        $stmt->bindValue($placeholder, $value, $type);
+                    }
+                }
+                $stmt->execute();
+                $hasChanges = true;
+                if ($newStatusId !== null && $newStatusId !== $previousStatusId) {
+                    $this->logStatusHistory($id, $previousStatusId, $newStatusId);
+                }
+            }
+
+            if (array_key_exists('righe', $data)) {
+                $lines = is_array($data['righe']) ? $data['righe'] : [];
+                $this->replaceLines($id, $lines);
+                $hasChanges = true;
+            }
+
+            if ($shouldCreateCreditNote) {
+                $updatedInvoice = $this->fetchDetail($id);
+                if ($updatedInvoice === null) {
+                    throw new RuntimeException('Impossibile recuperare la fattura aggiornata per generare la nota di credito.', 500);
+                }
+                $preventivoId = $this->getPreventivoIdForInvoice($id);
+                $creditNote = $this->createCreditNoteForRejectedInvoice($updatedInvoice, $preventivoId);
+                $creditNoteMessage = $this->buildCreditNoteReferenceMessage($creditNote);
+                $currentNote = $updatedInvoice['note'] ?? null;
+                $updatedNote = $this->mergeNoteWithSuffix($currentNote, $creditNoteMessage);
+                if ($updatedNote !== ($currentNote ?? '')) {
+                    $this->updateInvoiceNoteField($id, $updatedNote);
+                }
+                $hasChanges = true;
+            }
+
+            if ($manageTransaction && $this->pdo->inTransaction()) {
+                $this->pdo->commit();
+            }
+        } catch (\Throwable $exception) {
+            if ($manageTransaction && $this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            throw $exception;
         }
 
         if (!$hasChanges) {
@@ -998,7 +1502,10 @@ final class FattureRepository
         }
 
         $this->ensureRecalcProcedureExists();
-        $this->pdo->beginTransaction();
+        $manageTransaction = !$this->pdo->inTransaction();
+        if ($manageTransaction) {
+            $this->pdo->beginTransaction();
+        }
         try {
             $del = $this->pdo->prepare('DELETE FROM tb_fatture_righe WHERE id_fattura = :id');
             $del->bindValue(':id', $id, PDO::PARAM_INT);
@@ -1060,9 +1567,13 @@ final class FattureRepository
                 $posizione++;
             }
 
-            $this->pdo->commit();
+            if ($manageTransaction && $this->pdo->inTransaction()) {
+                $this->pdo->commit();
+            }
         } catch (\Throwable $exception) {
-            $this->pdo->rollBack();
+            if ($manageTransaction && $this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
             throw $exception;
         }
     }
@@ -1559,7 +2070,11 @@ final class FattureRepository
         $saldo = round(max(0.0, $totale - $totalePagato), 2);
         $newStatusId = null;
         if ($totale > 0) {
-            if (abs($saldo) < 0.009) {
+            $isFullyUnpaid = abs($saldo - $totale) < 0.009;
+            $isFullyPaid = abs($saldo) < 0.009;
+            if ($isFullyUnpaid) {
+                $newStatusId = $this->getStatoIdByCode('inviata');
+            } elseif ($isFullyPaid) {
                 $saldo = 0.0;
                 $newStatusId = $this->getStatoIdByCode('pagata');
             } elseif ($saldo > 0 && $saldo < $totale) {

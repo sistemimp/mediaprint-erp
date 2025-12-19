@@ -21,6 +21,14 @@ export const fetchFattureList = async ({ token, limit, signal } = {}) => {
   return { items }
 }
 
+export const fetchFattureDashboard = async ({ token, signal } = {}) => {
+  const payload = await apiFetch('/fattureDashboard.php', { token, signal })
+  if (!payload?.ok) {
+    throw new Error(payload?.message || 'API error')
+  }
+  return payload
+}
+
 export const fetchFatturaDetail = async ({ token, id, signal } = {}) => {
   const response = await apiFetch('/fattureDetail.php', {
     token,
@@ -92,6 +100,13 @@ export const updateFatturaDetail = async ({
   note,
   saldo,
   righe,
+  cliente_pec,
+  cliente_codice_sdi,
+  cliente_iban,
+  cliente_banca,
+  cliente_modalita_pagamento,
+  cliente_id_cond_pagamento,
+  cliente_giorni_pagamento,
   signal,
 } = {}) => {
   const payload = {
@@ -148,6 +163,28 @@ export const updateFatturaDetail = async ({
       }
       return normalized
     })
+  }
+
+  if (cliente_pec !== undefined) {
+    payload.cliente_pec = cliente_pec
+  }
+  if (cliente_codice_sdi !== undefined) {
+    payload.cliente_codice_sdi = cliente_codice_sdi
+  }
+  if (cliente_iban !== undefined) {
+    payload.cliente_iban = cliente_iban
+  }
+  if (cliente_banca !== undefined) {
+    payload.cliente_banca = cliente_banca
+  }
+  if (cliente_modalita_pagamento !== undefined) {
+    payload.cliente_modalita_pagamento = cliente_modalita_pagamento
+  }
+  if (cliente_id_cond_pagamento !== undefined) {
+    payload.cliente_id_cond_pagamento = cliente_id_cond_pagamento
+  }
+  if (cliente_giorni_pagamento !== undefined) {
+    payload.cliente_giorni_pagamento = cliente_giorni_pagamento
   }
 
   const response = await apiFetch('/fattureUpdate.php', {

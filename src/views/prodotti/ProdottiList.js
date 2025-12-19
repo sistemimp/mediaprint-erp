@@ -20,10 +20,10 @@ import {
   CTableRow,
 } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
-import { cilDescription, cilPlus } from '@coreui/icons'
+import { cilDescription, cilPlus, cilTrash } from '@coreui/icons'
 
 import { useAuth } from '../../context/AuthContext'
-import { fetchCategorieProdotti, fetchProdotti } from '../../services/prodotti'
+import { fetchCategorieProdotti, fetchProdotti, deleteProdotto } from '../../services/prodotti'
 
 const ProdottiList = () => {
   const navigate = useNavigate()
@@ -34,6 +34,8 @@ const ProdottiList = () => {
   const [filters, setFilters] = useState({ id_categoria: '', q: '' })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
+  const [feedback, setFeedback] = useState(null)
+  const [deletingId, setDeletingId] = useState(null)
   const [sorts, setSorts] = useState([{ field: 'codice', dir: 'asc' }])
 
   useEffect(() => {
@@ -62,6 +64,12 @@ const ProdottiList = () => {
     load()
     return () => controller.abort()
   }, [token, logout])
+
+  useEffect(() => {
+    if (!feedback) return undefined
+    const timer = window.setTimeout(() => setFeedback(null), 3000)
+    return () => window.clearTimeout(timer)
+  }, [feedback])
 
   const filtered = useMemo(() => {
     let out = items
@@ -136,6 +144,25 @@ const ProdottiList = () => {
     navigate(`/prodotti/dettagli?id=${id}`)
   }
 
+  const handleDelete = async (id) => {
+    if (!id) return
+    const confirmed = window.confirm('Sei sicuro di voler eliminare questo prodotto? Verrà nascosto dalla lista.')
+    if (!confirmed) return
+    setDeletingId(id)
+    try {
+      await deleteProdotto({ token, id })
+      setItems((prev) => prev.filter((item) => Number(item.id_prodotto) !== Number(id)))
+      setFeedback({ message: 'Prodotto eliminato', color: 'success' })
+      setError(null)
+    } catch (e) {
+      if (e.status === 401 && logout) { logout(); return }
+      setError(e)
+      setFeedback(null)
+    } finally {
+      setDeletingId(null)
+    }
+  }
+
   const onChangeFilter = (e) => {
     const { name, value } = e.target
     setFilters((prev) => ({ ...prev, [name]: value }))
@@ -178,6 +205,12 @@ const ProdottiList = () => {
           </CRow>
         </CForm>
 
+        {feedback && (
+          <CAlert color={feedback.color || 'success'} className="mb-3">
+            {feedback.message}
+          </CAlert>
+        )}
+
         {loading && (
           <div className="d-flex justify-content-center py-5"><CSpinner /></div>
         )}
@@ -210,11 +243,24 @@ const ProdottiList = () => {
                   <CTableDataCell>{row.codice || '-'}</CTableDataCell>
                   <CTableDataCell>{row.nome}</CTableDataCell>
                   <CTableDataCell>{row.prezzo_listino ?? '-'}</CTableDataCell>
-                  <CTableDataCell className="text-center">
-                    <CButton color="link" size="sm" className="p-0" onClick={() => handleView(row.id_prodotto)}>
-                      <CIcon icon={cilDescription} />
-                    </CButton>
-                  </CTableDataCell>
+                <CTableDataCell className="text-center">
+                    <div className="d-flex justify-content-center gap-2">
+                      <CButton color="link" size="sm" className="p-0" onClick={() => handleView(row.id_prodotto)}>
+                        <CIcon icon={cilDescription} />
+                      </CButton>
+                      <CButton
+                        color="danger"
+                        size="sm"
+                        variant="outline"
+                        className="p-0"
+                        title="Elimina"
+                        onClick={() => handleDelete(row.id_prodotto)}
+                        disabled={deletingId === row.id_prodotto}
+                      >
+                        {deletingId === row.id_prodotto ? <CSpinner size="sm" /> : <CIcon icon={cilTrash} />}
+                      </CButton>
+                    </div>
+                </CTableDataCell>
                 </CTableRow>
               ))}
             </CTableBody>

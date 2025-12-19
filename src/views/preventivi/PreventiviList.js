@@ -28,7 +28,7 @@ import {
   CModalFooter,
 } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
-import { cilDescription, cilEnvelopeClosed, cilPlus, cilPrint } from '@coreui/icons'
+import { cilDescription, cilEnvelopeClosed, cilPlus, cilPrint, cilZoom } from '@coreui/icons'
 
 import { useAuth } from '../../context/AuthContext'
 import {
@@ -38,6 +38,8 @@ import {
   archivePreventivo,
   sendPreventivoEmail,
   fetchPreventivoDetail,
+  fetchPreventivoRevisionDetail,
+  fetchPreventiviRevisionsSummary,
 } from '../../services/preventivi'
 import HtmlEditor from '../../components/HtmlEditor'
 
@@ -60,11 +62,109 @@ const formatDate = (value) => {
   return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleDateString('it-IT')
 }
 
+const formatDateTime = (value) => {
+  if (!value) return '-'
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString('it-IT')
+}
+
 const buildPreventivoPdfUrl = (id) => {
   const numericId = Number(id)
   if (!Number.isFinite(numericId) || numericId <= 0) return null
   return `https://jaspersoft.mediaprint.it/jasperserver/rest_v2/reports/Mediaprint/GestionaleMP/Preventivi.pdf?id_preventivo=${numericId}&j_username=gestionaleMp&j_password=gestionaleMp`
 }
+
+const pickLineValue = (line, keys = []) => {
+  if (!line || !keys.length) return undefined
+  for (const key of keys) {
+    const value = line[key]
+    if (value !== undefined && value !== null) {
+      return value
+    }
+  }
+  return undefined
+}
+
+const getLineQuantity = (line) => {
+  const raw = pickLineValue(line, ['quantita', 'quantità', 'qta', 'qty', 'quantity'])
+  const numeric = Number(raw)
+  return Number.isFinite(numeric) ? numeric : 0
+}
+
+const getLineDescription = (line) => {
+  return pickLineValue(line, ['descrizione', 'nome_prodotto', 'description']) ?? '-'
+}
+
+const getLinePrice = (line) => {
+  const raw = pickLineValue(line, ['prezzo', 'prezzo_unitario', 'price', 'pu']) ?? 0
+  const numeric = Number(raw)
+  return Number.isFinite(numeric) ? numeric : 0
+}
+
+const getLineDiscount = (line) => {
+  const raw = pickLineValue(line, ['sconto', 'discount']) ?? 0
+  const numeric = Number(raw)
+  return Number.isFinite(numeric) ? numeric : 0
+}
+
+const getLineVatPercent = (line) => {
+  const raw = pickLineValue(line, ['iva', 'vat', 'aliquota']) ?? null
+  const numeric = Number(raw)
+  return Number.isFinite(numeric) ? numeric : null
+}
+
+const getLineTotal = (line) => {
+  const raw = pickLineValue(line, ['totale', 'importo', 'prezzo_totale'])
+  if (raw !== undefined && raw !== null) {
+    const numeric = Number(raw)
+    if (Number.isFinite(numeric)) return numeric
+  }
+  const qty = getLineQuantity(line)
+  const price = getLinePrice(line)
+  return qty * price
+}
+
+const formatVatLabel = (line) => {
+  const percent = getLineVatPercent(line)
+  if (percent === null) return '-'
+  const fixed = percent.toFixed(2).replace('.', ',')
+  return `${fixed}%`
+}
+
+  const renderLinesTable = (lines, emptyMessage) => {
+    const normalized = Array.isArray(lines) ? lines : []
+    if (normalized.length === 0) {
+      return <div className="small text-body-secondary">{emptyMessage}</div>
+    }
+    return (
+      <div className="table-responsive" style={{ maxHeight: 'calc(90vh - 380px)' }}>
+        <CTable small className="mb-0 align-middle">
+          <CTableHead color="light">
+            <CTableRow>
+              <CTableHeaderCell className="text-nowrap">Qtd.</CTableHeaderCell>
+              <CTableHeaderCell>Descrizione</CTableHeaderCell>
+              <CTableHeaderCell className="text-nowrap">Prezzo</CTableHeaderCell>
+              <CTableHeaderCell className="text-nowrap">IVA</CTableHeaderCell>
+              <CTableHeaderCell className="text-nowrap">Sconto</CTableHeaderCell>
+              <CTableHeaderCell className="text-end text-nowrap">Importo</CTableHeaderCell>
+            </CTableRow>
+          </CTableHead>
+          <CTableBody>
+            {normalized.map((line, idx) => (
+              <CTableRow key={`${line.id_riga ?? line.id ?? idx}-${idx}`}>
+                <CTableDataCell className="text-nowrap">{getLineQuantity(line)}</CTableDataCell>
+                <CTableDataCell>{getLineDescription(line)}</CTableDataCell>
+                <CTableDataCell className="text-nowrap">{formatCurrency(getLinePrice(line))}</CTableDataCell>
+                <CTableDataCell className="text-nowrap">{formatVatLabel(line)}</CTableDataCell>
+                <CTableDataCell className="text-nowrap">{formatCurrency(getLineDiscount(line))}</CTableDataCell>
+                <CTableDataCell className="text-end text-nowrap">{formatCurrency(getLineTotal(line))}</CTableDataCell>
+              </CTableRow>
+            ))}
+          </CTableBody>
+        </CTable>
+      </div>
+    )
+  }
 
 const PreventiviList = () => {
   const navigate = useNavigate()
@@ -87,6 +187,121 @@ const PreventiviList = () => {
   const [emailError, setEmailError] = useState(null)
   const [emailSuccess, setEmailSuccess] = useState(null)
   const [emailTarget, setEmailTarget] = useState(null)
+  const [revisionDetailModalVisible, setRevisionDetailModalVisible] = useState(false)
+  const [revisionDetailModalLoading, setRevisionDetailModalLoading] = useState(false)
+  const [revisionDetailModalError, setRevisionDetailModalError] = useState(null)
+  const [revisionDetailModalData, setRevisionDetailModalData] = useState(null)
+  const [expandedRevisions, setExpandedRevisions] = useState({})
+  const revisionDetailData = revisionDetailModalData?.payload?.detail?.data ?? {}
+  const revisionDetailDocumentNumber = revisionDetailData.anno_preventivo
+    ? `${revisionDetailData.anno_preventivo}/${revisionDetailData.numero_documento ?? '-'}`
+    : (revisionDetailData.numero_documento ? String(revisionDetailData.numero_documento) : '-')
+  const revisionDetailClientLabel =
+    revisionDetailData.cliente_ragione_sociale ?? revisionDetailData.ragione_sociale ?? '-'
+  const revisionDetailClientIdentifiers = [
+    revisionDetailData.cliente_piva ? `P.IVA ${revisionDetailData.cliente_piva}` : null,
+    revisionDetailData.cliente_codice_fiscale ? `CF ${revisionDetailData.cliente_codice_fiscale}` : null,
+  ]
+    .filter(Boolean)
+    .join(' • ')
+  const revisionLines = Array.isArray(revisionDetailModalData?.payload?.detail?.righe)
+    ? revisionDetailModalData.payload.detail.righe
+    : []
+  const [currentPreventivoDetail, setCurrentPreventivoDetail] = useState(null)
+  const [currentPreventivoLines, setCurrentPreventivoLines] = useState([])
+  const currentPreventivoDocumentNumber = currentPreventivoDetail
+    ? (currentPreventivoDetail.anno_preventivo
+      ? `${currentPreventivoDetail.anno_preventivo}/${currentPreventivoDetail.numero_documento ?? '-'}`
+      : (currentPreventivoDetail.numero_documento ? String(currentPreventivoDetail.numero_documento) : '-'))
+    : '-'
+  const currentPreventivoClientLabel = currentPreventivoDetail?.cliente_ragione_sociale
+    ?? currentPreventivoDetail?.ragione_sociale
+    ?? '-'
+  const currentPreventivoClientIdentifiers = currentPreventivoDetail
+    ? [
+      currentPreventivoDetail.cliente_piva ? `P.IVA ${currentPreventivoDetail.cliente_piva}` : null,
+      currentPreventivoDetail.cliente_codice_fiscale ? `CF ${currentPreventivoDetail.cliente_codice_fiscale}` : null,
+    ].filter(Boolean).join(' • ')
+    : ''
+  const currentPreventivoTotals = {
+    imponibile: currentPreventivoDetail?.totale_imponibile ?? currentPreventivoDetail?.totale ?? null,
+    iva: currentPreventivoDetail?.totale_iva ?? null,
+    totale: currentPreventivoDetail?.totale ?? currentPreventivoDetail?.totale_imponibile ?? null,
+  }
+  const currentPreventivoDocumentLabel = currentPreventivoDetail
+    ? (currentPreventivoDocumentNumber !== '-' ? currentPreventivoDocumentNumber : `Preventivo #${currentPreventivoDetail.id_preventivo ?? '-'}`)
+    : '-'
+  const currentPreventivoUpdatedLabel = currentPreventivoDetail?.updated_at
+    ? formatDateTime(currentPreventivoDetail.updated_at)
+    : 'Data non disponibile'
+  const [revisionSummaries, setRevisionSummaries] = useState({})
+  const handleOpenRevisionDetail = useCallback(
+    async (revisionId, preventivoId) => {
+      if (!token) return
+      const numericRevisionId = Number(revisionId)
+      if (!Number.isFinite(numericRevisionId) || numericRevisionId <= 0) return
+      setRevisionDetailModalVisible(true)
+      setRevisionDetailModalLoading(true)
+      setRevisionDetailModalError(null)
+      setRevisionDetailModalData(null)
+      setCurrentPreventivoDetail(null)
+      setCurrentPreventivoLines([])
+      try {
+        const { revision } = await fetchPreventivoRevisionDetail({
+          token,
+          id: numericRevisionId,
+        })
+        setRevisionDetailModalData(revision ?? null)
+        const numericPreventivoId = Number(preventivoId)
+        if (Number.isFinite(numericPreventivoId) && numericPreventivoId > 0) {
+          try {
+            const detailResult = await fetchPreventivoDetail({
+              token,
+              id: numericPreventivoId,
+            })
+            setCurrentPreventivoDetail(detailResult?.data ?? null)
+            setCurrentPreventivoLines(Array.isArray(detailResult?.righe) ? detailResult.righe : [])
+          } catch (detailError) {
+            // Silently ignore; comparison is best-effort.
+          }
+        }
+      } catch (error) {
+        if (error?.status === 401 && logout) {
+          logout()
+          return
+        }
+        setRevisionDetailModalError(error)
+      } finally {
+        setRevisionDetailModalLoading(false)
+      }
+    },
+    [fetchPreventivoDetail, fetchPreventivoRevisionDetail, logout, token],
+  )
+
+  const toggleRevisionRows = useCallback((id) => {
+    if (!id) return
+    setExpandedRevisions((prev) => ({ ...prev, [id]: !prev[id] }))
+  }, [])
+
+  const handleRowClick = useCallback(
+    (id, event) => {
+      if (!id) return
+      const target = event?.target
+      if (target?.closest && target.closest('button, a')) {
+        return
+      }
+      toggleRevisionRows(id)
+    },
+    [toggleRevisionRows],
+  )
+
+  const handleCloseRevisionModal = useCallback(() => {
+    setRevisionDetailModalVisible(false)
+    setRevisionDetailModalError(null)
+    setRevisionDetailModalData(null)
+    setCurrentPreventivoDetail(null)
+    setCurrentPreventivoLines([])
+  }, [])
 
   useEffect(() => {
     if (!token) return
@@ -239,6 +454,13 @@ const PreventiviList = () => {
     return groupedFlat.slice(start, start + rowsPerPage)
   }, [groupedFlat, page, rowsPerPage])
 
+  const visiblePreventivoIds = useMemo(() => {
+    return pageItems
+      .filter((entry) => entry.type === 'item')
+      .map((entry) => Number(entry.data?.id_preventivo))
+      .filter((id) => Number.isFinite(id) && id > 0)
+  }, [pageItems])
+
   const toggleSort = (field, shiftKey = false) => {
     setSorts((prev) => {
       if (!shiftKey) {
@@ -269,6 +491,49 @@ const PreventiviList = () => {
     for (let p = 1; p <= totalPages; p += 1) pages.push(p)
     return pages
   }, [page, totalPages])
+
+  useEffect(() => {
+    if (!token) {
+      setRevisionSummaries({})
+      return
+    }
+    if (visiblePreventivoIds.length === 0) {
+      setRevisionSummaries({})
+      return
+    }
+    const controller = new AbortController()
+    let active = true
+    const loadSummaries = async () => {
+      try {
+        const { data } = await fetchPreventiviRevisionsSummary({
+          token,
+          ids: visiblePreventivoIds,
+          signal: controller.signal,
+        })
+        if (!active) return
+        const mapping = {}
+        if (Array.isArray(data)) {
+          data.forEach((entry) => {
+            const key = Number(entry?.id_preventivo)
+            if (Number.isFinite(key) && key > 0) {
+              mapping[key] = Array.isArray(entry.revisions) ? entry.revisions : []
+            }
+          })
+        }
+        setRevisionSummaries(mapping)
+      } catch (err) {
+        if (err?.name === 'AbortError') return
+        if (err?.status === 401 && logout) {
+          logout()
+        }
+      }
+    }
+    loadSummaries()
+    return () => {
+      active = false
+      controller.abort()
+    }
+  }, [token, visiblePreventivoIds, logout])
 
   const handleView = (id) => {
     if (!id) return
@@ -448,6 +713,8 @@ const PreventiviList = () => {
         cc: emailForm.cc,
         subject: emailForm.subject,
         message: emailForm.body,
+        revisionNote: emailForm.subject,
+        revisionOperator: user?.username ?? user?.email ?? undefined,
       })
       if (!response?.ok) {
         const error = new Error(response?.message || 'Invio email non riuscito.')
@@ -586,68 +853,105 @@ const PreventiviList = () => {
                       )
                     }
                     const r = row.data
+                    const rowRevisions = Array.isArray(revisionSummaries[r.id_preventivo])
+                      ? revisionSummaries[r.id_preventivo]
+                      : []
+                    const latestRevision = rowRevisions[0] ?? null
+                    const latestRevisionLabel = latestRevision
+                      ? (latestRevision.label || `Rev.${latestRevision.numero_revision}`)
+                      : null
+                    const isExpanded = Boolean(expandedRevisions[r.id_preventivo])
                     return (
-                      <CTableRow key={r.id_preventivo ?? idx}>
-                        <CTableDataCell>
-                          {r.ragione_sociale || '-'}
-                        </CTableDataCell>
-                        <CTableDataCell>
-                          {(r.anno_preventivo ?? '-')}/{r.numero_documento ?? '-'}
-                        </CTableDataCell>
-                        <CTableDataCell>{formatDate(r.data_preventivo)}</CTableDataCell>
-                        <CTableDataCell>{r.riferimento_cliente || '-'}</CTableDataCell>
-                        <CTableDataCell>{formatCurrency(r.totale_imponibile)}</CTableDataCell>
-                        <CTableDataCell>{formatCurrency(r.totale_iva)}</CTableDataCell>
-                        <CTableDataCell>{formatCurrency(r.totale)}</CTableDataCell>
-                        <CTableDataCell className="text-center">
-                          {r.stato_label ? (
-                            <CBadge color="secondary">{r.stato_label}</CBadge>
-                          ) : (
-                            <span className="text-body-secondary">-</span>
-                          )}
-                        </CTableDataCell>
-                        <CTableDataCell className="text-center">
-                          <div className="d-inline-flex gap-1 flex-wrap justify-content-center">
-                            <CButton
-                              color="link"
-                              size="sm"
-                              className="p-0"
-                              onClick={() => handleView(r.id_preventivo)}
-                              title="Apri dettaglio"
-                            >
-                              <CIcon icon={cilDescription} />
-                            </CButton>
-                            <CButton
-                              color="link"
-                              size="sm"
-                              className="p-0"
-                              onClick={() => handlePrintPDF(r.id_preventivo)}
-                              title="Stampa PDF"
-                            >
-                              <CIcon icon={cilPrint} />
-                            </CButton>
-                            <CButton
-                              color="link"
-                              size="sm"
-                              className="p-0"
-                              onClick={() => handleOpenEmailModal(r)}
-                              title="Invia PDF via email"
-                            >
-                              <CIcon icon={cilEnvelopeClosed} />
-                            </CButton>
-                            {/* {viewMode === 'archiviati' ? (
-                              <CButton color="primary" variant="outline" size="sm" onClick={() => handleRestore(r.id_preventivo)}>
-                                Ripristina
+                      <React.Fragment key={r.id_preventivo ?? idx}>
+                        <CTableRow
+                          role="button"
+                          onClick={(event) => handleRowClick(r.id_preventivo, event)}
+                          className="align-middle"
+                          style={{ cursor: 'pointer' }}
+                          aria-expanded={isExpanded}
+                        >
+                          <CTableDataCell>
+                            {r.ragione_sociale || '-'}
+                          </CTableDataCell>
+                          <CTableDataCell>
+                            {(r.anno_preventivo ?? '-')}/{r.numero_documento ?? '-'}
+                            {latestRevisionLabel && (
+                              <CBadge color="info" className="ms-2 text-dark" shape="rounded-pill">
+                                {latestRevisionLabel}
+                              </CBadge>
+                            )}
+                          </CTableDataCell>
+                          <CTableDataCell>{formatDate(r.data_preventivo)}</CTableDataCell>
+                          <CTableDataCell>{r.riferimento_cliente || '-'}</CTableDataCell>
+                          <CTableDataCell>{formatCurrency(r.totale_imponibile)}</CTableDataCell>
+                          <CTableDataCell>{formatCurrency(r.totale_iva)}</CTableDataCell>
+                          <CTableDataCell>{formatCurrency(r.totale)}</CTableDataCell>
+                          <CTableDataCell className="text-center">
+                            {r.stato_label ? (
+                              <CBadge color="secondary">{r.stato_label}</CBadge>
+                            ) : (
+                              <span className="text-body-secondary">-</span>
+                            )}
+                          </CTableDataCell>
+                          <CTableDataCell className="text-center">
+                            <div className="d-inline-flex gap-1 flex-wrap justify-content-center">
+                              <CButton
+                                color="link"
+                                size="sm"
+                                className="p-0"
+                                onClick={() => handleView(r.id_preventivo)}
+                                title="Apri dettaglio"
+                              >
+                                <CIcon icon={cilDescription} />
                               </CButton>
-                            )
-                              : (
-                                <CButton color="secondary" variant="outline" size="sm" onClick={() => handleArchive(r.id_preventivo)}>
-                                  Archivia
+                              <CButton
+                                color="link"
+                                size="sm"
+                                className="p-0"
+                                onClick={() => handlePrintPDF(r.id_preventivo)}
+                                title="Stampa PDF"
+                              >
+                                <CIcon icon={cilPrint} />
+                              </CButton>
+                              <CButton
+                                color="link"
+                                size="sm"
+                                className="p-0"
+                                onClick={() => handleOpenEmailModal(r)}
+                                title="Invia PDF via email"
+                              >
+                                <CIcon icon={cilEnvelopeClosed} />
+                              </CButton>
+                            </div>
+                          </CTableDataCell>
+                        </CTableRow>
+                    {isExpanded && rowRevisions.length > 0 && (
+                      <CTableRow key={`rev-${r.id_preventivo}`} className="border-start-0 border-end-0">
+                        <CTableDataCell colSpan={9} className="pt-0 pb-2">
+                          <div className="d-flex flex-column gap-1 small text-body-secondary">
+                            {rowRevisions.map((rev) => (
+                              <div className="d-flex flex-wrap gap-3 align-items-baseline" key={rev.id_revisione}>
+                                <span className="fw-semibold text-dark">{rev.label || `Rev.${rev.numero_revision}`}</span>
+                                <span>Imponibile: {formatCurrency(rev.totale_imponibile)}</span>
+                                <span>IVA: {formatCurrency(rev.totale_iva)}</span>
+                                <span>Totale: {formatCurrency(rev.totale)}</span>
+                                <span className="text-muted">({formatDate(rev.created_at)})</span>
+                                <CButton
+                                  color="link"
+                                  size="sm"
+                                  className="p-0"
+                                  onClick={() => handleOpenRevisionDetail(rev.id_revisione, r.id_preventivo)}
+                                  title="Apri dettaglio revisione"
+                                >
+                                  <CIcon icon={cilZoom} />
                                 </CButton>
-                              )} */}
+                              </div>
+                            ))}
                           </div>
                         </CTableDataCell>
                       </CTableRow>
+                    )}
+                  </React.Fragment>
                     )
                   })}
                 </CTableBody>
@@ -781,6 +1085,125 @@ const PreventiviList = () => {
             </CButton>
           </CModalFooter>
         )}
+      </CModal>
+      <CModal
+        visible={revisionDetailModalVisible}
+        onClose={handleCloseRevisionModal}
+        size="lg"
+        backdrop="static"
+        className="preventivi-revision-modal"
+      >
+        <CModalHeader>
+          <CModalTitle>Dettaglio revisione</CModalTitle>
+        </CModalHeader>
+        <CModalBody>
+          {revisionDetailModalLoading && (
+            <div className="d-flex justify-content-center py-4">
+              <CSpinner />
+            </div>
+          )}
+          {!revisionDetailModalLoading && revisionDetailModalError && (
+            <CAlert color="danger">{revisionDetailModalError.message || 'Impossibile caricare la revisione.'}</CAlert>
+          )}
+          {!revisionDetailModalLoading && !revisionDetailModalError && revisionDetailModalData && (
+            <>
+              <div className="row g-4 mb-4">
+              <div className="col-12 col-lg-6">
+                <div className="border rounded p-3 h-100">
+                    <div className="d-flex justify-content-between align-items-start">
+                      <div>
+                        <div className="text-body-secondary small">Revisione salvata</div>
+                        <div className="fw-semibold">
+                          {revisionDetailModalData.label || `Rev.${revisionDetailModalData.numero_revision}`}
+                        </div>
+                      </div>
+                      <div className="text-body-secondary small text-end">
+                        {formatDateTime(revisionDetailModalData.created_at)}
+                      </div>
+                    </div>
+                    <div className="text-body-secondary small mt-3">Cliente</div>
+                    <div className="fw-semibold">{revisionDetailClientLabel}</div>
+                    {revisionDetailClientIdentifiers && (
+                      <div className="small text-body-secondary">{revisionDetailClientIdentifiers}</div>
+                    )}
+                    <div className="text-body-secondary small mt-3">Documento</div>
+                    <div className="fw-semibold">{revisionDetailDocumentNumber}</div>
+                    <div className="row g-2 mt-3">
+                      <div className="col">
+                        <div className="text-body-secondary small">Imponibile</div>
+                        <div className="fw-semibold">
+                          {formatCurrency(revisionDetailData.totale_imponibile ?? revisionDetailData.totale ?? 0)}
+                        </div>
+                      </div>
+                      <div className="col">
+                        <div className="text-body-secondary small">IVA</div>
+                        <div className="fw-semibold">{formatCurrency(revisionDetailData.totale_iva ?? 0)}</div>
+                      </div>
+                      <div className="col">
+                        <div className="text-body-secondary small">Totale</div>
+                        <div className="fw-semibold">
+                          {formatCurrency(revisionDetailData.totale ?? revisionDetailData.totale_imponibile ?? 0)}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="text-body-secondary small mt-4">Righe revisione</div>
+                    {renderLinesTable(revisionLines, 'Nessuna riga salvata.')}
+                  </div>
+                </div>
+                <div className="col-12 col-lg-6">
+                  <div className="border rounded p-3 h-100">
+                    <div className="d-flex justify-content-between align-items-start">
+                      <div>
+                        <div className="text-body-secondary small">Versione corrente</div>
+                        <div className="fw-semibold">{currentPreventivoDocumentLabel}</div>
+                      </div>
+                      <div className="text-body-secondary small text-end">
+                        {currentPreventivoUpdatedLabel}
+                      </div>
+                    </div>
+                    <div className="text-body-secondary small mt-3">Cliente</div>
+                    <div className="fw-semibold">{currentPreventivoClientLabel}</div>
+                    {currentPreventivoClientIdentifiers && (
+                      <div className="small text-body-secondary">{currentPreventivoClientIdentifiers}</div>
+                    )}
+                    {currentPreventivoDetail ? (
+                      <div className="row g-2 mt-3">
+                        <div className="col">
+                          <div className="text-body-secondary small">Imponibile</div>
+                          <div className="fw-semibold">
+                            {formatCurrency(currentPreventivoTotals.imponibile ?? 0)}
+                          </div>
+                        </div>
+                        <div className="col">
+                          <div className="text-body-secondary small">IVA</div>
+                          <div className="fw-semibold">{formatCurrency(currentPreventivoTotals.iva ?? 0)}</div>
+                        </div>
+                        <div className="col">
+                          <div className="text-body-secondary small">Totale</div>
+                          <div className="fw-semibold">{formatCurrency(currentPreventivoTotals.totale ?? 0)}</div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="text-body-secondary small mt-3">
+                        Dati correnti non disponibili.
+                      </div>
+                    )}
+                    <div className="text-body-secondary small mt-4">Righe correnti</div>
+                    {renderLinesTable(currentPreventivoLines, 'Nessuna riga disponibile.')}
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+          {!revisionDetailModalLoading && !revisionDetailModalError && !revisionDetailModalData && (
+            <CAlert color="info">Nessun dato disponibile per la revisione selezionata.</CAlert>
+          )}
+        </CModalBody>
+        <CModalFooter className="justify-content-end">
+          <CButton color="secondary" variant="outline" onClick={handleCloseRevisionModal}>
+            Chiudi
+          </CButton>
+        </CModalFooter>
       </CModal>
     </>
   )

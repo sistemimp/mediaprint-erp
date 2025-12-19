@@ -44,10 +44,12 @@ import {
   cilArrowRight,
   cilCheckCircle,
   cilCog,
-  cilSave,
-  cilX,
   cilEnvelopeClosed,
   cilReload,
+  cilSave,
+  cilTrash,
+  cilX,
+  cilZoom,
   cibAdobeAcrobatReader,
 } from '@coreui/icons'
 
@@ -64,8 +66,10 @@ import {
   fetchPreventivoOggettiOptions,
   createPreventivoOggettoOption,
   sendPreventivoEmail,
+  fetchPreventivoRevisionDetail,
   logPreventivoEvent,
   generateLavorazioneFromPreventivo,
+  archivePreventivo,
 } from '../../services/preventivi'
 import { fetchDdtCausali, emitPreventivoDdt } from '../../services/ddt'
 import { fetchFattureConfig, emitPreventivoFattura } from '../../services/fatture'
@@ -210,7 +214,14 @@ const PreventiviDetail = () => {
   const [statusLog, setStatusLog] = useState([])
   const [statusLogLoading, setStatusLogLoading] = useState(false)
   const [statusLogError, setStatusLogError] = useState(null)
+  const [revisions, setRevisions] = useState([])
   const [statusTab, setStatusTab] = useState('timeline')
+  const [archiveLoading, setArchiveLoading] = useState(false)
+  const [archiveError, setArchiveError] = useState(null)
+  const [revisionModalVisible, setRevisionModalVisible] = useState(false)
+  const [revisionModalLoading, setRevisionModalLoading] = useState(false)
+  const [revisionModalError, setRevisionModalError] = useState(null)
+  const [revisionModalData, setRevisionModalData] = useState(null)
 
   // Dati generali
   const [clienteSearch, setClienteSearch] = useState('')
@@ -539,11 +550,18 @@ const PreventiviDetail = () => {
         defaults.id_sezionale = String(fatturaConfig.sezionali[0].id_sezionale)
       }
       if (!defaults.id_tipo_fatt && fatturaConfig.tipi.length > 0) {
-        defaults.id_tipo_fatt = String(fatturaConfig.tipi[0].id_tipo)
+        // Prefer the "Immediata" type when available so the modal defaults accordingly.
+        const preferredTipo = fatturaConfig.tipi.find((option) => {
+          const normalizedCode = String(option.code || '').toLowerCase()
+          const normalizedLabel = String(option.label || '').toLowerCase()
+          return normalizedCode === 'immediata' || normalizedLabel === 'immediata'
+        })
+        const preferredId = preferredTipo?.id_tipo ?? fatturaConfig.tipi[0].id_tipo
+        defaults.id_tipo_fatt = String(preferredId)
       }
       if (!defaults.id_stato_fatt && fatturaConfig.stati.length > 0) {
-        const emessa = fatturaConfig.stati.find((s) => String(s.code || '').toLowerCase() === 'emessa')
-        defaults.id_stato_fatt = String((emessa ?? fatturaConfig.stati[0]).id_stato)
+        const bozza = fatturaConfig.stati.find((s) => String(s.code || '').toLowerCase() === 'bozza')
+        defaults.id_stato_fatt = String((bozza ?? fatturaConfig.stati[0]).id_stato)
       }
       return defaults
     })
@@ -661,6 +679,7 @@ const PreventiviDetail = () => {
     const load = async () => {
       setLoading(true)
       setLoadError(null)
+      setRevisions([])
       try {
         setStatusError(null)
         setStatusSuccess(null)
@@ -673,6 +692,7 @@ const PreventiviDetail = () => {
           contatti: contattiSrv,
           linkedDdt: linkedDdtSrv,
           linkedFatture: linkedFattureSrv,
+          revisions: revisionsSrv,
           statuses,
           currentStatus: current,
         } = await fetchPreventivoDetail({
@@ -699,6 +719,7 @@ const PreventiviDetail = () => {
             label: data.stato_label ?? data.stato_code ?? null,
           })
         }
+        setRevisions(Array.isArray(revisionsSrv) ? revisionsSrv : [])
         if (data.id_anagrafica != null && data.id_anagrafica !== '') {
           setIdAnagrafica(String(data.id_anagrafica))
         }
@@ -1371,13 +1392,21 @@ const PreventiviDetail = () => {
     if (!safeCode) return
     if (!token || !id) return
     if (statusUpdating) return
+    const operatorName = user?.username || user?.name || user?.email || null
+    const statusNote = safeCode === 'inviato' ? 'Invio manuale da timeline.' : null
     const prevCode = String(currentStatus?.code || '').toLowerCase()
     const prevLabel = currentStatus?.label ?? prevCode
     setStatusError(null)
     setStatusSuccess(null)
     setStatusUpdating(true)
     try {
-      const result = await updatePreventivoStatus({ token, id, statusCode: safeCode })
+      const result = await updatePreventivoStatus({
+        token,
+        id,
+        statusCode: safeCode,
+        operatorName,
+        note: statusNote,
+      })
       const updatedStatuses = Array.isArray(result.statuses) ? result.statuses : null
       if (updatedStatuses) {
         setStatusOptions(updatedStatuses)
@@ -1448,7 +1477,7 @@ const PreventiviDetail = () => {
     } finally {
       setStatusUpdating(false)
     }
-  }, [token, id, statusUpdating, logout, statusOptions])
+  }, [token, id, statusUpdating, logout, statusOptions, user])
 
   // Stepper usa gestione inline (3 step). Le transizioni 1->bozza, 2->inviato
   // sono gestite direttamente, mentre il passo 3 (Finale) usa la select.
@@ -1733,6 +1762,16 @@ const PreventiviDetail = () => {
       setEmailError(new Error('Indicare almeno un destinatario.'))
       return
     }
+    try {
+      await saveDraft({ silent: true })
+    } catch (err) {
+      if (err?.status === 401 && logout) {
+        logout()
+        return
+      }
+      setEmailError(err)
+      return
+    }
     setEmailSending(true)
     setEmailError(null)
     setEmailSuccess(null)
@@ -1744,6 +1783,8 @@ const PreventiviDetail = () => {
         cc: emailCc,
         subject: emailSubject,
         message: emailBody,
+        revisionNote: emailSubject,
+        revisionOperator: user?.username ?? user?.email ?? undefined,
       })
       if (!result?.ok) {
         const error = new Error(result?.message || 'Invio email non riuscito.')
@@ -1762,80 +1803,102 @@ const PreventiviDetail = () => {
     } finally {
       setEmailSending(false)
     }
-  }, [token, id, emailTo, emailCc, emailSubject, emailBody, logout])
+  }, [token, id, emailTo, emailCc, emailSubject, emailBody, logout, user])
+
+  const handleOpenRevisionDetail = useCallback(
+    async (revisionId) => {
+      const numericId = Number(revisionId)
+      if (!token || !Number.isFinite(numericId) || numericId <= 0) return
+      setRevisionModalVisible(true)
+      setRevisionModalLoading(true)
+      setRevisionModalError(null)
+      setRevisionModalData(null)
+      try {
+        const result = await fetchPreventivoRevisionDetail({ token, id: numericId })
+        setRevisionModalData(result?.revision ?? null)
+      } catch (error) {
+        setRevisionModalError(error)
+      } finally {
+        setRevisionModalLoading(false)
+      }
+    },
+    [token],
+  )
+
+  const saveDraft = useCallback(
+    async ({ silent = false } = {}) => {
+      if (!editable || pendingOggettoCreate) {
+        return null
+      }
+      setStatusError(null)
+      setStatusSuccess(null)
+      if (!silent) {
+        setSubmitError(null)
+        setSubmitSuccess(null)
+      }
+      setSubmitting(true)
+      try {
+        const controller = new AbortController()
+        const payload = buildPayload()
+        const result = await createPreventivo({ token, ...payload, send: false, signal: controller.signal })
+        if (!silent) {
+          setSubmitSuccess(
+            result?.anno_preventivo && result?.numero_documento
+              ? `Bozza aggiornata. N. ${result.anno_preventivo}/${result.numero_documento}`
+              : `Bozza aggiornata (ID ${result?.id_preventivo ?? id})`,
+          )
+        }
+        return result
+      } catch (err) {
+        if (err?.status === 401 && logout) {
+          logout()
+          throw err
+        }
+        if (!silent) {
+          setSubmitError(err)
+        }
+        throw err
+      } finally {
+        setSubmitting(false)
+      }
+    },
+    [buildPayload, createPreventivo, editable, id, logout, pendingOggettoCreate, token],
+  )
 
   const handleSalvaBozza = async (e) => {
     if (e?.preventDefault) {
       e.preventDefault()
     }
-    if (!editable || pendingOggettoCreate) return
-    setSubmitting(true)
-    setSubmitError(null)
-    setSubmitSuccess(null)
-    setStatusError(null)
-    setStatusSuccess(null)
     try {
-      const controller = new AbortController()
-      const payload = buildPayload()
-      const result = await createPreventivo({ token, ...payload, send: false, signal: controller.signal })
-      setSubmitSuccess(
-        result?.anno_preventivo && result?.numero_documento
-          ? `Bozza aggiornata. N. ${result.anno_preventivo}/${result.numero_documento}`
-          : `Bozza aggiornata (ID ${result?.id_preventivo ?? id})`,
-      )
+      await saveDraft()
     } catch (err) {
-      if (err.status === 401 && logout) {
+      if (err?.status === 401 && logout) {
         logout()
-        return
       }
-      setSubmitError(err)
-    } finally {
-      setSubmitting(false)
     }
   }
 
   bozzaSaveHandlerRef.current = handleSalvaBozza
 
-  const handleConferma = async (e) => {
-    e.preventDefault()
-    if (!editable || pendingOggettoCreate) return
-    setSubmitting(true)
-    setSubmitError(null)
-    setSubmitSuccess(null)
-    setStatusError(null)
-    setStatusSuccess(null)
+  const handleArchivePreventivo = useCallback(async () => {
+    if (!token || !id) return
+    const confirmed = window.confirm('Confermi l\'archiviazione di questo preventivo?')
+    if (!confirmed) return
+    setArchiveError(null)
+    setArchiveLoading(true)
     try {
-      const controller = new AbortController()
-      const payload = buildPayload()
-      const result = await createPreventivo({ token, ...payload, send: true, signal: controller.signal })
-      setSubmitSuccess(
-        result?.status === 'sent'
-          ? `Preventivo confermato e inviato. N. ${result.anno_preventivo}/${result.numero_documento}`
-          : `Preventivo salvato come bozza (ID ${result?.id_preventivo ?? id})`,
-      )
-      if (result?.status === 'sent') {
-        const sentStatus = statusOptions.find((s) => (s?.code ?? '') === 'inviato')
-        setCurrentStatus({
-          code: 'inviato',
-          label: sentStatus?.label ?? 'Inviato',
-        })
-        setHeader((prev) => ({
-          ...prev,
-          stato: sentStatus?.label ?? 'Inviato',
-        }))
-      }
-      // Dopo conferma, non piu modificabile
-      setEditable(false)
+      await archivePreventivo({ token, id })
+      navigate('/preventivi/lista', { replace: true })
     } catch (err) {
-      if (err.status === 401 && logout) {
+      if (err?.status === 401 && logout) {
         logout()
         return
       }
-      setSubmitError(err)
+      setArchiveError(err)
     } finally {
-      setSubmitting(false)
+      setArchiveLoading(false)
     }
-  }
+  }, [token, id, navigate, logout])
 
   // Allow the component to run all Hooks on every render; effects and logic below already guard on `id`.
   // Visualizzazione stato: 3 step (Bozza -> Inviato -> Finale),
@@ -1864,6 +1927,9 @@ const PreventiviDetail = () => {
   }, [statusOptions])
 
   const uiDisabled = !editable || anagraficaDisabled
+  const latestRevisionLabel = revisions.length > 0 ? revisions[0].label : null
+  const revisionModalDetail = revisionModalData?.payload?.detail ?? null
+  const revisionModalLines = Array.isArray(revisionModalDetail?.righe) ? revisionModalDetail.righe : []
 
   const handleBreadcrumbSave = useCallback(() => {
     if (uiDisabled || submitting || pendingOggettoCreate) {
@@ -1937,6 +2003,11 @@ const PreventiviDetail = () => {
                 {header.stato}
               </CBadge>
             )}
+            {latestRevisionLabel && (
+              <CBadge color="dark" className="text-uppercase">
+                {latestRevisionLabel}
+              </CBadge>
+            )}
             <CButton
               color="primary"
               variant="outline"
@@ -1958,6 +2029,17 @@ const PreventiviDetail = () => {
             >
               <CIcon icon={cibAdobeAcrobatReader} className="me-2" />
               Stampa PDF
+            </CButton>
+            <CButton
+              color="warning"
+              variant="outline"
+              size="sm"
+              type="button"
+              onClick={handleArchivePreventivo}
+              disabled={loading || archiveLoading || !token}
+            >
+              <CIcon icon={cilTrash} className="me-2" />
+              Archivia
             </CButton>
             {hasLinkedLavorazione && (
               <CButton
@@ -2024,7 +2106,12 @@ const PreventiviDetail = () => {
         )}
 
         {!loading && !loadError && (
-          <CForm onSubmit={handleConferma}>
+          <CForm>
+            {archiveError && (
+              <CAlert color="danger" className="mb-3">
+                {archiveError?.payload?.message || archiveError.message || 'Impossibile archiviare il preventivo.'}
+              </CAlert>
+            )}
             {lavorazioneError && (
               <CAlert color="danger" className="mb-3">
                 {lavorazioneError?.payload?.message || lavorazioneError.message || 'Impossibile generare la lavorazione.'}
@@ -2069,6 +2156,11 @@ const PreventiviDetail = () => {
                 <CNavItem>
                   <CNavLink active={statusTab === 'storico'} role="tab" aria-selected={statusTab === 'storico'} onClick={() => setStatusTab('storico')}>
                     Storico
+                  </CNavLink>
+                </CNavItem>
+                <CNavItem>
+                  <CNavLink active={statusTab === 'revisioni'} role="tab" aria-selected={statusTab === 'revisioni'} onClick={() => setStatusTab('revisioni')}>
+                    Revisioni
                   </CNavLink>
                 </CNavItem>
                 <CNavItem>
@@ -2189,6 +2281,45 @@ const PreventiviDetail = () => {
                         </CTableBody>
                       </CTable>
                     )
+                  )}
+                </CTabPane>
+                <CTabPane visible={statusTab === 'revisioni'} role="tabpanel">
+                  {revisions.length === 0 ? (
+                    <small className="text-body-secondary">Nessuna revisione registrata.</small>
+                  ) : (
+                    <CTable small responsive className="mb-0">
+                      <CTableHead color="light">
+                        <CTableRow>
+                          <CTableHeaderCell>Revisione</CTableHeaderCell>
+                          <CTableHeaderCell>Data</CTableHeaderCell>
+                          <CTableHeaderCell>Operatore</CTableHeaderCell>
+                          <CTableHeaderCell>Nota</CTableHeaderCell>
+                          <CTableHeaderCell className="text-center">Azioni</CTableHeaderCell>
+                        </CTableRow>
+                      </CTableHead>
+                      <CTableBody>
+                        {revisions.map((rev) => (
+                          <CTableRow key={rev.id_revisione}>
+                            <CTableDataCell>{rev.label || `Rev.${rev.numero_revision}`}</CTableDataCell>
+                            <CTableDataCell>{formatDateTime(rev.created_at)}</CTableDataCell>
+                            <CTableDataCell>{rev.operatore || '-'}</CTableDataCell>
+                            <CTableDataCell>{rev.note || '-'}</CTableDataCell>
+                            <CTableDataCell className="text-center">
+                              <CButton
+                                color="link"
+                                size="sm"
+                                className="p-0"
+                                onClick={() => handleOpenRevisionDetail(rev.id_revisione)}
+                                title="Apri dettaglio revisione"
+                                aria-label="Apri dettaglio revisione"
+                              >
+                                <CIcon icon={cilZoom} />
+                              </CButton>
+                            </CTableDataCell>
+                          </CTableRow>
+                        ))}
+                      </CTableBody>
+                    </CTable>
                   )}
                 </CTabPane>
                 <CTabPane visible={statusTab === 'documenti'} role="tabpanel">
@@ -3247,9 +3378,6 @@ const PreventiviDetail = () => {
               <CButton color="secondary" variant="outline" type="button" onClick={handleSalvaBozza} disabled={uiDisabled || submitting || pendingOggettoCreate}>
                 <CIcon icon={cilSave} className="me-2" /> Aggiorna bozza
               </CButton>
-              <CButton color="primary" type="submit" disabled={uiDisabled || submitting || pendingOggettoCreate}>
-                <CIcon icon={cilCheckCircle} className="me-2" /> Conferma
-              </CButton>
               <CButton color="link" type="button" onClick={() => navigate('/preventivi/lista')}>
                 Torna alla lista
               </CButton>
@@ -3326,7 +3454,6 @@ const PreventiviDetail = () => {
                     <CTableRow>
                       <CTableHeaderCell>Descrizione</CTableHeaderCell>
                       <CTableHeaderCell className="text-end">Q.tà</CTableHeaderCell>
-                      <CTableHeaderCell className="text-end">Prezzo unitario</CTableHeaderCell>
                     </CTableRow>
                   </CTableHead>
                   <CTableBody>
@@ -3334,9 +3461,6 @@ const PreventiviDetail = () => {
                       <CTableRow key={row.id_riga ?? idx}>
                         <CTableDataCell>{row.descrizione}</CTableDataCell>
                         <CTableDataCell className="text-end">{Number(row.quantita) || 0}</CTableDataCell>
-                        <CTableDataCell className="text-end">
-                          {formatCurrency(row.prezzo_unitario ?? row.totale ?? 0)}
-                        </CTableDataCell>
                       </CTableRow>
                     ))}
                   </CTableBody>
@@ -3509,21 +3633,27 @@ const PreventiviDetail = () => {
                     </CTableRow>
                   </CTableHead>
                   <CTableBody>
-                    {righe.map((row, idx) => (
-                      <CTableRow key={row.id_riga ?? idx}>
-                        <CTableDataCell>{row.descrizione}</CTableDataCell>
-                        <CTableDataCell className="text-end">{Number(row.quantita) || 0}</CTableDataCell>
-                        <CTableDataCell className="text-end">
-                          {formatCurrency(row.prezzo_unitario ?? row.totale ?? 0)}
-                        </CTableDataCell>
-                        <CTableDataCell className="text-end">
-                          {row.iva != null ? `${row.iva}%` : '-'}
-                        </CTableDataCell>
-                        <CTableDataCell className="text-end">
-                          {formatCurrency(row.totale ?? row.prezzo_unitario ?? 0)}
-                        </CTableDataCell>
-                      </CTableRow>
-                    ))}
+                    {righe.map((row, idx) => {
+                      const qty = Number(row.quantita) || 0
+                      const rawPrice = Number(row.prezzo ?? row.prezzo_unitario ?? 0)
+                      const price = Number.isFinite(rawPrice) ? rawPrice : 0
+                      const discount = Number(row.sconto) || 0
+                      const ivaPerc = Number(row.iva ?? 0) || 0
+                      const imponibile = Math.max(0, qty * price * (1 - discount / 100))
+                      const ivaAmount = ivaPerc !== 0 ? imponibile * (ivaPerc / 100) : 0
+                      const lineTotal = imponibile + ivaAmount
+                      return (
+                        <CTableRow key={row.id_riga ?? idx}>
+                          <CTableDataCell>{row.descrizione}</CTableDataCell>
+                          <CTableDataCell className="text-end">{qty}</CTableDataCell>
+                          <CTableDataCell className="text-end">{formatCurrency(price)}</CTableDataCell>
+                          <CTableDataCell className="text-end">
+                            {row.iva != null ? `${row.iva}%` : '-'}
+                          </CTableDataCell>
+                          <CTableDataCell className="text-end">{formatCurrency(lineTotal)}</CTableDataCell>
+                        </CTableRow>
+                      )
+                    })}
                   </CTableBody>
                 </CTable>
               ) : (
@@ -3646,6 +3776,105 @@ const PreventiviDetail = () => {
               )}
             </CButton>
 
+          </CModalFooter>
+        </CModal>
+        <CModal visible={revisionModalVisible} onClose={() => setRevisionModalVisible(false)} size="lg" backdrop="static">
+          <CModalHeader>
+            <CModalTitle>Dettaglio revisione</CModalTitle>
+          </CModalHeader>
+          <CModalBody>
+            {revisionModalLoading && (
+              <div className="d-flex justify-content-center py-4">
+                <CSpinner />
+              </div>
+            )}
+            {!revisionModalLoading && revisionModalError && (
+              <CAlert color="danger" className="mb-0">
+                {revisionModalError?.message || 'Impossibile caricare il dettaglio della revisione.'}
+              </CAlert>
+            )}
+            {!revisionModalLoading && !revisionModalError && (
+              <>
+                <div className="mb-3">
+                  <div className="d-flex flex-wrap justify-content-between align-items-baseline gap-2">
+                    <h6 className="mb-0">
+                      Revisione {revisionModalData?.label || `Rev.${revisionModalData?.numero_revision ?? '-'}`}
+                    </h6>
+                    <small className="text-body-secondary">
+                      {formatDateTime(revisionModalData?.created_at)}
+                    </small>
+                  </div>
+                  <div className="small text-body-secondary">
+                    Operatore: {revisionModalData?.operatore || '-'}
+                  </div>
+                  <p className="mb-0">
+                    Nota: {revisionModalData?.note || '-'}
+                  </p>
+                </div>
+                {revisionModalDetail?.data ? (
+                  <div className="border rounded p-3 mb-3">
+                    <div className="row g-3">
+                      <div className="col-6 col-md-3">
+                        <small className="text-body-secondary">Numero</small>
+                        <div className="fw-semibold">
+                          {revisionModalDetail.data.numero_documento ?? '-'}
+                          {revisionModalDetail.data.anno_preventivo ? `/${revisionModalDetail.data.anno_preventivo}` : ''}
+                        </div>
+                      </div>
+                      <div className="col-6 col-md-3">
+                        <small className="text-body-secondary">Cliente</small>
+                        <div className="fw-semibold">{revisionModalDetail.data.ragione_sociale ?? '-'}</div>
+                      </div>
+                      <div className="col-6 col-md-3">
+                        <small className="text-body-secondary">Data preventivo</small>
+                        <div>{formatDate(revisionModalDetail.data.data_preventivo)}</div>
+                      </div>
+                      <div className="col-6 col-md-3">
+                        <small className="text-body-secondary">Totale</small>
+                        <div className="fw-semibold">{formatCurrency(revisionModalDetail.data.totale)}</div>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <CAlert color="warning" className="mb-3">
+                    Dettaglio documento non disponibile.
+                  </CAlert>
+                )}
+                {revisionModalLines.length > 0 ? (
+                  <CTable small responsive className="mb-0">
+                    <CTableHead color="light">
+                      <CTableRow>
+                        <CTableHeaderCell>Descrizione</CTableHeaderCell>
+                        <CTableHeaderCell className="text-end">Q.tà</CTableHeaderCell>
+                        <CTableHeaderCell className="text-end">Prezzo</CTableHeaderCell>
+                        <CTableHeaderCell className="text-end">Sconto (%)</CTableHeaderCell>
+                        <CTableHeaderCell className="text-end">IVA (%)</CTableHeaderCell>
+                        <CTableHeaderCell className="text-end">Totale</CTableHeaderCell>
+                      </CTableRow>
+                    </CTableHead>
+                    <CTableBody>
+                      {revisionModalLines.map((line, idx) => (
+                        <CTableRow key={`${line.id_riga ?? idx}-${idx}`}>
+                          <CTableDataCell>{line.descrizione || '-'}</CTableDataCell>
+                          <CTableDataCell className="text-end">{formatNumberValue(line.quantita ?? 0, 2)}</CTableDataCell>
+                          <CTableDataCell className="text-end">{formatCurrency(line.prezzo_unitario ?? line.prezzo ?? 0)}</CTableDataCell>
+                          <CTableDataCell className="text-end">{formatNumberValue(line.sconto ?? 0, 2)}</CTableDataCell>
+                          <CTableDataCell className="text-end">{formatNumberValue(line.iva ?? 0, 2)}</CTableDataCell>
+                          <CTableDataCell className="text-end">{formatCurrency(line.totale ?? line.importo_scontato ?? 0)}</CTableDataCell>
+                        </CTableRow>
+                      ))}
+                    </CTableBody>
+                  </CTable>
+                ) : (
+                  <small className="text-body-secondary">Non sono presenti righe nella revisione.</small>
+                )}
+              </>
+            )}
+          </CModalBody>
+          <CModalFooter className="justify-content-end">
+            <CButton color="secondary" variant="outline" onClick={() => setRevisionModalVisible(false)}>
+              Chiudi
+            </CButton>
           </CModalFooter>
         </CModal>
       </CCardBody>

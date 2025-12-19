@@ -36,4 +36,16 @@ final class AnagraficheDashboardService
             'series' => $series,
         ];
     }
+
+    /**
+     * @return list<array<string,mixed>>
+     */
+    public function getNewClients(int $limit = 20, ?string $startDate = null, ?string $endDate = null): array
+    {
+        if ($startDate !== null && $endDate !== null) {
+            return $this->repository->fetchNewClientsForRange($startDate, $endDate, $limit);
+        }
+
+        return $this->repository->fetchNewClientsCurrentMonth($limit);
+    }
 }

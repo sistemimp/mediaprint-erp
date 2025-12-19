@@ -45,6 +45,27 @@ try {
     if (array_key_exists('saldo', $payload)) {
         $updates['saldo'] = $payload['saldo'];
     }
+    if (array_key_exists('cliente_pec', $payload)) {
+        $updates['cliente_pec'] = $payload['cliente_pec'];
+    }
+    if (array_key_exists('cliente_codice_sdi', $payload)) {
+        $updates['cliente_codice_sdi'] = $payload['cliente_codice_sdi'];
+    }
+    if (array_key_exists('cliente_iban', $payload)) {
+        $updates['cliente_iban'] = $payload['cliente_iban'];
+    }
+    if (array_key_exists('cliente_banca', $payload)) {
+        $updates['cliente_banca'] = $payload['cliente_banca'];
+    }
+    if (array_key_exists('cliente_modalita_pagamento', $payload)) {
+        $updates['cliente_modalita_pagamento'] = $payload['cliente_modalita_pagamento'];
+    }
+    if (array_key_exists('cliente_id_cond_pagamento', $payload)) {
+        $updates['cliente_id_cond_pagamento'] = $payload['cliente_id_cond_pagamento'];
+    }
+    if (array_key_exists('cliente_giorni_pagamento', $payload)) {
+        $updates['cliente_giorni_pagamento'] = $payload['cliente_giorni_pagamento'];
+    }
     if (array_key_exists('righe', $payload)) {
         $updates['righe'] = is_array($payload['righe']) ? $payload['righe'] : [];
     }
@@ -66,4 +87,3 @@ try {
 } catch (Throwable $throwable) {
     HttpResponse::error('Errore interno inatteso.', 500, ['error' => $throwable->getMessage()]);
 }
-

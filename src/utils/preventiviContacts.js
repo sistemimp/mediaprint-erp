@@ -32,6 +32,7 @@ export const serializePreventivoContacts = (contacts, fallbackAnagraficaId = nul
       const telefono = String(contact.telefono ?? '').trim()
       const cellulare = String(contact.cellulare ?? '').trim()
       const email = String(contact.email ?? '').trim()
+      const note = String(contact.note ?? '').trim()
       if (!nome && !ruolo && !telefono && !cellulare && !email && !note) {
         return null
       }
@@ -51,6 +52,7 @@ export const serializePreventivoContacts = (contacts, fallbackAnagraficaId = nul
         telefono,
         cellulare,
         email,
+        note,
         origine,
         id_contatto_anagrafica: idContattoAnagrafica > 0 ? idContattoAnagrafica : undefined,
         id_anagrafica: idAnagrafica ?? undefined,

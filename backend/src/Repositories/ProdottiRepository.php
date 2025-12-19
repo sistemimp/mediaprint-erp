@@ -157,6 +157,20 @@ final class ProdottiRepository
         $stmt->execute();
     }
 
+    public function deactivateProdotto(int $id): void
+    {
+        $check = $this->pdo->prepare('SELECT 1 FROM tb_prodotti WHERE id_prodotto = :id LIMIT 1');
+        $check->bindValue(':id', $id, PDO::PARAM_INT);
+        $check->execute();
+        if (!$check->fetchColumn()) {
+            throw new \RuntimeException('Prodotto non trovato.', 404);
+        }
+
+        $stmt = $this->pdo->prepare('UPDATE tb_prodotti SET attivo = 0 WHERE id_prodotto = :id');
+        $stmt->bindValue(':id', $id, PDO::PARAM_INT);
+        $stmt->execute();
+    }
+
     /**
      * @return int id_categoria
      */

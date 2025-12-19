@@ -40,6 +40,21 @@ final class LavorazioniRepository
         }
     }
 
+    public function updateNote(int $lavorazioneId, ?string $note): void
+    {
+        $stmt = $this->pdo->prepare('UPDATE tb_lavorazioni SET note = :note, updated_at = NOW() WHERE id_lavorazione = :id');
+        $stmt->bindValue(':id', $lavorazioneId, PDO::PARAM_INT);
+        if ($note === null) {
+            $stmt->bindValue(':note', null, PDO::PARAM_NULL);
+        } else {
+            $stmt->bindValue(':note', $note, PDO::PARAM_STR);
+        }
+        $stmt->execute();
+        if ($stmt->rowCount() === 0) {
+            throw new \RuntimeException('Lavorazione non trovata per aggiornare le note.', 404);
+        }
+    }
+
     public function findRepartoIdByCode(string $code): ?int
     {
         $sql = 'SELECT id_reparto FROM cfg_reparti_produttivi WHERE LOWER(code) = LOWER(:code) LIMIT 1';
@@ -684,6 +699,7 @@ final class LavorazioniRepository
                 a.data_completamento,
                 a.quantita_prevista,
                 a.quantita_effettiva,
+                a.percentuale,
                 a.note,
                 a.ordine,
                 a.id_reparto,
@@ -724,6 +740,7 @@ final class LavorazioniRepository
             } else {
                 $row['assegnatari_ids'] = [];
             }
+            $row['percentuale'] = isset($row['percentuale']) ? (int) $row['percentuale'] : 0;
         }
         unset($row);
 
@@ -900,6 +917,7 @@ final class LavorazioniRepository
                 ordine,
                 data_scadenza,
                 quantita_prevista,
+                percentuale,
                 note,
                 data_creazione
             ) VALUES (
@@ -912,7 +930,8 @@ final class LavorazioniRepository
                 :ordine,
                 :data_scadenza,
                 :quantita_prevista,
-                :note,
+                        :percentuale,
+                        :note,
                 NOW()
             )
         SQL;
@@ -933,12 +952,13 @@ final class LavorazioniRepository
         } else {
             $stmt->bindValue(':data_scadenza', null, PDO::PARAM_NULL);
         }
-        if (isset($data['quantita_prevista']) && $data['quantita_prevista'] !== null && $data['quantita_prevista'] !== '') {
-            $stmt->bindValue(':quantita_prevista', $data['quantita_prevista'], PDO::PARAM_STR);
-        } else {
-            $stmt->bindValue(':quantita_prevista', null, PDO::PARAM_NULL);
-        }
-        $stmt->bindValue(':note', $data['note'] ?? null, PDO::PARAM_STR);
+            if (isset($data['quantita_prevista']) && $data['quantita_prevista'] !== null && $data['quantita_prevista'] !== '') {
+                $stmt->bindValue(':quantita_prevista', $data['quantita_prevista'], PDO::PARAM_STR);
+            } else {
+                $stmt->bindValue(':quantita_prevista', null, PDO::PARAM_NULL);
+            }
+            $stmt->bindValue(':percentuale', isset($data['percentuale']) ? (int) $data['percentuale'] : 0, PDO::PARAM_INT);
+            $stmt->bindValue(':note', $data['note'] ?? null, PDO::PARAM_STR);
         $stmt->execute();
 
         $id = (int) $this->pdo->lastInsertId();
@@ -959,7 +979,7 @@ final class LavorazioniRepository
      */
     public function findActivity(int $activityId): ?array
     {
-        $stmt = $this->pdo->prepare('SELECT id_attivita, id_lavorazione, titolo, descrizione, id_reparto FROM tb_lavorazioni_attivita WHERE id_attivita = :id LIMIT 1');
+        $stmt = $this->pdo->prepare('SELECT id_attivita, id_lavorazione, titolo, descrizione, id_reparto, data_creazione, data_scadenza, percentuale FROM tb_lavorazioni_attivita WHERE id_attivita = :id LIMIT 1');
         $stmt->bindValue(':id', $activityId, PDO::PARAM_INT);
         $stmt->execute();
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -1014,6 +1034,97 @@ final class LavorazioniRepository
             $this->pdo->rollBack();
             throw $exception;
         }
+    }
+
+    public function updateActivityStatus(int $activityId, string $stato, int $percentuale): array
+    {
+        $select = $this->pdo->prepare('SELECT id_lavorazione, data_creazione, data_scadenza FROM tb_lavorazioni_attivita WHERE id_attivita = :id LIMIT 1');
+        $select->bindValue(':id', $activityId, PDO::PARAM_INT);
+        $select->execute();
+        $activity = $select->fetch(PDO::FETCH_ASSOC);
+        if ($activity === false) {
+            throw new \RuntimeException('Attività non trovata per aggiornare lo stato.', 404);
+        }
+
+        $stmt = $this->pdo->prepare(<<<'SQL'
+            UPDATE tb_lavorazioni_attivita
+            SET stato = :stato,
+                percentuale = :percentuale,
+                data_completamento = CASE WHEN :is_done = 1 THEN NOW() ELSE NULL END
+            WHERE id_attivita = :id
+        SQL);
+        $stmt->bindValue(':id', $activityId, PDO::PARAM_INT);
+        $stmt->bindValue(':stato', $stato, PDO::PARAM_STR);
+        $stmt->bindValue(':is_done', $stato === 'done' ? 1 : 0, PDO::PARAM_INT);
+        $stmt->bindValue(':percentuale', max(0, min(100, $percentuale)), PDO::PARAM_INT);
+        $stmt->execute();
+        // MySQL rowCount may return 0 when no columns change; do not treat it as an error here.
+
+        return [
+            'lavorazione_id' => isset($activity['id_lavorazione']) ? (int) $activity['id_lavorazione'] : 0,
+            'data_creazione' => $activity['data_creazione'] ?? null,
+            'data_scadenza' => $activity['data_scadenza'] ?? null,
+        ];
+    }
+
+    public function updateLavorazionePercentuale(int $lavorazioneId, int $percentuale): void
+    {
+        $stmt = $this->pdo->prepare('UPDATE tb_lavorazioni SET percentuale_avanzamento = :percentuale, updated_at = NOW() WHERE id_lavorazione = :id');
+        $stmt->bindValue(':id', $lavorazioneId, PDO::PARAM_INT);
+        $stmt->bindValue(':percentuale', $percentuale, PDO::PARAM_INT);
+        $stmt->execute();
+    }
+
+    public function deleteActivity(int $activityId): array
+    {
+        $select = $this->pdo->prepare('SELECT id_lavorazione FROM tb_lavorazioni_attivita WHERE id_attivita = :id LIMIT 1');
+        $select->bindValue(':id', $activityId, PDO::PARAM_INT);
+        $select->execute();
+        $activity = $select->fetch(PDO::FETCH_ASSOC);
+        if ($activity === false) {
+            return ['lavorazione_id' => 0];
+        }
+
+        $deleteAssociations = $this->pdo->prepare('DELETE FROM tb_lavorazioni_attivita_operatori WHERE id_attivita = :id');
+        $deleteAssociations->bindValue(':id', $activityId, PDO::PARAM_INT);
+        $deleteAssociations->execute();
+
+        $delete = $this->pdo->prepare('DELETE FROM tb_lavorazioni_attivita WHERE id_attivita = :id');
+        $delete->bindValue(':id', $activityId, PDO::PARAM_INT);
+        $delete->execute();
+
+        return [
+            'lavorazione_id' => isset($activity['id_lavorazione']) ? (int) $activity['id_lavorazione'] : 0,
+        ];
+    }
+
+    public function calculateLavorazionePercentuale(int $lavorazioneId): int
+    {
+        $sql = <<<SQL
+            SELECT
+                SUM(COALESCE(a.quantita_prevista, 1) * COALESCE(a.percentuale, 0)) AS weighted,
+                SUM(COALESCE(a.quantita_prevista, 1)) AS total_weight
+            FROM tb_lavorazioni_attivita a
+            WHERE a.id_lavorazione = :id
+        SQL;
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->bindValue(':id', $lavorazioneId, PDO::PARAM_INT);
+        $stmt->execute();
+        $row = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
+        $weighted = isset($row['weighted']) ? (float) $row['weighted'] : 0.0;
+        $totalWeight = isset($row['total_weight']) ? (float) $row['total_weight'] : 0.0;
+        if ($totalWeight <= 0.0) {
+            return 0;
+        }
+        return max(0, min(100, (int) round($weighted / $totalWeight)));
+    }
+
+    public function hasSuspendedActivities(int $lavorazioneId): bool
+    {
+        $stmt = $this->pdo->prepare("SELECT 1 FROM tb_lavorazioni_attivita WHERE id_lavorazione = :id AND stato = 'sospesa' LIMIT 1");
+        $stmt->bindValue(':id', $lavorazioneId, PDO::PARAM_INT);
+        $stmt->execute();
+        return (bool) $stmt->fetchColumn();
     }
 
     /**

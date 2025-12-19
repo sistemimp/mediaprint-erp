@@ -30,7 +30,6 @@ const VariazioniList = () => {
 
   const [editRow, setEditRow] = useState(null)
   const [name, setName] = useState('')
-  const [price, setPrice] = useState('')
   const [category, setCategory] = useState('')
   const [code, setCode] = useState('')
   const [saving, setSaving] = useState(false)
@@ -128,9 +127,9 @@ const VariazioniList = () => {
     return () => controller.abort()
   }, [token])
 
-  const startCreate = () => { setEditRow(null); setName(''); setPrice(''); setCategory(''); setCode(''); setFormVisible(true) }
-  const startEdit = (row) => { setEditRow(row); setName(row.nome || ''); setPrice(row.prezzo ?? ''); setCategory(row.categoria || ''); setCode(row.codice || ''); setFormVisible(true) }
-  const cancel = () => { setEditRow(null); setName(''); setPrice(''); setCategory(''); setCode(''); setFormVisible(false) }
+  const startCreate = () => { setEditRow(null); setName(''); setCategory(''); setCode(''); setFormVisible(true) }
+  const startEdit = (row) => { setEditRow(row); setName(row.nome || ''); setCategory(row.categoria || ''); setCode(row.codice || ''); setFormVisible(true) }
+  const cancel = () => { setEditRow(null); setName(''); setCategory(''); setCode(''); setFormVisible(false) }
 
   const save = async (e) => {
     e.preventDefault()
@@ -138,8 +137,13 @@ const VariazioniList = () => {
     setError(null)
     try {
       const cleaned = String(name).trim()
-      const p = String(price).trim()
-      await saveVariazione({ token, id_variazione: editRow?.id_variazione, nome: cleaned, prezzo: p === '' ? null : Number(p), categoria: String(category).trim() || null, codice: String(code).trim() || null })
+      await saveVariazione({
+        token,
+        id_variazione: editRow?.id_variazione,
+        nome: cleaned,
+        categoria: String(category).trim() || null,
+        codice: String(code).trim() || null,
+      })
       await load()
       cancel()
       showToast('Variazione salvata', 'success')
@@ -161,9 +165,6 @@ const VariazioniList = () => {
             <CRow className="g-2 align-items-end">
               <CCol md={6}>
                 <CFormInput placeholder="Nome variazione" value={name} onChange={(e) => setName(e.target.value)} required />
-              </CCol>
-              <CCol md={4}>
-                <CFormInput type="number" step="0.01" placeholder="Prezzo base" value={price} onChange={(e) => setPrice(e.target.value)} />
               </CCol>
               <CCol md={4}>
                 <CFormInput placeholder="Codice variazione (unico)" value={code} onChange={(e) => setCode(e.target.value)} />
@@ -200,7 +201,6 @@ const VariazioniList = () => {
                 <CTableHeaderCell role="button" onClick={(e) => toggleSort('codice', e.shiftKey)} className="text-nowrap">
                   Codice{sortIndicator('codice')}
                 </CTableHeaderCell>
-                <CTableHeaderCell>Prezzo base</CTableHeaderCell>
                 <CTableHeaderCell className="text-center">Azioni</CTableHeaderCell>
               </CTableRow>
             </CTableHead>
@@ -210,7 +210,6 @@ const VariazioniList = () => {
                   <CTableDataCell>{r.categoria || '-'}</CTableDataCell>
                   <CTableDataCell>{r.nome}</CTableDataCell>
                   <CTableDataCell>{r.codice || '-'}</CTableDataCell>
-                  <CTableDataCell>{r.prezzo ?? 0}</CTableDataCell>
                   <CTableDataCell className="text-center">
                     <CButton
                       size="sm"

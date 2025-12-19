@@ -270,6 +270,7 @@ HTML;
             'code' => $row['stato_code'] ?? null,
             'label' => $row['stato_label'] ?? ($row['stato_code'] ?? null),
         ];
+        $revisions = $this->repository->listRevisions($id);
         return [
             'data' => $row,
             'righe' => $righe,
@@ -282,6 +283,7 @@ HTML;
                 'editable' => $editable,
                 'statuses' => $statuses,
                 'current_status' => $currentStatus,
+                'revisions' => $revisions,
             ],
         ];
     }
@@ -365,6 +367,23 @@ HTML;
         $detail = $this->repository->fetchDetail($id);
         if ($detail === null) {
             throw new \RuntimeException('Preventivo non trovato dopo l\'aggiornamento.', 500);
+        }
+
+        $operatorName = isset($input['operatore']) ? trim((string) $input['operatore']) : null;
+        if ($operatorName === '') {
+            $operatorName = null;
+        }
+        $revisionNote = isset($input['note']) ? trim((string) $input['note']) : null;
+        if ($revisionNote === '') {
+            $revisionNote = null;
+        }
+        if ($code === 'inviato') {
+            $notePayload = $revisionNote ?? 'Stato impostato come inviato dal timeline.';
+            try {
+                $this->repository->createRevision($id, $notePayload, $operatorName, ['detail' => $detail]);
+            } catch (\Throwable $ignored) {
+                // Non bloccare l'aggiornamento dello stato se il log fallisce
+            }
         }
 
         $editable = ($detail['stato_code'] ?? 'bozza') === 'bozza';
@@ -644,6 +663,17 @@ HTML;
                 $cliente
             );
         }
+        $revisionNote = isset($input['revision_note']) ? trim((string) $input['revision_note']) : null;
+        if ($revisionNote === '') {
+            $revisionNote = null;
+        }
+        $revisionOperator = isset($input['revision_operator']) ? trim((string) $input['revision_operator']) : null;
+        if ($revisionOperator === '') {
+            $revisionOperator = null;
+        }
+        if ($revisionNote === null && $subject !== '') {
+            $revisionNote = sprintf('Oggetto email: %s', $subject);
+        }
 
         $rawMessage = trim((string) ($input['message_html'] ?? $input['message'] ?? ''));
         $introHtml = $this->normalizeHtmlMessage(
@@ -697,6 +727,13 @@ HTML;
             } catch (\Throwable $ignored) {
                 $updatedDetail = null;
             }
+
+            try {
+                $this->repository->createRevision($id, $revisionNote, $revisionOperator, ['detail' => $updatedDetail]);
+            } catch (\Throwable $ignored) {
+                // Non bloccare l'invio se il log fallisce
+            }
+
         }
 
         return [
@@ -712,6 +749,89 @@ HTML;
             'status' => $sent ? 'inviato' : 'errore',
             'preventivo' => $updatedDetail,
         ];
+    }
+
+    /**
+     * Ritorna i dati di una revisione salvata.
+     *
+     * @return array{revision:array<string,mixed>}
+     */
+    public function revisionDetail(array $input): array
+    {
+        $id = isset($input['id']) ? (int) $input['id'] : 0;
+        if ($id <= 0) {
+            throw new \RuntimeException('ID revisione mancante o non valido.', 422);
+        }
+
+        $revision = $this->repository->getRevisionById($id);
+        if ($revision === null) {
+            throw new \RuntimeException('Revisione non trovata.', 404);
+        }
+
+        return [
+            'revision' => $revision,
+        ];
+    }
+
+    /**
+     * @return array{data:list<array{id_preventivo:int,revisions:list<array<string,mixed>>>}}
+     */
+    public function revisionsSummary(array $input): array
+    {
+        $idsInput = $input['ids'] ?? [];
+        if (!is_array($idsInput)) {
+            $idsInput = [];
+        }
+        $rawIds = [];
+        foreach ($idsInput as $item) {
+            $num = (int) $item;
+            if ($num > 0) {
+                $rawIds[] = $num;
+            }
+        }
+        $uniqueIds = array_values(array_unique($rawIds));
+        if (empty($uniqueIds)) {
+            return ['data' => []];
+        }
+        $out = [];
+        foreach ($uniqueIds as $id) {
+            $revisions = $this->repository->listRevisions($id);
+            if (empty($revisions)) {
+                continue;
+            }
+            $summary = [];
+            foreach ($revisions as $rev) {
+                $data = $rev['payload']['detail']['data'] ?? [];
+                $summary[] = [
+                    'id_revisione' => $rev['id_revisione'],
+                    'label' => $rev['label'],
+                    'numero_revision' => $rev['numero_revision'],
+                    'created_at' => $rev['created_at'],
+                    'totale_imponibile' => $this->normalizeFloat($data['totale_imponibile'] ?? $data['totale'] ?? null),
+                    'totale_iva' => $this->normalizeFloat($data['totale_iva'] ?? null),
+                    'totale' => $this->normalizeFloat($data['totale'] ?? $data['totale_imponibile'] ?? null),
+                ];
+            }
+            if (empty($summary)) {
+                continue;
+            }
+            $out[] = [
+                'id_preventivo' => $id,
+                'revisions' => $summary,
+            ];
+        }
+
+        return ['data' => $out];
+    }
+
+    private function normalizeFloat($value): float
+    {
+        if ($value === null) {
+            return 0.0;
+        }
+        $string = (string) $value;
+        $normalized = str_replace(',', '.', $string);
+        return (float) $normalized;
     }
 
     /**

@@ -26,7 +26,8 @@ import {
   CTableRow,
 } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
-import { cilArrowRight, cilSpreadsheet } from '@coreui/icons'
+import { cilArrowRight, cilSpreadsheet, cilWarning } from '@coreui/icons'
+import { utils, write } from 'xlsx'
 
 import { useAuth } from '../../context/AuthContext'
 import { fetchPagamentiLedger, fetchPagamentiList } from '../../services/pagamenti'
@@ -48,6 +49,9 @@ const PagamentiList = () => {
   const [ledgerError, setLedgerError] = useState(null)
   const [ledgerSearch, setLedgerSearch] = useState('')
   const [ledgerPage, setLedgerPage] = useState(0)
+  const [ledgerPendingOnly, setLedgerPendingOnly] = useState(false)
+  const [ledgerResiduoOnly, setLedgerResiduoOnly] = useState(false)
+  const [ledgerExporting, setLedgerExporting] = useState(false)
 
   const [payments, setPayments] = useState([])
   const [paymentsLoading, setPaymentsLoading] = useState(false)
@@ -120,13 +124,49 @@ const PagamentiList = () => {
   const filteredLedger = useMemo(() => {
     if (!ledger || ledger.length === 0) return []
     const term = ledgerSearch.trim().toLowerCase()
-    if (term === '') return ledger
-    return ledger.filter((row) =>
+    const matchesTerm = (row) =>
+      term === '' ||
       [row.ragione_sociale, row.piva, row.codice_fiscale].some((field) =>
         field ? String(field).toLowerCase().includes(term) : false,
-      ),
-    )
-  }, [ledger, ledgerSearch])
+      )
+    const matchesPending = (row) => (ledgerPendingOnly ? row.has_pending_unassigned : true)
+    const matchesResiduo = (row) =>
+      !ledgerResiduoOnly || Number.isFinite(row.saldo_residuo) && Number(row.saldo_residuo) > 0
+    return ledger.filter((row) => matchesTerm(row) && matchesPending(row) && matchesResiduo(row))
+  }, [ledger, ledgerSearch, ledgerPendingOnly, ledgerResiduoOnly])
+
+  const exportLedger = async () => {
+    if (filteredLedger.length === 0 || ledgerExporting) return
+    setLedgerExporting(true)
+    try {
+      const headers = ['Cliente', 'P.IVA', 'Fatturato', 'Pagato', 'Residuo', 'Residuo da associare']
+      const rows = filteredLedger.map((row) => [
+        row.ragione_sociale || '',
+        row.piva || row.codice_fiscale || '',
+        row.totale_fatturato ?? 0,
+        row.totale_pagato ?? 0,
+        row.saldo_residuo ?? 0,
+        row.pending_residuo ?? 0,
+      ])
+      const wb = utils.book_new()
+      const ws = utils.aoa_to_sheet([headers, ...rows])
+      utils.book_append_sheet(wb, ws, 'Ledger')
+      const wbout = write(wb, { bookType: 'xlsx', type: 'array' })
+      const blob = new Blob([wbout], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.setAttribute('download', `ledger-${Date.now()}.xlsx`)
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(url)
+    } finally {
+      setLedgerExporting(false)
+    }
+  }
   const paginatedLedger = useMemo(() => {
     const start = ledgerPage * 10
     return filteredLedger.slice(start, start + 10)
@@ -216,6 +256,45 @@ const PagamentiList = () => {
                 />
               </CCol>
             </CRow>
+        <div className="d-flex justify-content-between flex-wrap gap-3 align-items-center mb-3">
+          <div className="text-body-secondary small">
+            Filtri attivi:{' '}
+            {ledgerResiduoOnly && <span className="fw-semibold">residui &gt; 0</span>}
+            {ledgerPendingOnly && (
+              <>
+                {ledgerResiduoOnly ? ' • ' : ''}
+                <span className="fw-semibold">pagamenti da associare</span>
+              </>
+            )}
+            {!ledgerPendingOnly && !ledgerResiduoOnly && <span className="fw-semibold">nessuno</span>}
+          </div>
+          <div className="d-flex flex-wrap gap-2 align-items-center">
+            <CButton
+              size="sm"
+              color={ledgerPendingOnly ? 'primary' : 'secondary'}
+              variant={ledgerPendingOnly ? 'solid' : 'outline'}
+              onClick={() => setLedgerPendingOnly((prev) => !prev)}
+            >
+              {ledgerPendingOnly ? 'Tutti i clienti' : 'Clienti con fatture da associare'}
+            </CButton>
+            <CButton
+              size="sm"
+              color={ledgerResiduoOnly ? 'primary' : 'secondary'}
+              variant={ledgerResiduoOnly ? 'solid' : 'outline'}
+              onClick={() => setLedgerResiduoOnly((prev) => !prev)}
+            >
+              {ledgerResiduoOnly ? 'Mostra Tutti' : 'Filtra clienti con debito'}
+            </CButton>
+            <CButton
+              color="primary"
+              variant="outline"
+              disabled={ledgerExporting || filteredLedger.length === 0}
+              onClick={exportLedger}
+            >
+              {ledgerExporting ? 'Esportazione...' : 'Esporta lista'}
+            </CButton>
+              </div>
+            </div>
             {ledgerLoading ? (
               <div className="d-flex justify-content-center py-4">
                 <CSpinner color="primary" />
@@ -239,7 +318,17 @@ const PagamentiList = () => {
                   <CTableBody>
                     {paginatedLedger.map((row) => (
                       <CTableRow key={row.id_anagrafica}>
-                        <CTableDataCell>{row.ragione_sociale}</CTableDataCell>
+                        <CTableDataCell>
+                          <div className="d-flex flex-wrap align-items-center gap-2">
+                            <span>{row.ragione_sociale}</span>
+                            {row.has_pending_unassigned && (
+                              <CBadge color="warning" textColor="dark" className="d-flex align-items-center gap-1 small mb-0">
+                                <CIcon icon={cilWarning} />
+                                risultano pagamenti da associare
+                              </CBadge>
+                            )}
+                          </div>
+                        </CTableDataCell>
                         <CTableDataCell>{row.piva || row.codice_fiscale || '-'}</CTableDataCell>
                         <CTableDataCell className="text-end">
                           {formatCurrency(row.totale_fatturato)}

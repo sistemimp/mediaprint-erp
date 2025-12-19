@@ -295,9 +295,74 @@ GET `/preventiviDetail.php?id=...`
 {
   "data": { "id_preventivo": 101, "anno_preventivo": 2025, "numero_documento": 12, "data_preventivo": "2025-10-05", "oggetto": "Stampa brochure A4", "riferimento_cliente": "ORD-2025-003", "stato_code": "bozza", "totale": 122, "totale_imponibile": 100, "totale_sconto": 0, "totale_iva": 22, "note": null, "id_anagrafica": 123, "ragione_sociale": "ACME S.p.A." },
   "righe": [ { "id_riga": 1, "id_prodotto": 10, "descrizione": "Carta 100g", "quantita": 2, "prezzo_unitario": 50, "sconto": 0, "importo_scontato": 100, "iva": 22, "id_sdi_natura_iva": null, "totale": 122, "posizione": 1 } ],
-  "meta": { "editable": true }
+  "meta": {
+    "editable": true,
+    "revisions": [
+      {
+        "id_revisione": 1,
+        "id_preventivo": 101,
+        "numero_revision": 1,
+        "label": "Rev.1",
+        "note": "Email inviata: Preventivo 12/2025",
+        "operatore": "mrossi",
+        "created_at": "2025-10-05 15:30:00"
+      }
+    ]
+  }
 }
 ```
+
+- `meta.revisions`: elenco delle revisioni (ordine decrescente), ogni voce contiene `id_revisione`, `numero_revision`, `label`, `note`, `operatore` e `created_at`.
+
+### Dettaglio revisione
+GET `/preventiviRevisionDetail.php?id=...`
+
+- Risposta 200
+```json
+{
+  "revision": {
+    "id_revisione": 1,
+    "id_preventivo": 101,
+    "numero_revision": 1,
+    "label": "Rev.1",
+    "note": "Email inviata: Preventivo 12/2025",
+    "operatore": "mrossi",
+    "created_at": "2025-10-05 15:30:00",
+    "payload": {
+      "detail": {
+        "data": { "numero_documento": 12, "anno_preventivo": 2025, "data_preventivo": "...", "oggetto": "...", "totale": 122, "...": "..." },
+        "righe": [ /* stesse righe inviate */ ],
+        "cig": [],
+        ...
+      }
+    }
+  }
+}
+```
+
+- `payload.detail` è il dettaglio completo del preventivo al momento dell'invio (stessa struttura restituita da `preventiviDetail`).
+
+### Revisioni in lista documenti
+POST `/preventiviRevisionsSummary.php`
+
+- Body JSON: `{ ids: number[] }` (es. `[45, 82, 123]`)
+- Risposta 200
+```json
+{
+  "data": [
+    {
+      "id_preventivo": 45,
+      "revisions": [
+        { "id_revisione": 1, "label": "Rev.1", "created_at": "...", "totale_imponibile": 100, "totale_iva": 22, "totale": 122 },
+        { "id_revisione": 2, "label": "Rev.2", "created_at": "...", "totale_imponibile": 120, "totale_iva": 26.4, "totale": 146.4 }
+      ]
+    }
+  ]
+}
+```
+
+- L'array `data` restituisce per ogni `id_preventivo` la lista di revisioni disponibili, con i totali di `imponibile`, `IVA` e `totale` da mostrare in lista.
+- `meta.revisions`: elenco delle revisioni (ordine decrescente), ogni voce contiene `id_revisione`, `numero_revision`, `label`, `note`, `operatore` e `created_at`.
 
 ### Crea/aggiorna/invia
 POST `/preventiviCreate.php`
@@ -311,6 +376,29 @@ POST `/preventiviCreate.php`
     - Se bozza: `{ status: "draft", id_preventivo, anno_preventivo?, numero_documento? }`
     - Se inviato: `{ status: "sent", id_preventivo, anno_preventivo, numero_documento }`
   - 422/404 su errori
+-
+### Lista nuovi clienti mese
+GET `/dashboardNewClients.php`
+
+- Query param: `limit` (int, default 20, max 100)
+- Risposta 200
+```json
+{
+  "ok": true,
+  "data": [
+    {
+      "id_anagrafica": 123,
+      "ragione_sociale": "ACME S.p.A.",
+      "piva": "IT01234567890",
+      "codice_fiscale": null,
+      "email": "info@acme.it",
+      "created_at": "2025-12-01 09:12:00"
+    }
+  ],
+  "meta": { "limit": 20, "count": 1 }
+}
+```
+
 
 ## Dashboard
 
@@ -327,9 +415,24 @@ GET `/dashboard.php`
     "nuovi_mese_precedente": 20,
     "perc_change_mom": 50.0
   },
-  "series": [ { "mese": "2025-06", "tot": 200, "attive": 180, "disattive": 20 } ]
+  "series": [
+    { "mese": "2025-06", "tot": 200, "attive": 180, "disattive": 20 }
+  ],
+  "sales": {
+    "fatturato": 3800.25,
+    "nuovi_clienti": 12,
+    "tasso_conversione": 41.7,
+    "preventivi_totali": 29,
+    "preventivi_confermati": 12,
+    "period": "2025-06"
+  }
 }
 ```
+
+- `fatture_series`: lista degli ultimi 12 mesi con `mese`, `totale` (importo fatture emesse) e `pagate` (parte saldata), utile per disegnare l’andamento del fatturato.
+- `conversion_series`: ultimi 6 mesi con `periodo`, `totale` preventivi, `confermati` (stato confermato) e `tasso` (%) di conversione.
+
+- `sales`: riepilogo delle vendite del mese corrente con fatturato (IVA compresa), numero di nuovi clienti acquisiti, percentuale di preventivi accettati, conteggio totale e confermato dei preventivi e il periodo in formato `YYYY-MM`.
 
 ## Configurazioni
 

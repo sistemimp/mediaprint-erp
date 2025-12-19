@@ -66,6 +66,7 @@ import {
   fetchProdottoVariazioni,
 } from '../../services/prodotti'
 import { fetchPacchetti, fetchPacchettoDetail } from '../../services/pacchetti'
+import { fetchPaymentTerms } from '../../services/paymentTerms'
 
 const currencyFormatter = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' })
 
@@ -112,6 +113,93 @@ const toDateInputValue = (value) => {
   return ''
 }
 
+const sanitizePaymentAnchor = (anchor) => {
+  const value = typeof anchor === 'string' ? anchor.toLowerCase().trim() : ''
+  return ['end_of_month', 'invoice_date'].includes(value) ? value : 'invoice_date'
+}
+
+const endOfMonthDate = (date) => {
+  return new Date(date.getFullYear(), date.getMonth() + 1, 0)
+}
+
+const addDays = (date, days) => {
+  const result = new Date(date)
+  result.setDate(result.getDate() + days)
+  return result
+}
+
+const formatIsoDate = (date) => {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+const roundToTwo = (value) => {
+  return Math.round(value * 100) / 100
+}
+
+const buildRateLabel = (index, anchor, offset) => {
+  const anchorLabel = anchor === 'end_of_month' ? 'fine mese' : 'data fattura'
+  if (offset <= 0) {
+    return `Rata ${index} (${anchorLabel})`
+  }
+  return `Rata ${index} (${offset} gg ${anchorLabel})`
+}
+
+const buildScheduleFromTerm = (term, invoiceDate, total) => {
+  if (!term || !Array.isArray(term.schedule) || term.schedule.length === 0) {
+    return []
+  }
+  const totalAmount = Number.isFinite(Number(total)) ? Number(total) : 0
+  const installments = term.schedule.length
+  const baseQuota = installments > 0 ? roundToTwo(totalAmount / installments) : 0
+  let remaining = totalAmount
+  const baseDate = (() => {
+    if (invoiceDate) {
+      const parsed = new Date(invoiceDate)
+      if (!Number.isNaN(parsed.getTime())) {
+        return parsed
+      }
+      if (typeof invoiceDate === 'string') {
+        const isoMatch = invoiceDate.match(/^(\d{4}-\d{2}-\d{2})/)
+        if (isoMatch) {
+          return new Date(isoMatch[1])
+        }
+      }
+    }
+    return new Date()
+  })()
+
+  return term.schedule.map((item, index) => {
+    const anchor = sanitizePaymentAnchor(item.anchor)
+    const offsetRaw = item.offset_days ?? item.offset ?? 0
+    const offsetDays = Number.isFinite(Number(offsetRaw)) ? Number(offsetRaw) : 0
+    let dueDate = anchor === 'end_of_month' ? endOfMonthDate(baseDate) : new Date(baseDate)
+    if (offsetDays !== 0) {
+      dueDate = addDays(dueDate, offsetDays)
+    }
+    if (anchor === 'end_of_month') {
+      dueDate = endOfMonthDate(dueDate)
+    }
+
+    const label = item.label && String(item.label).trim() !== ''
+      ? String(item.label)
+      : buildRateLabel(index + 1, anchor, offsetDays)
+    const amount = index < installments - 1 ? baseQuota : roundToTwo(remaining)
+    remaining = roundToTwo(remaining - amount)
+
+    return {
+      index: index + 1,
+      label,
+      due_date: formatIsoDate(dueDate),
+      amount: Math.max(amount, 0),
+      anchor,
+      offset_days: offsetDays,
+    }
+  })
+}
+
 const computeRowAmounts = (row) => {
   const qty = Number(row.quantita)
   const price = Number(row.prezzo_unitario)
@@ -138,11 +226,50 @@ const computeRowAmounts = (row) => {
   }
 }
 
+const createEmptyFormValues = () => ({
+  data_fattura: '',
+  id_stato_fatt: '',
+  id_sezionale: '',
+  note: '',
+  saldo: '',
+  cliente_pec: '',
+  cliente_codice_sdi: '',
+  cliente_iban: '',
+  cliente_banca: '',
+  cliente_modalita_pagamento: '',
+  cliente_id_cond_pagamento: '',
+  cliente_giorni_pagamento: '',
+})
+
 const TIMELINE_BASE_STEPS = [
   { code: 'bozza', fallbackLabel: 'Bozza' },
   { code: 'emessa', fallbackLabel: 'Emessa' },
   { code: 'inviata', fallbackLabel: 'Inviata' },
 ]
+
+const ICON_SYMBOLS = {
+  cilWarning: '⚠',
+  cilBan: '⛔',
+  cilCheck: '✔',
+  cilThumbsDown: '✖',
+  cilThumbsUp: '👍',
+}
+
+const resolveIconSymbol = (raw) => {
+  if (!raw) return ''
+  if (typeof raw !== 'string') return ''
+  const trimmed = raw.trim()
+  if (ICON_SYMBOLS[trimmed]) {
+    return ICON_SYMBOLS[trimmed]
+  }
+  if (trimmed.length === 1) {
+    return trimmed
+  }
+  if (/^[^\s]{1,2}$/.test(trimmed)) {
+    return trimmed
+  }
+  return ''
+}
 
 const CONCLUSIVE_STATUS_IDS = [4, 5, 6, 7]
 const FINAL_STEP_FALLBACK_LABEL = 'Stato conclusivo'
@@ -158,13 +285,7 @@ const FattureDetail = () => {
   const [record, setRecord] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
-  const [formValues, setFormValues] = useState({
-    data_fattura: '',
-    id_stato_fatt: '',
-    id_sezionale: '',
-    note: '',
-    saldo: '',
-  })
+  const [formValues, setFormValues] = useState(createEmptyFormValues)
   const [rows, setRows] = useState([])
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState(null)
@@ -177,6 +298,9 @@ const FattureDetail = () => {
   })
   const [configLoading, setConfigLoading] = useState(false)
   const [configError, setConfigError] = useState(null)
+  const [paymentTerms, setPaymentTerms] = useState([])
+  const [paymentTermsLoading, setPaymentTermsLoading] = useState(false)
+  const [paymentTermsError, setPaymentTermsError] = useState(null)
   const [naturaOptions, setNaturaOptions] = useState([])
   const [naturaLoading, setNaturaLoading] = useState(false)
   const [naturaError, setNaturaError] = useState(null)
@@ -297,6 +421,34 @@ const FattureDetail = () => {
     load()
     return () => controller.abort()
   }, [token, logout, reloadVersion])
+
+  useEffect(() => {
+    if (!token) return
+    const controller = new AbortController()
+    const load = async () => {
+      setPaymentTermsLoading(true)
+      setPaymentTermsError(null)
+      try {
+        const { items } = await fetchPaymentTerms({
+          token,
+          signal: controller.signal,
+        })
+        setPaymentTerms(Array.isArray(items) ? items : [])
+      } catch (err) {
+        if (err?.name === 'AbortError') return
+        if (err?.status === 401 && logout) {
+          logout()
+          return
+        }
+        setPaymentTerms([])
+        setPaymentTermsError(err)
+      } finally {
+        setPaymentTermsLoading(false)
+      }
+    }
+    load()
+    return () => controller.abort()
+  }, [token, logout])
 
   useEffect(() => {
     if (!token || !id) return
@@ -451,10 +603,10 @@ const FattureDetail = () => {
         ])
         const sorted = Array.isArray(items)
           ? [...items].sort(
-              (a, b) =>
-                String(a?.codice || '').localeCompare(String(b?.codice || '')) ||
-                String(a?.nome || '').localeCompare(String(b?.nome || '')),
-            )
+            (a, b) =>
+              String(a?.codice || '').localeCompare(String(b?.codice || '')) ||
+              String(a?.nome || '').localeCompare(String(b?.nome || '')),
+          )
           : []
         setProdVarOptions(sorted)
         const map = {}
@@ -483,10 +635,10 @@ const FattureDetail = () => {
       selectedComboKey && String(selectedComboKey).trim() !== ''
         ? selectedComboKey
         : selectedVarIds
-            .map((id) => Number(id) || 0)
-            .filter((n) => n > 0)
-            .sort((a, b) => a - b)
-            .join('+')
+          .map((id) => Number(id) || 0)
+          .filter((n) => n > 0)
+          .sort((a, b) => a - b)
+          .join('+')
     const comboPrice = comboKey && prodComboMap[comboKey] != null ? Number(prodComboMap[comboKey]) : null
     const delta = prodVarOptions
       .filter((v) => selectedVarIds.includes(v.id_variazione))
@@ -603,25 +755,33 @@ const FattureDetail = () => {
 
   useEffect(() => {
     if (!record) {
-      setFormValues({
-        data_fattura: '',
-        id_stato_fatt: '',
-        id_sezionale: '',
-        note: '',
-        saldo: '',
-      })
+      setFormValues(createEmptyFormValues())
       setRows([])
       setSaveError(null)
       setSaveSuccess(null)
       return
     }
     setFormValues({
+      ...createEmptyFormValues(),
       data_fattura: toDateInputValue(record.data_fattura),
       id_stato_fatt: record.id_stato_fatt ? String(record.id_stato_fatt) : '',
       id_sezionale: record.id_sezionale ? String(record.id_sezionale) : '',
       note: record.note ?? '',
       saldo:
         record.saldo !== null && record.saldo !== undefined ? String(record.saldo) : '',
+      cliente_pec: record.cliente_pec ?? '',
+      cliente_codice_sdi: record.cliente_codice_sdi ?? '',
+      cliente_iban: record.cliente_iban ?? '',
+      cliente_banca: record.cliente_banca ?? '',
+      cliente_modalita_pagamento: record.cliente_modalita_pagamento ?? '',
+      cliente_id_cond_pagamento: record.cliente_id_cond_pagamento
+        ? String(record.cliente_id_cond_pagamento)
+        : '',
+      cliente_giorni_pagamento:
+        record.cliente_giorni_pagamento !== null &&
+          record.cliente_giorni_pagamento !== undefined
+          ? String(record.cliente_giorni_pagamento)
+          : '',
     })
     setRows(hydrateRowsFromRecord(record))
     setSaveError(null)
@@ -650,6 +810,12 @@ const FattureDetail = () => {
     })
     return map
   }, [statiOptions])
+  const rifiutataStatusId = useMemo(() => {
+    const match = statiByCode.rifiutata
+    if (!match?.id_stato) return null
+    const numericId = Number(match.id_stato)
+    return Number.isFinite(numericId) ? numericId : null
+  }, [statiByCode])
   const currentStatusId = useMemo(() => {
     if (!record?.id_stato_fatt) return null
     const numeric = Number(record.id_stato_fatt)
@@ -687,19 +853,27 @@ const FattureDetail = () => {
     }
     const baseSteps = TIMELINE_BASE_STEPS.map((step) => {
       const matchId = getIdByCode(step.code)
+      const state = statiByCode[step.code]
       return {
         key: step.code,
-        label: statiByCode[step.code]?.label || step.fallbackLabel,
+        label: state?.label || step.fallbackLabel,
         matchIds: matchId ? [matchId] : [],
+        timeline_icon: state?.timeline_icon ?? null,
+        timeline_color: state?.timeline_color ?? null,
+        timeline_icon_symbol: resolveIconSymbol(state?.timeline_icon ?? ''),
       }
     })
+    const finalState = currentStatusId != null ? statiById[currentStatusId] : null
     baseSteps.push({
       key: 'conclusione',
       label: finalStepLabel,
       matchIds: CONCLUSIVE_STATUS_IDS,
+      timeline_icon: finalState?.timeline_icon ?? null,
+      timeline_color: finalState?.timeline_color ?? null,
+      timeline_icon_symbol: resolveIconSymbol(finalState?.timeline_icon ?? ''),
     })
     return baseSteps
-  }, [statiByCode, finalStepLabel])
+  }, [statiByCode, finalStepLabel, statiById, currentStatusId])
   const activeStatusStep = useMemo(() => {
     if (!timelineSteps.length) return 0
     if (currentStatusId == null) return 1
@@ -729,6 +903,30 @@ const FattureDetail = () => {
         .join(' '),
     [finalStatusVariant],
   )
+
+  useEffect(() => {
+    const stepperRoot = document.querySelector('.invoice-timeline-stepper')
+    if (!stepperRoot) return
+    const stepElements = Array.from(stepperRoot.querySelectorAll('.stepper-step'))
+    stepElements.forEach((step, index) => {
+      const meta = timelineSteps[index]
+      const indicator = step.querySelector('.stepper-step-indicator')
+      const indicatorText = step.querySelector('.stepper-step-indicator-text')
+      if (indicator) {
+        const color = meta?.timeline_color ? String(meta.timeline_color).trim() : ''
+        indicator.style.backgroundColor = color
+        indicator.style.borderColor = color
+      }
+      if (indicatorText) {
+        const symbol = meta?.timeline_icon_symbol ?? ''
+        if (symbol) {
+          indicatorText.setAttribute('data-icon', symbol)
+        } else {
+          indicatorText.removeAttribute('data-icon')
+        }
+      }
+    })
+  }, [timelineSteps])
 
   const sezionaliOptions = useMemo(
     () => (Array.isArray(config?.sezionali) ? config.sezionali : []),
@@ -837,8 +1035,8 @@ const FattureDetail = () => {
       const naturaLabel =
         bucket.aliquota === 0 && bucket.naturaIds.size > 0
           ? Array.from(bucket.naturaIds)
-              .map((id) => naturaMap.get(id)?.label || `Natura ${id}`)
-              .join(', ')
+            .map((id) => naturaMap.get(id)?.label || `Natura ${id}`)
+            .join(', ')
           : null
       return {
         aliquota: bucket.aliquota,
@@ -870,9 +1068,66 @@ const FattureDetail = () => {
     }
     return raw
   }, [record])
-  const paymentSchedule = Array.isArray(record?.condizioni_pagamento_rate)
-    ? record.condizioni_pagamento_rate
-    : []
+  const currentPaymentTermId = useMemo(() => {
+    const raw = formValues.cliente_id_cond_pagamento
+    if (raw === null || raw === undefined || raw === '') {
+      return null
+    }
+    const numeric = Number(raw)
+    return Number.isFinite(numeric) && numeric > 0 ? numeric : null
+  }, [formValues.cliente_id_cond_pagamento])
+
+  const paymentSchedule = useMemo(() => {
+    const defaultSchedule = Array.isArray(record?.condizioni_pagamento_rate)
+      ? record.condizioni_pagamento_rate
+      : []
+    const selectedTermId = Number(
+      currentPaymentTermId ?? record?.cliente_id_cond_pagamento ?? 0,
+    )
+    if (!Number.isFinite(selectedTermId) || selectedTermId <= 0 || paymentTerms.length === 0) {
+      return defaultSchedule
+    }
+
+    const term = paymentTerms.find(
+      (item) => Number(item?.id) === selectedTermId || Number(item?.id_termine) === selectedTermId,
+    )
+    if (!term) {
+      return defaultSchedule
+    }
+
+    const invoiceDate = formValues.data_fattura || record?.data_fattura
+    const schedule = buildScheduleFromTerm(term, invoiceDate, record?.totale)
+    return schedule.length > 0 ? schedule : defaultSchedule
+  }, [
+    currentPaymentTermId,
+    formValues.cliente_id_cond_pagamento,
+    formValues.data_fattura,
+    paymentTerms,
+    record?.condizioni_pagamento_rate,
+    record?.data_fattura,
+    record?.totale,
+  ])
+
+  const currentPaymentTermLabel = useMemo(() => {
+    if (currentPaymentTermId !== null) {
+      const term = paymentTerms.find(
+        (item) =>
+          Number(item?.id) === currentPaymentTermId ||
+          Number(item?.id_termine) === currentPaymentTermId,
+      )
+      if (term?.label) {
+        return term.label
+      }
+    }
+    return record?.cliente_condizioni_pagamento ?? null
+  }, [currentPaymentTermId, paymentTerms, record?.cliente_condizioni_pagamento])
+
+  const currentPaymentTermInList = useMemo(() => {
+    if (currentPaymentTermId === null) {
+      return false
+    }
+    return paymentTerms.some((term) => Number(term?.id) === currentPaymentTermId)
+  }, [currentPaymentTermId, paymentTerms])
 
   const handleFormChange = (field) => (event) => {
     const value = event?.target?.value ?? ''
@@ -1235,6 +1490,26 @@ const FattureDetail = () => {
     const previousStatusId = record?.id_stato_fatt ? Number(record.id_stato_fatt) : null
     const desiredStatusId = formValues.id_stato_fatt ? Number(formValues.id_stato_fatt) : null
 
+    const wantsRejectTransition =
+      desiredStatusId !== null &&
+      rifiutataStatusId !== null &&
+      desiredStatusId === rifiutataStatusId &&
+      previousStatusId !== rifiutataStatusId
+    if (wantsRejectTransition) {
+      const confirmMessage =
+        'Confermi di generare automaticamente una nota di credito e impostare lo stato su "Rifiutata"?'
+      const confirmed = typeof window !== 'undefined' ? window.confirm(confirmMessage) : true
+      if (!confirmed) {
+        setSaveError(null)
+        setSaveSuccess(null)
+        setFormValues((prev) => ({
+          ...prev,
+          id_stato_fatt: previousStatusId ? String(previousStatusId) : '',
+        }))
+        return
+      }
+    }
+
     let linesPayload = []
     try {
       linesPayload = normalizeRowsForSubmit(rows)
@@ -1267,6 +1542,13 @@ const FattureDetail = () => {
         id_stato_fatt: formValues.id_stato_fatt ? Number(formValues.id_stato_fatt) : undefined,
         id_sezionale: formValues.id_sezionale ? Number(formValues.id_sezionale) : undefined,
         saldo: saldoValue,
+        cliente_pec: formValues.cliente_pec,
+        cliente_codice_sdi: formValues.cliente_codice_sdi,
+        cliente_iban: formValues.cliente_iban,
+        cliente_banca: formValues.cliente_banca,
+        cliente_modalita_pagamento: formValues.cliente_modalita_pagamento,
+        cliente_id_cond_pagamento: formValues.cliente_id_cond_pagamento,
+        cliente_giorni_pagamento: formValues.cliente_giorni_pagamento,
         righe: linesPayload,
       })
       if (updated) {
@@ -1405,36 +1687,36 @@ const FattureDetail = () => {
   return (
     <CCard>
       <CCardHeader>
-          <div className="d-flex justify-content-between align-items-center flex-wrap gap-3">
-            <div>
-              <h5 className="mb-0">Fattura {numeroDisplay}</h5>
-              <small className="text-body-secondary">
-                Dettaglio documento {record?.id_fattura ? `#${record.id_fattura}` : ''}
-              </small>
-            </div>
-            <div className="d-flex gap-2">
-              <CButton color="secondary" variant="ghost" onClick={handlePrintPdf} disabled={!record}>
-                <CIcon icon={cilPrint} className="me-2" />
-                Stampa PDF
-              </CButton>
-              <CButton color="primary" onClick={handleExportXml} disabled={!record || exportingXml}>
-                {exportingXml ? (
-                  <>
-                    <CSpinner size="sm" className="me-2" />
-                    Esportazione...
-                  </>
-                ) : (
-                  <>
-                    <CIcon icon={cilCloudDownload} className="me-2" />
-                    Esporta XML SdI
-                  </>
-                )}
-              </CButton>
-              <CButton color="secondary" variant="outline" onClick={() => navigate(-1)}>
-                <CIcon icon={cilArrowLeft} className="me-2" />
-                Indietro
-              </CButton>
-            </div>
+        <div className="d-flex justify-content-between align-items-center flex-wrap gap-3">
+          <div>
+            <h5 className="mb-0">Fattura {numeroDisplay}</h5>
+            <small className="text-body-secondary">
+              Dettaglio documento {record?.id_fattura ? `#${record.id_fattura}` : ''}
+            </small>
+          </div>
+          <div className="d-flex gap-2">
+            <CButton color="secondary" variant="ghost" onClick={handlePrintPdf} disabled={!record}>
+              <CIcon icon={cilPrint} className="me-2" />
+              Stampa PDF
+            </CButton>
+            <CButton color="primary" onClick={handleExportXml} disabled={!record || exportingXml}>
+              {exportingXml ? (
+                <>
+                  <CSpinner size="sm" className="me-2" />
+                  Esportazione...
+                </>
+              ) : (
+                <>
+                  <CIcon icon={cilCloudDownload} className="me-2" />
+                  Esporta XML SdI
+                </>
+              )}
+            </CButton>
+            <CButton color="secondary" variant="outline" onClick={() => navigate(-1)}>
+              <CIcon icon={cilArrowLeft} className="me-2" />
+              Indietro
+            </CButton>
+          </div>
         </div>
       </CCardHeader>
       <CCardBody>
@@ -1613,36 +1895,81 @@ const FattureDetail = () => {
               <div className="border rounded p-3 bg-body-tertiary">
                 <CRow className="g-3">
                   <CCol md={4}>
-                    <div className="text-body-secondary small">PEC</div>
-                    <div className="fw-semibold">{record.cliente_pec || '-'}</div>
+                    <CFormLabel>PEC</CFormLabel>
+                    <CFormInput
+                      type="email"
+                      value={formValues.cliente_pec}
+                      onChange={handleFormChange('cliente_pec')}
+                      disabled={formDisabled}
+                    />
                   </CCol>
                   <CCol md={4}>
-                    <div className="text-body-secondary small">Codice destinatario / SdI</div>
-                    <div className="fw-semibold">{record.cliente_codice_sdi || '-'}</div>
+                    <CFormLabel>Codice destinatario / SdI</CFormLabel>
+                    <CFormInput
+                      value={formValues.cliente_codice_sdi}
+                      onChange={handleFormChange('cliente_codice_sdi')}
+                      disabled={formDisabled}
+                    />
                   </CCol>
                   <CCol md={4}>
-                    <div className="text-body-secondary small">IBAN</div>
-                    <div className="fw-semibold">{record.cliente_iban || '-'}</div>
+                    <CFormLabel>IBAN</CFormLabel>
+                    <CFormInput
+                      value={formValues.cliente_iban}
+                      onChange={handleFormChange('cliente_iban')}
+                      disabled={formDisabled}
+                    />
                   </CCol>
                   <CCol md={4}>
-                    <div className="text-body-secondary small">Banca</div>
-                    <div className="fw-semibold">{record.cliente_banca || '-'}</div>
+                    <CFormLabel>Banca</CFormLabel>
+                    <CFormInput
+                      value={formValues.cliente_banca}
+                      onChange={handleFormChange('cliente_banca')}
+                      disabled={formDisabled}
+                    />
                   </CCol>
                   <CCol md={4}>
-                    <div className="text-body-secondary small">Modalità di pagamento</div>
-                    <div className="fw-semibold">{record.cliente_modalita_pagamento || '-'}</div>
+                    <CFormLabel>Modalità di pagamento</CFormLabel>
+                    <CFormInput
+                      value={formValues.cliente_modalita_pagamento}
+                      onChange={handleFormChange('cliente_modalita_pagamento')}
+                      disabled={formDisabled}
+                    />
                   </CCol>
                   <CCol md={4}>
-                    <div className="text-body-secondary small">Condizioni di pagamento</div>
-                    <div className="fw-semibold">{record.cliente_condizioni_pagamento || '-'}</div>
-                  </CCol>
-                  <CCol md={4}>
-                    <div className="text-body-secondary small">Condizione pagamento (ID)</div>
-                    <div className="fw-semibold">
-                      {record.cliente_id_cond_pagamento
-                        ? `#${record.cliente_id_cond_pagamento}`
-                        : '-'}
-                    </div>
+                    <CFormLabel>Condizione di pagamento</CFormLabel>
+                    <CFormSelect
+                      value={formValues.cliente_id_cond_pagamento}
+                      onChange={handleFormChange('cliente_id_cond_pagamento')}
+                      disabled={formDisabled || paymentTermsLoading}
+                    >
+                      <option value="">
+                        {paymentTermsLoading
+                          ? 'Caricamento...'
+                          : 'Rimuovi override (usa impostazioni cliente)'}
+                      </option>
+                      {paymentTerms.map((term) => (
+                        <option key={`term-${term.id}`} value={String(term.id)}>{term.label}</option>
+                      ))}
+                      {!currentPaymentTermInList && currentPaymentTermId !== null && (
+                        <option value={String(currentPaymentTermId)}>
+                          {currentPaymentTermLabel || `Condizione #${currentPaymentTermId}`}
+                        </option>
+                      )}
+                    </CFormSelect>
+                    <small className="text-body-secondary d-block mt-1">
+                      {currentPaymentTermLabel
+                        ? `Attuale: ${currentPaymentTermLabel}`
+                        : 'Nessuna condizione attiva'}
+                      {record?.cliente_id_cond_pagamento
+                        ? ` (#${record.cliente_id_cond_pagamento})`
+                        : ''}
+                    </small>
+                    {paymentTermsError && (
+                      <small className="text-danger d-block">
+                        {paymentTermsError.message ||
+                          'Impossibile caricare le condizioni di pagamento.'}
+                      </small>
+                    )}
                   </CCol>
                   {clienteAltriDati && (
                     <CCol xs={12}>
@@ -1688,7 +2015,6 @@ const FattureDetail = () => {
                 </CRow>
               </div>
             </section>
-
             <CForm id="fattura-detail-form" onSubmit={handleSubmit} ref={formRef}>
               <CRow className="g-3 mb-4">
                 <CCol md={3}>
@@ -2213,11 +2539,11 @@ const FattureDetail = () => {
                           {prodComboList.map((combo) => {
                             const labels = Array.isArray(combo.var_ids)
                               ? combo.var_ids.map((idv) => {
-                                  const vv = prodVarOptions.find(
-                                    (x) => Number(x.id_variazione) === Number(idv),
-                                  )
-                                  return vv ? (vv.categoria ? `${vv.categoria} - ${vv.nome}` : vv.nome) : idv
-                                })
+                                const vv = prodVarOptions.find(
+                                  (x) => Number(x.id_variazione) === Number(idv),
+                                )
+                                return vv ? (vv.categoria ? `${vv.categoria} - ${vv.nome}` : vv.nome) : idv
+                              })
                               : []
                             return (
                               <option key={combo.combo_key} value={combo.combo_key}>
@@ -2305,7 +2631,7 @@ const FattureDetail = () => {
                     </CCol>
                     <CCol md={6}>
                       <CFormLabel>Natura IVA</CFormLabel>
-                      <CFormSelect value="" onChange={() => {}} disabled>
+                      <CFormSelect value="" onChange={() => { }} disabled>
                         <option value="">Selezione disponibile dopo l'inserimento</option>
                       </CFormSelect>
                     </CCol>

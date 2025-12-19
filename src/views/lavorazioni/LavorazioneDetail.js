@@ -32,7 +32,7 @@ import {
   CTableRow,
 } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
-import { cilArrowLeft, cilPen, cilReload, cilSend } from '@coreui/icons'
+import { cilArrowLeft, cilCheckCircle, cilMediaPause, cilMediaPlay, cilPen, cilReload, cilSend, cilXCircle } from '@coreui/icons'
 import {
   fetchLavorazioneDetail,
   fetchLavorazioneActivityTemplates,
@@ -41,15 +41,30 @@ import {
   assignLavorazione,
   assignLavorazioneActivity,
   notifyLavorazioneOperators,
+  updateLavorazioneInfo,
+  updateLavorazioneActivityStatus,
+  deleteLavorazioneActivity,
 } from '../../services/lavorazioni'
 import { useAuth } from '../../context/AuthContext'
 
 const statoBadgeMap = {
+  todo: 'warning',
   aperta: 'secondary',
   pianificata: 'info',
   in_produzione: 'primary',
   completata: 'success',
   annullata: 'danger',
+  sospesa: 'danger',
+  done: 'success',
+}
+
+const jobStateLabels = {
+  in_produzione: 'In lavorazione',
+  aperta: 'Aperta',
+  pianificata: 'Pianificata',
+  completata: 'Completata',
+  annullata: 'Annullata',
+  sospesa: 'Sospesa',
 }
 
 const formatDate = (value, withTime = false) => {
@@ -68,7 +83,7 @@ const formatDate = (value, withTime = false) => {
 const renderStateBadge = (detail) => {
   const code = detail?.stato || 'aperta'
   const color = statoBadgeMap[code] || 'secondary'
-  const label = detail?.stato_label || code
+  const label = detail?.stato_label || jobStateLabels[code] || code
   return <CBadge color={color}>{label}</CBadge>
 }
 
@@ -90,6 +105,14 @@ const priorityOptions = [
   { value: 'high', label: 'Alta' },
   { value: 'critical', label: 'Critica' },
 ]
+
+const activityStatusLabels = {
+  todo: 'Da fare',
+  in_progress: 'In esecuzione',
+  done: 'Terminata',
+  cancelled: 'Annullata',
+  sospesa: 'Sospesa',
+}
 
 const formatPercent = (value) => {
   if (value === undefined || value === null || Number.isNaN(Number(value))) {
@@ -158,6 +181,24 @@ const LavorazioneDetail = () => {
   const [notificationSubmitting, setNotificationSubmitting] = useState(false)
   const [notificationError, setNotificationError] = useState(null)
   const [notificationSuccess, setNotificationSuccess] = useState(null)
+  const [noteDraft, setNoteDraft] = useState('')
+  const [noteSaving, setNoteSaving] = useState(false)
+  const [noteError, setNoteError] = useState(null)
+  const [noteSuccess, setNoteSuccess] = useState(null)
+  const [activityStatusLoading, setActivityStatusLoading] = useState({})
+  const [activityStatusError, setActivityStatusError] = useState(null)
+  const [activityStatusSuccess, setActivityStatusSuccess] = useState(null)
+  const [activityDeleting, setActivityDeleting] = useState({})
+  useEffect(() => {
+    if (!activityStatusSuccess && !activityStatusError) {
+      return undefined
+    }
+    const timer = setTimeout(() => {
+      setActivityStatusError(null)
+      setActivityStatusSuccess(null)
+    }, 2000)
+    return () => clearTimeout(timer)
+  }, [activityStatusError, activityStatusSuccess])
 
   useEffect(() => {
     if (!token || !recordId) {
@@ -270,6 +311,136 @@ const LavorazioneDetail = () => {
 
   const currentDetail = detail ?? {}
   const hasDetail = Boolean(detail)
+  useEffect(() => {
+    setNoteDraft(currentDetail.note ?? '')
+    setNoteError(null)
+    setNoteSuccess(null)
+  }, [currentDetail.note])
+  const hasSuspendedActivity = useMemo(
+    () =>
+      Array.isArray(currentDetail.attivita) &&
+      currentDetail.attivita.some((task) => String(task?.stato || '').toLowerCase() === 'sospesa'),
+    [currentDetail.attivita],
+  )
+  const overallProgressColor = hasSuspendedActivity
+    ? 'danger'
+    : currentDetail.percentuale_avanzamento >= 100
+      ? 'success'
+      : 'primary'
+  const handleNoteChange = (event) => {
+    const value = event?.target?.value ?? ''
+    setNoteDraft(value)
+    setNoteError(null)
+    setNoteSuccess(null)
+  }
+
+  const handleNoteReset = () => {
+    setNoteDraft(currentDetail.note ?? '')
+    setNoteError(null)
+    setNoteSuccess(null)
+  }
+
+  const handleNoteSave = async (event) => {
+    if (event?.preventDefault) {
+      event.preventDefault()
+    }
+    if (!token || !recordId) return
+    const noteChanged = noteDraft !== (currentDetail.note ?? '')
+    if (!noteChanged) {
+      return
+    }
+    setNoteSaving(true)
+    setNoteError(null)
+    setNoteSuccess(null)
+    try {
+      await updateLavorazioneInfo({
+        token,
+        idLavorazione: Number(recordId),
+        note: noteDraft,
+      })
+      setNoteSuccess('Note aggiornate correttamente.')
+      setRefreshIndex((value) => value + 1)
+    } catch (err) {
+      console.error('Impossibile aggiornare le note della lavorazione:', err)
+      setNoteError(err)
+    } finally {
+      setNoteSaving(false)
+    }
+  }
+
+  const setActivityStatusLoadingFor = (activityId, loading) => {
+    setActivityStatusLoading((prev) => {
+      const next = { ...(prev ?? {}) }
+      if (loading) {
+        next[activityId] = true
+      } else {
+        delete next[activityId]
+      }
+      return next
+    })
+  }
+
+  const setActivityDeletingFor = (activityId, loading) => {
+    setActivityDeleting((prev) => {
+      const next = { ...(prev ?? {}) }
+      if (loading) {
+        next[activityId] = true
+      } else {
+        delete next[activityId]
+      }
+      return next
+    })
+  }
+
+  const handleActivityStatusChange = async (activityId, targetStatus, percentOverride) => {
+    if (!token || !activityId) return
+    setActivityStatusError(null)
+    setActivityStatusSuccess(null)
+    setActivityStatusLoadingFor(activityId, true)
+    try {
+      await updateLavorazioneActivityStatus({
+        token,
+        idAttivita: Number(activityId),
+        stato: targetStatus,
+        percentuale: typeof percentOverride === 'number' ? percentOverride : undefined,
+      })
+      const label = activityStatusLabels[targetStatus] ?? targetStatus
+      const suffix = typeof percentOverride === 'number' ? ` (${percentOverride}%)` : ''
+      setActivityStatusSuccess(`Stato attività aggiornato: ${label}${suffix}.`)
+      setRefreshIndex((value) => value + 1)
+    } catch (err) {
+      console.error('Impossibile aggiornare lo stato dell\'attività:', err)
+      setActivityStatusError(err)
+    } finally {
+      setActivityStatusLoadingFor(activityId, false)
+    }
+  }
+
+  const handleDeleteActivity = async (activityId) => {
+    if (!token || !activityId) return
+    if (!window.confirm('Sei sicuro di rimuovere questa attività?')) {
+      return
+    }
+    setActivityStatusError(null)
+    setActivityStatusSuccess(null)
+    setActivityDeletingFor(activityId, true)
+    try {
+      await deleteLavorazioneActivity({
+        token,
+        idAttivita: Number(activityId),
+      })
+      setActivityStatusSuccess('Attività rimossa correttamente.')
+      setRefreshIndex((value) => value + 1)
+    } catch (err) {
+      console.error('Impossibile rimuovere l\'attività:', err)
+      setActivityStatusError(err)
+    } finally {
+      setActivityDeletingFor(activityId, false)
+    }
+  }
+
+  const isActivityStatusLoading = (activityId) => Boolean(activityStatusLoading[activityId])
+  const isActivityDeleting = (activityId) => Boolean(activityDeleting[activityId])
   const jobAssignedOperators = useMemo(() => {
     const ids = new Set()
     if (Array.isArray(currentDetail?.assegnazioni)) {
@@ -669,7 +840,7 @@ const LavorazioneDetail = () => {
       {notificationSuccess ? <CAlert color="success">{notificationSuccess}</CAlert> : null}
 
       <CRow className="mb-4">
-        <CCol md={8}>
+        <CCol xs={12}>
           <CCard className="mb-4">
             <CCardHeader className="d-flex align-items-center justify-content-between">
               <div>
@@ -713,16 +884,62 @@ const LavorazioneDetail = () => {
                 <CCol md={6}>
                   <InfoField label="Periodo previsto" value={`${formatDate(currentDetail.data_inizio_prevista)} → ${formatDate(currentDetail.data_fine_prevista)}`} />
                   <InfoField label="Avvio effettivo" value={formatDate(currentDetail.data_avvio_reale, true)} />
-                  <InfoField label="Note" value={currentDetail.note || <span className="text-body-secondary">Nessuna nota</span>} />
                 </CCol>
               </CRow>
+              <CForm onSubmit={handleNoteSave} className="mt-3">
+                {noteError && (
+                  <CAlert color="danger">
+                    {noteError?.payload?.message ||
+                      noteError.message ||
+                      "Errore durante l'aggiornamento delle note."}
+                  </CAlert>
+                )}
+                {noteSuccess && (
+                  <CAlert color="success" className="mb-3">
+                    {noteSuccess}
+                  </CAlert>
+                )}
+                <CFormLabel>Note</CFormLabel>
+                <CFormTextarea
+                  rows={4}
+                  value={noteDraft}
+                  onChange={handleNoteChange}
+                  disabled={!hasDetail || noteSaving}
+                  placeholder="Inserisci le note della lavorazione"
+                />
+                <div className="d-flex flex-wrap gap-2 mt-2">
+                  <CButton
+                    type="submit"
+                    color="primary"
+                    disabled={!hasDetail || noteSaving || noteDraft === (currentDetail.note ?? '')}
+                  >
+                    {noteSaving ? 'Salvataggio...' : 'Salva note'}
+                  </CButton>
+                  <CButton
+                    type="button"
+                    color="secondary"
+                    disabled={!hasDetail || noteSaving || noteDraft === (currentDetail.note ?? '')}
+                    onClick={handleNoteReset}
+                  >
+                    Annulla
+                  </CButton>
+                  <CButton
+                    type="button"
+                    color="light"
+                    onClick={handleOpenJobAssignmentModal}
+                    disabled={!hasDetail || noteSaving}
+                  >
+                    Gestisci assegnazioni
+                  </CButton>
+                </div>
+              </CForm>
               <div className="mt-4">
                 <div className="text-body-secondary text-uppercase small fw-semibold mb-2">Avanzamento complessivo</div>
                 <div className="d-flex align-items-center gap-3">
                   <div className="flex-grow-1">
                     <CProgress
                       thin
-                      color={currentDetail.percentuale_avanzamento >= 100 ? 'success' : 'primary'}
+                      color={overallProgressColor}
                       value={Math.min(100, Math.max(0, Number(currentDetail.percentuale_avanzamento) || 0))}
                       className="mb-1"
                     />
@@ -730,7 +947,7 @@ const LavorazioneDetail = () => {
                       In corso — {formatPercent(currentDetail.percentuale_avanzamento)} completato
                     </div>
                   </div>
-                  <CBadge color="primary" className="px-3 py-2">
+                  <CBadge color={overallProgressColor} className="px-3 py-2">
                     {formatPercent(currentDetail.percentuale_avanzamento)}
                   </CBadge>
                 </div>
@@ -747,6 +964,22 @@ const LavorazioneDetail = () => {
               </CButton>
             </CCardHeader>
             <CCardBody className="p-0">
+              {(activityStatusError || activityStatusSuccess) && (
+                <div className="px-3 pt-3">
+                  {activityStatusError && (
+                    <CAlert color="danger" className="mb-3">
+                      {activityStatusError?.payload?.message ||
+                        activityStatusError.message ||
+                        "Errore durante l'aggiornamento dello stato dell'attività."}
+                    </CAlert>
+                  )}
+                  {activityStatusSuccess && (
+                    <CAlert color="success" className="mb-3">
+                      {activityStatusSuccess}
+                    </CAlert>
+                  )}
+                </div>
+              )}
               <CTable hover responsive className="mb-0">
                 <CTableHead color="light">
                   <CTableRow>
@@ -755,58 +988,152 @@ const LavorazioneDetail = () => {
                     <CTableHeaderCell>Reparto</CTableHeaderCell>
                     <CTableHeaderCell>Scadenza</CTableHeaderCell>
                     <CTableHeaderCell>Assegnatari</CTableHeaderCell>
+                    <CTableHeaderCell>Azioni</CTableHeaderCell>
                     <CTableHeaderCell>Progresso</CTableHeaderCell>
                   </CTableRow>
                 </CTableHead>
                 <CTableBody>
                   {Array.isArray(currentDetail.attivita) && currentDetail.attivita.length > 0 ? (
-                    currentDetail.attivita.map((task) => (
-                      <CTableRow key={task.id_attivita || task.titolo}>
-                        <CTableDataCell>
-                          <div className="fw-semibold">{task.titolo}</div>
-                          <div className="text-body-secondary small">ID {task.id_attivita}</div>
-                        </CTableDataCell>
-                        <CTableDataCell>{renderStateBadge({ stato: task.stato, stato_label: task.stato_label || task.stato })}</CTableDataCell>
-                        <CTableDataCell>{task.reparto_label || '-'}</CTableDataCell>
-                        <CTableDataCell>{formatDate(task.data_scadenza)}</CTableDataCell>
-                        <CTableDataCell>
-                          <div className="fw-semibold">
-                            {Array.isArray(task.assegnatari) ? task.assegnatari.join(', ') : task.assegnatari || '-'}
-                          </div>
-                          <div className="d-flex flex-column gap-2 mt-2">
-                            <CButton
-                              size="sm"
-                              color="light"
-                              onClick={() => handleOpenActivityAssignmentModal(task)}
-                              disabled={!task?.id_attivita}
-                            >
-                              Aggiorna
-                            </CButton>
-                            <CButton
-                              size="sm"
-                              color="primary"
-                              variant="ghost"
-                              onClick={() => handleOpenNotificationModal('activity', task)}
-                              disabled={!task?.id_attivita}
-                            >
-                              Notifica
-                            </CButton>
-                          </div>
-                        </CTableDataCell>
-                        <CTableDataCell>
-                          <CProgress
-                            thin
-                            value={Math.min(100, Math.max(0, Number(task.percentuale) || 0))}
-                            color={Number(task.percentuale) >= 100 ? 'success' : 'primary'}
-                            className="mb-1"
-                          />
-                          <div className="text-body-secondary small">{formatPercent(task.percentuale)}</div>
-                        </CTableDataCell>
-                      </CTableRow>
-                    ))
+                    currentDetail.attivita.map((task) => {
+                      const taskStatus = String(task.stato || '').toLowerCase()
+                      const activityLoading = isActivityStatusLoading(task.id_attivita)
+                      const disableStart =
+                        activityLoading ||
+                        taskStatus === 'in_progress' ||
+                        taskStatus === 'done' ||
+                        taskStatus === 'cancelled'
+                      const disableSuspend = activityLoading || taskStatus !== 'in_progress'
+                      const disableFinish =
+                        activityLoading || taskStatus === 'done' || taskStatus === 'cancelled'
+                      const disableReschedule = activityLoading || taskStatus !== 'done'
+                      return (
+                        <CTableRow key={task.id_attivita || task.titolo}>
+                          <CTableDataCell>
+                            <div className="fw-semibold">{task.titolo}</div>
+                            <div className="text-body-secondary small">ID {task.id_attivita}</div>
+                          </CTableDataCell>
+                          <CTableDataCell>
+                            {renderStateBadge({
+                              stato: task.stato,
+                              stato_label: task.stato_label || task.stato,
+                            })}
+                          </CTableDataCell>
+                          <CTableDataCell>{task.reparto_label || '-'}</CTableDataCell>
+                          <CTableDataCell>{formatDate(task.data_scadenza)}</CTableDataCell>
+                          <CTableDataCell>
+                            <div className="fw-semibold">
+                              {Array.isArray(task.assegnatari)
+                                ? task.assegnatari.join(', ')
+                                : task.assegnatari || '-'}
+                            </div>
+                            <div className="d-flex flex-column gap-2 mt-2">
+                              <CButton
+                                size="sm"
+                                color="light"
+                                onClick={() => handleOpenActivityAssignmentModal(task)}
+                                disabled={!task?.id_attivita}
+                              >
+                                Aggiorna
+                              </CButton>
+                              <CButton
+                                size="sm"
+                                color="primary"
+                                variant="ghost"
+                                onClick={() => handleOpenNotificationModal('activity', task)}
+                                disabled={!task?.id_attivita}
+                              >
+                                Notifica
+                              </CButton>
+                              <CButton
+                                size="sm"
+                                color="danger"
+                                variant="outline"
+                                disabled={!task?.id_attivita || activityLoading || isActivityDeleting(task.id_attivita)}
+                                onClick={() => handleDeleteActivity(task.id_attivita)}
+                                title="Rimuovi attività"
+                                aria-label="Rimuovi attività"
+                              >
+                                <CIcon icon={cilXCircle} />
+                              </CButton>
+                            </div>
+                          </CTableDataCell>
+                          <CTableDataCell>
+                            <div className="d-flex flex-column gap-2">
+                              <div className="d-flex flex-wrap gap-2">
+                                <CButton
+                                  size="sm"
+                                  color="primary"
+                                  variant="outline"
+                                  disabled={disableStart}
+                                  onClick={() => handleActivityStatusChange(task.id_attivita, 'in_progress', 10)}
+                                  title="Avvia attività"
+                                  aria-label="Avvia attività"
+                                >
+                                  <CIcon icon={cilMediaPlay} />
+                                </CButton>
+                                <CButton
+                                  size="sm"
+                                  color="warning"
+                                  variant="outline"
+                                  disabled={disableSuspend}
+                                  onClick={() => handleActivityStatusChange(task.id_attivita, 'sospesa', 50)}
+                                  title="Sospendi attività"
+                                  aria-label="Sospendi attività"
+                                >
+                                  <CIcon icon={cilMediaPause} />
+                                </CButton>
+                                <CButton
+                                  size="sm"
+                                  color="success"
+                                  variant="outline"
+                                  disabled={disableFinish}
+                                  onClick={() => handleActivityStatusChange(task.id_attivita, 'done', 100)}
+                                  title="Termina attività"
+                                  aria-label="Termina attività"
+                                >
+                                  <CIcon icon={cilCheckCircle} />
+                                </CButton>
+                                <CButton
+                                  size="sm"
+                                  color="info"
+                                  variant="outline"
+                                  disabled={disableReschedule}
+                                  onClick={() => handleActivityStatusChange(task.id_attivita, 'todo', 0)}
+                                  title="Rischedula attività"
+                                  aria-label="Rischedula attività"
+                                >
+                                  <CIcon icon={cilReload} />
+                                </CButton>
+                              </div>
+                              {activityLoading ? (
+                                <small className="text-body-secondary d-flex align-items-center gap-2">
+                                  <CSpinner size="sm" />
+                                  Aggiornamento in corso...
+                                </small>
+                              ) : null}
+                            </div>
+                          </CTableDataCell>
+                          <CTableDataCell>
+                            <CProgress
+                              thin
+                              value={Math.min(100, Math.max(0, Number(task.percentuale) || 0))}
+                              color={
+                                taskStatus === 'sospesa'
+                                  ? 'danger'
+                                  : Number(task.percentuale) >= 100
+                                    ? 'success'
+                                    : 'primary'
+                              }
+                              className="mb-1"
+                            />
+                            <div className="text-body-secondary small">{formatPercent(task.percentuale)}</div>
+                          </CTableDataCell>
+                        </CTableRow>
+                      )
+                    })
                   ) : (
                     <CTableRow>
-                      <CTableDataCell colSpan={6} className="text-center py-4 text-body-secondary">
+                      <CTableDataCell colSpan={7} className="text-center py-4 text-body-secondary">
                         Nessuna attivita registrata.
                       </CTableDataCell>
                     </CTableRow>
@@ -816,7 +1143,9 @@ const LavorazioneDetail = () => {
             </CCardBody>
           </CCard>
         </CCol>
-        <CCol md={4}>
+      </CRow>
+      <CRow className="mb-4">
+        <CCol md={6}>
           <CCard className="mb-4">
             <CCardHeader className="d-flex justify-content-between align-items-center flex-wrap gap-2">
               <strong>Squadra e assegnazioni</strong>
@@ -860,8 +1189,9 @@ const LavorazioneDetail = () => {
               </CButton>
             </CCardBody>
           </CCard>
-
-          <CCard>
+        </CCol>
+        <CCol md={6}>
+          <CCard className="mb-4">
             <CCardHeader>
               <strong>Cronologia</strong>
             </CCardHeader>

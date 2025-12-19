@@ -29,8 +29,10 @@ final class PagamentiRepository
                 a.codice_fiscale,
                 COALESCE(f.totale_fatturato, 0) AS totale_fatturato,
                 COALESCE(f.totale_pagato, 0) AS totale_fatture_pagato,
-                COALESCE(p.totale_pagamenti, 0) AS totale_pagamenti,
-                COALESCE(f.totale_fatturato, 0) - COALESCE(p.totale_pagamenti, 0) AS saldo_residuo
+                COALESCE(p.totale_pagamenti, 0) + COALESCE(pending.pending_residuo, 0) AS totale_pagamenti,
+                COALESCE(pending.pending_residuo, 0) AS pending_residuo,
+                COALESCE(pending.has_pending_unassigned, 0) AS has_pending_unassigned,
+                COALESCE(f.totale_fatturato, 0) - (COALESCE(p.totale_pagamenti, 0) + COALESCE(pending.pending_residuo, 0)) AS saldo_residuo
             FROM tb_anagrafiche a
             LEFT JOIN (
                 SELECT
@@ -48,6 +50,15 @@ final class PagamentiRepository
                 INNER JOIN tb_fatture t ON t.id_fattura = p.id_fattura
                 GROUP BY t.id_anagrafica
             ) p ON p.id_anagrafica = a.id_anagrafica
+            LEFT JOIN (
+                SELECT
+                    id_anagrafica_hint,
+                    SUM(GREATEST(COALESCE(importo_totale, 0) - COALESCE(importo_allocato, 0), 0)) AS pending_residuo,
+                    MAX(CASE WHEN (COALESCE(importo_totale, 0) - COALESCE(importo_allocato, 0)) > 0.009 THEN 1 ELSE 0 END) AS has_pending_unassigned
+                FROM tb_pagamenti
+                WHERE id_anagrafica_hint IS NOT NULL
+                GROUP BY id_anagrafica_hint
+            ) pending ON pending.id_anagrafica_hint = a.id_anagrafica
             WHERE a.is_active = 1
         SQL;
 
@@ -77,10 +88,30 @@ final class PagamentiRepository
                 'totale_pagato' => (float) $row['totale_pagamenti'],
                 'totale_fatture_pagata' => (float) $row['totale_fatture_pagato'],
                 'saldo_residuo' => (float) $row['saldo_residuo'],
+                'pending_residuo' => (float) ($row['pending_residuo'] ?? 0),
+                'has_pending_unassigned' => ((int) ($row['has_pending_unassigned'] ?? 0)) === 1,
             ];
         }
 
         return $items;
+    }
+
+    /**
+     * @return list<array{id_anagrafica:int, ragione_sociale:string, saldo_residuo:float, totale_fatturato:float}>
+     */
+    public function listTopClientsByBalance(int $limit = 5): array
+    {
+        $rows = $this->listLedger(null, $limit);
+        $out = [];
+        foreach ($rows as $row) {
+            $out[] = [
+                'id_anagrafica' => (int) ($row['id_anagrafica'] ?? 0),
+                'ragione_sociale' => (string) ($row['ragione_sociale'] ?? ''),
+                'saldo_residuo' => (float) ($row['saldo_residuo'] ?? 0),
+                'totale_fatturato' => (float) ($row['totale_fatturato'] ?? 0),
+            ];
+        }
+        return $out;
     }
 
     /**
@@ -832,11 +863,14 @@ SQL;
                 pag.note,
                 pag.id_anagrafica_hint,
                 pag.cliente_nome_hint,
+                a.ragione_sociale AS cliente_ragione_sociale,
+                a.piva AS cliente_piva,
                 mp.code AS mp_code,
                 mp.label AS mp_label,
                 mt.code AS metodo_code,
                 mt.label AS metodo_label
              FROM tb_pagamenti pag
+             LEFT JOIN tb_anagrafiche a ON a.id_anagrafica = pag.id_anagrafica_hint
              LEFT JOIN cfg_sdi_modalita_pagamento mp ON mp.id_modalita = pag.id_mp
              LEFT JOIN cfg_metodi_pagamento mt ON mt.id_metodo = pag.id_metodo
              WHERE pag.id_pagamento = :id
@@ -881,9 +915,9 @@ SQL;
             'import_uid' => $row['import_uid'] ?? null,
             'residuo_pagamento' => $residuo,
             'note' => $row['note'] ?? null,
-            'id_anagrafica' => isset($row['id_anagrafica_hint']) ? (int) $row['id_anagrafica_hint'] : null,
-            'cliente' => $row['cliente_nome_hint'] ?? null,
-            'piva' => null,
+                'id_anagrafica' => isset($row['id_anagrafica_hint']) ? (int) $row['id_anagrafica_hint'] : null,
+                'cliente' => $row['cliente_ragione_sociale'] ?? $row['cliente_nome_hint'] ?? null,
+                'piva' => $row['cliente_piva'] ?? null,
             'fattura_display' => null,
             'fattura_numero' => null,
             'fattura_anno' => null,
@@ -962,6 +996,63 @@ SQL;
         }
 
         return $items;
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
+    public function assignPendingPaymentToAnagrafica(int $idPagamento, ?int $idAnagrafica): array
+    {
+        if ($idPagamento <= 0) {
+            throw new RuntimeException('ID pagamento non valido per l\'assegnazione del cliente.', 422);
+        }
+
+        $checkStmt = $this->pdo->prepare('SELECT id_pagamento FROM tb_pagamenti WHERE id_pagamento = :id LIMIT 1');
+        $checkStmt->bindValue(':id', $idPagamento, PDO::PARAM_INT);
+        $checkStmt->execute();
+        if ($checkStmt->fetch(PDO::FETCH_ASSOC) === false) {
+            throw new RuntimeException('Pagamento non trovato per l\'assegnazione del cliente.', 404);
+        }
+
+        $ragioneSociale = null;
+        if ($idAnagrafica !== null && $idAnagrafica > 0) {
+            $clienteStmt = $this->pdo->prepare('SELECT ragione_sociale FROM tb_anagrafiche WHERE id_anagrafica = :id LIMIT 1');
+            $clienteStmt->bindValue(':id', $idAnagrafica, PDO::PARAM_INT);
+            $clienteStmt->execute();
+            $clienteRow = $clienteStmt->fetch(PDO::FETCH_ASSOC);
+            if ($clienteRow === false) {
+                throw new RuntimeException('Cliente selezionato non trovato.', 404);
+            }
+            $ragioneSociale = $clienteRow['ragione_sociale'] ?? null;
+        } else {
+            $idAnagrafica = null;
+        }
+
+        $updateStmt = $this->pdo->prepare(
+            'UPDATE tb_pagamenti
+             SET id_anagrafica_hint = :id_anagrafica, cliente_nome_hint = :cliente_nome
+             WHERE id_pagamento = :id
+             LIMIT 1'
+        );
+        if ($idAnagrafica !== null) {
+            $updateStmt->bindValue(':id_anagrafica', $idAnagrafica, PDO::PARAM_INT);
+        } else {
+            $updateStmt->bindValue(':id_anagrafica', null, PDO::PARAM_NULL);
+        }
+        if ($ragioneSociale !== null) {
+            $updateStmt->bindValue(':cliente_nome', $ragioneSociale, PDO::PARAM_STR);
+        } else {
+            $updateStmt->bindValue(':cliente_nome', null, PDO::PARAM_NULL);
+        }
+        $updateStmt->bindValue(':id', $idPagamento, PDO::PARAM_INT);
+        $updateStmt->execute();
+
+        $detail = $this->fetchPagamento($idPagamento);
+        if ($detail === null) {
+            throw new RuntimeException('Impossibile ricaricare il pagamento aggiornato.', 500);
+        }
+
+        return $detail;
     }
 
     private function normalizeDate(?string $date): string

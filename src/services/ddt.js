@@ -21,6 +21,14 @@ export const fetchDdtList = async ({ token, limit, signal } = {}) => {
   return { items }
 }
 
+export const fetchDdtDashboard = async ({ token, signal } = {}) => {
+  const payload = await apiFetch('/ddtDashboard.php', { token, signal })
+  if (!payload?.ok) {
+    throw new Error(payload?.message || 'API error')
+  }
+  return payload
+}
+
 export const fetchDdtCausali = async ({ token, signal } = {}) => {
   const response = await apiFetch('/ddtCausaliList.php', {
     token,

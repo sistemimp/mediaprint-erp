@@ -237,6 +237,26 @@ export const assignLavorazioneActivity = async ({
   })
 }
 
+export const updateLavorazioneInfo = async ({ token, idLavorazione, note, signal } = {}) => {
+  if (!idLavorazione) {
+    throw new Error('ID lavorazione mancante')
+  }
+
+  const body = {
+    id_lavorazione: idLavorazione,
+    note: note ?? undefined,
+  }
+
+  const payload = await apiFetch('/lavorazioniUpdate.php', {
+    method: 'POST',
+    token,
+    body,
+    signal,
+  })
+
+  return payload ?? {}
+}
+
 export const notifyLavorazioneOperators = async ({
   token,
   idLavorazione,
@@ -270,6 +290,57 @@ export const notifyLavorazioneOperators = async ({
     body,
     signal,
   })
+}
+
+export const updateLavorazioneActivityStatus = async ({
+  token,
+  idAttivita,
+  stato,
+  percentuale,
+  signal,
+} = {}) => {
+  if (!idAttivita) {
+    throw new Error('ID attivita mancante')
+  }
+  if (!stato) {
+    throw new Error('Stato attivita mancante')
+  }
+
+  const body = {
+    id_attivita: idAttivita,
+    stato,
+  }
+  if (percentuale !== undefined && percentuale !== null) {
+    body.percentuale = percentuale
+  }
+
+  const payload = await apiFetch('/lavorazioniActivityStatus.php', {
+    method: 'POST',
+    token,
+    body,
+    signal,
+  })
+
+  return payload ?? {}
+}
+
+export const deleteLavorazioneActivity = async ({ token, idAttivita, signal } = {}) => {
+  if (!idAttivita) {
+    throw new Error('ID attività mancante')
+  }
+
+  const body = {
+    id_attivita: idAttivita,
+  }
+
+  const payload = await apiFetch('/lavorazioniActivityDelete.php', {
+    method: 'POST',
+    token,
+    body,
+    signal,
+  })
+
+  return payload ?? {}
 }
 
 export const fetchLavorazioneNotifications = async ({

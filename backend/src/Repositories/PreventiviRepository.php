@@ -124,6 +124,29 @@ final class PreventiviRepository
         }
     }
 
+    private function ensureRevisionTable(): void
+    {
+        try {
+            $this->pdo->exec(<<<'SQL'
+                CREATE TABLE IF NOT EXISTS tb_preventivi_revisioni (
+                    id_revisione INT AUTO_INCREMENT PRIMARY KEY,
+                    id_preventivo INT NOT NULL,
+                    numero_revision INT NOT NULL,
+                    label VARCHAR(32) NOT NULL,
+                    note TEXT NULL,
+                    operatore VARCHAR(255) NULL,
+                    payload JSON NULL,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE KEY uniq_prev_revision (id_preventivo, numero_revision),
+                    CONSTRAINT fk_prev_revision_preventivo FOREIGN KEY (id_preventivo)
+                        REFERENCES tb_preventivi (id_preventivo) ON DELETE CASCADE
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            SQL);
+        } catch (\Throwable $ignored) {
+            // ignore schema failures; future calls can tolerate missing table
+        }
+    }
+
     /**
      * @return list<array{id_oggetto:int,label:string,ordering:int,attivo:int}>
      */
@@ -373,6 +396,139 @@ final class PreventiviRepository
         return $statement->fetchAll(PDO::FETCH_ASSOC);
     }
 
+    private function normalizeRevisionRow(array $row): array
+    {
+        return [
+            'id_revisione' => isset($row['id_revisione']) ? (int) $row['id_revisione'] : 0,
+            'id_preventivo' => isset($row['id_preventivo']) ? (int) $row['id_preventivo'] : 0,
+            'numero_revision' => isset($row['numero_revision']) ? (int) $row['numero_revision'] : 0,
+            'label' => isset($row['label']) ? (string) $row['label'] : '',
+            'note' => isset($row['note']) && $row['note'] !== null ? (string) $row['note'] : null,
+            'operatore' => isset($row['operatore']) && $row['operatore'] !== null ? (string) $row['operatore'] : null,
+            'payload' => $this->decodeRevisionPayload($row['payload'] ?? null),
+            'created_at' => isset($row['created_at']) && $row['created_at'] !== null ? (string) $row['created_at'] : null,
+        ];
+    }
+
+    private function decodeRevisionPayload(?string $payload): ?array
+    {
+        if ($payload === null) {
+            return null;
+        }
+        $decoded = json_decode($payload, true);
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            return null;
+        }
+        return $decoded;
+    }
+
+    private function getNextRevisionNumber(int $idPreventivo): int
+    {
+        $this->ensureRevisionTable();
+        try {
+            $stmt = $this->pdo->prepare('SELECT COALESCE(MAX(numero_revision), 0) + 1 AS next FROM tb_preventivi_revisioni WHERE id_preventivo = :id');
+            $stmt->bindValue(':id', $idPreventivo, PDO::PARAM_INT);
+            $stmt->execute();
+            $row = $stmt->fetch(PDO::FETCH_ASSOC);
+            if ($row && isset($row['next'])) {
+                return max(1, (int) $row['next']);
+            }
+        } catch (\Throwable $ignored) {
+            // ignore and fallback to 1
+        }
+        return 1;
+    }
+
+    private function fetchRevision(int $idRevision): ?array
+    {
+        $this->ensureRevisionTable();
+        try {
+            $stmt = $this->pdo->prepare('SELECT id_revisione, id_preventivo, numero_revision, label, note, operatore, payload, created_at FROM tb_preventivi_revisioni WHERE id_revisione = :id LIMIT 1');
+            $stmt->bindValue(':id', $idRevision, PDO::PARAM_INT);
+            $stmt->execute();
+            $row = $stmt->fetch(PDO::FETCH_ASSOC);
+            if ($row === false) {
+                return null;
+            }
+            return $this->normalizeRevisionRow($row);
+        } catch (\Throwable $ignored) {
+            return null;
+        }
+    }
+
+    public function listRevisions(int $idPreventivo): array
+    {
+        $this->ensureRevisionTable();
+        try {
+            $stmt = $this->pdo->prepare(
+                'SELECT id_revisione, id_preventivo, numero_revision, label, note, operatore, payload, created_at FROM tb_preventivi_revisioni WHERE id_preventivo = :id ORDER BY numero_revision DESC, created_at DESC'
+            );
+            $stmt->bindValue(':id', $idPreventivo, PDO::PARAM_INT);
+            $stmt->execute();
+            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        } catch (\Throwable $ignored) {
+            return [];
+        }
+
+        $out = [];
+        foreach ($rows as $row) {
+            $out[] = $this->normalizeRevisionRow($row);
+        }
+        return $out;
+    }
+
+    public function createRevision(int $idPreventivo, ?string $note = null, ?string $operatore = null, ?array $payload = null): ?array
+    {
+        $this->ensureRevisionTable();
+        $nextNumber = $this->getNextRevisionNumber($idPreventivo);
+        $label = sprintf('Rev.%d', $nextNumber);
+        $payloadJson = null;
+        if ($payload !== null) {
+            $encoded = json_encode($payload, JSON_UNESCAPED_UNICODE);
+            if ($encoded !== false) {
+                $payloadJson = $encoded;
+            }
+        }
+        try {
+            $stmt = $this->pdo->prepare(
+                'INSERT INTO tb_preventivi_revisioni (id_preventivo, numero_revision, label, note, operatore, payload) VALUES (:id, :numero, :label, :note, :operatore, :payload)'
+            );
+            $stmt->bindValue(':id', $idPreventivo, PDO::PARAM_INT);
+            $stmt->bindValue(':numero', $nextNumber, PDO::PARAM_INT);
+            $stmt->bindValue(':label', $label, PDO::PARAM_STR);
+            if ($note === null) {
+                $stmt->bindValue(':note', null, PDO::PARAM_NULL);
+            } else {
+                $stmt->bindValue(':note', $note, PDO::PARAM_STR);
+            }
+            if ($operatore === null) {
+                $stmt->bindValue(':operatore', null, PDO::PARAM_NULL);
+            } else {
+                $stmt->bindValue(':operatore', $operatore, PDO::PARAM_STR);
+            }
+            if ($payloadJson === null) {
+                $stmt->bindValue(':payload', null, PDO::PARAM_NULL);
+            } else {
+                $stmt->bindValue(':payload', $payloadJson, PDO::PARAM_STR);
+            }
+            $stmt->execute();
+        } catch (\Throwable $ignored) {
+            return null;
+        }
+
+        $revisionId = (int) $this->pdo->lastInsertId();
+        if ($revisionId <= 0) {
+            return null;
+        }
+
+        return $this->fetchRevision($revisionId);
+    }
+
+    public function getRevisionById(int $idRevision): ?array
+    {
+        return $this->fetchRevision($idRevision);
+    }
+
     /**
      * @return list<array{id_stato:int, code:string, label:string, ordering:int}>
      */
@@ -471,6 +627,132 @@ final class PreventiviRepository
                 'tot' => (int) $r['tot'],
             ];
         }
+        return $out;
+    }
+
+    /**
+     * Restituisce il conteggio totale dei preventivi creati nel mese corrente e quelli confermati.
+     *
+     * @return array{total:int, accepted:int}
+     */
+    public function fetchCurrentMonthConversion(): array
+    {
+        $sql = <<<'SQL'
+            WITH params AS (
+              SELECT
+                DATE_FORMAT(CURDATE(), '%Y-%m-01') AS start_month,
+                DATE_ADD(DATE_FORMAT(CURDATE(), '%Y-%m-01'), INTERVAL 1 MONTH) AS next_month
+            )
+            SELECT
+              COUNT(p.id_preventivo) AS total,
+              SUM(CASE WHEN sp.code = 'confermato' THEN 1 ELSE 0 END) AS accepted
+            FROM params r
+            LEFT JOIN tb_preventivi p
+              ON COALESCE(p.data_preventivo, p.created_at) >= r.start_month
+             AND COALESCE(p.data_preventivo, p.created_at) < r.next_month
+            LEFT JOIN cfg_stati_preventivo sp ON sp.id_stato = p.id_stato_prev
+        SQL;
+
+        $stmt = $this->pdo->query($sql);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        return [
+            'total' => isset($row['total']) ? (int) $row['total'] : 0,
+            'accepted' => isset($row['accepted']) ? (int) $row['accepted'] : 0,
+        ];
+    }
+
+    /**
+     * @return list<array{periodo:string, totale:int, confermati:int, tasso:float}>
+     */
+    public function fetchConversionSeriesLast6(): array
+    {
+        $sql = <<<'SQL'
+            WITH RECURSIVE mesi(ms) AS (
+              SELECT DATE_SUB(DATE_FORMAT(CURDATE(), '%Y-%m-01'), INTERVAL 5 MONTH)
+              UNION ALL
+              SELECT DATE_ADD(ms, INTERVAL 1 MONTH)
+              FROM mesi
+              WHERE ms < DATE_FORMAT(CURDATE(), '%Y-%m-01')
+            )
+            SELECT
+              DATE_FORMAT(m.ms, '%Y-%m') AS periodo,
+              COUNT(p.id_preventivo) AS totale,
+              COALESCE(SUM(CASE WHEN sp.code = 'confermato' THEN 1 ELSE 0 END), 0) AS confermati
+            FROM mesi m
+            LEFT JOIN tb_preventivi p
+              ON COALESCE(p.data_preventivo, p.created_at) >= m.ms
+             AND COALESCE(p.data_preventivo, p.created_at) < DATE_ADD(m.ms, INTERVAL 1 MONTH)
+            LEFT JOIN cfg_stati_preventivo sp ON sp.id_stato = p.id_stato_prev
+            GROUP BY m.ms
+            ORDER BY m.ms
+        SQL;
+
+        $stmt = $this->pdo->query($sql);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+        $out = [];
+        foreach ($rows as $row) {
+            $total = isset($row['totale']) ? (int) $row['totale'] : 0;
+            $confirmed = isset($row['confermati']) ? (int) $row['confermati'] : 0;
+            $out[] = [
+                'periodo' => (string) ($row['periodo'] ?? ''),
+                'totale' => $total,
+                'confermati' => $confirmed,
+                'tasso' => $total > 0 ? round(($confirmed / $total) * 100, 1) : 0.0,
+            ];
+        }
+
+        return $out;
+    }
+
+    /**
+     * @return list<array{id_anagrafica:int|null, ragione_sociale:?string, totale:int, confermati:int, tasso:float}>
+     */
+    public function listTopClientsByConversion(string $startDate, string $endDate, int $limit = 5): array
+    {
+        $effectiveLimit = max(1, $limit);
+        $sql = <<<'SQL'
+            SELECT
+              a.id_anagrafica,
+              a.ragione_sociale,
+              COUNT(p.id_preventivo) AS totale,
+              COALESCE(SUM(CASE WHEN sp.code = 'confermato' THEN 1 ELSE 0 END), 0) AS confermati,
+              COALESCE(
+                (SUM(CASE WHEN sp.code = 'confermato' THEN 1 ELSE 0 END) / NULLIF(COUNT(p.id_preventivo), 0)) * 100,
+                0
+              ) AS tasso
+            FROM tb_preventivi p
+            LEFT JOIN tb_anagrafiche a ON a.id_anagrafica = p.id_anagrafica
+            LEFT JOIN cfg_stati_preventivo sp ON sp.id_stato = p.id_stato_prev
+            WHERE COALESCE(p.data_preventivo, p.created_at) >= :start
+              AND COALESCE(p.data_preventivo, p.created_at) < :end
+            GROUP BY a.id_anagrafica, a.ragione_sociale
+            ORDER BY tasso DESC, totale DESC
+            LIMIT :limit
+        SQL;
+
+        $sql = str_replace('LIMIT :limit', 'LIMIT ' . (int) $effectiveLimit, $sql);
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->bindValue(':start', $startDate);
+        $stmt->bindValue(':end', $endDate);
+        $stmt->execute();
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+        $out = [];
+        foreach ($rows as $row) {
+            $total = isset($row['totale']) ? (int) $row['totale'] : 0;
+            $confirmed = isset($row['confermati']) ? (int) $row['confermati'] : 0;
+            $rate = $total > 0 ? round(($confirmed / $total) * 100, 1) : 0.0;
+            $out[] = [
+                'id_anagrafica' => isset($row['id_anagrafica']) ? (int) $row['id_anagrafica'] : null,
+                'ragione_sociale' => $row['ragione_sociale'] ?? null,
+                'totale' => $total,
+                'confermati' => $confirmed,
+                'tasso' => $rate,
+            ];
+        }
+
         return $out;
     }
 

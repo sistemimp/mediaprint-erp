@@ -16,6 +16,14 @@ export const fetchLatestPreventivi = async ({ token, signal, limit } = {}) => {
   return { items }
 }
 
+export const fetchPreventiviDashboard = async ({ token, signal } = {}) => {
+  const payload = await apiFetch('/preventiviDashboard.php', { token, signal })
+  if (!payload?.ok) {
+    throw new Error(payload?.message || 'API error')
+  }
+  return payload
+}
+
 export const fetchPreventiviArchivio = async ({ token, signal, page, pageSize, search, sortBy, sortDirection } = {}) => {
   const params = {}
   if (page) params.page = page
@@ -107,7 +115,8 @@ export const fetchPreventivoDetail = async ({ token, id, signal } = {}) => {
   const linkedFatture = Array.isArray(response?.linked_fatture) ? response.linked_fatture : []
   const statuses = Array.isArray(response?.meta?.statuses) ? response.meta.statuses : []
   const currentStatus = response?.meta?.current_status ?? null
-  return { data, editable, righe, cig, determine, contatti, linkedDdt, linkedFatture, statuses, currentStatus }
+  const revisions = Array.isArray(response?.meta?.revisions) ? response.meta.revisions : []
+  return { data, editable, righe, cig, determine, contatti, linkedDdt, linkedFatture, statuses, currentStatus, revisions }
 }
 
 // Opzioni per la multi-select "Oggetto preventivo"
@@ -201,7 +210,7 @@ export const archivePreventivo = async ({ token, id, signal } = {}) => {
   return response ?? { ok: true }
 }
 
-export const updatePreventivoStatus = async ({ token, id, statusCode, signal } = {}) => {
+export const updatePreventivoStatus = async ({ token, id, statusCode, operatorName, note, signal } = {}) => {
   const numericId = Number(id)
   const payload = {
     stato: statusCode,
@@ -210,6 +219,12 @@ export const updatePreventivoStatus = async ({ token, id, statusCode, signal } =
     payload.id = numericId
   } else if (id) {
     payload.id = id
+  }
+  if (operatorName) {
+    payload.operatore = operatorName
+  }
+  if (note) {
+    payload.note = note
   }
 
   const response = await apiFetch('/preventiviStatus.php', {
@@ -285,7 +300,7 @@ export const logPreventivoEvent = async (args = {}) => {
   return logPreventivoStatusChange(args)
 }
 
-export const sendPreventivoEmail = async ({ token, id, to, cc, subject, message, signal } = {}) => {
+export const sendPreventivoEmail = async ({ token, id, to, cc, subject, message, revisionNote, revisionOperator, signal } = {}) => {
   const numericId = Number(id)
   const body = {
     id_preventivo: Number.isFinite(numericId) && numericId > 0 ? numericId : id,
@@ -293,6 +308,8 @@ export const sendPreventivoEmail = async ({ token, id, to, cc, subject, message,
     cc,
     subject,
     message,
+    revision_note: revisionNote,
+    revision_operator: revisionOperator,
   }
 
   const response = await apiFetch('/preventiviSendEmail.php', {
@@ -303,6 +320,41 @@ export const sendPreventivoEmail = async ({ token, id, to, cc, subject, message,
   })
 
   return response ?? { ok: false }
+}
+
+export const fetchPreventivoRevisionDetail = async ({ token, id, signal } = {}) => {
+  const numericId = Number(id)
+  const params = {
+    id: Number.isFinite(numericId) && numericId > 0 ? numericId : id,
+  }
+
+  const response = await apiFetch('/preventiviRevisionDetail.php', {
+    token,
+    params,
+    signal,
+  })
+
+  const revision = response?.revision ?? null
+  return { revision }
+}
+
+export const fetchPreventiviRevisionsSummary = async ({ token, ids = [], signal } = {}) => {
+  const validIds = Array.isArray(ids)
+    ? ids.map((value) => {
+        const num = Number(value)
+        return Number.isFinite(num) && num > 0 ? num : null
+      }).filter(Number.isFinite)
+    : []
+
+  const response = await apiFetch('/preventiviRevisionsSummary.php', {
+    method: 'POST',
+    token,
+    body: { ids: validIds },
+    signal,
+  })
+
+  const data = Array.isArray(response?.data) ? response.data : []
+  return { data }
 }
 
 export const generateLavorazioneFromPreventivo = async ({

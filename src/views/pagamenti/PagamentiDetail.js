@@ -26,8 +26,10 @@ import {
 import CIcon from '@coreui/icons-react'
 import { cilArrowLeft, cilMagnifyingGlass, cilPlus, cilTrash } from '@coreui/icons'
 
+import AnagraficaAutocomplete from '../../components/AnagraficaAutocomplete'
 import { useAuth } from '../../context/AuthContext'
-import { fetchPagamentoDetail, searchPagamentiFatture } from '../../services/pagamenti'
+import { fetchAnagrafiche } from '../../services/anagrafiche'
+import { assignPagamentoToAnagrafica, fetchPagamentoDetail, searchPagamentiFatture } from '../../services/pagamenti'
 import { deleteFatturaPagamento, saveFatturaPagamento } from '../../services/fatture'
 
 const currencyFormatter = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' })
@@ -109,6 +111,15 @@ const PagamentiDetail = () => {
   const [assignmentAmount, setAssignmentAmount] = useState('')
   const [assignmentSaving, setAssignmentSaving] = useState(false)
   const [assignmentSubmitError, setAssignmentSubmitError] = useState(null)
+  const [assignCustomerModalOpen, setAssignCustomerModalOpen] = useState(false)
+  const [assignCustomerSearchTerm, setAssignCustomerSearchTerm] = useState('')
+  const [assignCustomerItems, setAssignCustomerItems] = useState([])
+  const [assignCustomerLoading, setAssignCustomerLoading] = useState(false)
+  const [assignCustomerError, setAssignCustomerError] = useState(null)
+  const [assignCustomerSelectedId, setAssignCustomerSelectedId] = useState('')
+  const [assignCustomerSelectedCliente, setAssignCustomerSelectedCliente] = useState(null)
+  const [assignCustomerSaving, setAssignCustomerSaving] = useState(false)
+  const [assignCustomerSubmitError, setAssignCustomerSubmitError] = useState(null)
 
   const loadDetail = useCallback(
     async (abortSignal) => {
@@ -205,6 +216,10 @@ const PagamentiDetail = () => {
     return { totale, allocato, residuo }
   })()
   const residuoDisponibile = assignmentStats?.residuo ?? toNumberOrNull(record?.residuo_pagamento)
+  const assignedCustomerId = (() => {
+    const candidate = toNumberOrNull(record?.id_anagrafica)
+    return Number.isFinite(candidate) && candidate > 0 ? candidate : null
+  })()
   const isStaging = Boolean(record?.staging)
   const canAssignMore = Boolean(record)
   const deleteDisabled = deleting || !record
@@ -273,8 +288,20 @@ const PagamentiDetail = () => {
         token,
         q: normalizedTerm || undefined,
         onlyOpen: true,
+        id_anagrafica: assignedCustomerId || undefined,
       })
-      setAssignmentResults(Array.isArray(response?.items) ? response.items : [])
+      let filteredResults = Array.isArray(response?.items) ? response.items : []
+      if (assignedCustomerId) {
+        filteredResults = filteredResults.filter((item) => {
+          const customerId = toNumberOrNull(item?.id_anagrafica)
+          if (!Number.isFinite(customerId) || customerId !== assignedCustomerId) {
+            return false
+          }
+          const saldo = toNumberOrNull(item?.saldo)
+          return saldo !== null ? saldo > 0 : false
+        })
+      }
+      setAssignmentResults(filteredResults)
     } catch (err) {
       if (err?.status === 401 && logout) {
         logout()
@@ -290,16 +317,15 @@ const PagamentiDetail = () => {
   const openAssignmentModal = () => {
     if (!record) return
     const defaultAmount = residuoDisponibile != null ? Number(residuoDisponibile) : null
-    const autoSearchTerm = extractCustomerHintFromReference(record.reference, record.cliente)
     setAssignmentModalOpen(true)
-    setAssignmentSearch(autoSearchTerm || '')
+    setAssignmentSearch('')
     setAssignmentResults([])
     setAssignmentError(null)
     setAssignmentSelected(null)
     setAssignmentAmount(defaultAmount && defaultAmount > 0 ? defaultAmount.toFixed(2) : '')
     setAssignmentSubmitError(null)
-    if (autoSearchTerm && autoSearchTerm.length >= 3) {
-      void performAssignmentSearch(autoSearchTerm)
+    if (assignedCustomerId) {
+      void performAssignmentSearch('')
     }
   }
 
@@ -357,6 +383,14 @@ const PagamentiDetail = () => {
         note: record.note,
         import_uid: record.import_uid,
       })
+      const invoiceCustomerId = toNumberOrNull(assignmentSelected?.id_anagrafica)
+      if (Number.isFinite(invoiceCustomerId) && invoiceCustomerId > 0) {
+        await assignPagamentoToAnagrafica({
+          token,
+          id_pagamento: record.id_pagamento,
+          id_anagrafica: invoiceCustomerId,
+        })
+      }
       closeAssignmentModal()
       await refreshRecord()
     } catch (err) {
@@ -367,6 +401,101 @@ const PagamentiDetail = () => {
       setAssignmentSubmitError(err)
     } finally {
       setAssignmentSaving(false)
+    }
+  }
+
+  useEffect(() => {
+    if (!assignCustomerModalOpen || !token) return
+    const controller = new AbortController()
+    const searchTerm = String(assignCustomerSearchTerm || '').trim()
+    setAssignCustomerLoading(true)
+    setAssignCustomerError(null)
+
+    fetchAnagrafiche({
+      token,
+      search: searchTerm !== '' ? searchTerm : undefined,
+      page: 1,
+      pageSize: 30,
+      signal: controller.signal,
+    })
+      .then((response) => {
+        if (controller.signal.aborted) return
+        setAssignCustomerItems(Array.isArray(response?.items) ? response.items : [])
+      })
+      .catch((err) => {
+        if (err?.name === 'AbortError') return
+        if (err?.status === 401 && logout) {
+          logout()
+          return
+        }
+        setAssignCustomerError(err)
+        setAssignCustomerItems([])
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          setAssignCustomerLoading(false)
+        }
+      })
+
+    return () => controller.abort()
+  }, [assignCustomerModalOpen, assignCustomerSearchTerm, token, logout])
+
+  const openAssignCustomerModal = () => {
+    if (!record) return
+    const initialSearch =
+      record.cliente || extractCustomerHintFromReference(record.reference, record.cliente) || ''
+    setAssignCustomerModalOpen(true)
+    setAssignCustomerSearchTerm(initialSearch)
+    setAssignCustomerItems([])
+    setAssignCustomerError(null)
+    setAssignCustomerSelectedId(record.id_anagrafica ? String(record.id_anagrafica) : '')
+    setAssignCustomerSelectedCliente(
+      record.id_anagrafica
+        ? {
+            id_anagrafica: record.id_anagrafica,
+            ragione_sociale: record.cliente || '',
+          }
+        : null,
+    )
+    setAssignCustomerSubmitError(null)
+  }
+
+  const closeAssignCustomerModal = () => {
+    setAssignCustomerModalOpen(false)
+    setAssignCustomerSearchTerm('')
+    setAssignCustomerItems([])
+    setAssignCustomerError(null)
+    setAssignCustomerSelectedId('')
+    setAssignCustomerSelectedCliente(null)
+    setAssignCustomerSubmitError(null)
+  }
+
+  const handleAssignCustomerSubmit = async (event) => {
+    event?.preventDefault?.()
+    if (!record || !token) return
+    const selectedId = Number(assignCustomerSelectedId)
+    if (!Number.isFinite(selectedId) || selectedId <= 0) {
+      setAssignCustomerSubmitError(new Error('Seleziona un cliente valido.'))
+      return
+    }
+    setAssignCustomerSaving(true)
+    setAssignCustomerSubmitError(null)
+    try {
+      await assignPagamentoToAnagrafica({
+        token,
+        id_pagamento: record.id_pagamento,
+        id_anagrafica: selectedId,
+      })
+      closeAssignCustomerModal()
+      await refreshRecord()
+    } catch (err) {
+      if (err?.status === 401 && logout) {
+        logout()
+        return
+      }
+      setAssignCustomerSubmitError(err)
+    } finally {
+      setAssignCustomerSaving(false)
     }
   }
 
@@ -476,7 +605,14 @@ const PagamentiDetail = () => {
             </CRow>
 
             <section className="mb-4">
-              <h6 className="text-body-secondary mb-2">Cliente</h6>
+              <div className="d-flex justify-content-between align-items-start mb-2">
+                <h6 className="text-body-secondary mb-0">Cliente</h6>
+                {isStaging && (
+                  <CButton size="sm" color="primary" variant="outline" onClick={openAssignCustomerModal}>
+                    Assegna cliente
+                  </CButton>
+                )}
+              </div>
               <div className="border rounded p-3 bg-body-tertiary">
                 <CRow>
                   <CCol md={6}>
@@ -803,6 +939,70 @@ const PagamentiDetail = () => {
         <CModalFooter>
           <CButton color="secondary" variant="ghost" onClick={closeAssignmentModal}>
             Chiudi
+          </CButton>
+        </CModalFooter>
+      </CModal>
+      <CModal visible={assignCustomerModalOpen} onClose={closeAssignCustomerModal} size="lg">
+        <CModalHeader closeButton>
+          <CModalTitle>Assegna cliente</CModalTitle>
+        </CModalHeader>
+        <CModalBody>
+          {assignCustomerError && (
+            <CAlert color="danger" className="mb-3">
+              {assignCustomerError.message || 'Errore durante il caricamento dei clienti.'}
+            </CAlert>
+          )}
+          <AnagraficaAutocomplete
+            items={assignCustomerItems}
+            value={assignCustomerSelectedId}
+            onChange={(value) => setAssignCustomerSelectedId(value || '')}
+            onChangeCliente={(cliente) => setAssignCustomerSelectedCliente(cliente || null)}
+            onSearch={(query) => {
+              const searchValue = String(query || '')
+              setAssignCustomerSearchTerm((prev) => (prev === searchValue ? prev : searchValue))
+            }}
+            loading={assignCustomerLoading}
+            placeholder="Cerca cliente per ragione sociale, P.IVA o CF"
+          />
+          {assignCustomerSelectedCliente ? (
+            <div className="border rounded bg-body-tertiary p-3 mt-3">
+              <div className="fw-semibold">
+                {assignCustomerSelectedCliente.ragione_sociale ||
+                  assignCustomerSelectedCliente.label ||
+                  '-'}
+              </div>
+              <small className="text-body-secondary">
+                ID {assignCustomerSelectedCliente.id_anagrafica || assignCustomerSelectedCliente.id || '-'}
+              </small>
+            </div>
+          ) : (
+            <p className="text-body-secondary small mt-3 mb-0">
+              Seleziona un cliente valido per collegare il pagamento.
+            </p>
+          )}
+          {assignCustomerSubmitError && (
+            <CAlert color="danger" className="mt-3">
+              {assignCustomerSubmitError.message || 'Errore durante l\'assegnazione del cliente.'}
+            </CAlert>
+          )}
+        </CModalBody>
+        <CModalFooter>
+          <CButton color="secondary" variant="ghost" onClick={closeAssignCustomerModal}>
+            Annulla
+          </CButton>
+          <CButton
+            color="primary"
+            disabled={assignCustomerSaving || !assignCustomerSelectedId}
+            onClick={handleAssignCustomerSubmit}
+          >
+            {assignCustomerSaving ? (
+              <>
+                <CSpinner size="sm" className="me-2" />
+                Salvataggio...
+              </>
+            ) : (
+              'Salva assegnazione'
+            )}
           </CButton>
         </CModalFooter>
       </CModal>

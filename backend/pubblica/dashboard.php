@@ -1,63 +1,102 @@
 <?php
 declare(strict_types=1);
 
-use MediaPrint\Repo\AnagraficheDashboardRepository;
-use MediaPrint\Service\AnagraficheDashboardService;
-
 use MediaPrint\Backend\Database;
 use MediaPrint\Backend\HttpResponse;
-use MediaPrint\Repo\AuthRepository;
-use MediaPrint\Service\AuthService;
-use MediaPrint\Repo\PreventiviRepository;
+use MediaPrint\Repo\AnagraficheDashboardRepository;
 use MediaPrint\Repo\FattureRepository;
-
-use MediaPrint\Backend\Cors;
+use MediaPrint\Repo\PagamentiRepository;
+use MediaPrint\Repo\PreventiviRepository;
+use MediaPrint\Service\AnagraficheDashboardService;
 
 require __DIR__ . '/../bootstrap.php';
 
 header('Content-Type: application/json');
 
+/**
+ * @return array{start:string,end:string,period:string}
+ */
+function resolveDashboardPeriod(?string $periodRaw): array
+{
+    $period = strtolower(trim((string) $periodRaw));
+    $allowed = ['monthly', 'quarterly', 'yearly'];
+    if (!in_array($period, $allowed, true)) {
+        $period = 'monthly';
+    }
+
+    $now = new \DateTimeImmutable('now');
+    $year = (int) $now->format('Y');
+    $month = (int) $now->format('n');
+
+    if ($period === 'quarterly') {
+        $quarterIndex = intdiv($month - 1, 3);
+        $startMonth = ($quarterIndex * 3) + 1;
+        $start = new \DateTimeImmutable(sprintf('%d-%02d-01 00:00:00', $year, $startMonth));
+        $end = $start->modify('+3 months');
+    } elseif ($period === 'yearly') {
+        $start = new \DateTimeImmutable(sprintf('%d-01-01 00:00:00', $year));
+        $end = $start->modify('+1 year');
+    } else {
+        $start = new \DateTimeImmutable($now->format('Y-m-01 00:00:00'));
+        $end = $start->modify('+1 month');
+    }
+
+    return [
+        'start' => $start->format('Y-m-d H:i:s'),
+        'end' => $end->format('Y-m-d H:i:s'),
+        'period' => $period,
+    ];
+}
 
 try {
-    // Leggi parametri
-    $onlyActive = isset($_GET['only_active']) && (int)$_GET['only_active'] === 1;
-
-    // DI
     $pdo = Database::getConnection();
 
-    // Anagrafiche
-    $anagRepo = new AnagraficheDashboardRepository($pdo);
-    $anagSrv  = new AnagraficheDashboardService($anagRepo);
-    $anagrafiche = $anagSrv->getDashboardStats($onlyActive);
+    $periodRange = resolveDashboardPeriod($_GET['period'] ?? null);
 
-    // Preventivi
-    $prevRepo = new PreventiviRepository($pdo);
-    $prevByStatus = $prevRepo->countNewByStatusCurrentMonth();
-    $ultimiPrev   = $prevRepo->listLatest(15);
-    $topClienti   = $prevRepo->listTopClientsLast12Months(5);
+    $onlyActive = isset($_GET['only_active']) && (int) $_GET['only_active'] === 1;
+    $anagraficheRepo = new AnagraficheDashboardRepository($pdo);
+    $anagraficheService = new AnagraficheDashboardService($anagraficheRepo);
+    $anagraficheStats = $anagraficheService->getDashboardStats($onlyActive);
+    $kpi = $anagraficheStats['kpi'] ?? [];
 
-    // Fatture (andamento per grafico)
-    $fatRepo = new FattureRepository($pdo);
-    $fattureSeries = $fatRepo->fetchMonthlyTotalsLast12();
+    $preventiviRepo = new PreventiviRepository($pdo);
+    $conversion = $preventiviRepo->fetchCurrentMonthConversion();
+    $conversionSeries = $preventiviRepo->fetchConversionSeriesLast6();
 
-    $payload = [
-        'ok' => true,
-        // Back-compat keys for anagrafiche widgets
-        'kpi' => $anagrafiche['kpi'] ?? [],
-        'series' => $anagrafiche['series'] ?? [],
-        // New dashboard sections
-        'preventivi_mese_per_stato' => $prevByStatus,
-        'ultimi_preventivi' => $ultimiPrev,
-        'top_clienti' => $topClienti,
-        'fatture_series' => $fattureSeries,
+    $fattureRepo = new FattureRepository($pdo);
+    $fatturato = $fattureRepo->fetchCurrentMonthRevenue();
+    $fattureSeries = $fattureRepo->fetchMonthlyTotalsLast12();
+
+    $pagamentiRepo = new PagamentiRepository($pdo);
+    $topClients = [
+        'conversion' => $preventiviRepo->listTopClientsByConversion($periodRange['start'], $periodRange['end'], 5),
+        'revenue' => $fattureRepo->listTopClientsByRevenue($periodRange['start'], $periodRange['end'], 5),
+        'balance' => $pagamentiRepo->listTopClientsByBalance(5),
+        'period' => $periodRange['period'],
     ];
 
-    echo json_encode($payload);
-} catch (Throwable $e) {
-    http_response_code(500);
-    echo json_encode([
-        'ok' => false,
-        'error' => 'internal_error',
-        'message' => $e->getMessage(),
-    ]);
+    $sales = [
+        'fatturato' => (float) $fatturato,
+        'nuovi_clienti' => (int) ($kpi['nuovi_mese_corrente'] ?? 0),
+        'tasso_conversione' => $conversion['total'] > 0 ? round(($conversion['accepted'] / $conversion['total']) * 100, 1) : 0.0,
+        'preventivi_totali' => $conversion['total'],
+        'preventivi_confermati' => $conversion['accepted'],
+        'period' => date('Y-m'),
+    ];
+
+    HttpResponse::json([
+        'ok' => true,
+        'kpi' => $kpi,
+        'series' => $anagraficheStats['series'] ?? [],
+        'sales' => $sales,
+        'fatture_series' => $fattureSeries,
+        'conversion_series' => $conversionSeries,
+        'top_clients' => $topClients,
+    ], 200);
+} catch (\Throwable $exception) {
+    $code = (int) ($exception->getCode() ?: 500);
+    if ($code < 400 || $code > 599) {
+        $code = 500;
+    }
+    HttpResponse::error('Errore interno inatteso.', $code, ['error' => $exception->getMessage()]);
 }

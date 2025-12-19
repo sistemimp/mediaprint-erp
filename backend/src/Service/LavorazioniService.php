@@ -117,7 +117,7 @@ final class LavorazioniService
         }
 
         $rawState = (string) ($input['stato'] ?? ($input['status'] ?? ($input['code'] ?? '')));
-        $stato = $this->filterEnum($rawState, ['aperta', 'pianificata', 'in_produzione', 'completata', 'annullata']);
+        $stato = $this->filterEnum($rawState, ['aperta', 'pianificata', 'in_produzione', 'completata', 'annullata', 'sospesa']);
         if ($stato === null) {
             throw new \RuntimeException('Stato lavorazione non valido.', 422);
         }
@@ -165,6 +165,41 @@ final class LavorazioniService
         }
 
         return $detail;
+    }
+
+    /**
+     * @param array<string, mixed> $input
+     * @return array<string, mixed>
+     */
+    public function updateInfo(array $input): array
+    {
+        $lavorazioneId = $this->sanitizeInt(
+            $input['id'] ?? ($input['id_lavorazione'] ?? ($input['lavorazione_id'] ?? 0)),
+            1,
+            PHP_INT_MAX,
+        );
+        if ($lavorazioneId <= 0) {
+            throw new \RuntimeException('ID lavorazione mancante o non valido.', 422);
+        }
+
+        $detail = $this->repository->findDetail($lavorazioneId);
+        if ($detail === null) {
+            throw new \RuntimeException('Lavorazione non trovata.', 404);
+        }
+
+        $rawNote = array_key_exists('note', $input) ? (string) $input['note'] : null;
+        $note = $rawNote !== null ? trim($rawNote) : null;
+        if ($note === '') {
+            $note = null;
+        }
+
+        $this->repository->updateNote($lavorazioneId, $note);
+        $updated = $this->repository->findDetail($lavorazioneId);
+
+        return [
+            'ok' => true,
+            'lavorazione' => $updated ?? $detail,
+        ];
     }
 
     /**
@@ -301,12 +336,12 @@ final class LavorazioniService
     {
         $activityId = $this->sanitizeInt($input['id_attivita'] ?? ($input['attivita_id'] ?? ($input['id'] ?? 0)), 1, PHP_INT_MAX);
         if ($activityId <= 0) {
-            throw new \RuntimeException('ID attivit� mancante o non valido.', 422);
+            throw new \RuntimeException('ID attività mancante o non valido.', 422);
         }
 
         $activity = $this->repository->findActivity($activityId);
         if ($activity === null) {
-            throw new \RuntimeException('Attivit� non trovata.', 404);
+            throw new \RuntimeException('Attività non trovata.', 404);
         }
 
         $repartoId = null;
@@ -328,6 +363,94 @@ final class LavorazioniService
         return [
             'ok' => true,
             'activity' => $updated ?? $activity,
+        ];
+    }
+
+    public function deleteActivity(array $input): array
+    {
+        $activityId = $this->sanitizeInt($input['id_attivita'] ?? ($input['attivita_id'] ?? ($input['id'] ?? 0)), 1, PHP_INT_MAX);
+        if ($activityId <= 0) {
+            throw new \RuntimeException('ID attività mancante o non valido.', 422);
+        }
+
+        $activity = $this->repository->findActivity($activityId);
+        if ($activity === null) {
+            throw new \RuntimeException('Attività non trovata.', 404);
+        }
+
+        $meta = $this->repository->deleteActivity($activityId);
+        $lavorazioneId = $meta['lavorazione_id'] ?? 0;
+        if ($lavorazioneId > 0) {
+            $jobDetailBefore = $this->repository->findDetail($lavorazioneId);
+            $jobStateBefore = strtolower($jobDetailBefore['stato'] ?? '');
+            $newPercent = $this->repository->calculateLavorazionePercentuale($lavorazioneId);
+            $this->repository->updateLavorazionePercentuale($lavorazioneId, $newPercent);
+            $hasSuspended = $this->repository->hasSuspendedActivities($lavorazioneId);
+            if ($hasSuspended && $jobStateBefore !== 'sospesa') {
+                $this->repository->updateStato($lavorazioneId, 'sospesa');
+            } elseif (!$hasSuspended && $jobStateBefore === 'sospesa') {
+                $this->repository->updateStato($lavorazioneId, 'in_produzione');
+            }
+        }
+
+        return [
+            'ok' => true,
+            'lavorazione_id' => $lavorazioneId,
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $input
+     * @return array<string, mixed>
+     */
+    public function updateActivityStatus(array $input): array
+    {
+        $activityId = $this->sanitizeInt($input['id_attivita'] ?? ($input['attivita_id'] ?? ($input['id'] ?? 0)), 1, PHP_INT_MAX);
+        if ($activityId <= 0) {
+            throw new \RuntimeException('ID attivit? mancante o non valido.', 422);
+        }
+
+        $status = $this->filterEnum($input['stato'] ?? ($input['status'] ?? ''), ['todo', 'in_progress', 'done', 'cancelled', 'sospesa']);
+        if ($status === null) {
+            throw new \RuntimeException('Stato attivit? non valido.', 422);
+        }
+
+        $activity = $this->repository->findActivity($activityId);
+        if ($activity === null) {
+            throw new \RuntimeException('Attivit? non trovata.', 404);
+        }
+
+        $percentInput = array_key_exists('percentuale', $input) ? $this->sanitizePercent($input['percentuale']) : null;
+        $percentuale = $percentInput ?? $this->derivePercentByStatus($status, $activity);
+        if ($percentuale === null) {
+            $percentuale = 0;
+        }
+
+        $activityMeta = $this->repository->updateActivityStatus($activityId, $status, $percentuale);
+        $lavorazioneId = $activityMeta['lavorazione_id'] ?? 0;
+        $jobStateBefore = null;
+        if ($lavorazioneId > 0) {
+            $jobDetailBefore = $this->repository->findDetail($lavorazioneId);
+            $jobStateBefore = strtolower($jobDetailBefore['stato'] ?? '');
+            $newPercent = $this->repository->calculateLavorazionePercentuale($lavorazioneId);
+            $this->repository->updateLavorazionePercentuale($lavorazioneId, $newPercent);
+
+            $hasSuspended = $this->repository->hasSuspendedActivities($lavorazioneId);
+            if ($hasSuspended && $jobStateBefore !== 'sospesa') {
+                $this->repository->updateStato($lavorazioneId, 'sospesa');
+            } elseif (!$hasSuspended) {
+                if ($status === 'in_progress' && $jobStateBefore !== 'in_produzione') {
+                    $this->repository->updateStato($lavorazioneId, 'in_produzione');
+                } elseif ($jobStateBefore === 'sospesa') {
+                    $this->repository->updateStato($lavorazioneId, 'in_produzione');
+                }
+            }
+        }
+
+        $updated = $this->repository->findActivity($activityId);
+        return [
+            'ok' => true,
+            'activity' => $updated,
         ];
     }
 
@@ -353,10 +476,10 @@ final class LavorazioniService
             if ($candidate > 0) {
                 $activity = $this->repository->findActivity($candidate);
                 if ($activity === null) {
-                    throw new \RuntimeException('Attivit� non trovata.', 404);
+                    throw new \RuntimeException('Attività non trovata.', 404);
                 }
                 if ((int) ($activity['id_lavorazione'] ?? 0) !== $lavorazioneId) {
-                    throw new \RuntimeException('Attivit� non appartenente alla lavorazione selezionata.', 422);
+                    throw new \RuntimeException('Attività non appartenente alla lavorazione selezionata.', 422);
                 }
                 $activityId = $candidate;
             }
@@ -365,7 +488,7 @@ final class LavorazioniService
         $title = trim((string) ($input['titolo'] ?? ($input['title'] ?? '')));
         if ($title === '') {
             $title = $activityId !== null
-                ? sprintf('Aggiornamento attivit� #%d', $activityId)
+                ? sprintf('Aggiornamento attività #%d', $activityId)
                 : sprintf('Aggiornamento lavorazione %s', $detail['codice'] ?? (string) $lavorazioneId);
         }
 
@@ -450,7 +573,7 @@ final class LavorazioniService
     private function buildFilters(array $query, bool $withSearch = false): array
     {
         $filters = [
-            'stato' => $this->filterEnum($query['stato'] ?? null, ['aperta', 'pianificata', 'in_produzione', 'completata', 'annullata']),
+            'stato' => $this->filterEnum($query['stato'] ?? null, ['aperta', 'pianificata', 'in_produzione', 'completata', 'annullata', 'sospesa']),
             'reparto_id' => null,
             'date_from' => null,
             'date_to' => null,
@@ -560,6 +683,71 @@ final class LavorazioniService
         }
         $normalized = strtolower(trim($value));
         return in_array($normalized, ['low', 'medium', 'high', 'critical'], true) ? $normalized : 'medium';
+    }
+
+    private function sanitizePercent($value): ?int
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+        if (!is_numeric($value)) {
+            return null;
+        }
+        $number = (int) $value;
+        if ($number < 0) {
+            return 0;
+        }
+        if ($number > 100) {
+            return 100;
+        }
+        return $number;
+    }
+
+    private function derivePercentByStatus(string $status, array $activityMeta): ?int
+    {
+        switch ($status) {
+            case 'done':
+                return 100;
+            case 'cancelled':
+                return 50;
+            case 'todo':
+                return 0;
+            case 'sospesa':
+                return 50;
+            case 'in_progress':
+                $estimated = $this->estimatePercentFromSchedule(
+                    $activityMeta['data_creazione'] ?? null,
+                    $activityMeta['data_scadenza'] ?? null,
+                );
+                return $estimated ?? 10;
+            default:
+                return 0;
+        }
+    }
+
+    private function estimatePercentFromSchedule(?string $start, ?string $end): ?int
+    {
+        if (!is_string($start) || !is_string($end) || trim($start) === '' || trim($end) === '') {
+            return null;
+        }
+
+        try {
+            $startDt = new \DateTimeImmutable($start);
+            $endDt = new \DateTimeImmutable($end);
+        } catch (\Throwable $exception) {
+            return null;
+        }
+
+        if ($endDt <= $startDt) {
+            return null;
+        }
+
+        $now = new \DateTimeImmutable('now');
+        $total = $endDt->getTimestamp() - $startDt->getTimestamp();
+        $elapsed = $now->getTimestamp() - $startDt->getTimestamp();
+        $ratio = max(0, min(1, $total > 0 ? $elapsed / $total : 0));
+        $percent = (int) round(10 + ($ratio * 80));
+        return max(10, min(90, $percent));
     }
 
     /**

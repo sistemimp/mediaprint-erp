@@ -15,6 +15,14 @@ export const fetchProdotti = async ({ token, id_categoria, q, signal } = {}) => 
   return { items }
 }
 
+export const fetchProdottiDashboard = async ({ token, signal } = {}) => {
+  const payload = await apiFetch('/prodottiDashboard.php', { token, signal })
+  if (!payload?.ok) {
+    throw new Error(payload?.message || 'API error')
+  }
+  return payload
+}
+
 export const fetchNatureIva = async ({ token, signal } = {}) => {
   const response = await apiFetch('/natureIvaList.php', { token, signal })
   const items = Array.isArray(response?.items) ? response.items : []
@@ -34,6 +42,21 @@ export const createProdotto = async ({ token, body, signal } = {}) => {
 
 export const updateProdotto = async ({ token, body, signal } = {}) => {
   const response = await apiFetch('/prodotti/update.php', { method: 'POST', token, body, signal })
+  return response
+}
+
+export const deleteProdotto = async ({ token, id_prodotto, id, signal } = {}) => {
+  const prodId = id_prodotto ?? id
+  const parsedId = prodId !== undefined && prodId !== null ? Number(prodId) : NaN
+  if (!parsedId || Number.isNaN(parsedId)) {
+    throw new Error('ID prodotto non valido')
+  }
+  const response = await apiFetch('/prodotti/delete.php', {
+    method: 'POST',
+    token,
+    body: { id: parsedId },
+    signal,
+  })
   return response
 }
 

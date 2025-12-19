@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import PropTypes from 'prop-types'
 import { CFormLabel } from '@coreui/react'
 import { CMultiSelect } from '@coreui/react-pro'
@@ -87,6 +87,7 @@ const OggettoPreventivo = ({
   const [baseOptions, setBaseOptions] = useState(DEFAULT_OGGETTO_OPTIONS)
   const [loading, setLoading] = useState(false)
   const [pendingCreate, setPendingCreate] = useState(false)
+  const lastLabelsRef = useRef(null)
 
   const normalizedExtra = useMemo(() => {
     return mergeOggettoOptionLists([], Array.isArray(extraOptions) ? extraOptions : [])
@@ -176,9 +177,21 @@ const OggettoPreventivo = ({
   }, [valueAsStrings, labelMap])
 
   useEffect(() => {
-    if (typeof onLabelsChange === 'function') {
-      onLabelsChange(computedLabels)
+    if (typeof onLabelsChange !== 'function') {
+      lastLabelsRef.current = computedLabels
+      return
     }
+    const prev = Array.isArray(lastLabelsRef.current) ? lastLabelsRef.current : null
+    const next = computedLabels
+    const same =
+      prev &&
+      prev.length === next.length &&
+      prev.every((label, idx) => label === next[idx])
+    if (same) {
+      return
+    }
+    lastLabelsRef.current = next
+    onLabelsChange(next)
   }, [computedLabels, onLabelsChange])
 
   const handleSelectionChange = useCallback(
@@ -200,6 +213,7 @@ const OggettoPreventivo = ({
       if (typeof onLabelsChange === 'function') {
         const labels = uniqueValues.map((id) => labelMap.get(id) || id).filter((text) => text !== '')
         onLabelsChange(labels)
+        lastLabelsRef.current = labels
       }
     },
     [labelMap, onChange, onLabelsChange],
@@ -230,7 +244,9 @@ const OggettoPreventivo = ({
             }
             return labelMap.get(id) || id
           })
-          onLabelsChange(labels.filter((text) => text !== ''))
+          const filtered = labels.filter((text) => text !== '')
+          onLabelsChange(filtered)
+          lastLabelsRef.current = filtered
         }
         return {
           value: String(existing.value),
@@ -265,7 +281,9 @@ const OggettoPreventivo = ({
             }
             return labelMap.get(id) || id
           })
-          onLabelsChange(labels.filter((text) => text !== ''))
+          const filtered = labels.filter((text) => text !== '')
+          onLabelsChange(filtered)
+          lastLabelsRef.current = filtered
         }
         return {
           value: normalized.value,
