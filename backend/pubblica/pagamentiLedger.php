@@ -6,6 +6,8 @@ require __DIR__ . '/../bootstrap.php';
 use MediaPrint\Backend\Database;
 use MediaPrint\Backend\HttpResponse;
 use MediaPrint\Repo\PagamentiRepository;
+use MediaPrint\Repo\AccountsRepository;
+use MediaPrint\Backend\AuthGuard;
 
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
@@ -19,11 +21,18 @@ if ($method !== 'GET') {
 }
 
 try {
+    $auth = AuthGuard::requireAuth();
+    AuthGuard::requirePermissions($auth, ['pay.view']);
+    $allowed = null;
+    if (AuthGuard::getAccountType($auth) === 'cliente') {
+        $accountsRepo = new AccountsRepository(Database::getConnection());
+        $allowed = $accountsRepo->listAccountAnagraficheIds(AuthGuard::getAccountId($auth));
+    }
     $search = isset($_GET['q']) ? trim((string) $_GET['q']) : null;
     $limit = isset($_GET['limit']) ? (int) $_GET['limit'] : 200;
 
     $repo = new PagamentiRepository(Database::getConnection());
-    $items = $repo->listLedger($search, $limit);
+    $items = $repo->listLedger($search, $limit, $allowed);
 
     HttpResponse::json(['items' => $items], 200);
 } catch (RuntimeException $exception) {
@@ -35,4 +44,3 @@ try {
 } catch (Throwable $throwable) {
     HttpResponse::error('Errore interno inatteso.', 500, ['error' => $throwable->getMessage()]);
 }
-

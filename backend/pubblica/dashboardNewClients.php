@@ -5,6 +5,7 @@ use MediaPrint\Backend\Database;
 use MediaPrint\Backend\HttpResponse;
 use MediaPrint\Repo\AnagraficheDashboardRepository;
 use MediaPrint\Service\AnagraficheDashboardService;
+use MediaPrint\Backend\AuthGuard;
 
 require __DIR__ . '/../bootstrap.php';
 
@@ -50,6 +51,21 @@ function resolveDashboardPeriod(?string $periodRaw): array
 }
 
 try {
+    $auth = AuthGuard::requireAuth();
+    AuthGuard::requirePermissions($auth, ['anag.view']);
+    if (AuthGuard::getAccountType($auth) === 'cliente') {
+        HttpResponse::json([
+            'ok' => true,
+            'data' => [],
+            'meta' => [
+                'limit' => 0,
+                'count' => 0,
+                'period' => $_GET['period'] ?? 'monthly',
+            ],
+        ], 200);
+        return;
+    }
+
     $pdo = Database::getConnection();
     $repo = new AnagraficheDashboardRepository($pdo);
     $service = new AnagraficheDashboardService($repo);

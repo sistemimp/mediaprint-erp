@@ -4,6 +4,8 @@ declare(strict_types=1);
 use MediaPrint\Backend\Database;
 use MediaPrint\Backend\HttpResponse;
 use MediaPrint\Repo\PagamentiRepository;
+use MediaPrint\Repo\AccountsRepository;
+use MediaPrint\Backend\AuthGuard;
 use PDO;
 
 require __DIR__ . '/../bootstrap.php';
@@ -50,35 +52,98 @@ function resolveDashboardPeriod(?string $periodRaw): array
 }
 
 try {
+    $auth = AuthGuard::requireAuth();
+    AuthGuard::requirePermissions($auth, ['pay.view']);
+    $allowed = null;
+    if (AuthGuard::getAccountType($auth) === 'cliente') {
+        $accountsRepo = new AccountsRepository(Database::getConnection());
+        $allowed = $accountsRepo->listAccountAnagraficheIds(AuthGuard::getAccountId($auth));
+        if ($allowed === []) {
+            HttpResponse::json([
+                'ok' => true,
+                'kpi' => [
+                    'pagamenti_mese' => 0,
+                    'importo_mese' => 0,
+                    'pending_count' => 0,
+                    'pending_residuo' => 0,
+                ],
+                'top_clients' => [],
+                'latest' => [],
+                'period' => $_GET['period'] ?? 'monthly',
+            ], 200);
+            return;
+        }
+    }
     $pdo = Database::getConnection();
     $repo = new PagamentiRepository($pdo);
     $range = resolveDashboardPeriod($_GET['period'] ?? null);
+    $allowedParams = [];
+    $allowedClauseAssigned = '';
+    $allowedClausePending = '';
+    if (is_array($allowed)) {
+        $placeholders = [];
+        foreach ($allowed as $index => $id) {
+            $key = ':allowed_' . $index;
+            $placeholders[] = $key;
+            $allowedParams[$key] = $id;
+        }
+        $allowedClauseAssigned = ' AND f.id_anagrafica IN (' . implode(',', $placeholders) . ')';
+        $allowedClausePending = ' AND pag.id_anagrafica_hint IN (' . implode(',', $placeholders) . ')';
+    }
 
-    $stmt = $pdo->prepare(
-        'SELECT COUNT(*) AS totale, COALESCE(SUM(importo), 0) AS totale_importo
-         FROM appoggio_pagamenti_fattura
-         WHERE data_pagamento >= :start AND data_pagamento < :end'
-    );
+    if ($allowedClauseAssigned === '') {
+        $stmt = $pdo->prepare(
+            'SELECT COUNT(*) AS totale, COALESCE(SUM(importo), 0) AS totale_importo
+             FROM appoggio_pagamenti_fattura
+             WHERE data_pagamento >= :start AND data_pagamento < :end'
+        );
+    } else {
+        $stmt = $pdo->prepare(
+            'SELECT COUNT(*) AS totale, COALESCE(SUM(p.importo), 0) AS totale_importo
+             FROM appoggio_pagamenti_fattura p
+             LEFT JOIN tb_fatture f ON f.id_fattura = p.id_fattura
+             WHERE p.data_pagamento >= :start AND p.data_pagamento < :end'
+            . $allowedClauseAssigned
+        );
+    }
     $stmt->bindValue(':start', $range['start']->format('Y-m-d H:i:s'));
     $stmt->bindValue(':end', $range['end']->format('Y-m-d H:i:s'));
+    foreach ($allowedParams as $key => $value) {
+        $stmt->bindValue($key, $value, PDO::PARAM_INT);
+    }
     $stmt->execute();
     $row = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
     $pagamentiMese = (int) ($row['totale'] ?? 0);
     $importoMese = (float) ($row['totale_importo'] ?? 0);
 
-    $stmt = $pdo->query(
-        'SELECT COUNT(*) AS totale, COALESCE(SUM(GREATEST(importo_totale - importo_allocato, 0)), 0) AS residuo
-         FROM tb_pagamenti
-         WHERE (importo_totale - importo_allocato) > 0.009'
-    );
-    $row = $stmt ? ($stmt->fetch(PDO::FETCH_ASSOC) ?: []) : [];
+    if ($allowedClausePending === '') {
+        $stmt = $pdo->query(
+            'SELECT COUNT(*) AS totale, COALESCE(SUM(GREATEST(importo_totale - importo_allocato, 0)), 0) AS residuo
+             FROM tb_pagamenti
+             WHERE (importo_totale - importo_allocato) > 0.009'
+        );
+        $row = $stmt ? ($stmt->fetch(PDO::FETCH_ASSOC) ?: []) : [];
+    } else {
+        $stmt = $pdo->prepare(
+            'SELECT COUNT(*) AS totale, COALESCE(SUM(GREATEST(importo_totale - importo_allocato, 0)), 0) AS residuo
+             FROM tb_pagamenti pag
+             WHERE (importo_totale - importo_allocato) > 0.009'
+            . $allowedClausePending
+        );
+        foreach ($allowedParams as $key => $value) {
+            $stmt->bindValue($key, $value, PDO::PARAM_INT);
+        }
+        $stmt->execute();
+        $row = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
+    }
     $pendingCount = (int) ($row['totale'] ?? 0);
     $pendingResiduo = (float) ($row['residuo'] ?? 0);
 
     $latest = [];
     try {
-        $stmt = $pdo->query(
-            'SELECT * FROM (
+        $assignedFilter = $allowedClauseAssigned === '' ? '' : $allowedClauseAssigned;
+        $pendingFilter = $allowedClausePending === '' ? '' : $allowedClausePending;
+        $sql = 'SELECT * FROM (
                 SELECT
                     p.id_pag_fattura AS id_pagamento,
                     p.data_pagamento,
@@ -91,6 +156,7 @@ try {
                 FROM appoggio_pagamenti_fattura p
                 LEFT JOIN tb_fatture f ON f.id_fattura = p.id_fattura
                 LEFT JOIN tb_anagrafiche a ON a.id_anagrafica = f.id_anagrafica
+                WHERE 1=1' . $assignedFilter . '
                 UNION ALL
                 SELECT
                     pag.id_pagamento AS id_pagamento,
@@ -102,10 +168,19 @@ try {
                     NULL AS anno,
                     "pending" AS source
                 FROM tb_pagamenti pag
+                WHERE 1=1' . $pendingFilter . '
             ) x
             ORDER BY COALESCE(x.data_pagamento, "1970-01-01") DESC, x.id_pagamento DESC
-            LIMIT 10'
-        );
+            LIMIT 10';
+        if ($allowedParams === []) {
+            $stmt = $pdo->query($sql);
+        } else {
+            $stmt = $pdo->prepare($sql);
+            foreach ($allowedParams as $key => $value) {
+                $stmt->bindValue($key, $value, PDO::PARAM_INT);
+            }
+            $stmt->execute();
+        }
         $rows = $stmt ? ($stmt->fetchAll(PDO::FETCH_ASSOC) ?: []) : [];
         foreach ($rows as $row) {
             $latest[] = [
@@ -131,7 +206,7 @@ try {
             'pending_count' => $pendingCount,
             'pending_residuo' => $pendingResiduo,
         ],
-        'top_clients' => $repo->listTopClientsByBalance(5),
+        'top_clients' => $repo->listTopClientsByBalance(5, $allowed),
         'latest' => $latest,
         'period' => $range['period'],
     ], 200);

@@ -3,7 +3,9 @@ declare(strict_types=1);
 
 use MediaPrint\Backend\Database;
 use MediaPrint\Backend\HttpResponse;
+use MediaPrint\Repo\AccountsRepository;
 use MediaPrint\Repo\PreventiviRepository;
+use MediaPrint\Backend\AuthGuard;
 
 require __DIR__ . '/../bootstrap.php';
 
@@ -49,10 +51,41 @@ function resolveDashboardPeriod(?string $periodRaw): array
 }
 
 try {
+    $auth = AuthGuard::requireAuth();
+    AuthGuard::requirePermissions($auth, ['prev.view']);
+    $allowed = null;
+    if (AuthGuard::getAccountType($auth) === 'cliente') {
+        $accountsRepo = new AccountsRepository(Database::getConnection());
+        $allowed = $accountsRepo->listAccountAnagraficheIds(AuthGuard::getAccountId($auth));
+        if ($allowed === []) {
+            HttpResponse::json([
+                'ok' => true,
+                'conversion' => ['total' => 0, 'accepted' => 0],
+                'series' => [],
+                'status_counts' => [],
+                'top_clients' => [],
+                'latest' => [],
+                'period' => $_GET['period'] ?? 'monthly',
+            ], 200);
+            return;
+        }
+    }
+
     $pdo = Database::getConnection();
     $repo = new PreventiviRepository($pdo);
 
     $range = resolveDashboardPeriod($_GET['period'] ?? null);
+    $allowedClause = '';
+    $allowedParams = [];
+    if (is_array($allowed)) {
+        $placeholders = [];
+        foreach ($allowed as $index => $id) {
+            $key = ':allowed_' . $index;
+            $placeholders[] = $key;
+            $allowedParams[$key] = $id;
+        }
+        $allowedClause = ' AND p.id_anagrafica IN (' . implode(',', $placeholders) . ')';
+    }
 
     $stmt = $pdo->prepare(
         'SELECT
@@ -62,9 +95,13 @@ try {
          LEFT JOIN cfg_stati_preventivo sp ON sp.id_stato = p.id_stato_prev
          WHERE COALESCE(p.data_preventivo, p.created_at) >= :start
            AND COALESCE(p.data_preventivo, p.created_at) < :end'
+        . $allowedClause
     );
     $stmt->bindValue(':start', $range['start']->format('Y-m-d H:i:s'));
     $stmt->bindValue(':end', $range['end']->format('Y-m-d H:i:s'));
+    foreach ($allowedParams as $key => $value) {
+        $stmt->bindValue($key, $value, PDO::PARAM_INT);
+    }
     $stmt->execute();
     $row = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
     $conversion = [
@@ -72,7 +109,7 @@ try {
         'accepted' => (int) ($row['accepted'] ?? 0),
     ];
 
-    $series = $repo->fetchConversionSeriesLast6();
+    $series = $repo->fetchConversionSeriesLast6($allowed);
 
     $statusStmt = $pdo->prepare(
         'SELECT
@@ -85,13 +122,17 @@ try {
          LEFT JOIN tb_preventivi p
            ON p.id_stato_prev = s.id_stato
           AND COALESCE(p.data_preventivo, p.created_at) >= :start
-          AND COALESCE(p.data_preventivo, p.created_at) < :end
+          AND COALESCE(p.data_preventivo, p.created_at) < :end'
+        . $allowedClause . '
          WHERE s.attivo = 1
          GROUP BY s.id_stato, s.code, s.label, s.ordering
          ORDER BY s.ordering ASC, s.id_stato ASC'
     );
     $statusStmt->bindValue(':start', $range['start']->format('Y-m-d H:i:s'));
     $statusStmt->bindValue(':end', $range['end']->format('Y-m-d H:i:s'));
+    foreach ($allowedParams as $key => $value) {
+        $statusStmt->bindValue($key, $value, PDO::PARAM_INT);
+    }
     $statusStmt->execute();
     $rows = $statusStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
     $statusCounts = [];
@@ -114,13 +155,17 @@ try {
          FROM tb_preventivi p
          LEFT JOIN tb_anagrafiche a ON a.id_anagrafica = p.id_anagrafica
          WHERE COALESCE(p.data_preventivo, p.created_at) >= :start
-           AND COALESCE(p.data_preventivo, p.created_at) < :end
+           AND COALESCE(p.data_preventivo, p.created_at) < :end'
+        . $allowedClause . '
          GROUP BY a.id_anagrafica, a.ragione_sociale
          ORDER BY totale DESC
          LIMIT 5'
     );
     $topStmt->bindValue(':start', $range['start']->format('Y-m-d H:i:s'));
     $topStmt->bindValue(':end', $range['end']->format('Y-m-d H:i:s'));
+    foreach ($allowedParams as $key => $value) {
+        $topStmt->bindValue($key, $value, PDO::PARAM_INT);
+    }
     $topStmt->execute();
     $rows = $topStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
     $topClients = [];
@@ -133,7 +178,7 @@ try {
         ];
     }
 
-    $latest = $repo->listLatest(10);
+    $latest = $repo->listLatest(10, $allowed);
 
     HttpResponse::json([
         'ok' => true,

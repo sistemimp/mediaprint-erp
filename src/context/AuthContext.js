@@ -1,4 +1,5 @@
 import React, { createContext, useCallback, useEffect, useMemo, useState } from 'react'
+import { buildApiUrl, AUTH_TOKEN_STORAGE_KEY, AUTH_USER_STORAGE_KEY } from '../services/apiClient'
 
 const AuthContext = createContext({
   token: null,
@@ -10,13 +11,10 @@ const AuthContext = createContext({
   logout: () => {},
 })
 
-const TOKEN_STORAGE_KEY = 'mediaprint-erp-auth-token'
-const USER_STORAGE_KEY = 'mediaprint-erp-user'
-
 export const AuthProvider = ({ children }) => {
-  const [token, setToken] = useState(() => localStorage.getItem(TOKEN_STORAGE_KEY))
+  const [token, setToken] = useState(() => localStorage.getItem(AUTH_TOKEN_STORAGE_KEY))
   const [user, setUser] = useState(() => {
-    const storedUser = localStorage.getItem(USER_STORAGE_KEY)
+    const storedUser = localStorage.getItem(AUTH_USER_STORAGE_KEY)
     if (!storedUser) {
       return null
     }
@@ -32,23 +30,26 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => {
     if (token) {
-      localStorage.setItem(TOKEN_STORAGE_KEY, token)
+      localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, token)
     } else {
-      localStorage.removeItem(TOKEN_STORAGE_KEY)
+      localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY)
     }
   }, [token])
 
   useEffect(() => {
     if (user) {
-      localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(user))
+      localStorage.setItem(AUTH_USER_STORAGE_KEY, JSON.stringify(user))
     } else {
-      localStorage.removeItem(USER_STORAGE_KEY)
+      localStorage.removeItem(AUTH_USER_STORAGE_KEY)
     }
   }, [user])
 
   const login = useCallback(async ({ username, password }) => {
+    const configuredLoginUrl = import.meta.env.VITE_AUTH_LOGIN_URL
     const loginUrl =
-      import.meta.env.VITE_AUTH_LOGIN_URL || 'https://gestionale.mediaprint.it/pubblica/login.php'
+      configuredLoginUrl && configuredLoginUrl.trim() !== ''
+        ? configuredLoginUrl.trim()
+        : buildApiUrl('/login.php').toString()
 
     if (!loginUrl) {
       throw new Error('Login endpoint is not configured (missing VITE_AUTH_LOGIN_URL).')
@@ -78,6 +79,7 @@ export const AuthProvider = ({ children }) => {
         throw new Error('La risposta del server non contiene un token.')
       }
 
+      localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, data.token)
       setToken(data.token)
       setUser(data.user ?? null)
       return data
@@ -92,6 +94,8 @@ export const AuthProvider = ({ children }) => {
   }, [])
 
   const logout = useCallback(() => {
+    localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY)
+    localStorage.removeItem(AUTH_USER_STORAGE_KEY)
     setToken(null)
     setUser(null)
     setError(null)

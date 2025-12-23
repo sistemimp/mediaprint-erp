@@ -1,4 +1,4 @@
-import { apiFetch, buildApiUrl } from './apiClient'
+import { apiFetch, buildApiUrl, getStoredToken } from './apiClient'
 
 export const fetchPagamentiLedger = async ({ token, q, limit, signal } = {}) => {
   const response = await apiFetch('/pagamentiLedger.php', {
@@ -109,8 +109,11 @@ export const uploadPagamentiExcel = async ({ token, file, signal } = {}) => {
 
   const url = buildApiUrl('/pagamentiImportUpload.php')
   const headers = {}
-  if (token) {
-    headers.Authorization = `Bearer ${token}`
+  const resolvedToken = token || getStoredToken()
+  if (resolvedToken) {
+    headers.Authorization = `Bearer ${resolvedToken}`
+    headers['X-Authorization'] = `Bearer ${resolvedToken}`
+    headers['X-Access-Token'] = resolvedToken
   }
 
   const response = await fetch(url.toString(), {

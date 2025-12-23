@@ -35,6 +35,10 @@ const ProdottiVariazioni = React.lazy(() => import('./views/prodotti/VariazioniL
 const PacchettiList = React.lazy(() => import('./views/pacchetti/PacchettiList'))
 const PacchettiCreate = React.lazy(() => import('./views/pacchetti/PacchettiCreate'))
 const PacchettiDetail = React.lazy(() => import('./views/pacchetti/PacchettiDetail'))
+// Contratti
+const ContrattiList = React.lazy(() => import('./views/contratti/ContrattiList'))
+const ContrattiCreate = React.lazy(() => import('./views/contratti/ContrattiCreate'))
+const ContrattiDetail = React.lazy(() => import('./views/contratti/ContrattiDetail'))
 // Pagamenti
 const PagamentiDashboard = React.lazy(() => import('./views/pagamenti/PagamentiDashboard'))
 const PagamentiList = React.lazy(() => import('./views/pagamenti/PagamentiList'))
@@ -42,7 +46,9 @@ const PagamentiDetail = React.lazy(() => import('./views/pagamenti/PagamentiDeta
 const PagamentiImport = React.lazy(() => import('./views/pagamenti/PagamentiImport'))
 const LavorazioniList = React.lazy(() => import('./views/lavorazioni/LavorazioniList'))
 const LavorazioneDetail = React.lazy(() => import('./views/lavorazioni/LavorazioneDetail'))
+const LavorazioniTemplates = React.lazy(() => import('./views/lavorazioni/LavorazioniTemplates'))
 const ChatRoom = React.lazy(() => import('./views/chat/ChatRoom'))
+const AccountsList = React.lazy(() => import('./views/accounts/AccountsList'))
 
 const routes = [
   { path: '/', exact: true, name: 'Home' },
@@ -74,13 +80,18 @@ const routes = [
   { path: '/pacchetti/lista', name: 'Pacchetti - Lista', element: PacchettiList },
   { path: '/pacchetti/crea', name: 'Pacchetti - Crea nuovo', element: PacchettiCreate },
   { path: '/pacchetti/dettagli', name: 'Pacchetti - Dettagli', element: PacchettiDetail },
+  { path: '/contratti/lista', name: 'Contratti - Lista', element: ContrattiList },
+  { path: '/contratti/crea', name: 'Contratti - Crea nuovo', element: ContrattiCreate },
+  { path: '/contratti/dettagli', name: 'Contratti - Dettagli', element: ContrattiDetail },
   { path: '/pagamenti/dashboard', name: 'Pagamenti - Dashboard', element: PagamentiDashboard },
   { path: '/pagamenti/lista', name: 'Pagamenti - Situazione', element: PagamentiList },
   { path: '/pagamenti/dettaglio', name: 'Pagamenti - Dettaglio', element: PagamentiDetail },
   { path: '/pagamenti/import', name: 'Pagamenti - Import', element: PagamentiImport },
   { path: '/lavorazioni/lista', name: 'Lavorazioni - Lista', element: LavorazioniList },
   { path: '/lavorazioni/dettaglio', name: 'Lavorazioni - Dettaglio', element: LavorazioneDetail },
+  { path: '/lavorazioni/templates', name: 'Lavorazioni - Template attivita', element: LavorazioniTemplates },
   { path: '/chat', name: 'Live Chat', element: ChatRoom },
+  { path: '/accounts/lista', name: 'Account - Lista', element: AccountsList },
 ]
 
 export default routes

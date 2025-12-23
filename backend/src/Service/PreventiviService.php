@@ -236,6 +236,12 @@ HTML;
         if ($row === null) {
             throw new \RuntimeException('Preventivo non trovato.', 404);
         }
+        if (isset($input['allowed_anagrafiche']) && is_array($input['allowed_anagrafiche'])) {
+            $allowed = array_map('intval', $input['allowed_anagrafiche']);
+            if (!in_array((int) $row['id_anagrafica'], $allowed, true)) {
+                throw new \RuntimeException('Preventivo non trovato.', 404);
+            }
+        }
 
         $linkedDdt = isset($row['linked_ddt']) && is_array($row['linked_ddt']) ? $row['linked_ddt'] : [];
         $linkedFatture = isset($row['linked_fatture']) && is_array($row['linked_fatture']) ? $row['linked_fatture'] : [];
@@ -297,7 +303,10 @@ HTML;
         // vincola a massimo 10 come da richiesta
         $limit = max(1, min($limit, 10));
 
-        $rows = $this->repository->listLatest($limit);
+        $allowed = isset($input['allowed_anagrafiche']) && is_array($input['allowed_anagrafiche'])
+            ? $input['allowed_anagrafiche']
+            : null;
+        $rows = $this->repository->listLatest($limit, $allowed);
 
         return [
             'data' => $rows,
@@ -318,6 +327,9 @@ HTML;
             'page' => isset($input['page']) ? max(1, (int) $input['page']) : 1,
             'per_page' => isset($input['per_page']) ? max(1, (int) $input['per_page']) : 20,
         ];
+        if (isset($input['allowed_anagrafiche']) && is_array($input['allowed_anagrafiche'])) {
+            $filters['allowed_ids'] = $input['allowed_anagrafiche'];
+        }
 
         $result = $this->repository->searchArchived($filters);
         $total = (int) $result['total'];

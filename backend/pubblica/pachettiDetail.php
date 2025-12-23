@@ -7,6 +7,7 @@ use MediaPrint\Repo\PacchettiRepository;
 use MediaPrint\Service\PacchettiService;
 use MediaPrint\Backend\Database;
 use MediaPrint\Backend\HttpResponse;
+use MediaPrint\Backend\AuthGuard;
 
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
@@ -21,6 +22,13 @@ if ($method !== 'GET') {
 }
 
 try {
+    $auth = AuthGuard::requireAuth();
+    AuthGuard::requirePermissions($auth, ['cfg.view']);
+    if (AuthGuard::getAccountType($auth) === 'cliente') {
+        HttpResponse::json(['data' => null, 'righe' => []], 200);
+        return;
+    }
+
     $id = isset($_GET['id']) ? (int) $_GET['id'] : (isset($_GET['id_pacchetto']) ? (int) $_GET['id_pacchetto'] : 0);
     $service = new PacchettiService(new PacchettiRepository(Database::getConnection()));
     $result = $service->detail(['id' => $id]);
@@ -32,4 +40,3 @@ try {
 } catch (Throwable $throwable) {
     HttpResponse::error('Errore interno inatteso.', 500, ['error' => $throwable->getMessage()]);
 }
-

@@ -7,6 +7,7 @@ use MediaPrint\Backend\Database;
 use MediaPrint\Backend\HttpResponse;
 use MediaPrint\Repo\LavorazioniRepository;
 use MediaPrint\Service\LavorazioniService;
+use MediaPrint\Backend\AuthGuard;
 
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 if ($method === 'OPTIONS') {
@@ -20,6 +21,12 @@ if ($method !== 'POST') {
 }
 
 try {
+    $auth = AuthGuard::requireAuth();
+    AuthGuard::requirePermissions($auth, ['job.manage']);
+    if (AuthGuard::getAccountType($auth) === 'cliente') {
+        throw new RuntimeException('Accesso non consentito.', 403);
+    }
+
     $payload = json_decode(file_get_contents('php://input') ?: 'null', true);
     if (!is_array($payload)) {
         $payload = [];

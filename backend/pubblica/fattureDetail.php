@@ -6,6 +6,8 @@ require __DIR__ . '/../bootstrap.php';
 use MediaPrint\Backend\Database;
 use MediaPrint\Backend\HttpResponse;
 use MediaPrint\Repo\FattureRepository;
+use MediaPrint\Repo\AccountsRepository;
+use MediaPrint\Backend\AuthGuard;
 
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
@@ -19,6 +21,14 @@ if ($method !== 'GET') {
 }
 
 try {
+    $auth = AuthGuard::requireAuth();
+    AuthGuard::requirePermissions($auth, ['fatt.view']);
+    $allowed = null;
+    if (AuthGuard::getAccountType($auth) === 'cliente') {
+        $accountsRepo = new AccountsRepository(Database::getConnection());
+        $allowed = $accountsRepo->listAccountAnagraficheIds(AuthGuard::getAccountId($auth));
+    }
+
     $id = isset($_GET['id']) ? (int) $_GET['id'] : 0;
     if ($id <= 0) {
         throw new RuntimeException('ID fattura mancante o non valido.', 422);
@@ -27,6 +37,9 @@ try {
     $repo = new FattureRepository(Database::getConnection());
     $detail = $repo->fetchDetail($id);
     if ($detail === null) {
+        throw new RuntimeException('Fattura non trovata.', 404);
+    }
+    if (is_array($allowed) && $allowed !== [] && !in_array((int) ($detail['id_anagrafica'] ?? 0), $allowed, true)) {
         throw new RuntimeException('Fattura non trovata.', 404);
     }
 
@@ -40,4 +53,3 @@ try {
 } catch (Throwable $throwable) {
     HttpResponse::error('Errore interno inatteso.', 500, ['error' => $throwable->getMessage()]);
 }
-

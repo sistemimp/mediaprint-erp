@@ -1,4 +1,4 @@
-import { apiFetch, buildApiUrl } from './apiClient'
+import { apiFetch, buildApiUrl, getStoredToken } from './apiClient'
 
 export const fetchFattureList = async ({ token, limit, signal } = {}) => {
   const params = {}
@@ -324,8 +324,11 @@ export const exportFatturaXml = async ({ token, id, signal } = {}) => {
 
   const url = buildApiUrl('/fattureExportXml.php', { id: fatturaId })
   const headers = {}
-  if (token) {
-    headers.Authorization = `Bearer ${token}`
+  const resolvedToken = token || getStoredToken()
+  if (resolvedToken) {
+    headers.Authorization = `Bearer ${resolvedToken}`
+    headers['X-Authorization'] = `Bearer ${resolvedToken}`
+    headers['X-Access-Token'] = resolvedToken
   }
 
   const response = await fetch(url.toString(), {

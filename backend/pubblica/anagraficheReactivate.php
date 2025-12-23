@@ -4,13 +4,18 @@ declare(strict_types=1);
 use MediaPrint\Service\AnagraficheService;
 use MediaPrint\Repo\AnagraficheRepository;
 use MediaPrint\Backend\Database;
+use MediaPrint\Backend\AuthGuard;
 
 header('Content-Type: application/json; charset=utf-8');
     require __DIR__ . '/../bootstrap.php';
 try {
-
-
     // Parse JSON body
+    $auth = AuthGuard::requireAuth();
+    AuthGuard::requirePermissions($auth, ['anag.edit']);
+    if (AuthGuard::getAccountType($auth) === 'cliente') {
+        throw new RuntimeException('Accesso non consentito.', 403);
+    }
+
     $raw = file_get_contents('php://input') ?: '';
     $data = json_decode($raw, true);
     if (!is_array($data)) {
@@ -35,4 +40,3 @@ try {
         'message' => $e->getMessage(),
     ], JSON_UNESCAPED_UNICODE);
 }
-

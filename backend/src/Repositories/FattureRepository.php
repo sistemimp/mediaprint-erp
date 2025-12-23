@@ -7,6 +7,7 @@ use DateTimeImmutable;
 use Firebase\JWT\JWT;
 use Firebase\JWT\Key;
 use MediaPrint\Service\PaymentTerms;
+use MediaPrint\Repo\ContrattiRepository;
 use PDO;
 use PDOException;
 use RuntimeException;
@@ -35,8 +36,16 @@ final class FattureRepository
      *
      * @return list<array{mese:string, totale:float, pagate:float}>
      */
-    public function fetchMonthlyTotalsLast12(): array
+    public function fetchMonthlyTotalsLast12(?array $allowedAnagrafiche = null): array
     {
+        $allowed = null;
+        if (is_array($allowedAnagrafiche)) {
+            $allowed = array_values(array_filter(array_map('intval', $allowedAnagrafiche), static fn ($id) => $id > 0));
+            if ($allowed === []) {
+                return [];
+            }
+        }
+
         $sql = <<<'SQL'
             WITH RECURSIVE mesi(ms) AS (
               SELECT DATE_SUB(DATE_FORMAT(CURDATE(), '%Y-%m-01'), INTERVAL 11 MONTH)
@@ -57,9 +66,33 @@ final class FattureRepository
             GROUP BY m.ms
             ORDER BY m.ms
         SQL;
+        $params = [];
+        if ($allowed !== null) {
+            $placeholders = [];
+            foreach ($allowed as $index => $id) {
+                $key = ':allowed_' . $index;
+                $placeholders[] = $key;
+                $params[$key] = $id;
+            }
+            $sql = str_replace(
+                'AND f.data_fattura <  DATE_ADD(m.ms, INTERVAL 1 MONTH)',
+                'AND f.data_fattura <  DATE_ADD(m.ms, INTERVAL 1 MONTH)'
+                . ' AND f.id_anagrafica IN (' . implode(',', $placeholders) . ')',
+                $sql
+            );
+        }
 
-        $stmt = $this->pdo->query($sql);
-        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        if ($params === []) {
+            $stmt = $this->pdo->query($sql);
+            $rows = $stmt ? ($stmt->fetchAll(PDO::FETCH_ASSOC) ?: []) : [];
+        } else {
+            $stmt = $this->pdo->prepare($sql);
+            foreach ($params as $placeholder => $value) {
+                $stmt->bindValue($placeholder, $value, PDO::PARAM_INT);
+            }
+            $stmt->execute();
+            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        }
         $out = [];
         foreach ($rows as $r) {
             $out[] = [
@@ -71,8 +104,16 @@ final class FattureRepository
         return $out;
     }
 
-    public function fetchCurrentMonthRevenue(): float
+    public function fetchCurrentMonthRevenue(?array $allowedAnagrafiche = null): float
     {
+        $allowed = null;
+        if (is_array($allowedAnagrafiche)) {
+            $allowed = array_values(array_filter(array_map('intval', $allowedAnagrafiche), static fn ($id) => $id > 0));
+            if ($allowed === []) {
+                return 0.0;
+            }
+        }
+
         $sql = <<<'SQL'
             WITH params AS (
               SELECT
@@ -88,9 +129,32 @@ final class FattureRepository
             LEFT JOIN cfg_stati_fattura sf ON sf.id_stato = f.id_stato_fatt
             WHERE sf.code IS NULL OR sf.code <> 'bozza'
         SQL;
+        $params = [];
+        if ($allowed !== null) {
+            $placeholders = [];
+            foreach ($allowed as $index => $id) {
+                $key = ':allowed_' . $index;
+                $placeholders[] = $key;
+                $params[$key] = $id;
+            }
+            $sql = str_replace(
+                'AND COALESCE(f.data_fattura, f.created_at) < p.next_month',
+                'AND COALESCE(f.data_fattura, f.created_at) < p.next_month'
+                . ' AND f.id_anagrafica IN (' . implode(',', $placeholders) . ')',
+                $sql
+            );
+        }
 
-        $stmt = $this->pdo->query($sql);
-        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($params === []) {
+            $stmt = $this->pdo->query($sql);
+        } else {
+            $stmt = $this->pdo->prepare($sql);
+            foreach ($params as $placeholder => $value) {
+                $stmt->bindValue($placeholder, $value, PDO::PARAM_INT);
+            }
+            $stmt->execute();
+        }
+        $row = $stmt ? $stmt->fetch(PDO::FETCH_ASSOC) : false;
         if (!$row) {
             return 0.0;
         }
@@ -101,9 +165,16 @@ final class FattureRepository
     /**
      * @return list<array{id_anagrafica:int|null, ragione_sociale:?string, fatturato:float}>
      */
-    public function listTopClientsByRevenue(string $startDate, string $endDate, int $limit = 5): array
+    public function listTopClientsByRevenue(string $startDate, string $endDate, int $limit = 5, ?array $allowedAnagrafiche = null): array
     {
         $effectiveLimit = max(1, $limit);
+        $allowed = null;
+        if (is_array($allowedAnagrafiche)) {
+            $allowed = array_values(array_filter(array_map('intval', $allowedAnagrafiche), static fn ($id) => $id > 0));
+            if ($allowed === []) {
+                return [];
+            }
+        }
         $sql = <<<'SQL'
             SELECT
               a.id_anagrafica,
@@ -121,9 +192,25 @@ final class FattureRepository
         SQL;
 
         $sql = str_replace('LIMIT :limit', 'LIMIT ' . (int) $effectiveLimit, $sql);
+        if ($allowed !== null) {
+            $placeholders = [];
+            foreach ($allowed as $index => $id) {
+                $placeholders[] = ':allowed_' . $index;
+            }
+            $sql = str_replace(
+                'AND (sf.code IS NULL OR sf.code <> \'bozza\')',
+                'AND (sf.code IS NULL OR sf.code <> \'bozza\') AND f.id_anagrafica IN (' . implode(',', $placeholders) . ')',
+                $sql
+            );
+        }
         $stmt = $this->pdo->prepare($sql);
         $stmt->bindValue(':start', $startDate);
         $stmt->bindValue(':end', $endDate);
+        if ($allowed !== null) {
+            foreach ($allowed as $index => $id) {
+                $stmt->bindValue(':allowed_' . $index, $id, PDO::PARAM_INT);
+            }
+        }
         $stmt->execute();
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
@@ -142,7 +229,7 @@ final class FattureRepository
     /**
      * @return list<array<string,mixed>>
      */
-    public function listLatest(int $limit = 200): array
+    public function listLatest(int $limit = 200, ?array $allowedAnagrafiche = null): array
     {
         $limit = max(1, min($limit, 500));
         $sql = <<<'SQL'
@@ -169,12 +256,32 @@ final class FattureRepository
             LEFT JOIN tb_anagrafiche a ON a.id_anagrafica = f.id_anagrafica
             LEFT JOIN cfg_stati_fattura sf ON sf.id_stato = f.id_stato_fatt
             LEFT JOIN cfg_sezionali sz ON sz.id_sezionale = f.id_sezionale
+            /*FILTERS*/
             ORDER BY COALESCE(f.data_fattura, f.created_at) DESC, f.id_fattura DESC
             LIMIT :limit
         SQL;
 
+        $allowed = null;
+        if (is_array($allowedAnagrafiche)) {
+            $allowed = array_values(array_filter(array_map('intval', $allowedAnagrafiche), static fn($id) => $id > 0));
+            if ($allowed === []) {
+                return [];
+            }
+        }
+        $where = '';
+        if ($allowed !== null) {
+            $placeholders = implode(',', array_fill(0, count($allowed), '?'));
+            $where = "WHERE f.id_anagrafica IN ({$placeholders})";
+        }
+
+        $sql = str_replace('/*FILTERS*/', $where, $sql);
         $sql = str_replace(':limit', (string) $limit, $sql);
         $stmt = $this->pdo->prepare($sql);
+        if ($allowed !== null) {
+            foreach ($allowed as $index => $id) {
+                $stmt->bindValue($index + 1, $id, PDO::PARAM_INT);
+            }
+        }
         $stmt->execute();
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
@@ -1414,6 +1521,8 @@ final class FattureRepository
             throw new RuntimeException('ID fattura non valido per l\'aggiornamento delle righe.', 422);
         }
 
+        $lines = $this->applyContractPricing($id, $lines);
+
         $normalized = [];
         foreach ($lines as $line) {
             if (!is_array($line)) {
@@ -1542,7 +1651,7 @@ final class FattureRepository
             );
 
             $posizione = 1;
-            foreach ($normalized as $line) {
+        foreach ($normalized as $line) {
                 $stmt->bindValue(':id_fattura', $id, PDO::PARAM_INT);
                 $stmt->bindValue(':id_prodotto', $line['id_prodotto'], $line['id_prodotto'] ? PDO::PARAM_INT : PDO::PARAM_NULL);
                 $stmt->bindValue(':descrizione', $line['descrizione'], PDO::PARAM_STR);
@@ -1576,6 +1685,60 @@ final class FattureRepository
             }
             throw $exception;
         }
+    }
+
+    /**
+     * @param list<array<string,mixed>> $lines
+     * @return list<array<string,mixed>>
+     */
+    private function applyContractPricing(int $idFattura, array $lines): array
+    {
+        $idAnagrafica = $this->getAnagraficaIdForFattura($idFattura);
+        if ($idAnagrafica <= 0 || empty($lines)) {
+            return $lines;
+        }
+
+        $repo = new ContrattiRepository($this->pdo);
+        $out = [];
+        foreach ($lines as $line) {
+            if (!is_array($line)) {
+                continue;
+            }
+            $qtyRaw = $line['quantita'] ?? $line['qty'] ?? 1;
+            $qty = is_numeric($qtyRaw) ? (float) $qtyRaw : 1.0;
+            $idProdotto = isset($line['id_prodotto']) ? (int) $line['id_prodotto'] : 0;
+            $idPacchetto = isset($line['id_pacchetto']) ? (int) $line['id_pacchetto'] : 0;
+            $pricing = null;
+            if ($idProdotto > 0) {
+                $pricing = $repo->resolveProductPricing($idAnagrafica, $idProdotto, $qty);
+            }
+            if ($pricing === null && $idPacchetto > 0) {
+                $pricing = $repo->resolvePackagePricing($idAnagrafica, $idPacchetto, $qty);
+            }
+            if ($pricing !== null) {
+                $line['prezzo_unitario'] = $pricing['prezzo_unitario'];
+                $line['prezzo'] = $pricing['prezzo_unitario'];
+                $line['sconto'] = $pricing['sconto'] ?? 0.0;
+                if (array_key_exists('iva', $pricing) && $pricing['iva'] !== null) {
+                    $line['aliquota_iva'] = $pricing['iva'];
+                    $line['iva'] = $pricing['iva'];
+                }
+                if (array_key_exists('id_sdi_natura_iva', $pricing) && $pricing['id_sdi_natura_iva'] !== null) {
+                    $line['id_sdi_natura_iva'] = $pricing['id_sdi_natura_iva'];
+                }
+            }
+            $out[] = $line;
+        }
+        return $out;
+    }
+
+    private function getAnagraficaIdForFattura(int $idFattura): int
+    {
+        $stmt = $this->pdo->prepare('SELECT id_anagrafica FROM tb_fatture WHERE id_fattura = :id LIMIT 1');
+        $stmt->bindValue(':id', $idFattura, PDO::PARAM_INT);
+        $stmt->execute();
+        $value = $stmt->fetchColumn();
+        return $value !== false ? (int) $value : 0;
     }
 
     /**

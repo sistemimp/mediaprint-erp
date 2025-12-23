@@ -855,7 +855,7 @@ final class DdtRepository
     /**
      * @return list<array<string,mixed>>
      */
-    public function listLatest(int $limit = 200): array
+    public function listLatest(int $limit = 200, ?array $allowedAnagrafiche = null): array
     {
         $limit = max(1, min($limit, 500));
         $sql = <<<'SQL'
@@ -877,12 +877,32 @@ final class DdtRepository
             FROM tb_ddt d
             LEFT JOIN tb_anagrafiche a ON a.id_anagrafica = d.id_anagrafica
             LEFT JOIN cfg_causali_ddt c ON c.id_causale = d.id_causale
+            /*FILTERS*/
             ORDER BY COALESCE(d.data_ddt, d.created_at) DESC, d.id_ddt DESC
             LIMIT :limit
         SQL;
 
+        $allowed = null;
+        if (is_array($allowedAnagrafiche)) {
+            $allowed = array_values(array_filter(array_map('intval', $allowedAnagrafiche), static fn($id) => $id > 0));
+            if ($allowed === []) {
+                return [];
+            }
+        }
+        $where = '';
+        if ($allowed !== null) {
+            $placeholders = implode(',', array_fill(0, count($allowed), '?'));
+            $where = "WHERE d.id_anagrafica IN ({$placeholders})";
+        }
+
+        $sql = str_replace('/*FILTERS*/', $where, $sql);
         $sql = str_replace(':limit', (string) $limit, $sql);
         $stmt = $this->pdo->prepare($sql);
+        if ($allowed !== null) {
+            foreach ($allowed as $index => $id) {
+                $stmt->bindValue($index + 1, $id, PDO::PARAM_INT);
+            }
+        }
         $stmt->execute();
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
 

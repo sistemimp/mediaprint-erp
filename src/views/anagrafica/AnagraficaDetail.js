@@ -93,6 +93,37 @@ const formatDateTime = (value) => {
   })}`
 }
 
+const formatInteger = (value) => {
+  if (value === undefined || value === null || Number.isNaN(Number(value))) {
+    return "-"
+  }
+  return Number(value).toLocaleString("it-IT")
+}
+
+const formatPercent = (value) => {
+  if (value === undefined || value === null || Number.isNaN(Number(value))) {
+    return "-"
+  }
+  return `${Number(value).toFixed(1)}%`
+}
+
+const toNumberOrZero = (value) => {
+  const numeric = Number(value)
+  return Number.isFinite(numeric) ? numeric : 0
+}
+
+const normalizeDocumentDate = (row, dateField, fallbackField) => {
+  const raw = row?.[dateField] ?? row?.[fallbackField] ?? null
+  if (!raw) {
+    return null
+  }
+  const ts = new Date(raw).getTime()
+  if (Number.isNaN(ts)) {
+    return null
+  }
+  return { ts, raw }
+}
+
 const formatSedeAddress = (sede) => {
   if (!sede) {
     return "-"
@@ -207,6 +238,14 @@ const statoOptions = [
   { label: "Disattiva", value: "disattiva" },
 ]
 
+const KPI_PERIOD_OPTIONS = [
+  { value: 'all', label: 'Tutti' },
+  { value: 'month', label: 'Mese' },
+  { value: 'quarter', label: 'Trimestre' },
+  { value: 'semester', label: 'Semestre' },
+  { value: 'year', label: 'Ultimo anno' },
+]
+
 const AnagraficaDetail = () => {
   const location = useLocation()
   const navigate = useNavigate()
@@ -223,6 +262,7 @@ const AnagraficaDetail = () => {
 
   const [mutationError, setMutationError] = useState(null)
   const [toast, setToast] = useState({ open: false, type: 'success', message: '' })
+  const [kpiPeriod, setKpiPeriod] = useState('all')
 
   const showToast = (message, type = 'success') => {
     setToast({ open: true, type, message })
@@ -255,6 +295,10 @@ const AnagraficaDetail = () => {
   const contattiArchiviati = useMemo(
     () => (Array.isArray(detail?.contatti_archiviati) ? detail.contatti_archiviati : []),
     [detail?.contatti_archiviati],
+  )
+  const contratti = useMemo(
+    () => (Array.isArray(detail?.contratti) ? detail.contratti : []),
+    [detail?.contratti],
   )
   const paymentTermsMap = useMemo(() => {
     const map = new Map()
@@ -336,6 +380,7 @@ const AnagraficaDetail = () => {
         const data = await fetchAnagraficaDetail({
           token,
           id: recordId,
+          kpiPeriod,
           signal: controller.signal,
         })
 
@@ -362,7 +407,7 @@ const AnagraficaDetail = () => {
     return () => {
       controller.abort()
     }
-  }, [token, recordId, refreshIndex, logout])
+  }, [token, recordId, refreshIndex, logout, kpiPeriod])
 
   useEffect(() => {
     if (!token) {
@@ -510,6 +555,7 @@ const AnagraficaDetail = () => {
       const response = await updateAnagraficaDetail({
         token,
         id: recordId,
+        kpiPeriod,
         anagrafica: payload,
       })
       handleMutationSuccess(response)
@@ -582,6 +628,7 @@ const AnagraficaDetail = () => {
       const response = await updateAnagraficaDetail({
         token,
         id: recordId,
+        kpiPeriod,
         fiscale: payload,
       })
       handleMutationSuccess(response)
@@ -689,6 +736,7 @@ const AnagraficaDetail = () => {
       const response = await updateAnagraficaDetail({
         token,
         id: recordId,
+        kpiPeriod,
         sedi: requestBody,
       })
       handleMutationSuccess(response)
@@ -719,6 +767,7 @@ const AnagraficaDetail = () => {
             const updateResp = await updateAnagraficaDetail({
               token,
               id: recordId,
+              kpiPeriod,
               contatti: updates,
             })
             handleMutationSuccess(updateResp)
@@ -746,7 +795,7 @@ const AnagraficaDetail = () => {
     } finally {
       setSavingSedeId(null)
     }
-  }, [editingSedeId, handleMutationSuccess, logout, recordId, sedeForm, sedi, token])
+  }, [editingSedeId, handleMutationSuccess, kpiPeriod, logout, recordId, sedeForm, sedi, token])
 
   const handleSedeDelete = async (sedeId) => {
     if (!recordId || !sedeId) {
@@ -767,6 +816,7 @@ const AnagraficaDetail = () => {
       const response = await updateAnagraficaDetail({
         token,
         id: recordId,
+        kpiPeriod,
         sedi: { delete: [sedeId] },
       })
       handleMutationSuccess(response)
@@ -817,6 +867,7 @@ const AnagraficaDetail = () => {
       const response = await updateAnagraficaDetail({
         token,
         id: recordId,
+        kpiPeriod,
         // Archiviazione contatto (pass-through all'API)
         contatti: [{ action: 'archive', id_contatto: contattoId }],
       })
@@ -879,6 +930,7 @@ const AnagraficaDetail = () => {
         const createdResp = await updateAnagraficaDetail({
           token,
           id: recordId,
+          kpiPeriod,
           contatti: { create: [payload] },
         })
         handleMutationSuccess(createdResp)
@@ -899,7 +951,7 @@ const AnagraficaDetail = () => {
         }
 
         if (followUps.length > 0) {
-          const updatesResp = await updateAnagraficaDetail({ token, id: recordId, contatti: followUps })
+          const updatesResp = await updateAnagraficaDetail({ token, id: recordId, kpiPeriod, contatti: followUps })
           handleMutationSuccess(updatesResp)
         }
       } else {
@@ -915,7 +967,7 @@ const AnagraficaDetail = () => {
           }
         }
 
-        const response = await updateAnagraficaDetail({ token, id: recordId, contatti: batch })
+        const response = await updateAnagraficaDetail({ token, id: recordId, kpiPeriod, contatti: batch })
         handleMutationSuccess(response)
       }
       setEditingContactId(null)
@@ -929,7 +981,7 @@ const AnagraficaDetail = () => {
     } finally {
       setSavingContactId(null)
     }
-  }, [contactForm, contatti, handleMutationSuccess, logout, recordId, token])
+  }, [contactForm, contatti, handleMutationSuccess, kpiPeriod, logout, recordId, token])
 
   const preventivi = useMemo(
     () => (Array.isArray(detail?.preventivi) ? detail.preventivi : []),
@@ -964,6 +1016,112 @@ const AnagraficaDetail = () => {
   const ddt = detail?.ddt ?? []
   const fatture = detail?.fatture ?? []
   const [contactsView, setContactsView] = useState('associati')
+
+  const kpiCutoffTimestamp = useMemo(() => {
+    if (kpiPeriod === 'all') {
+      return null
+    }
+    const now = new Date()
+    if (kpiPeriod === 'month') {
+      now.setMonth(now.getMonth() - 1)
+    } else if (kpiPeriod === 'quarter') {
+      now.setMonth(now.getMonth() - 3)
+    } else if (kpiPeriod === 'semester') {
+      now.setMonth(now.getMonth() - 6)
+    } else if (kpiPeriod === 'year') {
+      now.setFullYear(now.getFullYear() - 1)
+    }
+    return now.getTime()
+  }, [kpiPeriod])
+
+  const filteredPreventivi = useMemo(() => {
+    if (!kpiCutoffTimestamp) {
+      return preventivi
+    }
+    return preventivi.filter((row) => {
+      const info = normalizeDocumentDate(row, 'data_preventivo', 'created_at')
+      return info ? info.ts >= kpiCutoffTimestamp : false
+    })
+  }, [preventivi, kpiCutoffTimestamp])
+
+  const filteredFatture = useMemo(() => {
+    if (!kpiCutoffTimestamp) {
+      return fatture
+    }
+    return fatture.filter((row) => {
+      const info = normalizeDocumentDate(row, 'data_fattura', 'created_at')
+      return info ? info.ts >= kpiCutoffTimestamp : false
+    })
+  }, [fatture, kpiCutoffTimestamp])
+
+  const filteredDdt = useMemo(() => {
+    if (!kpiCutoffTimestamp) {
+      return ddt
+    }
+    return ddt.filter((row) => {
+      const info = normalizeDocumentDate(row, 'data_ddt', 'created_at')
+      return info ? info.ts >= kpiCutoffTimestamp : false
+    })
+  }, [ddt, kpiCutoffTimestamp])
+
+  const kpiData = detail?.kpi ?? null
+  const computedFatturatoTotale = useMemo(
+    () => filteredFatture.reduce((sum, fattura) => sum + toNumberOrZero(fattura?.totale), 0),
+    [filteredFatture],
+  )
+  const computedSaldoTotale = useMemo(
+    () => filteredFatture.reduce((sum, fattura) => sum + toNumberOrZero(fattura?.saldo), 0),
+    [filteredFatture],
+  )
+  const fattureCount = kpiData?.fatture?.count ?? filteredFatture.length
+  const preventiviCount = kpiData?.preventivi?.count ?? filteredPreventivi.length
+  const ddtCount = kpiData?.ddt?.count ?? filteredDdt.length
+  const fatturatoTotale =
+    kpiData?.fatture?.totale !== undefined && kpiData?.fatture?.totale !== null
+      ? toNumberOrZero(kpiData.fatture.totale)
+      : computedFatturatoTotale
+  const saldoTotale =
+    kpiData?.fatture?.saldo !== undefined && kpiData?.fatture?.saldo !== null
+      ? toNumberOrZero(kpiData.fatture.saldo)
+      : computedSaldoTotale
+  const conversioneFatture = preventiviCount > 0 ? (fattureCount / preventiviCount) * 100 : 0
+  const lastDocument = useMemo(() => {
+    let latest = null
+    const consider = (type, row, dateField, fallbackField) => {
+      const info = normalizeDocumentDate(row, dateField, fallbackField)
+      if (!info) return
+      if (!latest || info.ts > latest.ts) {
+        latest = { type, ts: info.ts, raw: info.raw }
+      }
+    }
+
+    filteredFatture.forEach((row) => consider('Fattura', row, 'data_fattura', 'created_at'))
+    filteredDdt.forEach((row) => consider('DDT', row, 'data_ddt', 'created_at'))
+    filteredPreventivi.forEach((row) => consider('Preventivo', row, 'data_preventivo', 'created_at'))
+
+    return latest
+  }, [filteredFatture, filteredDdt, filteredPreventivi])
+
+  const kpiPeriodLabel = useMemo(
+    () => KPI_PERIOD_OPTIONS.find((option) => option.value === kpiPeriod)?.label ?? 'Tutti',
+    [kpiPeriod],
+  )
+
+  const kpiCards = useMemo(
+    () => [
+      { key: 'fatturato', label: 'Fatturato', value: formatCurrency(fatturatoTotale) },
+      { key: 'saldo', label: 'Saldo aperto', value: formatCurrency(saldoTotale) },
+      { key: 'preventivi', label: 'Preventivi', value: formatInteger(preventiviCount) },
+      { key: 'fatture', label: 'Fatture', value: formatInteger(fattureCount) },
+      { key: 'ddt', label: 'DDT', value: formatInteger(ddtCount) },
+    ],
+    [fatturatoTotale, saldoTotale, preventiviCount, fattureCount, ddtCount],
+  )
+
+  const lastDocumentLabel =
+    kpiData?.last_document?.date
+      ? `${kpiData.last_document.type || 'Documento'} (${formatDate(kpiData.last_document.date)})`
+      : (lastDocument ? `${lastDocument.type} (${formatDate(lastDocument.raw)})` : '-')
 
   const sedeOptions = useMemo(() => {
     const options = [
@@ -1236,6 +1394,7 @@ const AnagraficaDetail = () => {
       const response = await updateAnagraficaDetail({
         token,
         id: recordId,
+        kpiPeriod,
         anagrafica: { stato: 'attiva', is_active: 1 },
       })
       handleMutationSuccess(response)
@@ -1348,6 +1507,46 @@ const AnagraficaDetail = () => {
 
         {recordId && !loading && !errorMessage && detail && (
           <>
+            <section className="d-flex flex-column gap-3">
+              <div className="d-flex justify-content-between align-items-start gap-3">
+                <h3 className="h6 mb-0">KPI cliente</h3>
+                <CFormSelect
+                  size="sm"
+                  value={kpiPeriod}
+                  onChange={(event) => setKpiPeriod(event.target.value)}
+                  aria-label="Selettore periodo KPI cliente"
+                  style={{ minWidth: 180 }}
+                >
+                  {KPI_PERIOD_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </CFormSelect>
+              </div>
+              <div className="text-body-secondary small">Periodo: {kpiPeriodLabel}</div>
+              <CRow className="g-3">
+                {kpiCards.map((card) => (
+                  <CCol key={card.key} sm={6} lg={3}>
+                    <CCard className="h-100 border-0 shadow-sm">
+                      <CCardBody>
+                        <div className="text-body-secondary text-uppercase small fw-semibold">{card.label}</div>
+                        <div className="fs-4 fw-semibold mt-2">{card.value}</div>
+                      </CCardBody>
+                    </CCard>
+                  </CCol>
+                ))}
+              </CRow>
+              <CRow className="g-2">
+                <CCol md={6}>
+                  <DetailField label="Conversione fatture/preventivi" value={formatPercent(conversioneFatture)} compact />
+                </CCol>
+                <CCol md={6}>
+                  <DetailField label="Ultimo documento" value={lastDocumentLabel} compact />
+                </CCol>
+              </CRow>
+            </section>
+
             <section className="d-flex flex-column gap-3">
               <div className="d-flex justify-content-between align-items-start gap-3">
                 <h3 className="h6 mb-0">Informazioni generali</h3>
@@ -2278,6 +2477,7 @@ const AnagraficaDetail = () => {
                                           const response = await updateAnagraficaDetail({
                                             token,
                                             id: recordId,
+                                            kpiPeriod,
                                             // Non forziamo id_sede: il backend ripristina sulla sede originale se esiste
                                             contatti: [{ action: 'restore', id_contatto: c.id_contatto }],
                                           })
@@ -2309,6 +2509,7 @@ const AnagraficaDetail = () => {
                                           const response = await updateAnagraficaDetail({
                                             token,
                                             id: recordId,
+                                            kpiPeriod,
                                             contatti: [{ action: 'hard_delete', id_contatto: c.id_contatto }],
                                           })
                                           handleMutationSuccess(response)
@@ -2337,6 +2538,73 @@ const AnagraficaDetail = () => {
                 ) : (
                   <CAlert color="info" className="mb-0">Nessun contatto archiviato.</CAlert>
                 )
+              )}
+            </section>
+
+            <section>
+              <div className="d-flex justify-content-between align-items-center mb-3">
+                <h3 className="h6 mb-0">Contratti</h3>
+                <CButton
+                  color="primary"
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    navigate('/contratti/crea', {
+                      state: {
+                        prefill: {
+                          id_anagrafica: detail?.anagrafica?.id_anagrafica ?? recordId,
+                          ragione_sociale: detail?.anagrafica?.ragione_sociale ?? null,
+                        },
+                      },
+                    })
+                  }
+                  disabled={isDisabled}
+                >
+                  <CIcon icon={cilPlus} className="me-2" /> Nuovo contratto
+                </CButton>
+              </div>
+              {contratti.length > 0 ? (
+                <CTable hover responsive size="sm">
+                  <CTableHead color="dark">
+                    <CTableRow>
+                      <CTableHeaderCell scope="col">Titolo</CTableHeaderCell>
+                      <CTableHeaderCell scope="col">Codice</CTableHeaderCell>
+                      <CTableHeaderCell scope="col">Inizio</CTableHeaderCell>
+                      <CTableHeaderCell scope="col">Fine</CTableHeaderCell>
+                      <CTableHeaderCell scope="col" className="text-center">Rinnovo</CTableHeaderCell>
+                      <CTableHeaderCell scope="col" className="text-center">Attivo</CTableHeaderCell>
+                      <CTableHeaderCell scope="col" className="text-end">Azioni</CTableHeaderCell>
+                    </CTableRow>
+                  </CTableHead>
+                  <CTableBody>
+                    {contratti.map((c) => (
+                      <CTableRow key={c.id_contratto}>
+                        <CTableDataCell>{c.titolo}</CTableDataCell>
+                        <CTableDataCell>{c.codice || '-'}</CTableDataCell>
+                        <CTableDataCell>{formatDate(c.data_inizio)}</CTableDataCell>
+                        <CTableDataCell>{formatDate(c.data_fine)}</CTableDataCell>
+                        <CTableDataCell className="text-center">
+                          {Number(c.rinnovo_automatico) === 1 ? <CBadge color="primary">Si</CBadge> : <span className="text-body-secondary">No</span>}
+                        </CTableDataCell>
+                        <CTableDataCell className="text-center">
+                          {Number(c.attivo) === 1 ? <CBadge color="success">Si</CBadge> : <span className="text-body-secondary">No</span>}
+                        </CTableDataCell>
+                        <CTableDataCell className="text-end">
+                          <CButton
+                            color="link"
+                            size="sm"
+                            className="p-0"
+                            onClick={() => navigate(`/contratti/dettagli?id=${c.id_contratto}`)}
+                          >
+                            <CIcon icon={cilDescription} />
+                          </CButton>
+                        </CTableDataCell>
+                      </CTableRow>
+                    ))}
+                  </CTableBody>
+                </CTable>
+              ) : (
+                <CAlert color="info" className="mb-0">Nessun contratto disponibile.</CAlert>
               )}
             </section>
 

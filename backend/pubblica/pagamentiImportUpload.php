@@ -8,6 +8,7 @@ use MediaPrint\Backend\HttpResponse;
 use MediaPrint\Repo\FattureRepository;
 use MediaPrint\Repo\PagamentiRepository;
 use MediaPrint\Service\PagamentiImportService;
+use MediaPrint\Backend\AuthGuard;
 
 $method = $_SERVER['REQUEST_METHOD'] ?? 'POST';
 
@@ -21,6 +22,12 @@ if ($method !== 'POST') {
 }
 
 try {
+    $auth = AuthGuard::requireAuth();
+    AuthGuard::requirePermissions($auth, ['pay.edit']);
+    if (AuthGuard::getAccountType($auth) === 'cliente') {
+        throw new RuntimeException('Accesso non consentito.', 403);
+    }
+
     if (empty($_FILES['file'])) {
         throw new RuntimeException('Caricare un file Excel o CSV.', 422);
     }

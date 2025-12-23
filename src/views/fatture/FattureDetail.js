@@ -2372,6 +2372,7 @@ const FattureDetail = () => {
                           r.iva != null ? Number(r.iva) : r.aliquota_iva != null ? Number(r.aliquota_iva) : 22,
                         sconto: r.sconto != null ? Number(r.sconto) : 0,
                         id_prodotto: r.id_prodotto ?? null,
+                        id_pacchetto: Number(selPacchetto) || null,
                         id_sdi_natura_iva: r.id_sdi_natura_iva ?? null,
                         id_categoria:
                           r.id_categoria !== undefined && r.id_categoria !== null ? Number(r.id_categoria) : null,

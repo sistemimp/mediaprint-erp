@@ -7,6 +7,7 @@ use MediaPrint\Backend\Database;
 use MediaPrint\Backend\HttpResponse;
 use MediaPrint\Repo\LavorazioniRepository;
 use MediaPrint\Service\LavorazioniService;
+use MediaPrint\Backend\AuthGuard;
 
 header('Content-Type: application/json');
 
@@ -22,6 +23,10 @@ if ($method !== 'GET') {
 }
 
 try {
+    $auth = AuthGuard::requireAuth();
+    AuthGuard::requirePermissions($auth, ['job.view']);
+    $_GET['id_account'] = AuthGuard::getAccountId($auth);
+
     $service = new LavorazioniService(new LavorazioniRepository(Database::getConnection()));
     $result = $service->notifications($_GET ?? []);
     HttpResponse::json($result);

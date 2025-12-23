@@ -4,9 +4,11 @@ declare(strict_types=1);
 require __DIR__ . '/../bootstrap.php';
 
 use MediaPrint\Repo\PreventiviRepository;
+use MediaPrint\Repo\AccountsRepository;
 use MediaPrint\Service\PreventiviService;
 use MediaPrint\Backend\Database;
 use MediaPrint\Backend\HttpResponse;
+use MediaPrint\Backend\AuthGuard;
 
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
@@ -20,6 +22,13 @@ if ($method !== 'GET') {
 }
 
 try {
+    $auth = AuthGuard::requireAuth();
+    AuthGuard::requirePermissions($auth, ['prev.view']);
+    if (AuthGuard::getAccountType($auth) === 'cliente') {
+        $accountsRepo = new AccountsRepository(Database::getConnection());
+        $_GET['allowed_anagrafiche'] = $accountsRepo->listAccountAnagraficheIds(AuthGuard::getAccountId($auth));
+    }
+
     $service = new PreventiviService(new PreventiviRepository(Database::getConnection()));
     $result = $service->detail($_GET);
     HttpResponse::json($result, 200);
@@ -32,4 +41,3 @@ try {
 } catch (Throwable $throwable) {
     HttpResponse::error('Errore interno inatteso.', 500, ['error' => $throwable->getMessage()]);
 }
-

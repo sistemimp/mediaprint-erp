@@ -16,10 +16,17 @@ final class PagamentiRepository
      *
      * @return list<array<string,mixed>>
      */
-    public function listLedger(?string $search = null, int $limit = 200): array
+    public function listLedger(?string $search = null, int $limit = 200, ?array $allowedAnagrafiche = null): array
     {
         $limit = max(1, min($limit, 500));
         $term = $search !== null ? trim($search) : '';
+        $allowed = null;
+        if (is_array($allowedAnagrafiche)) {
+            $allowed = array_values(array_filter(array_map('intval', $allowedAnagrafiche), static fn($id) => $id > 0));
+            if ($allowed === []) {
+                return [];
+            }
+        }
 
         $sql = <<<'SQL'
             SELECT
@@ -63,6 +70,15 @@ final class PagamentiRepository
         SQL;
 
         $params = [];
+        if ($allowed !== null) {
+            $placeholders = [];
+            foreach ($allowed as $index => $id) {
+                $key = ':allowed_' . $index;
+                $placeholders[] = $key;
+                $params[$key] = $id;
+            }
+            $sql .= ' AND a.id_anagrafica IN (' . implode(',', $placeholders) . ')';
+        }
         if ($term !== '') {
             $like = '%' . $term . '%';
             $sql .= ' AND (a.ragione_sociale LIKE :term_nome OR a.piva LIKE :term_piva OR a.codice_fiscale LIKE :term_cf)';
@@ -99,9 +115,9 @@ final class PagamentiRepository
     /**
      * @return list<array{id_anagrafica:int, ragione_sociale:string, saldo_residuo:float, totale_fatturato:float}>
      */
-    public function listTopClientsByBalance(int $limit = 5): array
+    public function listTopClientsByBalance(int $limit = 5, ?array $allowedAnagrafiche = null): array
     {
-        $rows = $this->listLedger(null, $limit);
+        $rows = $this->listLedger(null, $limit, $allowedAnagrafiche);
         $out = [];
         foreach ($rows as $row) {
             $out[] = [
@@ -126,6 +142,21 @@ final class PagamentiRepository
         $pendingWhere = [];
         $params = [];
         $onlyOpenPending = !empty($filters['pending_only_open']);
+
+        if (!empty($filters['allowed_anagrafiche']) && is_array($filters['allowed_anagrafiche'])) {
+            $allowed = array_values(array_filter(array_map('intval', $filters['allowed_anagrafiche']), static fn($id) => $id > 0));
+            if ($allowed === []) {
+                return [];
+            }
+            $placeholders = [];
+            foreach ($allowed as $index => $id) {
+                $key = ':allowed_' . $index;
+                $placeholders[] = $key;
+                $params[$key] = $id;
+            }
+            $assignedWhere[] = 'f.id_anagrafica IN (' . implode(',', $placeholders) . ')';
+            $pendingWhere[] = 'pag.id_anagrafica_hint IN (' . implode(',', $placeholders) . ')';
+        }
 
         if (!empty($filters['id_anagrafica'])) {
             $assignedWhere[] = 'f.id_anagrafica = :id_anagrafica';
@@ -435,6 +466,19 @@ SQL;
         if (!empty($filters['id_anagrafica'])) {
             $where[] = 'f.id_anagrafica = :id_anagrafica';
             $params[':id_anagrafica'] = (int) $filters['id_anagrafica'];
+        }
+        if (!empty($filters['allowed_anagrafiche']) && is_array($filters['allowed_anagrafiche'])) {
+            $allowed = array_values(array_filter(array_map('intval', $filters['allowed_anagrafiche']), static fn ($id) => $id > 0));
+            if ($allowed === []) {
+                return [];
+            }
+            $placeholders = [];
+            foreach ($allowed as $index => $id) {
+                $key = ':allowed_' . $index;
+                $placeholders[] = $key;
+                $params[$key] = $id;
+            }
+            $where[] = 'f.id_anagrafica IN (' . implode(',', $placeholders) . ')';
         }
         if (!empty($filters['q'])) {
             $term = '%' . trim((string) $filters['q']) . '%';

@@ -6,6 +6,8 @@ require __DIR__ . '/../bootstrap.php';
 use MediaPrint\Backend\Database;
 use MediaPrint\Backend\HttpResponse;
 use MediaPrint\Repo\FattureRepository;
+use MediaPrint\Repo\AccountsRepository;
+use MediaPrint\Backend\AuthGuard;
 
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
@@ -19,9 +21,16 @@ if ($method !== 'GET') {
 }
 
 try {
+    $auth = AuthGuard::requireAuth();
+    AuthGuard::requirePermissions($auth, ['fatt.view']);
+    $allowed = null;
+    if (AuthGuard::getAccountType($auth) === 'cliente') {
+        $accountsRepo = new AccountsRepository(Database::getConnection());
+        $allowed = $accountsRepo->listAccountAnagraficheIds(AuthGuard::getAccountId($auth));
+    }
     $limit = isset($_GET['limit']) ? (int) $_GET['limit'] : 200;
     $repo = new FattureRepository(Database::getConnection());
-    $items = $repo->listLatest($limit);
+    $items = $repo->listLatest($limit, $allowed);
 
     HttpResponse::json(['data' => $items], 200);
 } catch (RuntimeException $exception) {
@@ -33,4 +42,3 @@ try {
 } catch (Throwable $throwable) {
     HttpResponse::error('Errore interno inatteso.', 500, ['error' => $throwable->getMessage()]);
 }
-

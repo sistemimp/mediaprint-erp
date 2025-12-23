@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace MediaPrint\Service;
 
 use MediaPrint\Repo\AnagraficheRepository;
+use MediaPrint\Repo\ContrattiRepository;
 use RuntimeException;
 
 final class AnagraficheService
@@ -22,6 +23,9 @@ final class AnagraficheService
             'page' => isset($input['page']) ? max(1, (int) $input['page']) : 1,
             'per_page' => isset($input['per_page']) ? max(1, (int) $input['per_page']) : 20,
         ];
+        if (isset($input['allowed_anagrafiche']) && is_array($input['allowed_anagrafiche'])) {
+            $filters['allowed_ids'] = $input['allowed_anagrafiche'];
+        }
 
         $result = $this->repository->search($filters);
         $total = (int) $result['total'];
@@ -49,11 +53,23 @@ final class AnagraficheService
         if ($id <= 0) {
             throw new RuntimeException('ID anagrafica mancante o non valido.', 422);
         }
+        if (isset($input['allowed_anagrafiche']) && is_array($input['allowed_anagrafiche'])) {
+            $allowed = array_map('intval', $input['allowed_anagrafiche']);
+            if (!in_array($id, $allowed, true)) {
+                throw new RuntimeException('Anagrafica non trovata.', 404);
+            }
+        }
 
         $detail = $this->repository->findDetail($id);
         if ($detail === null) {
             throw new RuntimeException('Anagrafica non trovata.', 404);
         }
+
+        $contrattiRepo = new ContrattiRepository($this->repository->getPdo());
+        $detail['contratti'] = $contrattiRepo->list(['id_anagrafica' => $id]);
+
+        $kpiPeriod = isset($input['kpi_period']) ? (string) $input['kpi_period'] : (isset($input['period']) ? (string) $input['period'] : null);
+        $detail['kpi'] = $this->repository->getKpi($id, $kpiPeriod);
 
         return $detail;
     }
@@ -187,6 +203,9 @@ final class AnagraficheService
             'page' => isset($input['page']) ? max(1, (int) $input['page']) : 1,
             'per_page' => isset($input['per_page']) ? max(1, (int) $input['per_page']) : 20,
         ];
+        if (isset($input['allowed_anagrafiche']) && is_array($input['allowed_anagrafiche'])) {
+            $filters['allowed_ids'] = $input['allowed_anagrafiche'];
+        }
 
         $result = $this->repository->searchArchived($filters);
         $total = (int) $result['total'];

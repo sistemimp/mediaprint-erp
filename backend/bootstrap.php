@@ -56,6 +56,7 @@ spl_autoload_register(static function (string $class): void {
     $prefixes = [
         'MediaPrint\\Backend\\' => __DIR__ . '/src/',
         'MediaPrint\\Repo\\' => __DIR__ . '/src/Repositories/',
+        'MediaPrint\\Service\\' => __DIR__ . '/src/Service/',
     ];
 
     foreach ($prefixes as $prefix => $baseDir) {

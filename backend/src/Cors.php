@@ -20,7 +20,7 @@ final class Cors
         }
 
         header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
-        header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With, Accept, Cache-Control, Pragma');
+        header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Authorization, X-Access-Token, X-Requested-With, Accept, Cache-Control, Pragma');
         header('Access-Control-Max-Age: 86400');
         header('Vary: Origin');
 

@@ -7,6 +7,7 @@ use MediaPrint\Repo\AnagraficheRepository;
 use MediaPrint\Service\AnagraficheService;
 use MediaPrint\Backend\Database;
 use MediaPrint\Backend\HttpResponse;
+use MediaPrint\Backend\AuthGuard;
 
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
@@ -21,6 +22,12 @@ if ($method !== 'POST') {
 }
 
 try {
+    $auth = AuthGuard::requireAuth();
+    AuthGuard::requirePermissions($auth, ['anag.edit']);
+    if (AuthGuard::getAccountType($auth) === 'cliente') {
+        throw new RuntimeException('Accesso non consentito.', 403);
+    }
+
     $payload = json_decode(file_get_contents('php://input') ?: 'null', true);
     if (!is_array($payload)) {
         $payload = [];
@@ -39,4 +46,3 @@ try {
 } catch (Throwable $throwable) {
     HttpResponse::error('Errore interno inatteso.', 500, ['error' => $throwable->getMessage()]);
 }
-

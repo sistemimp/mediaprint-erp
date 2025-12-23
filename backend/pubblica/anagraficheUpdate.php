@@ -6,6 +6,7 @@ use MediaPrint\Repo\AnagraficheRepository;
 use MediaPrint\Service\AnagraficheService;
 use MediaPrint\Backend\Database;
 use MediaPrint\Backend\HttpResponse;
+use MediaPrint\Backend\AuthGuard;
 use RuntimeException;
 use Throwable;
 
@@ -28,6 +29,12 @@ if (!is_array($payload)) {
 }
 
 try {
+    $auth = AuthGuard::requireAuth();
+    AuthGuard::requirePermissions($auth, ['anag.edit']);
+    if (AuthGuard::getAccountType($auth) === 'cliente') {
+        throw new RuntimeException('Accesso non consentito.', 403);
+    }
+
     $service = new AnagraficheService(
         new AnagraficheRepository(Database::getConnection())
     );

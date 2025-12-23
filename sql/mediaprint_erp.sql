@@ -330,6 +330,34 @@ LOCK TABLES `auth_account_ruoli` WRITE;
 UNLOCK TABLES;
 
 --
+-- Table structure for table `auth_account_contatti`
+--
+
+DROP TABLE IF EXISTS `auth_account_contatti`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `auth_account_contatti` (
+  `id_account` bigint(20) unsigned NOT NULL,
+  `id_contatto` bigint(20) unsigned NOT NULL,
+  `is_primary` tinyint(1) NOT NULL DEFAULT 0,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id_account`,`id_contatto`),
+  KEY `idx_aac_contatto` (`id_contatto`),
+  CONSTRAINT `fk_aac_account` FOREIGN KEY (`id_account`) REFERENCES `auth_accounts` (`id_account`) ON DELETE CASCADE,
+  CONSTRAINT `fk_aac_contatto` FOREIGN KEY (`id_contatto`) REFERENCES `tb_sedi_contatti` (`id_contatto`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `auth_account_contatti`
+--
+
+LOCK TABLES `auth_account_contatti` WRITE;
+/*!40000 ALTER TABLE `auth_account_contatti` DISABLE KEYS */;
+/*!40000 ALTER TABLE `auth_account_contatti` ENABLE KEYS */;
+UNLOCK TABLES;
+
+--
 -- Table structure for table `auth_accounts`
 --
 
@@ -384,9 +412,6 @@ DELIMITER ;;
 BEFORE INSERT ON auth_accounts
 FOR EACH ROW
 BEGIN
-  IF NEW.account_type='cliente' AND NEW.id_contatto IS NULL THEN
-    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='Per account cliente è obbligatorio id_contatto';
-  END IF;
   IF NEW.account_type='operatore' THEN
     SET NEW.id_contatto = NULL;
   END IF;
@@ -409,9 +434,6 @@ DELIMITER ;;
 BEFORE UPDATE ON auth_accounts
 FOR EACH ROW
 BEGIN
-  IF NEW.account_type='cliente' AND NEW.id_contatto IS NULL THEN
-    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='Per account cliente è obbligatorio id_contatto';
-  END IF;
   IF NEW.account_type='operatore' THEN
     SET NEW.id_contatto = NULL;
   END IF;
@@ -440,6 +462,48 @@ CREATE TABLE `auth_password_reset` (
   UNIQUE KEY `token` (`token`),
   KEY `fk_reset_account` (`id_account`),
   CONSTRAINT `fk_reset_account` FOREIGN KEY (`id_account`) REFERENCES `auth_accounts` (`id_account`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `auth_account_temp_passwords`
+--
+
+DROP TABLE IF EXISTS `auth_account_temp_passwords`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `auth_account_temp_passwords` (
+  `id_temp` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `id_account` bigint(20) unsigned NOT NULL,
+  `temp_password` varchar(64) NOT NULL,
+  `expires_at` datetime NOT NULL,
+  `used_at` datetime DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id_temp`),
+  KEY `idx_temp_account` (`id_account`),
+  CONSTRAINT `fk_temp_account` FOREIGN KEY (`id_account`) REFERENCES `auth_accounts` (`id_account`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `auth_account_email_log`
+--
+
+DROP TABLE IF EXISTS `auth_account_email_log`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `auth_account_email_log` (
+  `id_log` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `id_account` bigint(20) unsigned NOT NULL,
+  `email` varchar(160) NOT NULL,
+  `email_type` varchar(40) NOT NULL,
+  `id_temp` bigint(20) unsigned DEFAULT NULL,
+  `sent_at` datetime NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id_log`),
+  KEY `idx_email_account` (`id_account`),
+  KEY `idx_email_temp` (`id_temp`),
+  CONSTRAINT `fk_email_account` FOREIGN KEY (`id_account`) REFERENCES `auth_accounts` (`id_account`) ON DELETE CASCADE,
+  CONSTRAINT `fk_email_temp` FOREIGN KEY (`id_temp`) REFERENCES `auth_account_temp_passwords` (`id_temp`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
@@ -480,6 +544,8 @@ INSERT INTO `auth_ruolo_permesso` VALUES
 (1,2),
 (1,10),
 (1,11),
+(1,68),
+(1,69),
 (1,20),
 (1,21),
 (1,22),
@@ -503,6 +569,8 @@ INSERT INTO `auth_ruolo_permesso` VALUES
 (2,2),
 (2,10),
 (2,11),
+(2,68),
+(2,69),
 (2,20),
 (2,21),
 (2,22),
@@ -522,10 +590,13 @@ INSERT INTO `auth_ruolo_permesso` VALUES
 (2,66),
 (3,1),
 (3,10),
+(3,68),
 (3,20),
 (3,30),
 (3,50),
 (4,10),
+(4,68),
+(4,69),
 (4,20),
 (4,21),
 (4,22),
@@ -548,7 +619,7 @@ CREATE TABLE `cfg_auth_permessi` (
   `attivo` tinyint(1) NOT NULL DEFAULT 1,
   PRIMARY KEY (`id_permesso`),
   UNIQUE KEY `uq_code` (`code`)
-) ENGINE=InnoDB AUTO_INCREMENT=68 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=70 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -580,7 +651,9 @@ INSERT INTO `cfg_auth_permessi` VALUES
 (64,'job.assign','Assegnare attivita agli operatori',1),
 (65,'job.report','Generare ed esportare report di produzione',1),
 (66,'job.analytics','Visualizzare dashboard e analytics produzione',1),
-(67,'job.admin','Gestire configurazioni e SLA lavorazioni',1);
+(67,'job.admin','Gestire configurazioni e SLA lavorazioni',1),
+(68,'contratti.view','Visualizzare contratti',1),
+(69,'contratti.edit','Creare/Modificare contratti',1);
 /*!40000 ALTER TABLE `cfg_auth_permessi` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -751,6 +824,53 @@ INSERT INTO `cfg_lavorazioni_attivita_template` VALUES
 (3,'Imbustamento','Preparazione e imbustamento del materiale','medium',NULL,NULL,1,30,'2025-11-26 12:22:35','2025-11-26 12:22:35');
 /*!40000 ALTER TABLE `cfg_lavorazioni_attivita_template` ENABLE KEYS */;
 UNLOCK TABLES;
+
+--
+-- Table structure for table `tb_lavorazioni_files`
+--
+
+DROP TABLE IF EXISTS `tb_lavorazioni_files`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `tb_lavorazioni_files` (
+  `id_file` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `id_lavorazione` int(10) unsigned NOT NULL,
+  `titolo` varchar(191) NOT NULL,
+  `categoria` enum('cliente','anteprima','altro') NOT NULL DEFAULT 'cliente',
+  `original_name` varchar(255) NOT NULL,
+  `file_name` varchar(255) NOT NULL,
+  `mime_type` varchar(128) DEFAULT NULL,
+  `size_bytes` bigint(20) unsigned NOT NULL DEFAULT 0,
+  `note` text DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `created_by` bigint(20) unsigned DEFAULT NULL,
+  PRIMARY KEY (`id_file`),
+  KEY `idx_lavfiles_lavorazione` (`id_lavorazione`),
+  KEY `idx_lavfiles_created_by` (`created_by`),
+  CONSTRAINT `fk_lavfiles_lavorazione` FOREIGN KEY (`id_lavorazione`) REFERENCES `tb_lavorazioni` (`id_lavorazione`) ON DELETE CASCADE,
+  CONSTRAINT `fk_lavfiles_created_by` FOREIGN KEY (`created_by`) REFERENCES `auth_accounts` (`id_account`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `tb_lavorazioni_files_downloads`
+--
+
+DROP TABLE IF EXISTS `tb_lavorazioni_files_downloads`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `tb_lavorazioni_files_downloads` (
+  `id_download` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `id_file` bigint(20) unsigned NOT NULL,
+  `downloaded_by` bigint(20) unsigned DEFAULT NULL,
+  `downloaded_at` datetime NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id_download`),
+  KEY `idx_lavfiles_dl_file` (`id_file`),
+  KEY `idx_lavfiles_dl_by` (`downloaded_by`),
+  CONSTRAINT `fk_lavfiles_dl_file` FOREIGN KEY (`id_file`) REFERENCES `tb_lavorazioni_files` (`id_file`) ON DELETE CASCADE,
+  CONSTRAINT `fk_lavfiles_dl_by` FOREIGN KEY (`downloaded_by`) REFERENCES `auth_accounts` (`id_account`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
 
 --
 -- Table structure for table `cfg_metodi_pagamento`
@@ -2023,11 +2143,38 @@ DELIMITER ;;
 BEFORE UPDATE ON tb_contatti_anagrafiche
 FOR EACH ROW
 BEGIN
+  DECLARE v_exists INT DEFAULT 0;
   IF NEW.is_predefinita = 1 AND OLD.is_predefinita = 0 THEN
-    UPDATE tb_contatti_anagrafiche
-    SET is_predefinita = 0
+    SELECT COUNT(*) INTO v_exists
+    FROM tb_contatti_anagrafiche
     WHERE id_contatto = NEW.id_contatto
-      AND id_anagrafica <> NEW.id_anagrafica;
+      AND id_anagrafica <> NEW.id_anagrafica
+      AND is_predefinita = 1;
+    IF v_exists > 0 THEN
+      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='Esiste gia una anagrafica predefinita per il contatto';
+    END IF;
+  END IF;
+END */;;
+DELIMITER ;
+/*!50003 SET sql_mode              = @saved_sql_mode */ ;
+/*!50003 SET character_set_client  = @saved_cs_client */ ;
+/*!50003 SET character_set_results = @saved_cs_results */ ;
+/*!50003 SET collation_connection  = @saved_col_connection */ ;
+
+DELIMITER ;;
+/*!50003 CREATE*/ /* 50017 DEFINER=`laravel_mediaprint`@`%`*/ /*!50003 TRIGGER bi_contatti_anagrafiche_single_default
+BEFORE INSERT ON tb_contatti_anagrafiche
+FOR EACH ROW
+BEGIN
+  DECLARE v_exists INT DEFAULT 0;
+  IF NEW.is_predefinita = 1 THEN
+    SELECT COUNT(*) INTO v_exists
+    FROM tb_contatti_anagrafiche
+    WHERE id_contatto = NEW.id_contatto
+      AND is_predefinita = 1;
+    IF v_exists > 0 THEN
+      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='Esiste gia una anagrafica predefinita per il contatto';
+    END IF;
   END IF;
 END */;;
 DELIMITER ;
@@ -2689,6 +2836,39 @@ LOCK TABLES `tb_lavorazioni_attivita` WRITE;
 UNLOCK TABLES;
 
 --
+-- Table structure for table `tb_lavorazioni_attivita_report`
+--
+
+DROP TABLE IF EXISTS `tb_lavorazioni_attivita_report`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `tb_lavorazioni_attivita_report` (
+  `id_report` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `id_attivita` bigint(20) unsigned NOT NULL,
+  `data_avvio` datetime DEFAULT NULL,
+  `data_fine` datetime DEFAULT NULL,
+  `id_operatore` bigint(20) unsigned DEFAULT NULL,
+  `note` text DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_at` datetime DEFAULT NULL,
+  PRIMARY KEY (`id_report`),
+  UNIQUE KEY `uq_attivita_report` (`id_attivita`),
+  KEY `idx_report_operatore` (`id_operatore`),
+  CONSTRAINT `fk_report_attivita` FOREIGN KEY (`id_attivita`) REFERENCES `tb_lavorazioni_attivita` (`id_attivita`) ON DELETE CASCADE,
+  CONSTRAINT `fk_report_operatore` FOREIGN KEY (`id_operatore`) REFERENCES `auth_accounts` (`id_account`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `tb_lavorazioni_attivita_report`
+--
+
+LOCK TABLES `tb_lavorazioni_attivita_report` WRITE;
+/*!40000 ALTER TABLE `tb_lavorazioni_attivita_report` DISABLE KEYS */;
+/*!40000 ALTER TABLE `tb_lavorazioni_attivita_report` ENABLE KEYS */;
+UNLOCK TABLES;
+
+--
 -- Table structure for table `tb_lavorazioni_attivita_allegati`
 --
 
@@ -2808,14 +2988,17 @@ CREATE TABLE `tb_lavorazioni_notifiche` (
   `sent_at` datetime DEFAULT NULL,
   `read_at` datetime DEFAULT NULL,
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `created_by` bigint(20) unsigned DEFAULT NULL,
   PRIMARY KEY (`id_notifica`),
   KEY `idx_notifiche_account` (`id_account`),
   KEY `idx_notifiche_stato` (`stato`),
   KEY `fk_notifiche_lavorazione` (`id_lavorazione`),
   KEY `fk_notifiche_attivita` (`id_attivita`),
+  KEY `fk_notifiche_created_by` (`created_by`),
   CONSTRAINT `fk_notifiche_account` FOREIGN KEY (`id_account`) REFERENCES `auth_accounts` (`id_account`) ON DELETE CASCADE,
   CONSTRAINT `fk_notifiche_attivita` FOREIGN KEY (`id_attivita`) REFERENCES `tb_lavorazioni_attivita` (`id_attivita`) ON DELETE SET NULL,
-  CONSTRAINT `fk_notifiche_lavorazione` FOREIGN KEY (`id_lavorazione`) REFERENCES `tb_lavorazioni` (`id_lavorazione`) ON DELETE CASCADE
+  CONSTRAINT `fk_notifiche_lavorazione` FOREIGN KEY (`id_lavorazione`) REFERENCES `tb_lavorazioni` (`id_lavorazione`) ON DELETE CASCADE,
+  CONSTRAINT `fk_notifiche_created_by` FOREIGN KEY (`created_by`) REFERENCES `auth_accounts` (`id_account`) ON DELETE SET NULL
 ) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 

@@ -6,7 +6,9 @@ require __DIR__ . '/../bootstrap.php';
 use MediaPrint\Backend\Database;
 use MediaPrint\Backend\HttpResponse;
 use MediaPrint\Repo\LavorazioniRepository;
+use MediaPrint\Repo\AccountsRepository;
 use MediaPrint\Service\LavorazioniService;
+use MediaPrint\Backend\AuthGuard;
 
 header('Content-Type: application/json');
 
@@ -21,6 +23,13 @@ if ($method !== 'GET') {
 }
 
 try {
+    $auth = AuthGuard::requireAuth();
+    AuthGuard::requirePermissions($auth, ['job.analytics']);
+    if (AuthGuard::getAccountType($auth) === 'cliente') {
+        $accountsRepo = new AccountsRepository(Database::getConnection());
+        $_GET['allowed_anagrafiche'] = $accountsRepo->listAccountAnagraficheIds(AuthGuard::getAccountId($auth));
+    }
+
     $service = new LavorazioniService(
         new LavorazioniRepository(Database::getConnection())
     );

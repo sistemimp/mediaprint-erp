@@ -6,6 +6,7 @@ require __DIR__ . '/../../../bootstrap.php';
 use MediaPrint\Repo\ProdottiRepository;
 use MediaPrint\Backend\Database;
 use MediaPrint\Backend\HttpResponse;
+use MediaPrint\Backend\AuthGuard;
 
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 if ($method === 'OPTIONS') {
@@ -17,6 +18,12 @@ if ($method !== 'POST') {
 }
 
 try {
+    $auth = AuthGuard::requireAuth();
+    AuthGuard::requirePermissions($auth, ['cfg.edit']);
+    if (AuthGuard::getAccountType($auth) === 'cliente') {
+        throw new RuntimeException('Accesso non consentito.', 403);
+    }
+
     $input = json_decode(file_get_contents('php://input') ?: 'null', true) ?: [];
     $id = isset($input['id_variazione']) ? (int) $input['id_variazione'] : null;
     if ($id === 0) { $id = null; }

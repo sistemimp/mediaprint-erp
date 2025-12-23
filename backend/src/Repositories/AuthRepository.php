@@ -45,6 +45,41 @@ final class AuthRepository
         return $row ?: null;
     }
 
+    public function findActiveAccountById(int $accountId): ?array
+    {
+        $sql = <<<SQL
+        SELECT
+            a.id_account,
+            a.account_type,
+            a.username,
+            a.email,
+            a.password_hash,
+            a.id_ruolo,
+            a.id_contatto,
+            a.is_active,
+            a.must_change_pwd,
+            a.has_mfa,
+            a.mfa_secret,
+            a.last_login,
+            a.created_at,
+            a.updated_at,
+            r.code AS primary_role_code,
+            r.label AS primary_role_label
+        FROM auth_accounts AS a
+        LEFT JOIN cfg_auth_ruoli AS r ON r.id_ruolo = a.id_ruolo
+        WHERE a.is_active = 1 AND a.id_account = :id_account
+        LIMIT 1
+        SQL;
+
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute([
+            'id_account' => $accountId,
+        ]);
+        $row = $stmt->fetch();
+
+        return $row ?: null;
+    }
+
     public function getAccountRoles(int $accountId, ?int $primaryRoleId): array
     {
         $roles = [];

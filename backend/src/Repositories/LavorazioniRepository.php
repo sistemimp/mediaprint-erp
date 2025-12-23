@@ -55,6 +55,104 @@ final class LavorazioniRepository
         }
     }
 
+    /**
+     * @param array<string, mixed> $data
+     */
+    public function updateInfo(int $lavorazioneId, array $data): void
+    {
+        $fields = [];
+
+        if (array_key_exists('titolo', $data)) {
+            $fields[] = 'titolo = :titolo';
+        }
+        if (array_key_exists('descrizione', $data)) {
+            $fields[] = 'descrizione = :descrizione';
+        }
+        if (array_key_exists('stato', $data)) {
+            $fields[] = 'stato = :stato';
+        }
+        if (array_key_exists('priorita', $data)) {
+            $fields[] = 'priorita = :priorita';
+        }
+        if (array_key_exists('id_reparto', $data)) {
+            $fields[] = 'id_reparto = :id_reparto';
+        }
+        if (array_key_exists('data_inizio_prevista', $data)) {
+            $fields[] = 'data_inizio_prevista = :data_inizio_prevista';
+        }
+        if (array_key_exists('data_fine_prevista', $data)) {
+            $fields[] = 'data_fine_prevista = :data_fine_prevista';
+        }
+        if (array_key_exists('data_avvio_reale', $data)) {
+            $fields[] = 'data_avvio_reale = :data_avvio_reale';
+        }
+        if (array_key_exists('note', $data)) {
+            $fields[] = 'note = :note';
+        }
+
+        if ($fields === []) {
+            return;
+        }
+
+        $sql = 'UPDATE tb_lavorazioni SET ' . implode(', ', $fields) . ', updated_at = NOW() WHERE id_lavorazione = :id';
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->bindValue(':id', $lavorazioneId, PDO::PARAM_INT);
+
+        if (array_key_exists('titolo', $data)) {
+            $stmt->bindValue(':titolo', $data['titolo'], PDO::PARAM_STR);
+        }
+        if (array_key_exists('descrizione', $data)) {
+            if ($data['descrizione'] === null) {
+                $stmt->bindValue(':descrizione', null, PDO::PARAM_NULL);
+            } else {
+                $stmt->bindValue(':descrizione', $data['descrizione'], PDO::PARAM_STR);
+            }
+        }
+        if (array_key_exists('stato', $data)) {
+            $stmt->bindValue(':stato', $data['stato'], PDO::PARAM_STR);
+        }
+        if (array_key_exists('priorita', $data)) {
+            $stmt->bindValue(':priorita', $data['priorita'], PDO::PARAM_STR);
+        }
+        if (array_key_exists('id_reparto', $data)) {
+            if ($data['id_reparto'] === null) {
+                $stmt->bindValue(':id_reparto', null, PDO::PARAM_NULL);
+            } else {
+                $stmt->bindValue(':id_reparto', (int) $data['id_reparto'], PDO::PARAM_INT);
+            }
+        }
+        if (array_key_exists('data_inizio_prevista', $data)) {
+            if ($data['data_inizio_prevista'] === null) {
+                $stmt->bindValue(':data_inizio_prevista', null, PDO::PARAM_NULL);
+            } else {
+                $stmt->bindValue(':data_inizio_prevista', $data['data_inizio_prevista'], PDO::PARAM_STR);
+            }
+        }
+        if (array_key_exists('data_fine_prevista', $data)) {
+            if ($data['data_fine_prevista'] === null) {
+                $stmt->bindValue(':data_fine_prevista', null, PDO::PARAM_NULL);
+            } else {
+                $stmt->bindValue(':data_fine_prevista', $data['data_fine_prevista'], PDO::PARAM_STR);
+            }
+        }
+        if (array_key_exists('data_avvio_reale', $data)) {
+            if ($data['data_avvio_reale'] === null) {
+                $stmt->bindValue(':data_avvio_reale', null, PDO::PARAM_NULL);
+            } else {
+                $stmt->bindValue(':data_avvio_reale', $data['data_avvio_reale'], PDO::PARAM_STR);
+            }
+        }
+        if (array_key_exists('note', $data)) {
+            if ($data['note'] === null) {
+                $stmt->bindValue(':note', null, PDO::PARAM_NULL);
+            } else {
+                $stmt->bindValue(':note', $data['note'], PDO::PARAM_STR);
+            }
+        }
+
+        $stmt->execute();
+    }
+
     public function findRepartoIdByCode(string $code): ?int
     {
         $sql = 'SELECT id_reparto FROM cfg_reparti_produttivi WHERE LOWER(code) = LOWER(:code) LIMIT 1';
@@ -613,6 +711,20 @@ final class LavorazioniRepository
     {
         $clauses = [];
 
+        if (isset($filters['allowed_anagrafiche']) && is_array($filters['allowed_anagrafiche'])) {
+            $allowed = array_values(array_filter(array_map('intval', $filters['allowed_anagrafiche']), static fn ($id) => $id > 0));
+            if ($allowed === []) {
+                return 'WHERE 1=0';
+            }
+            $placeholders = [];
+            foreach ($allowed as $index => $id) {
+                $key = ':allowed_' . $index;
+                $placeholders[] = $key;
+                $params[$key] = $id;
+            }
+            $clauses[] = 'l.id_anagrafica IN (' . implode(',', $placeholders) . ')';
+        }
+
         if (!empty($filters['stato'])) {
             $clauses[] = 'l.stato = :stato';
             $params[':stato'] = $filters['stato'];
@@ -655,7 +767,8 @@ final class LavorazioniRepository
                 l.*,
                 a.ragione_sociale AS cliente,
                 p.anno_preventivo,
-                p.numero_documento,
+                p.numero_documento AS numero_preventivo,
+                p.data_preventivo,
                 p.totale,
                 p.totale_imponibile,
                 p.totale_iva,
@@ -701,6 +814,12 @@ final class LavorazioniRepository
                 a.quantita_effettiva,
                 a.percentuale,
                 a.note,
+                r.data_avvio,
+                r.data_fine,
+                r.id_operatore,
+                r.note AS report_note,
+                r.updated_at AS report_updated_at,
+                repop.username AS report_operatore_nome,
                 a.ordine,
                 a.id_reparto,
                 rep.label AS reparto_label,
@@ -717,6 +836,8 @@ final class LavorazioniRepository
                 ) AS assegnatari_ids
             FROM tb_lavorazioni_attivita a
             LEFT JOIN cfg_reparti_produttivi rep ON rep.id_reparto = a.id_reparto
+            LEFT JOIN tb_lavorazioni_attivita_report r ON r.id_attivita = a.id_attivita
+            LEFT JOIN auth_accounts repop ON repop.id_account = r.id_operatore
             WHERE a.id_lavorazione = :id
             ORDER BY a.ordine ASC, a.data_scadenza ASC, a.id_attivita ASC
         SQL;
@@ -726,6 +847,7 @@ final class LavorazioniRepository
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
         foreach ($rows as &$row) {
             $row['id_reparto'] = isset($row['id_reparto']) ? (int) $row['id_reparto'] : null;
+            $row['id_operatore'] = isset($row['id_operatore']) ? (int) $row['id_operatore'] : null;
             if (!empty($row['assegnatari'])) {
                 $row['assegnatari'] = array_map('trim', explode(',', (string) $row['assegnatari']));
             } else {
@@ -874,7 +996,7 @@ final class LavorazioniRepository
      */
     public function listActivityTemplates(bool $onlyActive = true): array
     {
-        $sql = 'SELECT id_template, titolo, descrizione, priorita, id_reparto, durata_predefinita_giorni, attivo FROM cfg_lavorazioni_attivita_template';
+        $sql = 'SELECT id_template, titolo, descrizione, priorita, id_reparto, durata_predefinita_giorni, attivo, ordering FROM cfg_lavorazioni_attivita_template';
         if ($onlyActive) {
             $sql .= ' WHERE attivo = 1';
         }
@@ -888,11 +1010,169 @@ final class LavorazioniRepository
      */
     public function findActivityTemplate(int $id): ?array
     {
-        $stmt = $this->pdo->prepare('SELECT id_template, titolo, descrizione, priorita, id_reparto, durata_predefinita_giorni, attivo FROM cfg_lavorazioni_attivita_template WHERE id_template = :id LIMIT 1');
+        $stmt = $this->pdo->prepare('SELECT id_template, titolo, descrizione, priorita, id_reparto, durata_predefinita_giorni, attivo, ordering FROM cfg_lavorazioni_attivita_template WHERE id_template = :id LIMIT 1');
         $stmt->bindValue(':id', $id, PDO::PARAM_INT);
         $stmt->execute();
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
         return $row === false ? null : $row;
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     */
+    public function updateActivityInfo(int $activityId, array $data): void
+    {
+        $fields = [];
+
+        if (array_key_exists('titolo', $data)) {
+            $fields[] = 'titolo = :titolo';
+        }
+        if (array_key_exists('descrizione', $data)) {
+            $fields[] = 'descrizione = :descrizione';
+        }
+        if (array_key_exists('priorita', $data)) {
+            $fields[] = 'priorita = :priorita';
+        }
+        if (array_key_exists('id_reparto', $data)) {
+            $fields[] = 'id_reparto = :id_reparto';
+        }
+        if (array_key_exists('data_scadenza', $data)) {
+            $fields[] = 'data_scadenza = :data_scadenza';
+        }
+        if (array_key_exists('note', $data)) {
+            $fields[] = 'note = :note';
+        }
+        if (array_key_exists('quantita_prevista', $data)) {
+            $fields[] = 'quantita_prevista = :quantita_prevista';
+        }
+
+        if ($fields === []) {
+            return;
+        }
+
+        $sql = 'UPDATE tb_lavorazioni_attivita SET ' . implode(', ', $fields) . ' WHERE id_attivita = :id';
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->bindValue(':id', $activityId, PDO::PARAM_INT);
+
+        if (array_key_exists('titolo', $data)) {
+            $stmt->bindValue(':titolo', (string) $data['titolo'], PDO::PARAM_STR);
+        }
+        if (array_key_exists('descrizione', $data)) {
+            if ($data['descrizione'] === null) {
+                $stmt->bindValue(':descrizione', null, PDO::PARAM_NULL);
+            } else {
+                $stmt->bindValue(':descrizione', (string) $data['descrizione'], PDO::PARAM_STR);
+            }
+        }
+        if (array_key_exists('priorita', $data)) {
+            $stmt->bindValue(':priorita', (string) $data['priorita'], PDO::PARAM_STR);
+        }
+        if (array_key_exists('id_reparto', $data)) {
+            if ($data['id_reparto'] === null) {
+                $stmt->bindValue(':id_reparto', null, PDO::PARAM_NULL);
+            } else {
+                $stmt->bindValue(':id_reparto', (int) $data['id_reparto'], PDO::PARAM_INT);
+            }
+        }
+        if (array_key_exists('data_scadenza', $data)) {
+            if ($data['data_scadenza'] === null) {
+                $stmt->bindValue(':data_scadenza', null, PDO::PARAM_NULL);
+            } else {
+                $stmt->bindValue(':data_scadenza', (string) $data['data_scadenza'], PDO::PARAM_STR);
+            }
+        }
+        if (array_key_exists('note', $data)) {
+            if ($data['note'] === null) {
+                $stmt->bindValue(':note', null, PDO::PARAM_NULL);
+            } else {
+                $stmt->bindValue(':note', (string) $data['note'], PDO::PARAM_STR);
+            }
+        }
+        if (array_key_exists('quantita_prevista', $data)) {
+            if ($data['quantita_prevista'] === null) {
+                $stmt->bindValue(':quantita_prevista', null, PDO::PARAM_NULL);
+            } else {
+                $stmt->bindValue(':quantita_prevista', (string) $data['quantita_prevista'], PDO::PARAM_STR);
+            }
+        }
+
+        $stmt->execute();
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     */
+    public function upsertActivityTemplate(?int $id, array $data): int
+    {
+        if ($id !== null && $id > 0) {
+            $sql = <<<'SQL'
+                UPDATE cfg_lavorazioni_attivita_template
+                SET titolo = :titolo,
+                    descrizione = :descrizione,
+                    priorita = :priorita,
+                    id_reparto = :id_reparto,
+                    durata_predefinita_giorni = :durata,
+                    attivo = :attivo,
+                    ordering = :ordering,
+                    updated_at = NOW()
+                WHERE id_template = :id
+            SQL;
+            $stmt = $this->pdo->prepare($sql);
+            $stmt->bindValue(':id', $id, PDO::PARAM_INT);
+        } else {
+            $sql = <<<'SQL'
+                INSERT INTO cfg_lavorazioni_attivita_template (
+                    titolo,
+                    descrizione,
+                    priorita,
+                    id_reparto,
+                    durata_predefinita_giorni,
+                    attivo,
+                    ordering,
+                    created_at,
+                    updated_at
+                ) VALUES (
+                    :titolo,
+                    :descrizione,
+                    :priorita,
+                    :id_reparto,
+                    :durata,
+                    :attivo,
+                    :ordering,
+                    NOW(),
+                    NOW()
+                )
+            SQL;
+            $stmt = $this->pdo->prepare($sql);
+        }
+
+        $stmt->bindValue(':titolo', (string) $data['titolo'], PDO::PARAM_STR);
+        if (array_key_exists('descrizione', $data) && $data['descrizione'] !== null && $data['descrizione'] !== '') {
+            $stmt->bindValue(':descrizione', (string) $data['descrizione'], PDO::PARAM_STR);
+        } else {
+            $stmt->bindValue(':descrizione', null, PDO::PARAM_NULL);
+        }
+        $stmt->bindValue(':priorita', (string) $data['priorita'], PDO::PARAM_STR);
+        if (!empty($data['id_reparto'])) {
+            $stmt->bindValue(':id_reparto', (int) $data['id_reparto'], PDO::PARAM_INT);
+        } else {
+            $stmt->bindValue(':id_reparto', null, PDO::PARAM_NULL);
+        }
+        if (!empty($data['durata_predefinita_giorni'])) {
+            $stmt->bindValue(':durata', (int) $data['durata_predefinita_giorni'], PDO::PARAM_INT);
+        } else {
+            $stmt->bindValue(':durata', null, PDO::PARAM_NULL);
+        }
+        $stmt->bindValue(':attivo', (int) ($data['attivo'] ?? 1), PDO::PARAM_INT);
+        $stmt->bindValue(':ordering', (int) ($data['ordering'] ?? 100), PDO::PARAM_INT);
+
+        $stmt->execute();
+
+        if ($id !== null && $id > 0) {
+            return $id;
+        }
+
+        return (int) $this->pdo->lastInsertId();
     }
 
     /**
@@ -979,11 +1259,194 @@ final class LavorazioniRepository
      */
     public function findActivity(int $activityId): ?array
     {
-        $stmt = $this->pdo->prepare('SELECT id_attivita, id_lavorazione, titolo, descrizione, id_reparto, data_creazione, data_scadenza, percentuale FROM tb_lavorazioni_attivita WHERE id_attivita = :id LIMIT 1');
+        $stmt = $this->pdo->prepare(<<<'SQL'
+            SELECT
+                a.id_attivita,
+                a.id_lavorazione,
+                a.stato,
+                a.priorita,
+                a.note,
+                a.titolo,
+                a.descrizione,
+                a.id_reparto,
+                a.data_creazione,
+                a.data_scadenza,
+                a.percentuale,
+                r.data_avvio,
+                r.data_fine,
+                r.id_operatore,
+                r.note AS report_note,
+                r.updated_at AS report_updated_at
+            FROM tb_lavorazioni_attivita a
+            LEFT JOIN tb_lavorazioni_attivita_report r ON r.id_attivita = a.id_attivita
+            WHERE a.id_attivita = :id
+            LIMIT 1
+        SQL);
         $stmt->bindValue(':id', $activityId, PDO::PARAM_INT);
         $stmt->execute();
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
         return $row === false ? null : $row;
+    }
+
+    /**
+     * @param array<string, mixed>|null $oldValue
+     * @param array<string, mixed>|null $newValue
+     */
+    public function createTimelineEvent(
+        int $lavorazioneId,
+        ?int $attivitaId,
+        string $evento,
+        ?string $note,
+        ?array $oldValue = null,
+        ?array $newValue = null,
+        ?int $createdBy = null,
+    ): void {
+        $sql = <<<'SQL'
+            INSERT INTO tb_lavorazioni_eventi (
+                id_lavorazione,
+                id_attivita,
+                evento,
+                old_value,
+                new_value,
+                note,
+                created_at,
+                created_by
+            ) VALUES (
+                :id_lavorazione,
+                :id_attivita,
+                :evento,
+                :old_value,
+                :new_value,
+                :note,
+                NOW(),
+                :created_by
+            )
+        SQL;
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->bindValue(':id_lavorazione', $lavorazioneId, PDO::PARAM_INT);
+        if ($attivitaId !== null && $attivitaId > 0) {
+            $stmt->bindValue(':id_attivita', $attivitaId, PDO::PARAM_INT);
+        } else {
+            $stmt->bindValue(':id_attivita', null, PDO::PARAM_NULL);
+        }
+        $stmt->bindValue(':evento', $evento, PDO::PARAM_STR);
+        if ($oldValue !== null) {
+            $stmt->bindValue(':old_value', json_encode($oldValue), PDO::PARAM_STR);
+        } else {
+            $stmt->bindValue(':old_value', null, PDO::PARAM_NULL);
+        }
+        if ($newValue !== null) {
+            $stmt->bindValue(':new_value', json_encode($newValue), PDO::PARAM_STR);
+        } else {
+            $stmt->bindValue(':new_value', null, PDO::PARAM_NULL);
+        }
+        if ($note !== null && $note !== '') {
+            $stmt->bindValue(':note', $note, PDO::PARAM_STR);
+        } else {
+            $stmt->bindValue(':note', null, PDO::PARAM_NULL);
+        }
+        if ($createdBy !== null && $createdBy > 0) {
+            $stmt->bindValue(':created_by', $createdBy, PDO::PARAM_INT);
+        } else {
+            $stmt->bindValue(':created_by', null, PDO::PARAM_NULL);
+        }
+        $stmt->execute();
+    }
+
+    public function updateActivityReport(int $activityId, ?string $dataAvvio, ?string $dataFine, ?int $operatoreId, ?string $note): array
+    {
+        $select = $this->pdo->prepare('SELECT id_lavorazione FROM tb_lavorazioni_attivita WHERE id_attivita = :id LIMIT 1');
+        $select->bindValue(':id', $activityId, PDO::PARAM_INT);
+        $select->execute();
+        $activity = $select->fetch(PDO::FETCH_ASSOC);
+        if ($activity === false) {
+            throw new \RuntimeException('Attivit… non trovata per aggiornare il report.', 404);
+        }
+
+        $exists = $this->pdo->prepare('SELECT id_report FROM tb_lavorazioni_attivita_report WHERE id_attivita = :id LIMIT 1');
+        $exists->bindValue(':id', $activityId, PDO::PARAM_INT);
+        $exists->execute();
+        $reportId = $exists->fetchColumn();
+
+        if ($reportId === false) {
+            $insert = $this->pdo->prepare(<<<'SQL'
+                INSERT INTO tb_lavorazioni_attivita_report (
+                    id_attivita,
+                    data_avvio,
+                    data_fine,
+                    id_operatore,
+                    note,
+                    created_at,
+                    updated_at
+                ) VALUES (
+                    :id_attivita,
+                    :data_avvio,
+                    :data_fine,
+                    :id_operatore,
+                    :note,
+                    NOW(),
+                    NOW()
+                )
+            SQL);
+            $insert->bindValue(':id_attivita', $activityId, PDO::PARAM_INT);
+            if ($dataAvvio !== null) {
+                $insert->bindValue(':data_avvio', $dataAvvio, PDO::PARAM_STR);
+            } else {
+                $insert->bindValue(':data_avvio', null, PDO::PARAM_NULL);
+            }
+            if ($dataFine !== null) {
+                $insert->bindValue(':data_fine', $dataFine, PDO::PARAM_STR);
+            } else {
+                $insert->bindValue(':data_fine', null, PDO::PARAM_NULL);
+            }
+            if ($operatoreId !== null && $operatoreId > 0) {
+                $insert->bindValue(':id_operatore', $operatoreId, PDO::PARAM_INT);
+            } else {
+                $insert->bindValue(':id_operatore', null, PDO::PARAM_NULL);
+            }
+            if ($note !== null) {
+                $insert->bindValue(':note', $note, PDO::PARAM_STR);
+            } else {
+                $insert->bindValue(':note', null, PDO::PARAM_NULL);
+            }
+            $insert->execute();
+        } else {
+            $update = $this->pdo->prepare(<<<'SQL'
+                UPDATE tb_lavorazioni_attivita_report
+                SET data_avvio = :data_avvio,
+                    data_fine = :data_fine,
+                    id_operatore = :id_operatore,
+                    note = :note,
+                    updated_at = NOW()
+                WHERE id_attivita = :id_attivita
+            SQL);
+            $update->bindValue(':id_attivita', $activityId, PDO::PARAM_INT);
+            if ($dataAvvio !== null) {
+                $update->bindValue(':data_avvio', $dataAvvio, PDO::PARAM_STR);
+            } else {
+                $update->bindValue(':data_avvio', null, PDO::PARAM_NULL);
+            }
+            if ($dataFine !== null) {
+                $update->bindValue(':data_fine', $dataFine, PDO::PARAM_STR);
+            } else {
+                $update->bindValue(':data_fine', null, PDO::PARAM_NULL);
+            }
+            if ($operatoreId !== null && $operatoreId > 0) {
+                $update->bindValue(':id_operatore', $operatoreId, PDO::PARAM_INT);
+            } else {
+                $update->bindValue(':id_operatore', null, PDO::PARAM_NULL);
+            }
+            if ($note !== null) {
+                $update->bindValue(':note', $note, PDO::PARAM_STR);
+            } else {
+                $update->bindValue(':note', null, PDO::PARAM_NULL);
+            }
+            $update->execute();
+        }
+
+        return [
+            'lavorazione_id' => isset($activity['id_lavorazione']) ? (int) $activity['id_lavorazione'] : 0,
+        ];
     }
 
     /**
@@ -1127,6 +1590,216 @@ final class LavorazioniRepository
         return (bool) $stmt->fetchColumn();
     }
 
+    public function countOpenActivities(int $lavorazioneId): int
+    {
+        $stmt = $this->pdo->prepare("SELECT COUNT(*) FROM tb_lavorazioni_attivita WHERE id_lavorazione = :id AND stato <> 'done'");
+        $stmt->bindValue(':id', $lavorazioneId, PDO::PARAM_INT);
+        $stmt->execute();
+        return (int) ($stmt->fetchColumn() ?: 0);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function fetchRelatedDocuments(int $lavorazioneId): array
+    {
+        $stmt = $this->pdo->prepare('SELECT id_preventivo FROM tb_lavorazioni WHERE id_lavorazione = :id LIMIT 1');
+        $stmt->bindValue(':id', $lavorazioneId, PDO::PARAM_INT);
+        $stmt->execute();
+        $preventivoId = (int) ($stmt->fetchColumn() ?: 0);
+        if ($preventivoId <= 0) {
+            return [
+                'preventivo' => null,
+                'ddt' => [],
+                'fatture' => [],
+                'ordini' => [],
+            ];
+        }
+
+        $prevStmt = $this->pdo->prepare(<<<'SQL'
+            SELECT id_preventivo, anno_preventivo, numero_documento, data_preventivo, totale
+            FROM tb_preventivi
+            WHERE id_preventivo = :id
+            LIMIT 1
+        SQL);
+        $prevStmt->bindValue(':id', $preventivoId, PDO::PARAM_INT);
+        $prevStmt->execute();
+        $preventivo = $prevStmt->fetch(PDO::FETCH_ASSOC) ?: null;
+
+        $ddtStmt = $this->pdo->prepare(<<<'SQL'
+            SELECT d.id_ddt, d.anno, d.numero_documento, d.data_ddt
+            FROM appoggio_preventivo_ddt apd
+            INNER JOIN tb_ddt d ON d.id_ddt = apd.id_ddt
+            WHERE apd.id_preventivo = :id
+            ORDER BY d.data_ddt DESC, d.id_ddt DESC
+        SQL);
+        $ddtStmt->bindValue(':id', $preventivoId, PDO::PARAM_INT);
+        $ddtStmt->execute();
+        $ddt = $ddtStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+        $fattStmt = $this->pdo->prepare(<<<'SQL'
+            SELECT f.id_fattura, f.anno, f.numero_documento, f.data_fattura, f.totale, f.saldo
+            FROM appoggio_preventivo_fattura apf
+            INNER JOIN tb_fatture f ON f.id_fattura = apf.id_fattura
+            WHERE apf.id_preventivo = :id
+            ORDER BY f.data_fattura DESC, f.id_fattura DESC
+        SQL);
+        $fattStmt->bindValue(':id', $preventivoId, PDO::PARAM_INT);
+        $fattStmt->execute();
+        $fatture = $fattStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+        return [
+            'preventivo' => $preventivo,
+            'ddt' => $ddt,
+            'fatture' => $fatture,
+            'ordini' => [],
+        ];
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function listLavorazioneFiles(int $lavorazioneId): array
+    {
+        $sql = <<<SQL
+            SELECT
+                f.id_file,
+                f.id_lavorazione,
+                f.titolo,
+                f.categoria,
+                f.original_name,
+                f.file_name,
+                f.mime_type,
+                f.size_bytes,
+                f.note,
+                f.created_at,
+                f.created_by,
+                dl.last_download_at,
+                dl.download_count,
+                acc.username AS last_download_by
+            FROM tb_lavorazioni_files f
+            LEFT JOIN (
+                SELECT
+                    id_file,
+                    MAX(downloaded_at) AS last_download_at,
+                    COUNT(*) AS download_count,
+                    SUBSTRING_INDEX(GROUP_CONCAT(downloaded_by ORDER BY downloaded_at DESC), ',', 1) AS last_download_by_id
+                FROM tb_lavorazioni_files_downloads
+                GROUP BY id_file
+            ) dl ON dl.id_file = f.id_file
+            LEFT JOIN auth_accounts acc ON acc.id_account = dl.last_download_by_id
+            WHERE f.id_lavorazione = :id
+            ORDER BY f.created_at DESC, f.id_file DESC
+        SQL;
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->bindValue(':id', $lavorazioneId, PDO::PARAM_INT);
+        $stmt->execute();
+        return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     */
+    public function createLavorazioneFile(int $lavorazioneId, array $data): int
+    {
+        $sql = <<<SQL
+            INSERT INTO tb_lavorazioni_files (
+                id_lavorazione,
+                titolo,
+                categoria,
+                original_name,
+                file_name,
+                mime_type,
+                size_bytes,
+                note,
+                created_at,
+                created_by
+            ) VALUES (
+                :id_lavorazione,
+                :titolo,
+                :categoria,
+                :original_name,
+                :file_name,
+                :mime_type,
+                :size_bytes,
+                :note,
+                NOW(),
+                :created_by
+            )
+        SQL;
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->bindValue(':id_lavorazione', $lavorazioneId, PDO::PARAM_INT);
+        $stmt->bindValue(':titolo', (string) $data['titolo'], PDO::PARAM_STR);
+        $stmt->bindValue(':categoria', (string) $data['categoria'], PDO::PARAM_STR);
+        $stmt->bindValue(':original_name', (string) $data['original_name'], PDO::PARAM_STR);
+        $stmt->bindValue(':file_name', (string) $data['file_name'], PDO::PARAM_STR);
+        $stmt->bindValue(':mime_type', (string) $data['mime_type'], PDO::PARAM_STR);
+        $stmt->bindValue(':size_bytes', (int) $data['size_bytes'], PDO::PARAM_INT);
+        if (!empty($data['note'])) {
+            $stmt->bindValue(':note', (string) $data['note'], PDO::PARAM_STR);
+        } else {
+            $stmt->bindValue(':note', null, PDO::PARAM_NULL);
+        }
+        if (!empty($data['created_by'])) {
+            $stmt->bindValue(':created_by', (int) $data['created_by'], PDO::PARAM_INT);
+        } else {
+            $stmt->bindValue(':created_by', null, PDO::PARAM_NULL);
+        }
+        $stmt->execute();
+        return (int) $this->pdo->lastInsertId();
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    public function findLavorazioneFile(int $fileId): ?array
+    {
+        $stmt = $this->pdo->prepare(<<<'SQL'
+            SELECT
+                id_file,
+                id_lavorazione,
+                titolo,
+                categoria,
+                original_name,
+                file_name,
+                mime_type,
+                size_bytes,
+                note,
+                created_at,
+                created_by
+            FROM tb_lavorazioni_files
+            WHERE id_file = :id
+            LIMIT 1
+        SQL);
+        $stmt->bindValue(':id', $fileId, PDO::PARAM_INT);
+        $stmt->execute();
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        return $row === false ? null : $row;
+    }
+
+    public function logLavorazioneFileDownload(int $fileId, ?int $accountId): void
+    {
+        $sql = <<<SQL
+            INSERT INTO tb_lavorazioni_files_downloads (
+                id_file,
+                downloaded_by,
+                downloaded_at
+            ) VALUES (
+                :id_file,
+                :downloaded_by,
+                NOW()
+            )
+        SQL;
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->bindValue(':id_file', $fileId, PDO::PARAM_INT);
+        if ($accountId !== null && $accountId > 0) {
+            $stmt->bindValue(':downloaded_by', $accountId, PDO::PARAM_INT);
+        } else {
+            $stmt->bindValue(':downloaded_by', null, PDO::PARAM_NULL);
+        }
+        $stmt->execute();
+    }
+
     /**
      * @param array<int, int> $operatorIds
      */
@@ -1171,7 +1844,14 @@ final class LavorazioniRepository
         }
     }
 
-    public function createNotifications(int $lavorazioneId, ?int $attivitaId, array $operatorIds, string $title, string $message): int
+    public function createNotifications(
+        int $lavorazioneId,
+        ?int $attivitaId,
+        array $operatorIds,
+        string $title,
+        string $message,
+        ?int $createdBy = null,
+    ): int
     {
         if ($operatorIds === []) {
             return 0;
@@ -1186,7 +1866,8 @@ final class LavorazioniRepository
                 titolo,
                 messaggio,
                 stato,
-                created_at
+                created_at,
+                created_by
             ) VALUES (
                 :id_lavorazione,
                 :id_attivita,
@@ -1195,7 +1876,8 @@ final class LavorazioniRepository
                 :titolo,
                 :messaggio,
                 'pending',
-                NOW()
+                NOW(),
+                :created_by
             )
         SQL;
         $stmt = $this->pdo->prepare($sql);
@@ -1210,6 +1892,11 @@ final class LavorazioniRepository
             $stmt->bindValue(':id_account', $operatorId, PDO::PARAM_INT);
             $stmt->bindValue(':titolo', $title, PDO::PARAM_STR);
             $stmt->bindValue(':messaggio', $message, PDO::PARAM_STR);
+            if ($createdBy !== null && $createdBy > 0) {
+                $stmt->bindValue(':created_by', $createdBy, PDO::PARAM_INT);
+            } else {
+                $stmt->bindValue(':created_by', null, PDO::PARAM_NULL);
+            }
             $stmt->execute();
             $count += (int) $stmt->rowCount();
         }

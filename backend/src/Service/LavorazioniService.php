@@ -4,6 +4,8 @@ declare(strict_types=1);
 namespace MediaPrint\Service;
 
 use MediaPrint\Repo\LavorazioniRepository;
+use Firebase\JWT\JWT;
+use Firebase\JWT\Key;
 
 final class LavorazioniService
 {
@@ -163,6 +165,12 @@ final class LavorazioniService
         if ($detail === null) {
             throw new \RuntimeException('Lavorazione non trovata.', 404);
         }
+        if (isset($query['allowed_anagrafiche']) && is_array($query['allowed_anagrafiche'])) {
+            $allowed = array_map('intval', $query['allowed_anagrafiche']);
+            if (!in_array((int) ($detail['id_anagrafica'] ?? 0), $allowed, true)) {
+                throw new \RuntimeException('Lavorazione non trovata.', 404);
+            }
+        }
 
         return $detail;
     }
@@ -187,13 +195,115 @@ final class LavorazioniService
             throw new \RuntimeException('Lavorazione non trovata.', 404);
         }
 
-        $rawNote = array_key_exists('note', $input) ? (string) $input['note'] : null;
-        $note = $rawNote !== null ? trim($rawNote) : null;
-        if ($note === '') {
-            $note = null;
+        $updates = [];
+
+        if (array_key_exists('titolo', $input)) {
+            $titolo = trim((string) $input['titolo']);
+            if ($titolo === '') {
+                throw new \RuntimeException('Titolo lavorazione mancante.', 422);
+            }
+            $updates['titolo'] = $titolo;
         }
 
-        $this->repository->updateNote($lavorazioneId, $note);
+        if (array_key_exists('descrizione', $input)) {
+            $descrizione = trim((string) ($input['descrizione'] ?? ''));
+            $updates['descrizione'] = $descrizione !== '' ? $descrizione : null;
+        }
+
+        if (array_key_exists('stato', $input)) {
+            $stato = $this->filterEnum($input['stato'], ['aperta', 'pianificata', 'in_produzione', 'completata', 'annullata', 'sospesa']);
+            if ($stato === null) {
+                throw new \RuntimeException('Stato lavorazione non valido.', 422);
+            }
+            $updates['stato'] = $stato;
+        }
+
+        if (array_key_exists('priorita', $input)) {
+            $priorita = $this->filterEnum($input['priorita'], ['low', 'medium', 'high', 'critical']);
+            if ($priorita === null) {
+                throw new \RuntimeException('Priorita lavorazione non valida.', 422);
+            }
+            $updates['priorita'] = $priorita;
+        }
+
+        if (array_key_exists('id_reparto', $input)) {
+            $candidate = $input['id_reparto'];
+            if ($candidate === null || $candidate === '') {
+                $updates['id_reparto'] = null;
+            } else {
+                $idReparto = (int) $candidate;
+                $updates['id_reparto'] = $idReparto > 0 ? $idReparto : null;
+            }
+        } elseif (array_key_exists('reparto', $input)) {
+            $resolved = $this->resolveRepartoId((string) $input['reparto']);
+            if ($resolved === null) {
+                throw new \RuntimeException('Reparto non valido.', 422);
+            }
+            $updates['id_reparto'] = $resolved;
+        }
+
+        if (array_key_exists('data_inizio_prevista', $input)) {
+            $raw = $input['data_inizio_prevista'];
+            if ($raw === null || $raw === '') {
+                $updates['data_inizio_prevista'] = null;
+            } else {
+                $parsed = $this->sanitizeDate($raw);
+                if ($parsed === null) {
+                    throw new \RuntimeException('Data inizio prevista non valida.', 422);
+                }
+                $updates['data_inizio_prevista'] = $parsed;
+            }
+        }
+
+        if (array_key_exists('data_fine_prevista', $input)) {
+            $raw = $input['data_fine_prevista'];
+            if ($raw === null || $raw === '') {
+                $updates['data_fine_prevista'] = null;
+            } else {
+                $parsed = $this->sanitizeDate($raw);
+                if ($parsed === null) {
+                    throw new \RuntimeException('Data fine prevista non valida.', 422);
+                }
+                $updates['data_fine_prevista'] = $parsed;
+            }
+        }
+
+        $start = array_key_exists('data_inizio_prevista', $updates)
+            ? $updates['data_inizio_prevista']
+            : ($detail['data_inizio_prevista'] ?? null);
+        $end = array_key_exists('data_fine_prevista', $updates)
+            ? $updates['data_fine_prevista']
+            : ($detail['data_fine_prevista'] ?? null);
+        if ($start !== null && $end !== null) {
+            $startDt = new \DateTimeImmutable($start);
+            $endDt = new \DateTimeImmutable($end);
+            if ($startDt > $endDt) {
+                throw new \RuntimeException('Il periodo previsto non e valido.', 422);
+            }
+        }
+
+        if (array_key_exists('data_avvio_reale', $input)) {
+            $raw = $input['data_avvio_reale'];
+            if ($raw === null || $raw === '') {
+                $updates['data_avvio_reale'] = null;
+            } else {
+                $parsed = $this->sanitizeDateTime($raw);
+                if ($parsed === null) {
+                    throw new \RuntimeException('Data avvio reale non valida.', 422);
+                }
+                $updates['data_avvio_reale'] = $parsed;
+            }
+        }
+
+        if (array_key_exists('note', $input)) {
+            $rawNote = (string) $input['note'];
+            $note = trim($rawNote);
+            $updates['note'] = $note !== '' ? $note : null;
+        }
+
+        if ($updates !== []) {
+            $this->repository->updateInfo($lavorazioneId, $updates);
+        }
         $updated = $this->repository->findDetail($lavorazioneId);
 
         return [
@@ -211,6 +321,75 @@ final class LavorazioniService
         $all = isset($query['all']) ? (int) $query['all'] === 1 : false;
         $items = $this->repository->listActivityTemplates(!$all);
         return ['items' => $items];
+    }
+
+    /**
+     * @param array<string, mixed> $input
+     * @return array<string, mixed>
+     */
+    public function saveActivityTemplate(array $input): array
+    {
+        $id = $this->sanitizeInt($input['id_template'] ?? ($input['id'] ?? 0), 1, PHP_INT_MAX);
+        if ($id <= 0) {
+            $id = 0;
+        }
+
+        $titolo = trim((string) ($input['titolo'] ?? ''));
+        if ($titolo === '') {
+            throw new \RuntimeException('Titolo template obbligatorio.', 422);
+        }
+
+        $descrizione = null;
+        if (array_key_exists('descrizione', $input)) {
+            $descrizione = trim((string) ($input['descrizione'] ?? ''));
+            if ($descrizione === '') {
+                $descrizione = null;
+            }
+        }
+
+        $priorita = $this->sanitizePriority($input['priorita'] ?? null);
+
+        $idReparto = null;
+        if (array_key_exists('id_reparto', $input)) {
+            $candidate = $input['id_reparto'];
+            if ($candidate !== null && $candidate !== '') {
+                $idReparto = (int) $candidate;
+                if ($idReparto <= 0) {
+                    $idReparto = null;
+                }
+            }
+        }
+
+        $durata = null;
+        if (array_key_exists('durata_predefinita_giorni', $input)) {
+            $candidate = $input['durata_predefinita_giorni'];
+            if ($candidate !== null && $candidate !== '') {
+                $durataValue = (int) $candidate;
+                $durata = $durataValue > 0 ? $durataValue : null;
+            }
+        }
+
+        $ordering = 100;
+        if (array_key_exists('ordering', $input)) {
+            $candidate = (int) $input['ordering'];
+            if ($candidate >= 0) {
+                $ordering = $candidate;
+            }
+        }
+
+        $attivo = array_key_exists('attivo', $input) ? ((int) $input['attivo'] === 1 ? 1 : 0) : 1;
+
+        $newId = $this->repository->upsertActivityTemplate($id > 0 ? $id : null, [
+            'titolo' => $titolo,
+            'descrizione' => $descrizione,
+            'priorita' => $priorita,
+            'id_reparto' => $idReparto,
+            'durata_predefinita_giorni' => $durata,
+            'attivo' => $attivo,
+            'ordering' => $ordering,
+        ]);
+
+        return ['id_template' => $newId];
     }
 
     /**
@@ -419,6 +598,7 @@ final class LavorazioniService
         if ($activity === null) {
             throw new \RuntimeException('Attivit? non trovata.', 404);
         }
+        $oldStatus = isset($activity['stato']) ? strtolower((string) $activity['stato']) : null;
 
         $percentInput = array_key_exists('percentuale', $input) ? $this->sanitizePercent($input['percentuale']) : null;
         $percentuale = $percentInput ?? $this->derivePercentByStatus($status, $activity);
@@ -427,6 +607,28 @@ final class LavorazioniService
         }
 
         $activityMeta = $this->repository->updateActivityStatus($activityId, $status, $percentuale);
+        if ($oldStatus !== null && $oldStatus !== $status) {
+            $lavorazioneId = isset($activity['id_lavorazione']) ? (int) $activity['id_lavorazione'] : 0;
+            if ($lavorazioneId > 0) {
+                $actor = $this->resolveActorFromToken();
+                $actorId = $actor['id'] ?? null;
+                if ($actorId === null) {
+                    $actorId = $this->resolveActorIdFromInput($input);
+                }
+                $titolo = isset($activity['titolo']) ? (string) $activity['titolo'] : '';
+                $label = $titolo !== '' ? sprintf('%s (ID %d)', $titolo, $activityId) : sprintf('ID %d', $activityId);
+                $note = sprintf('Stato attivita %s: %s -> %s.', $label, $oldStatus, $status);
+                $this->repository->createTimelineEvent(
+                    $lavorazioneId,
+                    $activityId,
+                    'attivita_stato',
+                    $note,
+                    ['stato' => $oldStatus],
+                    ['stato' => $status],
+                    $actorId,
+                );
+            }
+        }
         $lavorazioneId = $activityMeta['lavorazione_id'] ?? 0;
         $jobStateBefore = null;
         if ($lavorazioneId > 0) {
@@ -445,12 +647,207 @@ final class LavorazioniService
                     $this->repository->updateStato($lavorazioneId, 'in_produzione');
                 }
             }
+            if ($jobStateBefore !== 'annullata') {
+                $openActivities = $this->repository->countOpenActivities($lavorazioneId);
+                if ($openActivities === 0 && $newPercent >= 100 && $jobStateBefore !== 'completata') {
+                    $this->repository->updateStato($lavorazioneId, 'completata');
+                }
+            }
         }
 
         $updated = $this->repository->findActivity($activityId);
         return [
             'ok' => true,
             'activity' => $updated,
+        ];
+    }
+
+    /**
+     * @return array{id:?int,name:?string}
+     */
+    private function resolveActorFromToken(): array
+    {
+        $header = $_SERVER['HTTP_AUTHORIZATION'] ?? $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? '';
+        if (!is_string($header) || $header === '' || stripos($header, 'Bearer ') !== 0) {
+            return ['id' => null, 'name' => null];
+        }
+        $token = trim(substr($header, 7));
+        if ($token === '') {
+            return ['id' => null, 'name' => null];
+        }
+        $secret = getenv('JWT_SECRET') ?: '04fb222b0c3ba451e9f1b7f72f756f33bc7dc5d9db127275ac40080819c114d63dc2f29de59075a285cd753e9454ed53';
+        if (!$secret) {
+            return ['id' => null, 'name' => null];
+        }
+        try {
+            $payload = JWT::decode($token, new Key($secret, 'HS256'));
+        } catch (\Throwable $exception) {
+            return ['id' => null, 'name' => null];
+        }
+
+        $id = null;
+        if (isset($payload->sub) && (is_string($payload->sub) || is_numeric($payload->sub))) {
+            $candidate = (int) $payload->sub;
+            $id = $candidate > 0 ? $candidate : null;
+        }
+
+        $name = null;
+        if (isset($payload->username) && is_string($payload->username) && trim($payload->username) !== '') {
+            $name = trim($payload->username);
+        } elseif (isset($payload->email) && is_string($payload->email) && trim($payload->email) !== '') {
+            $name = trim($payload->email);
+        } elseif ($id !== null) {
+            $name = 'user#' . (string) $id;
+        }
+
+        return ['id' => $id, 'name' => $name];
+    }
+
+    private function resolveActorIdFromInput(array $input): ?int
+    {
+        $candidates = [
+            $input['created_by'] ?? null,
+            $input['id_account'] ?? null,
+            $input['id_operatore'] ?? null,
+            $input['operatore_id'] ?? null,
+            $input['user_id'] ?? null,
+        ];
+
+        foreach ($candidates as $candidate) {
+            if ($candidate === null || $candidate === '') {
+                continue;
+            }
+            if (is_numeric($candidate)) {
+                $value = (int) $candidate;
+                if ($value > 0) {
+                    return $value;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param array<string, mixed> $input
+     * @return array<string, mixed>
+     */
+    public function updateActivityInfo(array $input): array
+    {
+        $activityId = $this->sanitizeInt($input['id_attivita'] ?? ($input['attivita_id'] ?? ($input['id'] ?? 0)), 1, PHP_INT_MAX);
+        if ($activityId <= 0) {
+            throw new \RuntimeException('ID attivita mancante o non valido.', 422);
+        }
+
+        $activity = $this->repository->findActivity($activityId);
+        if ($activity === null) {
+            throw new \RuntimeException('Attivita non trovata.', 404);
+        }
+
+        $updates = [];
+
+        if (array_key_exists('titolo', $input)) {
+            $titolo = trim((string) $input['titolo']);
+            if ($titolo === '') {
+                throw new \RuntimeException('Titolo attivita mancante.', 422);
+            }
+            $updates['titolo'] = $titolo;
+        }
+
+        if (array_key_exists('descrizione', $input)) {
+            $descrizione = trim((string) ($input['descrizione'] ?? ''));
+            $updates['descrizione'] = $descrizione !== '' ? $descrizione : null;
+        }
+
+        if (array_key_exists('priorita', $input)) {
+            $priorita = $this->sanitizePriority($input['priorita']);
+            $updates['priorita'] = $priorita;
+        }
+
+        if (array_key_exists('id_reparto', $input)) {
+            $candidate = $input['id_reparto'];
+            if ($candidate === null || $candidate === '') {
+                $updates['id_reparto'] = null;
+            } else {
+                $idReparto = (int) $candidate;
+                $updates['id_reparto'] = $idReparto > 0 ? $idReparto : null;
+            }
+        }
+
+        if (array_key_exists('data_scadenza', $input)) {
+            $raw = $input['data_scadenza'];
+            if ($raw === null || $raw === '') {
+                $updates['data_scadenza'] = null;
+            } else {
+                $parsed = $this->sanitizeDate($raw);
+                if ($parsed === null) {
+                    throw new \RuntimeException('Data scadenza non valida.', 422);
+                }
+                $updates['data_scadenza'] = $parsed;
+            }
+        }
+
+        if (array_key_exists('note', $input)) {
+            $rawNote = (string) $input['note'];
+            $note = trim($rawNote);
+            $updates['note'] = $note !== '' ? $note : null;
+        }
+
+        if (array_key_exists('quantita_prevista', $input)) {
+            if ($input['quantita_prevista'] === null || $input['quantita_prevista'] === '') {
+                $updates['quantita_prevista'] = null;
+            } else {
+                $updates['quantita_prevista'] = (float) $input['quantita_prevista'];
+            }
+        }
+
+        if ($updates !== []) {
+            $this->repository->updateActivityInfo($activityId, $updates);
+        }
+
+        $updated = $this->repository->findActivity($activityId);
+
+        return [
+            'ok' => true,
+            'activity' => $updated ?? $activity,
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $input
+     * @return array<string, mixed>
+     */
+    public function updateActivityReport(array $input): array
+    {
+        $activityId = $this->sanitizeInt($input['id_attivita'] ?? ($input['attivita_id'] ?? ($input['id'] ?? 0)), 1, PHP_INT_MAX);
+        if ($activityId <= 0) {
+            throw new \RuntimeException('ID attivita mancante o non valido.', 422);
+        }
+
+        $dataAvvio = $this->sanitizeDateTime($input['data_avvio'] ?? ($input['data_inizio'] ?? null));
+        $dataFine = $this->sanitizeDateTime($input['data_fine'] ?? ($input['data_end'] ?? null));
+        $operatoreId = null;
+        if (array_key_exists('id_operatore', $input)) {
+            $candidate = (int) $input['id_operatore'];
+            $operatoreId = $candidate > 0 ? $candidate : null;
+        }
+        $noteRaw = array_key_exists('note', $input) ? (string) $input['note'] : null;
+        $note = $noteRaw !== null ? trim($noteRaw) : null;
+        if ($note === '') {
+            $note = null;
+        }
+
+        $activity = $this->repository->findActivity($activityId);
+        if ($activity === null) {
+            throw new \RuntimeException('Attivita non trovata.', 404);
+        }
+
+        $this->repository->updateActivityReport($activityId, $dataAvvio, $dataFine, $operatoreId, $note);
+        $updated = $this->repository->findActivity($activityId);
+
+        return [
+            'ok' => true,
+            'activity' => $updated ?? $activity,
         ];
     }
 
@@ -510,7 +907,15 @@ final class LavorazioniService
             throw new \RuntimeException('Nessun operatore valido da notificare.', 422);
         }
 
-        $inserted = $this->repository->createNotifications($lavorazioneId, $activityId, $operatorIds, $title, $message);
+        $actor = $this->resolveActorFromToken();
+        $inserted = $this->repository->createNotifications(
+            $lavorazioneId,
+            $activityId,
+            $operatorIds,
+            $title,
+            $message,
+            $actor['id'] ?? $this->resolveActorIdFromInput($input),
+        );
 
         return [
             'ok' => true,
@@ -570,6 +975,110 @@ final class LavorazioniService
      * @param array<string, mixed> $query
      * @return array<string, mixed>
      */
+    public function documents(array $query): array
+    {
+        $lavorazioneId = $this->sanitizeInt($query['id_lavorazione'] ?? ($query['lavorazione_id'] ?? ($query['id'] ?? 0)), 1, PHP_INT_MAX);
+        if ($lavorazioneId <= 0) {
+            throw new \RuntimeException('ID lavorazione mancante o non valido.', 422);
+        }
+        if (!$this->repository->existsLavorazione($lavorazioneId)) {
+            throw new \RuntimeException('Lavorazione non trovata.', 404);
+        }
+
+        return $this->repository->fetchRelatedDocuments($lavorazioneId);
+    }
+
+    /**
+     * @param array<string, mixed> $query
+     * @return array<string, mixed>
+     */
+    public function filesList(array $query): array
+    {
+        $lavorazioneId = $this->sanitizeInt($query['id_lavorazione'] ?? ($query['lavorazione_id'] ?? ($query['id'] ?? 0)), 1, PHP_INT_MAX);
+        if ($lavorazioneId <= 0) {
+            throw new \RuntimeException('ID lavorazione mancante o non valido.', 422);
+        }
+        if (!$this->repository->existsLavorazione($lavorazioneId)) {
+            throw new \RuntimeException('Lavorazione non trovata.', 404);
+        }
+
+        $items = $this->repository->listLavorazioneFiles($lavorazioneId);
+        return ['items' => $items];
+    }
+
+    /**
+     * @param array<string, mixed> $input
+     * @param array<string, mixed> $file
+     * @return array<string, mixed>
+     */
+    public function uploadFile(array $input, array $file): array
+    {
+        $lavorazioneId = $this->sanitizeInt($input['id_lavorazione'] ?? ($input['lavorazione_id'] ?? ($input['id'] ?? 0)), 1, PHP_INT_MAX);
+        if ($lavorazioneId <= 0) {
+            throw new \RuntimeException('ID lavorazione mancante o non valido.', 422);
+        }
+        if (!$this->repository->existsLavorazione($lavorazioneId)) {
+            throw new \RuntimeException('Lavorazione non trovata.', 404);
+        }
+
+        if (!isset($file['tmp_name']) || !is_uploaded_file($file['tmp_name'])) {
+            throw new \RuntimeException('File mancante o non valido.', 422);
+        }
+        if (isset($file['error']) && (int) $file['error'] !== UPLOAD_ERR_OK) {
+            throw new \RuntimeException('Errore durante il caricamento del file.', 422);
+        }
+
+        $categoria = isset($input['categoria']) ? trim((string) $input['categoria']) : 'cliente';
+        $categoria = in_array($categoria, ['cliente', 'anteprima', 'altro'], true) ? $categoria : 'cliente';
+
+        $titolo = isset($input['titolo']) ? trim((string) $input['titolo']) : '';
+        $originalName = isset($file['name']) ? basename((string) $file['name']) : 'file';
+        if ($titolo === '') {
+            $titolo = $originalName;
+        }
+
+        $note = isset($input['note']) ? trim((string) $input['note']) : null;
+        if ($note === '') {
+            $note = null;
+        }
+
+        $extension = pathinfo($originalName, PATHINFO_EXTENSION);
+        $safeExtension = $extension !== '' ? preg_replace('/[^a-zA-Z0-9]+/', '', $extension) : '';
+        $fileName = sprintf('%s.%s', uniqid('lav_', true), $safeExtension !== '' ? $safeExtension : 'bin');
+
+        $baseDir = dirname(__DIR__, 2) . '/uploads/lavorazioni/' . $lavorazioneId;
+        if (!is_dir($baseDir) && !mkdir($baseDir, 0775, true) && !is_dir($baseDir)) {
+            throw new \RuntimeException('Impossibile creare la cartella di upload.', 500);
+        }
+
+        $destination = $baseDir . '/' . $fileName;
+        if (!move_uploaded_file($file['tmp_name'], $destination)) {
+            throw new \RuntimeException('Impossibile salvare il file caricato.', 500);
+        }
+
+        $actor = $this->resolveActorFromToken();
+        $createdBy = $actor['id'] ?? $this->resolveActorIdFromInput($input);
+
+        $idFile = $this->repository->createLavorazioneFile($lavorazioneId, [
+            'titolo' => $titolo,
+            'categoria' => $categoria,
+            'original_name' => $originalName,
+            'file_name' => $fileName,
+            'mime_type' => isset($file['type']) ? (string) $file['type'] : 'application/octet-stream',
+            'size_bytes' => isset($file['size']) ? (int) $file['size'] : 0,
+            'note' => $note,
+            'created_by' => $createdBy,
+        ]);
+
+        return [
+            'id_file' => $idFile,
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $query
+     * @return array<string, mixed>
+     */
     private function buildFilters(array $query, bool $withSearch = false): array
     {
         $filters = [
@@ -579,6 +1088,7 @@ final class LavorazioniService
             'date_to' => null,
             'search' => null,
             'periodo_code' => null,
+            'allowed_anagrafiche' => null,
         ];
 
         if (!empty($query['reparto'])) {
@@ -593,6 +1103,9 @@ final class LavorazioniService
         if ($withSearch) {
             $search = trim((string) ($query['search'] ?? ''));
             $filters['search'] = $search !== '' ? $search : null;
+        }
+        if (isset($query['allowed_anagrafiche']) && is_array($query['allowed_anagrafiche'])) {
+            $filters['allowed_anagrafiche'] = $query['allowed_anagrafiche'];
         }
 
         return $filters;
@@ -761,6 +1274,22 @@ final class LavorazioniService
         try {
             $dt = new \DateTimeImmutable($value);
             return $dt->format('Y-m-d');
+        } catch (\Throwable $exception) {
+            return null;
+        }
+    }
+
+    /**
+     * @param mixed $value
+     */
+    private function sanitizeDateTime($value): ?string
+    {
+        if (!is_string($value) || trim($value) === '') {
+            return null;
+        }
+        try {
+            $dt = new \DateTimeImmutable($value);
+            return $dt->format('Y-m-d H:i:s');
         } catch (\Throwable $exception) {
             return null;
         }

@@ -7,6 +7,7 @@ use MediaPrint\Backend\Database;
 use MediaPrint\Backend\HttpResponse;
 use MediaPrint\Repo\LavorazioniRepository;
 use MediaPrint\Service\LavorazioniService;
+use MediaPrint\Backend\AuthGuard;
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -27,6 +28,12 @@ if (!is_array($payload)) {
 }
 
 try {
+    $auth = AuthGuard::requireAuth();
+    AuthGuard::requirePermissions($auth, ['job.manage']);
+    if (AuthGuard::getAccountType($auth) === 'cliente') {
+        throw new RuntimeException('Accesso non consentito.', 403);
+    }
+
     $service = new LavorazioniService(new LavorazioniRepository(Database::getConnection()));
     $result = $service->changeStatus($payload);
     HttpResponse::json($result, 200);

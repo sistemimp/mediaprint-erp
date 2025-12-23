@@ -4,11 +4,18 @@ declare(strict_types=1);
 use MediaPrint\Repo\PreventiviRepository;
 use MediaPrint\Service\PreventiviService;
 use MediaPrint\Backend\Database;
+use MediaPrint\Backend\AuthGuard;
 
 header('Content-Type: application/json; charset=utf-8');
 
 try {
     require __DIR__ . '/../bootstrap.php';
+
+    $auth = AuthGuard::requireAuth();
+    AuthGuard::requirePermissions($auth, ['prev.edit']);
+    if (AuthGuard::getAccountType($auth) === 'cliente') {
+        throw new RuntimeException('Accesso non consentito.', 403);
+    }
 
     $raw = file_get_contents('php://input') ?: '';
     $data = json_decode($raw, true);
@@ -29,4 +36,3 @@ try {
         'message' => $e->getMessage(),
     ], JSON_UNESCAPED_UNICODE);
 }
-

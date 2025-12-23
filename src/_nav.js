@@ -11,6 +11,8 @@ import {
   cilCreditCard,
   cilViewColumn,
   cilChatBubble,
+  cilPeople,
+  cilDescription,
 } from '@coreui/icons'
 import { CNavGroup, CNavItem } from '@coreui/react'
 
@@ -82,6 +84,28 @@ const _nav = [
   },
   {
     component: CNavGroup,
+    name: 'Contratti',
+    icon: <CIcon icon={cilDescription} customClassName="nav-icon" />,
+    items: [
+      {
+        component: CNavItem,
+        name: 'Crea nuovo',
+        to: '/contratti/crea',
+      },
+      {
+        component: CNavItem,
+        name: 'Lista',
+        to: '/contratti/lista',
+      },
+      {
+        component: CNavItem,
+        name: 'Dettagli',
+        to: '/contratti/dettagli',
+      },
+    ],
+  },
+  {
+    component: CNavGroup,
     name: 'Anagrafica',
     icon: <CIcon icon={cilUser} customClassName="nav-icon" />,
     items: [
@@ -104,6 +128,18 @@ const _nav = [
         component: CNavItem,
         name: 'Dettagli',
         to: '/anagrafica/dettagli',
+      },
+    ],
+  },
+  {
+    component: CNavGroup,
+    name: 'Account',
+    icon: <CIcon icon={cilPeople} customClassName="nav-icon" />,
+    items: [
+      {
+        component: CNavItem,
+        name: 'Lista',
+        to: '/accounts/lista',
       },
     ],
   },
@@ -229,6 +265,11 @@ const _nav = [
         component: CNavItem,
         name: 'Dettaglio',
         to: '/lavorazioni/dettaglio',
+      },
+      {
+        component: CNavItem,
+        name: 'Template attivita',
+        to: '/lavorazioni/templates',
       },
     ],
   },

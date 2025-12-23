@@ -4,6 +4,7 @@
 namespace MediaPrint\Repo;
 
 use PDO;
+use MediaPrint\Repo\ContrattiRepository;
 
 final class PreventiviRepository
 {
@@ -359,7 +360,7 @@ final class PreventiviRepository
     /**
      * @return list<array<string, mixed>>
      */
-    public function listLatest(int $limit = 10): array
+    public function listLatest(int $limit = 10, ?array $allowedAnagrafiche = null): array
     {
         $sql = <<<'SQL'
             SELECT
@@ -382,6 +383,7 @@ final class PreventiviRepository
             FROM tb_preventivi p
             LEFT JOIN tb_anagrafiche a ON a.id_anagrafica = p.id_anagrafica
             LEFT JOIN cfg_stati_preventivo sp ON sp.id_stato = p.id_stato_prev
+            /*FILTERS*/
             ORDER BY p.data_preventivo DESC, p.created_at DESC
             LIMIT :limit
         SQL;
@@ -389,9 +391,29 @@ final class PreventiviRepository
         // Inseriamo il limite direttamente nella query, dato che MySQL con prepared nativi
         // non consente placeholder in LIMIT quando ATTR_EMULATE_PREPARES=false
         $effectiveLimit = max(1, $limit);
+        $allowed = null;
+        if (is_array($allowedAnagrafiche)) {
+            $allowed = array_values(array_filter(array_map('intval', $allowedAnagrafiche), static fn($id) => $id > 0));
+            if ($allowed === []) {
+                return [];
+            }
+        }
+
+        $where = '';
+        if ($allowed !== null) {
+            $placeholders = implode(',', array_fill(0, count($allowed), '?'));
+            $where = "WHERE p.id_anagrafica IN ({$placeholders})";
+        }
+
+        $sql = str_replace('/*FILTERS*/', $where, $sql);
         $sql = str_replace('LIMIT :limit', 'LIMIT ' . (int) $effectiveLimit, $sql);
 
         $statement = $this->pdo->prepare($sql);
+        if ($allowed !== null) {
+            foreach ($allowed as $index => $id) {
+                $statement->bindValue($index + 1, $id, PDO::PARAM_INT);
+            }
+        }
         $statement->execute();
 
         return $statement->fetchAll(PDO::FETCH_ASSOC);
@@ -666,8 +688,16 @@ final class PreventiviRepository
     /**
      * @return list<array{periodo:string, totale:int, confermati:int, tasso:float}>
      */
-    public function fetchConversionSeriesLast6(): array
+    public function fetchConversionSeriesLast6(?array $allowedAnagrafiche = null): array
     {
+        $allowed = null;
+        if (is_array($allowedAnagrafiche)) {
+            $allowed = array_values(array_filter(array_map('intval', $allowedAnagrafiche), static fn ($id) => $id > 0));
+            if ($allowed === []) {
+                return [];
+            }
+        }
+
         $sql = <<<'SQL'
             WITH RECURSIVE mesi(ms) AS (
               SELECT DATE_SUB(DATE_FORMAT(CURDATE(), '%Y-%m-01'), INTERVAL 5 MONTH)
@@ -683,14 +713,38 @@ final class PreventiviRepository
             FROM mesi m
             LEFT JOIN tb_preventivi p
               ON COALESCE(p.data_preventivo, p.created_at) >= m.ms
-             AND COALESCE(p.data_preventivo, p.created_at) < DATE_ADD(m.ms, INTERVAL 1 MONTH)
+              AND COALESCE(p.data_preventivo, p.created_at) < DATE_ADD(m.ms, INTERVAL 1 MONTH)
             LEFT JOIN cfg_stati_preventivo sp ON sp.id_stato = p.id_stato_prev
             GROUP BY m.ms
             ORDER BY m.ms
         SQL;
+        $params = [];
+        if ($allowed !== null) {
+            $placeholders = [];
+            foreach ($allowed as $index => $id) {
+                $key = ':allowed_' . $index;
+                $placeholders[] = $key;
+                $params[$key] = $id;
+            }
+            $sql = str_replace(
+                'AND COALESCE(p.data_preventivo, p.created_at) < DATE_ADD(m.ms, INTERVAL 1 MONTH)',
+                'AND COALESCE(p.data_preventivo, p.created_at) < DATE_ADD(m.ms, INTERVAL 1 MONTH)'
+                . ' AND p.id_anagrafica IN (' . implode(',', $placeholders) . ')',
+                $sql
+            );
+        }
 
-        $stmt = $this->pdo->query($sql);
-        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        if ($params === []) {
+            $stmt = $this->pdo->query($sql);
+            $rows = $stmt ? ($stmt->fetchAll(PDO::FETCH_ASSOC) ?: []) : [];
+        } else {
+            $stmt = $this->pdo->prepare($sql);
+            foreach ($params as $placeholder => $value) {
+                $stmt->bindValue($placeholder, $value, PDO::PARAM_INT);
+            }
+            $stmt->execute();
+            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        }
 
         $out = [];
         foreach ($rows as $row) {
@@ -963,6 +1017,14 @@ final class PreventiviRepository
 
         $where = [];
         $params = [];
+        if (!empty($filters['allowed_ids']) && is_array($filters['allowed_ids'])) {
+            $allowed = array_values(array_filter(array_map('intval', $filters['allowed_ids']), static fn($id) => $id > 0));
+            if ($allowed === []) {
+                return ['data' => [], 'total' => 0];
+            }
+            $placeholders = implode(',', array_fill(0, count($allowed), '?'));
+            $where[] = "pa.id_anagrafica IN ({$placeholders})";
+        }
 
         if (!empty($filters['search'])) {
             $where[] = '(
@@ -1001,6 +1063,12 @@ final class PreventiviRepository
         foreach ($params as $ph => $val) {
             $stmt->bindValue($ph, $val, PDO::PARAM_STR);
         }
+        if (isset($allowed) && $allowed !== []) {
+            $offsetParam = count($params);
+            foreach ($allowed as $index => $id) {
+                $stmt->bindValue($offsetParam + $index + 1, $id, PDO::PARAM_INT);
+            }
+        }
         $stmt->execute();
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
@@ -1013,6 +1081,12 @@ final class PreventiviRepository
         $countStmt = $this->pdo->prepare($countSql);
         if (!empty($params[':needle'])) {
             $countStmt->bindValue(':needle', $params[':needle'], PDO::PARAM_STR);
+        }
+        if (isset($allowed) && $allowed !== []) {
+            $offsetParam = !empty($params[':needle']) ? 1 : 0;
+            foreach ($allowed as $index => $id) {
+                $countStmt->bindValue($offsetParam + $index + 1, $id, PDO::PARAM_INT);
+            }
         }
         $countStmt->execute();
         $total = (int) $countStmt->fetchColumn();
@@ -1952,6 +2026,7 @@ final class PreventiviRepository
      */
     public function replaceLines(int $idPreventivo, array $lines): void
     {
+        $lines = $this->applyContractPricing($idPreventivo, $lines);
         $this->pdo->beginTransaction();
         try {
             $del = $this->pdo->prepare('DELETE FROM tb_preventivi_righe WHERE id_preventivo = :id');
@@ -2008,5 +2083,57 @@ final class PreventiviRepository
             $this->pdo->rollBack();
             throw $e;
         }
+    }
+
+    /**
+     * @param list<array<string,mixed>> $lines
+     * @return list<array<string,mixed>>
+     */
+    private function applyContractPricing(int $idPreventivo, array $lines): array
+    {
+        $idAnagrafica = $this->getAnagraficaIdForPreventivo($idPreventivo);
+        if ($idAnagrafica <= 0 || empty($lines)) {
+            return $lines;
+        }
+
+        $repo = new ContrattiRepository($this->pdo);
+        $out = [];
+        foreach ($lines as $line) {
+            if (!is_array($line)) {
+                continue;
+            }
+            $qty = isset($line['quantita']) ? (float) $line['quantita'] : 1.0;
+            $idProdotto = isset($line['id_prodotto']) ? (int) $line['id_prodotto'] : 0;
+            $idPacchetto = isset($line['id_pacchetto']) ? (int) $line['id_pacchetto'] : 0;
+            $pricing = null;
+            if ($idProdotto > 0) {
+                $pricing = $repo->resolveProductPricing($idAnagrafica, $idProdotto, $qty);
+            }
+            if ($pricing === null && $idPacchetto > 0) {
+                $pricing = $repo->resolvePackagePricing($idAnagrafica, $idPacchetto, $qty);
+            }
+            if ($pricing !== null) {
+                $line['prezzo'] = $pricing['prezzo_unitario'];
+                $line['prezzo_unitario'] = $pricing['prezzo_unitario'];
+                $line['sconto'] = $pricing['sconto'] ?? 0.0;
+                if (array_key_exists('iva', $pricing) && $pricing['iva'] !== null) {
+                    $line['iva'] = $pricing['iva'];
+                }
+                if (array_key_exists('id_sdi_natura_iva', $pricing) && $pricing['id_sdi_natura_iva'] !== null) {
+                    $line['id_sdi_natura_iva'] = $pricing['id_sdi_natura_iva'];
+                }
+            }
+            $out[] = $line;
+        }
+        return $out;
+    }
+
+    private function getAnagraficaIdForPreventivo(int $idPreventivo): int
+    {
+        $stmt = $this->pdo->prepare('SELECT id_anagrafica FROM tb_preventivi WHERE id_preventivo = :id LIMIT 1');
+        $stmt->bindValue(':id', $idPreventivo, PDO::PARAM_INT);
+        $stmt->execute();
+        $value = $stmt->fetchColumn();
+        return $value !== false ? (int) $value : 0;
     }
 }

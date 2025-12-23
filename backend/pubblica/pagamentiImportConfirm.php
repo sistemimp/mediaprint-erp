@@ -7,6 +7,7 @@ use MediaPrint\Backend\Database;
 use MediaPrint\Backend\HttpResponse;
 use MediaPrint\Repo\FattureRepository;
 use MediaPrint\Repo\PagamentiRepository;
+use MediaPrint\Backend\AuthGuard;
 
 $method = $_SERVER['REQUEST_METHOD'] ?? 'POST';
 
@@ -20,6 +21,12 @@ if ($method !== 'POST') {
 }
 
 try {
+    $auth = AuthGuard::requireAuth();
+    AuthGuard::requirePermissions($auth, ['pay.edit']);
+    if (AuthGuard::getAccountType($auth) === 'cliente') {
+        throw new RuntimeException('Accesso non consentito.', 403);
+    }
+
     $input = file_get_contents('php://input') ?: '{}';
     $payload = json_decode($input, true);
     if (!is_array($payload)) {

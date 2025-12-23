@@ -1,4 +1,4 @@
-import { apiFetch } from './apiClient'
+import { apiFetch, buildApiUrl, getStoredToken } from './apiClient'
 
 const sanitizeParams = (params = {}) => {
   const clean = {}
@@ -117,9 +117,10 @@ export const updateLavorazioneStatus = async ({ token, id, stato, signal } = {})
   return payload ?? { ok: true }
 }
 
-export const fetchLavorazioneActivityTemplates = async ({ token, signal } = {}) => {
+export const fetchLavorazioneActivityTemplates = async ({ token, all = false, signal } = {}) => {
   const payload = await apiFetch('/lavorazioniActivityTemplates.php', {
     token,
+    params: all ? { all: 1 } : undefined,
     signal,
   })
 
@@ -128,6 +129,39 @@ export const fetchLavorazioneActivityTemplates = async ({ token, signal } = {}) 
   }
 
   return Array.isArray(payload?.items) ? payload.items : []
+}
+
+export const saveLavorazioneActivityTemplate = async ({
+  token,
+  idTemplate,
+  titolo,
+  descrizione,
+  priorita,
+  repartoId,
+  durataGiorni,
+  attivo,
+  ordering,
+  signal,
+} = {}) => {
+  const body = {
+    id_template: idTemplate || undefined,
+    titolo: titolo || undefined,
+    descrizione: descrizione ?? undefined,
+    priorita: priorita || undefined,
+    id_reparto: repartoId !== undefined ? repartoId : undefined,
+    durata_predefinita_giorni: durataGiorni !== undefined ? durataGiorni : undefined,
+    attivo: attivo !== undefined ? (attivo ? 1 : 0) : undefined,
+    ordering: ordering !== undefined ? ordering : undefined,
+  }
+
+  const payload = await apiFetch('/lavorazioniActivityTemplatesSave.php', {
+    method: 'POST',
+    token,
+    body,
+    signal,
+  })
+
+  return payload ?? {}
 }
 
 export const createLavorazioneActivity = async ({
@@ -237,14 +271,54 @@ export const assignLavorazioneActivity = async ({
   })
 }
 
-export const updateLavorazioneInfo = async ({ token, idLavorazione, note, signal } = {}) => {
+export const updateLavorazioneInfo = async ({
+  token,
+  idLavorazione,
+  note,
+  titolo,
+  descrizione,
+  stato,
+  priorita,
+  repartoId,
+  dataInizioPrevista,
+  dataFinePrevista,
+  dataAvvioReale,
+  signal,
+} = {}) => {
   if (!idLavorazione) {
     throw new Error('ID lavorazione mancante')
   }
 
   const body = {
     id_lavorazione: idLavorazione,
-    note: note ?? undefined,
+  }
+
+  if (note !== undefined) {
+    body.note = note
+  }
+  if (titolo !== undefined) {
+    body.titolo = titolo
+  }
+  if (descrizione !== undefined) {
+    body.descrizione = descrizione
+  }
+  if (stato !== undefined) {
+    body.stato = stato
+  }
+  if (priorita !== undefined) {
+    body.priorita = priorita
+  }
+  if (repartoId !== undefined) {
+    body.id_reparto = repartoId
+  }
+  if (dataInizioPrevista !== undefined) {
+    body.data_inizio_prevista = dataInizioPrevista
+  }
+  if (dataFinePrevista !== undefined) {
+    body.data_fine_prevista = dataFinePrevista
+  }
+  if (dataAvvioReale !== undefined) {
+    body.data_avvio_reale = dataAvvioReale
   }
 
   const payload = await apiFetch('/lavorazioniUpdate.php', {
@@ -261,6 +335,7 @@ export const notifyLavorazioneOperators = async ({
   token,
   idLavorazione,
   idAttivita,
+  createdBy,
   titolo,
   messaggio,
   operatori,
@@ -272,6 +347,7 @@ export const notifyLavorazioneOperators = async ({
 
   const body = {
     id_lavorazione: idLavorazione,
+    created_by: createdBy ?? undefined,
     titolo: titolo || undefined,
     messaggio,
   }
@@ -297,6 +373,7 @@ export const updateLavorazioneActivityStatus = async ({
   idAttivita,
   stato,
   percentuale,
+  createdBy,
   signal,
 } = {}) => {
   if (!idAttivita) {
@@ -313,8 +390,42 @@ export const updateLavorazioneActivityStatus = async ({
   if (percentuale !== undefined && percentuale !== null) {
     body.percentuale = percentuale
   }
+  if (createdBy !== undefined && createdBy !== null) {
+    body.created_by = createdBy
+  }
 
   const payload = await apiFetch('/lavorazioniActivityStatus.php', {
+    method: 'POST',
+    token,
+    body,
+    signal,
+  })
+
+  return payload ?? {}
+}
+
+export const updateLavorazioneActivityReport = async ({
+  token,
+  idAttivita,
+  dataAvvio,
+  dataFine,
+  operatoreId,
+  note,
+  signal,
+} = {}) => {
+  if (!idAttivita) {
+    throw new Error('ID attivita mancante')
+  }
+
+  const body = {
+    id_attivita: idAttivita,
+    data_avvio: dataAvvio ?? undefined,
+    data_fine: dataFine ?? undefined,
+    id_operatore: operatoreId ?? undefined,
+    note: note ?? undefined,
+  }
+
+  const payload = await apiFetch('/lavorazioniActivityReport.php', {
     method: 'POST',
     token,
     body,
@@ -334,6 +445,58 @@ export const deleteLavorazioneActivity = async ({ token, idAttivita, signal } = 
   }
 
   const payload = await apiFetch('/lavorazioniActivityDelete.php', {
+    method: 'POST',
+    token,
+    body,
+    signal,
+  })
+
+  return payload ?? {}
+}
+
+export const updateLavorazioneActivity = async ({
+  token,
+  idAttivita,
+  titolo,
+  descrizione,
+  priorita,
+  dataScadenza,
+  note,
+  repartoId,
+  quantitaPrevista,
+  signal,
+} = {}) => {
+  if (!idAttivita) {
+    throw new Error('ID attivita mancante')
+  }
+
+  const body = {
+    id_attivita: idAttivita,
+  }
+
+  if (titolo !== undefined) {
+    body.titolo = titolo
+  }
+  if (descrizione !== undefined) {
+    body.descrizione = descrizione
+  }
+  if (priorita !== undefined) {
+    body.priorita = priorita
+  }
+  if (dataScadenza !== undefined) {
+    body.data_scadenza = dataScadenza
+  }
+  if (note !== undefined) {
+    body.note = note
+  }
+  if (repartoId !== undefined) {
+    body.id_reparto = repartoId
+  }
+  if (quantitaPrevista !== undefined) {
+    body.quantita_prevista = quantitaPrevista
+  }
+
+  const payload = await apiFetch('/lavorazioniActivityUpdate.php', {
     method: 'POST',
     token,
     body,
@@ -386,4 +549,87 @@ export const markLavorazioneNotificationsRead = async ({ token, accountId, notif
     body,
     signal,
   })
+}
+
+export const fetchLavorazioneDocuments = async ({ token, idLavorazione, signal } = {}) => {
+  if (!idLavorazione) {
+    throw new Error('ID lavorazione mancante')
+  }
+  const payload = await apiFetch('/lavorazioniDocuments.php', {
+    token,
+    params: { id_lavorazione: idLavorazione },
+    signal,
+  })
+  return payload ?? {}
+}
+
+export const fetchLavorazioneFiles = async ({ token, idLavorazione, signal } = {}) => {
+  if (!idLavorazione) {
+    throw new Error('ID lavorazione mancante')
+  }
+  const payload = await apiFetch('/lavorazioniFilesList.php', {
+    token,
+    params: { id_lavorazione: idLavorazione },
+    signal,
+  })
+  return Array.isArray(payload?.items) ? payload.items : []
+}
+
+export const uploadLavorazioneFile = async ({
+  token,
+  idLavorazione,
+  file,
+  titolo,
+  categoria,
+  note,
+  createdBy,
+  signal,
+} = {}) => {
+  if (!idLavorazione) {
+    throw new Error('ID lavorazione mancante')
+  }
+  if (!file) {
+    throw new Error('File mancante')
+  }
+
+  const formData = new FormData()
+  formData.append('id_lavorazione', idLavorazione)
+  if (titolo) formData.append('titolo', titolo)
+  if (categoria) formData.append('categoria', categoria)
+  if (note) formData.append('note', note)
+  if (createdBy) formData.append('created_by', createdBy)
+  formData.append('file', file)
+
+  const url = buildApiUrl('/lavorazioniFilesUpload.php')
+  const headers = {}
+  const resolvedToken = token || getStoredToken()
+  if (resolvedToken) {
+    headers.Authorization = `Bearer ${resolvedToken}`
+    headers['X-Authorization'] = `Bearer ${resolvedToken}`
+    headers['X-Access-Token'] = resolvedToken
+  }
+
+  const response = await fetch(url.toString(), {
+    method: 'POST',
+    headers,
+    body: formData,
+    signal,
+  })
+
+  let payload = null
+  try {
+    payload = await response.json()
+  } catch (_error) {
+    payload = null
+  }
+
+  if (!response.ok) {
+    const message = payload?.message || `Errore ${response.status}`
+    const error = new Error(message)
+    error.status = response.status
+    error.payload = payload
+    throw error
+  }
+
+  return payload ?? {}
 }

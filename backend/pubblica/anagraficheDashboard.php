@@ -3,6 +3,8 @@ declare(strict_types=1);
 
 use MediaPrint\Backend\Database;
 use MediaPrint\Backend\HttpResponse;
+use MediaPrint\Repo\AccountsRepository;
+use MediaPrint\Backend\AuthGuard;
 use PDO;
 
 require __DIR__ . '/../bootstrap.php';
@@ -52,6 +54,29 @@ function resolveDashboardPeriod(?string $periodRaw): array
 }
 
 try {
+    $auth = AuthGuard::requireAuth();
+    AuthGuard::requirePermissions($auth, ['anag.view']);
+    $allowed = null;
+    if (AuthGuard::getAccountType($auth) === 'cliente') {
+        $accountsRepo = new AccountsRepository(Database::getConnection());
+        $allowed = $accountsRepo->listAccountAnagraficheIds(AuthGuard::getAccountId($auth));
+        if ($allowed === []) {
+            HttpResponse::json([
+                'ok' => true,
+                'kpi' => [
+                    'totale_generale' => 0,
+                    'nuovi_mese_corrente' => 0,
+                    'nuovi_mese_precedente' => 0,
+                    'perc_change_mom' => null,
+                    'period' => $_GET['period'] ?? 'monthly',
+                ],
+                'status_counts' => [],
+                'latest' => [],
+            ], 200);
+            return;
+        }
+    }
+
     $pdo = Database::getConnection();
 
     $onlyActive = isset($_GET['only_active']) && (int) $_GET['only_active'] === 1;
@@ -59,16 +84,35 @@ try {
     $prevStart = $range['start']->modify('-' . $range['months'] . ' months');
     $prevEnd = $range['start'];
     $activeWhere = $onlyActive ? " WHERE stato = 'attiva'" : '';
+    $allowedClause = '';
+    $allowedParams = [];
+    if (is_array($allowed)) {
+        $placeholders = [];
+        foreach ($allowed as $index => $id) {
+            $key = ':allowed_' . $index;
+            $placeholders[] = $key;
+            $allowedParams[$key] = $id;
+        }
+        $allowedClause = ' AND id_anagrafica IN (' . implode(',', $placeholders) . ')';
+    }
 
     $statusCounts = [];
     try {
-        $stmt = $pdo->query(
-            'SELECT COALESCE(stato, "sconosciuto") AS stato, COUNT(*) AS totale
-             FROM tb_anagrafiche
-             ' . ($onlyActive ? "WHERE stato = 'attiva'" : '') . '
+        $sql = 'SELECT COALESCE(stato, "sconosciuto") AS stato, COUNT(*) AS totale
+             FROM tb_anagrafiche'
+            . ($onlyActive ? " WHERE stato = 'attiva'" : ' WHERE 1=1')
+            . $allowedClause . '
              GROUP BY COALESCE(stato, "sconosciuto")
-             ORDER BY totale DESC'
-        );
+             ORDER BY totale DESC';
+        if ($allowedClause === '') {
+            $stmt = $pdo->query($sql);
+        } else {
+            $stmt = $pdo->prepare($sql);
+            foreach ($allowedParams as $key => $value) {
+                $stmt->bindValue($key, $value, PDO::PARAM_INT);
+            }
+            $stmt->execute();
+        }
         $rows = $stmt ? ($stmt->fetchAll(PDO::FETCH_ASSOC) ?: []) : [];
         foreach ($rows as $row) {
             $statusCounts[] = [
@@ -86,12 +130,16 @@ try {
             'SELECT id_anagrafica, ragione_sociale, piva, codice_fiscale, stato, created_at
              FROM tb_anagrafiche
              WHERE created_at >= :start AND created_at < :end'
-            . ($onlyActive ? " AND stato = 'attiva'" : '') . '
+            . ($onlyActive ? " AND stato = 'attiva'" : '')
+            . $allowedClause . '
              ORDER BY created_at DESC
              LIMIT 10'
         );
         $stmt->bindValue(':start', $range['start']->format('Y-m-d H:i:s'));
         $stmt->bindValue(':end', $range['end']->format('Y-m-d H:i:s'));
+        foreach ($allowedParams as $key => $value) {
+            $stmt->bindValue($key, $value, PDO::PARAM_INT);
+        }
         $stmt->execute();
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
         foreach ($rows as $row) {
@@ -108,16 +156,29 @@ try {
         $latest = [];
     }
 
-    $totalStmt = $pdo->query('SELECT COUNT(*) FROM tb_anagrafiche' . $activeWhere);
-    $totalGenerale = (int) ($totalStmt ? ($totalStmt->fetchColumn() ?: 0) : 0);
+    if ($allowedClause === '') {
+        $totalStmt = $pdo->query('SELECT COUNT(*) FROM tb_anagrafiche' . $activeWhere);
+        $totalGenerale = (int) ($totalStmt ? ($totalStmt->fetchColumn() ?: 0) : 0);
+    } else {
+        $totalStmt = $pdo->prepare('SELECT COUNT(*) FROM tb_anagrafiche' . ($onlyActive ? " WHERE stato = 'attiva'" : ' WHERE 1=1') . $allowedClause);
+        foreach ($allowedParams as $key => $value) {
+            $totalStmt->bindValue($key, $value, PDO::PARAM_INT);
+        }
+        $totalStmt->execute();
+        $totalGenerale = (int) ($totalStmt->fetchColumn() ?: 0);
+    }
 
     $countStmt = $pdo->prepare(
         'SELECT COUNT(*) FROM tb_anagrafiche
          WHERE created_at >= :start AND created_at < :end'
         . ($onlyActive ? " AND stato = 'attiva'" : '')
+        . $allowedClause
     );
     $countStmt->bindValue(':start', $range['start']->format('Y-m-d H:i:s'));
     $countStmt->bindValue(':end', $range['end']->format('Y-m-d H:i:s'));
+    foreach ($allowedParams as $key => $value) {
+        $countStmt->bindValue($key, $value, PDO::PARAM_INT);
+    }
     $countStmt->execute();
     $newCurrent = (int) ($countStmt->fetchColumn() ?: 0);
 
@@ -125,9 +186,13 @@ try {
         'SELECT COUNT(*) FROM tb_anagrafiche
          WHERE created_at >= :start AND created_at < :end'
         . ($onlyActive ? " AND stato = 'attiva'" : '')
+        . $allowedClause
     );
     $prevStmt->bindValue(':start', $prevStart->format('Y-m-d H:i:s'));
     $prevStmt->bindValue(':end', $prevEnd->format('Y-m-d H:i:s'));
+    foreach ($allowedParams as $key => $value) {
+        $prevStmt->bindValue($key, $value, PDO::PARAM_INT);
+    }
     $prevStmt->execute();
     $newPrev = (int) ($prevStmt->fetchColumn() ?: 0);
 

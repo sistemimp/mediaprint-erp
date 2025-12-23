@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 use MediaPrint\Backend\Database;
 use MediaPrint\Backend\HttpResponse;
+use MediaPrint\Backend\AuthGuard;
 use PDO;
 
 require __DIR__ . '/../bootstrap.php';
@@ -20,6 +21,25 @@ function safeCount(PDO $pdo, string $sql): int
 }
 
 try {
+    $auth = AuthGuard::requireAuth();
+    AuthGuard::requirePermissions($auth, ['cfg.view']);
+    if (AuthGuard::getAccountType($auth) === 'cliente') {
+        HttpResponse::json([
+            'ok' => true,
+            'kpi' => [
+                'totale_prodotti' => 0,
+                'prodotti_attivi' => 0,
+                'prodotti_disattivi' => 0,
+                'categorie' => 0,
+                'variazioni' => 0,
+                'prezzi_combinati' => 0,
+            ],
+            'top_categorie' => [],
+            'latest' => [],
+        ], 200);
+        return;
+    }
+
     $pdo = Database::getConnection();
 
     $totalProducts = safeCount($pdo, 'SELECT COUNT(*) FROM tb_prodotti');

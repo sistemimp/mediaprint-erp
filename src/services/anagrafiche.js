@@ -116,16 +116,21 @@ export const fetchAnagraficheArchiviate = async ({
   return { items, meta }
 }
 
-export const fetchAnagraficaDetail = async ({ token, id, signal } = {}) => {
+export const fetchAnagraficaDetail = async ({ token, id, kpiPeriod, signal } = {}) => {
   const numericId = Number(id)
 
   if (!Number.isFinite(numericId) || numericId <= 0) {
     throw new Error('ID anagrafica mancante o non valido per il dettaglio.')
   }
 
+  const params = { id: numericId }
+  if (kpiPeriod) {
+    params.kpi_period = kpiPeriod
+  }
+
   const response = await apiFetch('/anagraficheDetail.php', {
     token,
-    params: { id: numericId },
+    params,
     signal,
   })
 
@@ -135,6 +140,7 @@ export const fetchAnagraficaDetail = async ({ token, id, signal } = {}) => {
 export const updateAnagraficaDetail = async ({
   token,
   id,
+  kpiPeriod,
   anagrafica,
   fiscale,
   contatti,
@@ -206,7 +212,7 @@ export const updateAnagraficaDetail = async ({
     signal,
   })
 
-  const detail = await fetchAnagraficaDetail({ token, id: numericId, signal })
+  const detail = await fetchAnagraficaDetail({ token, id: numericId, kpiPeriod, signal })
   return detail ?? { ok: true }
 }
 

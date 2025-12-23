@@ -1307,6 +1307,7 @@ const PreventiviCreate = () => {
                           iva: r.iva != null ? Number(r.iva) : 22,
                           sconto: r.sconto != null ? Number(r.sconto) : 0,
                           id_prodotto: r.id_prodotto ?? null,
+                          id_pacchetto: Number(selPacchetto) || null,
                           id_sdi_natura_iva: r.id_sdi_natura_iva ?? null,
                         }
 

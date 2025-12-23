@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 use MediaPrint\Backend\Database;
 use MediaPrint\Backend\HttpResponse;
+use MediaPrint\Backend\AuthGuard;
 use MediaPrint\Repo\AnagraficheDashboardRepository;
 use MediaPrint\Repo\FattureRepository;
 use MediaPrint\Repo\PagamentiRepository;
@@ -53,6 +54,21 @@ function resolveDashboardPeriod(?string $periodRaw): array
 }
 
 try {
+    $auth = AuthGuard::requireAuth();
+    AuthGuard::requirePermissions($auth, ['anag.view', 'prev.view', 'fatt.view', 'ddt.view', 'pay.view', 'job.view', 'cfg.view']);
+    if (AuthGuard::getAccountType($auth) === 'cliente') {
+        HttpResponse::json([
+            'ok' => true,
+            'kpi' => [],
+            'series' => [],
+            'sales' => [],
+            'fatture_series' => [],
+            'conversion_series' => [],
+            'top_clients' => [],
+        ], 200);
+        return;
+    }
+
     $pdo = Database::getConnection();
 
     $periodRange = resolveDashboardPeriod($_GET['period'] ?? null);

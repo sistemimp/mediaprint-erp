@@ -3,6 +3,7 @@
 
 namespace MediaPrint\Repo;
 
+use DateTimeImmutable;
 use PDO;
 use RuntimeException;
 use Throwable;
@@ -10,6 +11,11 @@ use Throwable;
 final class AnagraficheRepository
 {
     public function __construct(private PDO $pdo) {}
+
+    public function getPdo(): PDO
+    {
+        return $this->pdo;
+    }
 
     /**
      * Ritorna lo stato corrente dell'anagrafica (is_active, stato) oppure null se non esiste.
@@ -36,6 +42,13 @@ final class AnagraficheRepository
      */
     public function search(array $filters): array
     {
+        if (isset($filters['allowed_ids']) && is_array($filters['allowed_ids'])) {
+            $allowed = array_values(array_filter(array_map('intval', $filters['allowed_ids']), static fn($id) => $id > 0));
+            if ($allowed === []) {
+                return ['data' => [], 'total' => 0];
+            }
+        }
+
         $sql = <<<'SQL'
             SELECT
                 id_anagrafica,
@@ -77,6 +90,11 @@ final class AnagraficheRepository
 
         // Nasconde per default le anagrafiche disattivate/archiviate
         $where[] = 'is_active = 1';
+
+        if (isset($allowed) && $allowed !== []) {
+            $placeholders = implode(',', array_fill(0, count($allowed), '?'));
+            $where[] = "id_anagrafica IN ({$placeholders})";
+        }
         $sql .= ' WHERE ' . implode(' AND ', $where);
 
         $sortable = [
@@ -108,6 +126,12 @@ final class AnagraficheRepository
                 continue;
             }
             $statement->bindValue($placeholder, $value, PDO::PARAM_STR);
+        }
+        if (isset($allowed) && $allowed !== []) {
+            $offsetParam = count($params);
+            foreach ($allowed as $index => $id) {
+                $statement->bindValue($offsetParam + $index + 1, $id, PDO::PARAM_INT);
+            }
         }
         $statement->execute();
         $rows = $statement->fetchAll(PDO::FETCH_ASSOC);
@@ -153,6 +177,12 @@ final class AnagraficheRepository
             }
             $countStatement->bindValue($placeholder, $value, PDO::PARAM_STR);
         }
+        if (isset($allowed) && $allowed !== []) {
+            $offsetParam = count($params);
+            foreach ($allowed as $index => $id) {
+                $countStatement->bindValue($offsetParam + $index + 1, $id, PDO::PARAM_INT);
+            }
+        }
         $countStatement->execute();
         $total = (int) $countStatement->fetchColumn();
 
@@ -188,6 +218,19 @@ final class AnagraficheRepository
                 OR piva LIKE :needle
                 OR codice_fiscale LIKE :needle)';
             $params[':needle'] = '%' . $filters['search'] . '%';
+        }
+        if (!empty($filters['allowed_ids']) && is_array($filters['allowed_ids'])) {
+            $allowed = array_values(array_filter(array_map('intval', $filters['allowed_ids']), static fn ($id) => $id > 0));
+            if ($allowed === []) {
+                return ['data' => [], 'total' => 0];
+            }
+            $placeholders = [];
+            foreach ($allowed as $index => $id) {
+                $key = ':allowed_' . $index;
+                $placeholders[] = $key;
+                $params[$key] = $id;
+            }
+            $where[] = 'id_anagrafica IN (' . implode(',', $placeholders) . ')';
         }
 
         if ($where) {
@@ -229,8 +272,12 @@ final class AnagraficheRepository
             $countSql .= ' WHERE ' . implode(' AND ', $where);
         }
         $countStatement = $this->pdo->prepare($countSql);
-        if (!empty($params[':needle'])) {
-            $countStatement->bindValue(':needle', $params[':needle'], PDO::PARAM_STR);
+        foreach ($params as $placeholder => $value) {
+            if ($placeholder === ':perPage' || $placeholder === ':offset') {
+                continue;
+            }
+            $type = str_starts_with((string) $placeholder, ':allowed_') ? PDO::PARAM_INT : PDO::PARAM_STR;
+            $countStatement->bindValue($placeholder, $value, $type);
         }
         $countStatement->execute();
         $total = (int)$countStatement->fetchColumn();
@@ -480,6 +527,208 @@ final class AnagraficheRepository
             'fatture' => $fatture,
             'sedi' => $sedi,
         ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function getKpi(int $id, ?string $periodRaw = null): array
+    {
+        $range = $this->resolveKpiPeriod($periodRaw);
+        $start = $range['start'];
+        $end = $range['end'];
+        $startSql = $start ? $start->format('Y-m-d H:i:s') : null;
+        $endSql = $end ? $end->format('Y-m-d H:i:s') : null;
+
+        $preventiviCount = $this->fetchCountByDateField($id, 'tb_preventivi', 'data_preventivo', $startSql, $endSql);
+        $ddtCount = $this->fetchCountByDateField($id, 'tb_ddt', 'data_ddt', $startSql, $endSql);
+
+        $fattureTotals = $this->fetchFattureTotals($id, $startSql, $endSql);
+        $fattureCount = $fattureTotals['count'];
+        $fattureTotale = $fattureTotals['totale'];
+        $fattureSaldo = $fattureTotals['saldo'];
+
+        $lastDocument = $this->fetchLastDocument($id, $startSql, $endSql);
+
+        return [
+            'period' => $range['period'],
+            'start' => $startSql,
+            'end' => $endSql,
+            'preventivi' => [
+                'count' => $preventiviCount,
+            ],
+            'ddt' => [
+                'count' => $ddtCount,
+            ],
+            'fatture' => [
+                'count' => $fattureCount,
+                'totale' => $fattureTotale,
+                'saldo' => $fattureSaldo,
+            ],
+            'last_document' => $lastDocument,
+        ];
+    }
+
+    /**
+     * @return array{period:string,start:?DateTimeImmutable,end:?DateTimeImmutable}
+     */
+    private function resolveKpiPeriod(?string $periodRaw): array
+    {
+        $period = strtolower(trim((string) $periodRaw));
+        $allowed = ['all', 'month', 'quarter', 'semester', 'year'];
+        if (!in_array($period, $allowed, true)) {
+            $period = 'all';
+        }
+
+        if ($period === 'all') {
+            return [
+                'period' => $period,
+                'start' => null,
+                'end' => null,
+            ];
+        }
+
+        $end = new DateTimeImmutable('now');
+        $start = match ($period) {
+            'month' => $end->modify('-1 month'),
+            'quarter' => $end->modify('-3 months'),
+            'semester' => $end->modify('-6 months'),
+            'year' => $end->modify('-1 year'),
+            default => $end->modify('-1 month'),
+        };
+
+        return [
+            'period' => $period,
+            'start' => $start,
+            'end' => $end,
+        ];
+    }
+
+    private function fetchCountByDateField(int $id, string $table, string $dateField, ?string $start, ?string $end): int
+    {
+        [$dateSql, $params] = $this->buildDateFilter($dateField, $start, $end);
+        $sql = "SELECT COUNT(*) FROM {$table} WHERE id_anagrafica = :id{$dateSql}";
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->bindValue(':id', $id, PDO::PARAM_INT);
+        foreach ($params as $key => $value) {
+            $stmt->bindValue($key, $value, PDO::PARAM_STR);
+        }
+        $stmt->execute();
+
+        return (int) ($stmt->fetchColumn() ?: 0);
+    }
+
+    /**
+     * @return array{count:int,totale:float,saldo:float}
+     */
+    private function fetchFattureTotals(int $id, ?string $start, ?string $end): array
+    {
+        [$dateSql, $params] = $this->buildDateFilter('data_fattura', $start, $end);
+        $sql = 'SELECT COUNT(*) AS tot_count, COALESCE(SUM(totale), 0) AS tot_sum, COALESCE(SUM(saldo), 0) AS saldo_sum
+                FROM tb_fatture WHERE id_anagrafica = :id' . $dateSql;
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->bindValue(':id', $id, PDO::PARAM_INT);
+        foreach ($params as $key => $value) {
+            $stmt->bindValue($key, $value, PDO::PARAM_STR);
+        }
+        $stmt->execute();
+        $row = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
+
+        return [
+            'count' => (int) ($row['tot_count'] ?? 0),
+            'totale' => (float) ($row['tot_sum'] ?? 0),
+            'saldo' => (float) ($row['saldo_sum'] ?? 0),
+        ];
+    }
+
+    /**
+     * @return array{type:?string,date:?string,id:?int}
+     */
+    private function fetchLastDocument(int $id, ?string $start, ?string $end): array
+    {
+        $candidates = [
+            $this->fetchLastDocumentForTable($id, 'tb_fatture', 'id_fattura', 'data_fattura', 'Fattura', $start, $end),
+            $this->fetchLastDocumentForTable($id, 'tb_ddt', 'id_ddt', 'data_ddt', 'DDT', $start, $end),
+            $this->fetchLastDocumentForTable($id, 'tb_preventivi', 'id_preventivo', 'data_preventivo', 'Preventivo', $start, $end),
+        ];
+
+        $latest = null;
+        foreach ($candidates as $candidate) {
+            if ($candidate === null) {
+                continue;
+            }
+            $ts = strtotime((string) $candidate['date']);
+            if ($ts === false) {
+                continue;
+            }
+            if ($latest === null || $ts > $latest['ts']) {
+                $latest = [
+                    'ts' => $ts,
+                    'type' => $candidate['type'],
+                    'date' => $candidate['date'],
+                    'id' => $candidate['id'],
+                ];
+            }
+        }
+
+        if ($latest === null) {
+            return ['type' => null, 'date' => null, 'id' => null];
+        }
+
+        return [
+            'type' => $latest['type'],
+            'date' => $latest['date'],
+            'id' => $latest['id'],
+        ];
+    }
+
+    /**
+     * @return array{type:string,date:string,id:int}|null
+     */
+    private function fetchLastDocumentForTable(
+        int $id,
+        string $table,
+        string $idField,
+        string $dateField,
+        string $typeLabel,
+        ?string $start,
+        ?string $end
+    ): ?array {
+        [$dateSql, $params] = $this->buildDateFilter($dateField, $start, $end);
+        $sql = "SELECT {$idField} AS doc_id, COALESCE({$dateField}, created_at) AS doc_date
+                FROM {$table}
+                WHERE id_anagrafica = :id{$dateSql}
+                ORDER BY doc_date DESC
+                LIMIT 1";
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->bindValue(':id', $id, PDO::PARAM_INT);
+        foreach ($params as $key => $value) {
+            $stmt->bindValue($key, $value, PDO::PARAM_STR);
+        }
+        $stmt->execute();
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$row || empty($row['doc_date'])) {
+            return null;
+        }
+
+        return [
+            'type' => $typeLabel,
+            'date' => (string) $row['doc_date'],
+            'id' => isset($row['doc_id']) ? (int) $row['doc_id'] : 0,
+        ];
+    }
+
+    /**
+     * @return array{0:string,1:array<string,string>}
+     */
+    private function buildDateFilter(string $dateField, ?string $start, ?string $end): array
+    {
+        if (!$start || !$end) {
+            return ['', []];
+        }
+
+        $sql = " AND COALESCE({$dateField}, created_at) >= :start AND COALESCE({$dateField}, created_at) < :end";
+        return [$sql, [':start' => $start, ':end' => $end]];
     }
 
     /**
