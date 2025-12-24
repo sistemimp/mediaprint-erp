@@ -1,5 +1,6 @@
 import React from 'react'
 import { AppContent, AppSidebar, AppFooter, AppHeader } from '../components/index'
+import InstantMessagingWidget from '../components/InstantMessagingWidget'
 import { BreadcrumbActionsProvider } from '../context/BreadcrumbActionsContext'
 
 const DefaultLayout = () => {
@@ -14,6 +15,7 @@ const DefaultLayout = () => {
           </div>
           <AppFooter />
         </div>
+        <InstantMessagingWidget />
       </div>
     </BreadcrumbActionsProvider>
   )

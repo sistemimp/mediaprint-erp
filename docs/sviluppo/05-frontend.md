@@ -12,11 +12,12 @@ Client presenti in `src/services/`:
 - `accounts.js`, `anagrafiche.js`, `contratti.js`, `dashboard.js`, `ddt.js`
 - `fatture.js`, `lavorazioni.js`, `pacchetti.js`, `pagamenti.js`
 - `paymentTerms.js`, `preventivi.js`, `prodotti.js`
+- `instantMessagingApi.js`, `instantMessagingSocket.js`
 
 ## Moduli UI
 Cartelle principali in `src/views/`:
 - `anagrafica`, `prodotti`, `preventivi`, `dashboard`
 - `fatture`, `ddt`, `contratti`, `lavorazioni`, `pagamenti`, `pacchetti`
-- `accounts`
+- `accounts`, `im`
 
 Le viste di base (charts, forms, widgets, ecc.) sono parte del template CoreUI.

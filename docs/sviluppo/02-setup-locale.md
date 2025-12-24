@@ -22,12 +22,25 @@ npm run serve
 Variabili ambiente frontend (opzionali):
 - `VITE_API_BASE_URL` (default `/api`)
 - `VITE_AUTH_LOGIN_URL`
+- `VITE_IM_WS_URL` (URL WebSocket instant messaging, es. `ws://localhost:4010/ws/im`)
 
 ## Backend
 Da `backend/`:
 ```bash
 composer install
 ```
+
+## Instant messaging (WebSocket)
+Da `backend/ws/`:
+```bash
+npm install
+node instant-messaging-server.js
+```
+
+Variabili ambiente (opzionali):
+- `IM_API_BASE_URL` (base URL backend, es. `http://localhost:8000/pubblica`)
+- `IM_WS_HOST` (default `0.0.0.0`)
+- `IM_WS_PORT` (default `4010`)
 
 Configurare `backend/.env` con:
 - Parametri DB (host, nome db, utente, password)
@@ -39,9 +52,11 @@ Configurare `backend/.env` con:
 Dump disponibili in `sql/`:
 - `sql/mediaprint_erp.sql` (schema + dati di riferimento)
 - `sql/20250107_add_contratti_status_revisioni.sql` (integrazione contratti)
+- `sql/20251224_add_instant_messaging.sql` (tabelle instant messaging)
 
 Esempio import:
 ```bash
 mysql -u <user> -p <database> < sql/mediaprint_erp.sql
 mysql -u <user> -p <database> < sql/20250107_add_contratti_status_revisioni.sql
+mysql -u <user> -p <database> < sql/20251224_add_instant_messaging.sql
 ```

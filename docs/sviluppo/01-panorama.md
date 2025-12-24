@@ -14,7 +14,7 @@ Stato attuale (dalle sorgenti presenti):
 - Autenticazione con JWT, sessione frontend e route protette
 - Moduli anagrafiche, prodotti, preventivi e dashboard con servizi FE e API BE
 - Moduli aggiuntivi presenti in FE/BE: contratti, lavorazioni, pagamenti,
-  pacchetti, DDT, fatture
+  pacchetti, DDT, fatture, instant messaging
 - Export XML SdI lato fatture
 
 Note:

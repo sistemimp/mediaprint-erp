@@ -58,6 +58,9 @@
 - Backend
   - `composer install` in `backend/`, impostare `.env` (DB, JWT, CORS).
   - Richiede DB conforme al dump in `sql/`.
+- Instant messaging (WebSocket)
+  - `npm install` in `backend/ws/` e avvio con `node instant-messaging-server.js`.
+  - Imposta `VITE_IM_WS_URL` lato frontend e `IM_API_BASE_URL` lato server se necessario.
 
 ### Variabili per esportazione XML SdI
 Per usare l'endpoint `fattureExportXml.php` impostare in `backend/.env` i dati aziendali richiesti dal tracciato SdI:

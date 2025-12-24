@@ -36,11 +36,15 @@ Questa mappa si basa sui file presenti nel repository.
 - Accounts
   - FE: `src/services/accounts.js`
   - BE: `backend/pubblica/accounts*.php`
+- Instant messaging
+  - FE: `src/services/instantMessagingApi.js`, `src/services/instantMessagingSocket.js`
+  - BE: `backend/pubblica/im*.php`, `backend/ws/instant-messaging-server.js`
 
 ## Viste UI presenti
 Cartelle in `src/views/`:
 - `accounts`, `anagrafica`, `contratti`, `ddt`, `fatture`, `lavorazioni`
 - `pagamenti`, `pacchetti`, `preventivi`, `prodotti`, `dashboard`
+- `im`
 
 ## Gap documentazione
 - `docs/API.md` copre solo un sottoinsieme degli endpoint presenti.
