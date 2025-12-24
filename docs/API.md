@@ -444,6 +444,161 @@ GET `/natureIvaList.php`
 { "items": [ { "id_natura": 1, "code": "N1", "label": "Escluse ex art.15" } ] }
 ```
 
+### Aliquote IVA
+GET `/ivaList.php`
+
+- Risposta 200
+```json
+{ "items": [ { "id_iva": 1, "label": "22%", "aliquota": 22 } ] }
+```
+
+### Termini di pagamento
+GET `/paymentTermsList.php`
+
+- Risposta 200
+```json
+{ "items": [ { "id": 1, "label": "30 gg" } ] }
+```
+
+## Indice completo endpoint
+
+Questa sezione elenca tutte le route presenti in `backend/pubblica/`.
+Per le route gia documentate in dettaglio, fare riferimento alle sezioni
+specifiche sopra.
+
+### Sessione e profilo
+- POST `/login.php` - login JWT (vedi sezione Autenticazione)
+- GET `/me.php` - profilo utente autenticato
+
+### Accounts
+- GET `/accountsList.php` - lista account (query: `page`, `per_page`)
+- POST `/accountsCreate.php` - crea account (body JSON)
+- POST `/accountsUpdate.php` - aggiorna account (body JSON)
+- POST `/accountsDelete.php` - elimina account (body JSON)
+- POST `/accountsResetPassword.php` - reset password (body JSON)
+- POST `/accountsWelcomeEmail.php` - invio email benvenuto (body JSON)
+- GET `/accountsRolesList.php` - lista ruoli disponibili
+- GET `/accountsAnagrafiche.php` - elenco anagrafiche associabili
+- GET `/accountsContattiList.php` - elenco contatti associabili
+
+### Anagrafiche
+- GET `/anagraficheList.php` - lista attive (vedi sezione Anagrafiche)
+- GET `/anagraficheArchiveList.php` - lista archivio (vedi sezione Anagrafiche)
+- GET `/anagraficheDetail.php` - dettaglio (vedi sezione Anagrafiche)
+- POST `/anagraficheCreate.php` - creazione (vedi sezione Anagrafiche)
+- POST `/anagraficheUpdate.php` - aggiornamento (vedi sezione Anagrafiche)
+- POST `/anagraficheReactivate.php` - riattivazione da archivio
+- GET `/anagraficheDashboard.php` - KPI anagrafiche (query: `only_active`, `period`)
+
+### Contratti
+- GET `/contrattiList.php` - lista contratti
+- GET `/contrattiDetail.php` - dettaglio contratto
+- POST `/contrattiSave.php` - crea/aggiorna contratto
+- POST `/contrattiDelete.php` - elimina contratto
+- GET `/contrattiStatus.php` - lista stati contratto
+- GET `/contrattiActive.php` - contratti attivi (query: `id_anagrafica`)
+- GET `/contrattiRevisionDetail.php` - dettaglio revisione (query: `id`)
+- POST `/contrattiSendEmail.php` - invio contratto via email
+
+### Preventivi
+- GET `/preventiviList.php` - lista (vedi sezione Preventivi)
+- GET `/preventiviDetail.php` - dettaglio (vedi sezione Preventivi)
+- POST `/preventiviCreate.php` - crea/aggiorna/invia (vedi sezione Preventivi)
+- GET `/preventiviRevisionDetail.php` - dettaglio revisione (query: `id`)
+- POST `/preventiviRevisionsSummary.php` - riepilogo revisioni
+- POST `/preventiviSendEmail.php` - invio email preventivo
+- GET `/preventiviStatus.php` - lista stati preventivo
+- GET `/preventiviArchiveList.php` - lista archivio
+- POST `/preventiviArchive.php` - archivia preventivo
+- POST `/preventiviReactivate.php` - riattiva preventivo
+- POST `/preventiviEmitDdt.php` - genera DDT da preventivo
+- POST `/preventiviEmitFattura.php` - genera fattura da preventivo
+- POST `/preventiviGenerateLavorazione.php` - genera lavorazione
+- GET `/preventiviOggettiList.php` - lista oggetti
+- POST `/preventiviOggettiCreate.php` - crea oggetto
+- GET `/preventiviDashboard.php` - KPI preventivi (query: `period`)
+
+### DDT
+- GET `/ddtList.php` - lista DDT (query: `limit`)
+- GET `/ddtDetail.php` - dettaglio DDT (query: `id`)
+- POST `/ddtUpdate.php` - crea/aggiorna DDT
+- GET `/ddtCausaliList.php` - lista causali
+- GET `/ddtDestinazioni.php` - lista destinazioni
+- GET `/ddtDashboard.php` - KPI DDT (query: `period`)
+
+### Fatture
+- GET `/fattureList.php` - lista (query: `limit`)
+- GET `/fattureDetail.php` - dettaglio (query: `id`)
+- POST `/fattureUpdate.php` - crea/aggiorna fattura
+- GET `/fattureStatusLog.php` - log stati (query: `id`, `limit`, `offset`)
+- GET `/fattureConfig.php` - configurazioni fatture
+- GET `/fattureDashboard.php` - KPI fatture (query: `period`)
+- GET `/fattureExportXml.php` - export XML SdI (vedi sezione Fatture)
+- GET `/fatturePagamentiList.php` - pagamenti fattura (query: `id`)
+- POST `/fatturePagamentiSave.php` - salva pagamento
+- POST `/fatturePagamentiDelete.php` - elimina pagamento
+
+### Prodotti e variazioni
+- GET `/prodotti/list.php` - lista prodotti (vedi sezione Prodotti)
+- GET `/prodotti/detail.php` - dettaglio prodotto (vedi sezione Prodotti)
+- POST `/prodotti/create.php` - crea prodotto (vedi sezione Prodotti)
+- POST `/prodotti/update.php` - aggiorna prodotto (vedi sezione Prodotti)
+- POST `/prodotti/delete.php` - elimina prodotto
+- GET `/prodotti/categorie/list.php` - lista categorie
+- POST `/prodotti/categorie/save.php` - crea/aggiorna categoria
+- GET `/prodotti/variazioni/list.php` - lista variazioni
+- POST `/prodotti/variazioni/save.php` - crea/aggiorna variazione
+- POST `/prodotti/variazioni/delete.php` - elimina variazione
+- GET/POST `/prodotti/variazioni/prodotto.php` - link/unlink variazioni
+- GET/POST `/prodotti/variazioni/prezzi.php` - prezzi combinati
+- GET `/prodottiDashboard.php` - KPI prodotti
+
+### Lavorazioni
+- GET `/lavorazioniList.php` - lista lavorazioni
+- GET `/lavorazioniDetail.php` - dettaglio lavorazione
+- POST `/lavorazioniUpdate.php` - crea/aggiorna lavorazione
+- POST `/lavorazioniStatus.php` - aggiorna stato lavorazione
+- POST `/lavorazioniAssign.php` - assegna lavorazione
+- GET `/lavorazioniAssignmentsConfig.php` - config assegnazioni
+- GET `/lavorazioniDashboard.php` - KPI lavorazioni
+- GET `/lavorazioniDocuments.php` - documenti lavorazione
+- GET `/lavorazioniFilesList.php` - lista file allegati
+- GET `/lavorazioniFilesDownload.php` - download file (query: `id`)
+- POST `/lavorazioniFilesUpload.php` - upload file (multipart, field `file`)
+- GET `/lavorazioniNotifications.php` - lista notifiche (query: `id_account`)
+- POST `/lavorazioniNotificationsRead.php` - segna notifiche lette
+- POST `/lavorazioniNotifyOperators.php` - notifica operatori
+- POST `/lavorazioniActivityCreate.php` - crea attivita
+- POST `/lavorazioniActivityUpdate.php` - aggiorna attivita
+- POST `/lavorazioniActivityDelete.php` - elimina attivita
+- POST `/lavorazioniActivityStatus.php` - stato attivita
+- POST `/lavorazioniActivityAssign.php` - assegna attivita
+- POST `/lavorazioniActivityReport.php` - report attivita
+- GET `/lavorazioniActivityTemplates.php` - lista template
+- POST `/lavorazioniActivityTemplatesSave.php` - salva template
+
+### Pagamenti
+- GET `/pagamentiList.php` - lista pagamenti (query: `q`, `id_anagrafica`, `date_from`, `date_to`, `pending_only_open`)
+- GET `/pagamentiDetail.php` - dettaglio pagamento (query: `id`)
+- GET `/pagamentiLedger.php` - ledger (query: `q`, `limit`)
+- GET `/pagamentiInvoicesSearch.php` - ricerca fatture (query: `q`, `limit`, `id_anagrafica`, `solo_aperti`)
+- POST `/pagamentiAssignAnagrafica.php` - associa anagrafica
+- GET `/pagamentiDashboard.php` - KPI pagamenti (query: `period`)
+- POST `/pagamentiImportUpload.php` - upload file import (multipart, field `file`)
+- POST `/pagamentiImportConfirm.php` - conferma import
+
+### Pacchetti
+- GET `/pacchettiList.php` - lista pacchetti (query: `q`)
+- GET `/pachettiDetail.php` - dettaglio pacchetto (query: `id`/`id_pacchetto`)
+- GET `/Pacchetti/list.php` - lista pacchetti (query: `q`)
+- GET `/Pacchetti/detail.php` - dettaglio pacchetto (query: `id`/`id_pacchetto`)
+- POST `/Pacchetti/save.php` - crea/aggiorna pacchetto
+- POST `/Pacchetti/delete.php` - elimina pacchetto
+
+### Dashboard
+- GET `/dashboard.php` - KPI generali (vedi sezione Dashboard)
+- GET `/dashboardNewClients.php` - nuovi clienti (query: `limit`, `period`)
+
 ## Sicurezza e CORS
 
 - CORS abilitato globalmente in bootstrap.
