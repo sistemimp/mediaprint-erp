@@ -36,14 +36,11 @@ Questa mappa si basa sui file presenti nel repository.
 - Accounts
   - FE: `src/services/accounts.js`
   - BE: `backend/pubblica/accounts*.php`
-- Chat
-  - FE: `src/services/chatServer.js`, `src/services/chatSocket.js`
-  - BE: server Node avviato con `npm run chat-server`
 
 ## Viste UI presenti
 Cartelle in `src/views/`:
 - `accounts`, `anagrafica`, `contratti`, `ddt`, `fatture`, `lavorazioni`
-- `pagamenti`, `pacchetti`, `preventivi`, `prodotti`, `chat`, `dashboard`
+- `pagamenti`, `pacchetti`, `preventivi`, `prodotti`, `dashboard`
 
 ## Gap documentazione
 - `docs/API.md` copre solo un sottoinsieme degli endpoint presenti.

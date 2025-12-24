@@ -10,7 +10,6 @@ import {
   cilLibraryAdd,
   cilCreditCard,
   cilViewColumn,
-  cilChatBubble,
   cilPeople,
   cilDescription,
 } from '@coreui/icons'
@@ -272,12 +271,6 @@ const _nav = [
         to: '/lavorazioni/templates',
       },
     ],
-  },
-  {
-    component: CNavItem,
-    name: 'Live Chat',
-    to: '/chat',
-    icon: <CIcon icon={cilChatBubble} customClassName="nav-icon" />,
   },
 ]
 

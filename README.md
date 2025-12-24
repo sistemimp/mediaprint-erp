@@ -59,11 +59,6 @@
   - `composer install` in `backend/`, impostare `.env` (DB, JWT, CORS).
   - Richiede DB conforme al dump in `sql/`.
 
-## Live chat WebSocket
-- Il server Node dedicato è sotto `wss.mediaprint.it/` (express + `ws`) e salva gli allegati in `wss.mediaprint.it/public/uploads`.
-- Avvia il server con `npm run chat-server` dalla root del progetto; durante lo sviluppo il client React usa automaticamente `ws://localhost:4005/ws/chat` quando `VITE_CHAT_WS_URL` non è impostata.
-- In produzione imposta `VITE_CHAT_WS_URL=wss://wss.mediaprint.it/ws/chat` prima di `npm run build` per puntare al servizio remoto.
-
 ### Variabili per esportazione XML SdI
 Per usare l'endpoint `fattureExportXml.php` impostare in `backend/.env` i dati aziendali richiesti dal tracciato SdI:
 - `ERP_AZIENDA_DENOMINAZIONE`, `ERP_AZIENDA_PIVA`, `ERP_AZIENDA_CODICE_FISCALE`
@@ -88,3 +83,4 @@ Tutti i valori sono obbligatori salvo nota diversa; in assenza il backend rispon
 - Validazioni avanzate lato FE/BE per creazione/aggiornamento preventivi.
 - Test end-to-end minimi (login, CRUD anagrafiche, flusso preventivo).
 - Documentare proxy dev (`/api`) e deployment backend.
+

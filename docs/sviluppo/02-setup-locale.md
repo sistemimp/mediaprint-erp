@@ -22,7 +22,6 @@ npm run serve
 Variabili ambiente frontend (opzionali):
 - `VITE_API_BASE_URL` (default `/api`)
 - `VITE_AUTH_LOGIN_URL`
-- `VITE_CHAT_WS_URL` (se non impostata usa `ws://localhost:4005/ws/chat`)
 
 ## Backend
 Da `backend/`:

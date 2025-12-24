@@ -495,7 +495,7 @@ specifiche sopra.
 - GET `/contrattiDetail.php` - dettaglio contratto
 - POST `/contrattiSave.php` - crea/aggiorna contratto
 - POST `/contrattiDelete.php` - elimina contratto
-- GET `/contrattiStatus.php` - lista stati contratto
+- POST `/contrattiStatus.php` - lista stati contratto
 - GET `/contrattiActive.php` - contratti attivi (query: `id_anagrafica`)
 - GET `/contrattiRevisionDetail.php` - dettaglio revisione (query: `id`)
 - POST `/contrattiSendEmail.php` - invio contratto via email
@@ -598,6 +598,446 @@ specifiche sopra.
 ### Dashboard
 - GET `/dashboard.php` - KPI generali (vedi sezione Dashboard)
 - GET `/dashboardNewClients.php` - nuovi clienti (query: `limit`, `period`)
+
+## Dettagli endpoint (campi noti)
+
+<!-- BEGIN: endpoint-details -->
+### Accounts
+#### `GET /accountsAnagrafiche.php`
+- Permessi: `cfg.view`
+
+#### `GET /accountsContattiList.php`
+- Permessi: `cfg.view`
+
+#### `POST /accountsCreate.php`
+- Permessi: `cfg.edit`
+- Accesso: utenti con accountType `cliente` non consentiti
+
+#### `POST /accountsDelete.php`
+- Permessi: `cfg.edit`
+- Accesso: utenti con accountType `cliente` non consentiti
+
+#### `GET /accountsList.php`
+- Query: `page`, `per_page`
+- Permessi: `cfg.view`
+
+#### `POST /accountsResetPassword.php`
+- Permessi: `cfg.edit`
+- Accesso: utenti con accountType `cliente` non consentiti
+
+#### `GET /accountsRolesList.php`
+- Permessi: `cfg.view`
+
+#### `POST /accountsUpdate.php`
+- Permessi: `cfg.edit`
+- Accesso: utenti con accountType `cliente` non consentiti
+
+#### `POST /accountsWelcomeEmail.php`
+- Permessi: `cfg.edit`
+- Accesso: utenti con accountType `cliente` non consentiti
+
+### Altro
+#### `GET /pachettiDetail.php`
+- Query: `id`, `id_pacchetto`
+- Permessi: `cfg.view`
+
+#### `GET /prodottiDashboard.php`
+- Permessi: `cfg.view`
+
+### Anagrafiche
+#### `GET /anagraficheArchiveList.php`
+- Query: `allowed_anagrafiche`
+- Permessi: `anag.view`
+
+#### `POST /anagraficheCreate.php`
+- Permessi: `anag.edit`
+- Accesso: utenti con accountType `cliente` non consentiti
+
+#### `GET /anagraficheDashboard.php`
+- Query: `only_active`, `period`
+- Permessi: `anag.view`
+
+#### `GET /anagraficheDetail.php`
+- Query: `allowed_anagrafiche`
+- Permessi: `anag.view`
+
+#### `GET /anagraficheList.php`
+- Query: `allowed_anagrafiche`
+- Permessi: `anag.view`
+
+#### `POST /anagraficheReactivate.php`
+- Permessi: `anag.edit`
+- Accesso: utenti con accountType `cliente` non consentiti
+
+#### `POST /anagraficheUpdate.php`
+- Permessi: `anag.edit`
+- Accesso: utenti con accountType `cliente` non consentiti
+
+### Configurazioni
+#### `GET /ivaList.php`
+- Note: nessun parametro specifico rilevato
+
+#### `GET /natureIvaList.php`
+- Note: nessun parametro specifico rilevato
+
+#### `GET /paymentTermsList.php`
+- Note: nessun parametro specifico rilevato
+
+### Contratti
+#### `GET /contrattiActive.php`
+- Query: `id_anagrafica`
+- Permessi: `anag.view`
+
+#### `POST /contrattiDelete.php`
+- Permessi: `anag.edit`
+
+#### `GET /contrattiDetail.php`
+- Permessi: `anag.view`
+
+#### `GET /contrattiList.php`
+- Permessi: `anag.view`
+
+#### `GET /contrattiRevisionDetail.php`
+- Query: `id`
+
+#### `POST /contrattiSave.php`
+- Permessi: `anag.edit`
+
+#### `POST /contrattiSendEmail.php`
+- Note: nessun parametro specifico rilevato
+
+#### `POST /contrattiStatus.php`
+- Note: nessun parametro specifico rilevato
+
+### DDT
+#### `GET /ddtCausaliList.php`
+- Note: nessun parametro specifico rilevato
+
+#### `GET /ddtDashboard.php`
+- Query: `period`
+- Permessi: `ddt.view`
+
+#### `GET /ddtDestinazioni.php`
+- Note: nessun parametro specifico rilevato
+
+#### `GET /ddtDetail.php`
+- Query: `id`
+- Permessi: `ddt.view`
+
+#### `GET /ddtList.php`
+- Query: `limit`
+- Permessi: `ddt.view`
+
+#### `POST /ddtUpdate.php`
+- Body JSON: `aspetto`, `cura_trasporto`, `data_ddt`, `data_trasporto`, `destinazione_merce`, `id`, `id_anagrafica`, `id_causale`, `id_ddt`, `id_destinazione_predefinita`, `id_sede_destinazione`, `note`, `numero_colli`, `righe`, `stato_documento`, `vettore`
+
+### Dashboard
+#### `GET /dashboard.php`
+- Query: `only_active`, `period`
+- Permessi: `anag.view`, `cfg.view`, `ddt.view`, `fatt.view`, `job.view`, `pay.view`, `prev.view`
+
+#### `GET /dashboardNewClients.php`
+- Query: `limit`, `period`
+- Permessi: `anag.view`
+
+### Fatture
+#### `GET /fattureConfig.php`
+- Note: nessun parametro specifico rilevato
+
+#### `GET /fattureDashboard.php`
+- Query: `period`
+- Permessi: `fatt.view`
+
+#### `GET /fattureDetail.php`
+- Query: `id`
+- Permessi: `fatt.view`
+
+#### `GET /fattureExportXml.php`
+- Query: `id`
+
+#### `GET /fattureList.php`
+- Query: `limit`
+- Permessi: `fatt.view`
+
+#### `POST /fatturePagamentiDelete.php`
+- Body JSON: `id_fattura`, `id_pag_fattura`, `id_pagamento`
+
+#### `GET /fatturePagamentiList.php`
+- Query: `id`
+
+#### `POST /fatturePagamentiSave.php`
+- Note: nessun parametro specifico rilevato
+
+#### `GET /fattureStatusLog.php`
+- Query: `id`, `limit`, `offset`
+
+#### `POST /fattureUpdate.php`
+- Body JSON: `cliente_banca`, `cliente_codice_sdi`, `cliente_giorni_pagamento`, `cliente_iban`, `cliente_id_cond_pagamento`, `cliente_modalita_pagamento`, `cliente_pec`, `data_fattura`, `id`, `id_fattura`, `id_stato_fatt`, `note`, `righe`, `saldo`
+
+### Lavorazioni
+#### `POST /lavorazioniActivityAssign.php`
+- Permessi: `job.assign`
+- Accesso: utenti con accountType `cliente` non consentiti
+
+#### `POST /lavorazioniActivityCreate.php`
+- Permessi: `job.manage`
+- Accesso: utenti con accountType `cliente` non consentiti
+
+#### `POST /lavorazioniActivityDelete.php`
+- Permessi: `job.manage`
+- Accesso: utenti con accountType `cliente` non consentiti
+
+#### `POST /lavorazioniActivityReport.php`
+- Permessi: `job.report`
+- Accesso: utenti con accountType `cliente` non consentiti
+
+#### `POST /lavorazioniActivityStatus.php`
+- Permessi: `job.manage`
+- Accesso: utenti con accountType `cliente` non consentiti
+
+#### `GET /lavorazioniActivityTemplates.php`
+- Permessi: `job.admin`
+- Accesso: utenti con accountType `cliente` non consentiti
+
+#### `POST /lavorazioniActivityTemplatesSave.php`
+- Permessi: `job.admin`
+- Accesso: utenti con accountType `cliente` non consentiti
+
+#### `POST /lavorazioniActivityUpdate.php`
+- Permessi: `job.manage`
+- Accesso: utenti con accountType `cliente` non consentiti
+
+#### `POST /lavorazioniAssign.php`
+- Permessi: `job.assign`
+- Accesso: utenti con accountType `cliente` non consentiti
+
+#### `GET /lavorazioniAssignmentsConfig.php`
+- Permessi: `job.assign`
+- Accesso: utenti con accountType `cliente` non consentiti
+
+#### `GET /lavorazioniDashboard.php`
+- Query: `allowed_anagrafiche`
+- Permessi: `job.analytics`
+
+#### `GET /lavorazioniDetail.php`
+- Query: `allowed_anagrafiche`
+- Permessi: `job.view`
+
+#### `GET /lavorazioniDocuments.php`
+- Query: `allowed_anagrafiche`
+- Permessi: `job.view`
+
+#### `GET /lavorazioniFilesDownload.php`
+- Query: `id`
+- Permessi: `job.view`
+
+#### `GET /lavorazioniFilesList.php`
+- Query: `allowed_anagrafiche`
+- Permessi: `job.view`
+
+#### `POST /lavorazioniFilesUpload.php`
+- File upload: multipart field `file`
+- Permessi: `job.manage`
+- Accesso: utenti con accountType `cliente` non consentiti
+
+#### `GET /lavorazioniList.php`
+- Query: `allowed_anagrafiche`
+- Permessi: `job.view`
+
+#### `GET /lavorazioniNotifications.php`
+- Query: `id_account`
+- Permessi: `job.view`
+
+#### `POST /lavorazioniNotificationsRead.php`
+- Body JSON: `id_account`
+- Permessi: `job.view`
+
+#### `POST /lavorazioniNotifyOperators.php`
+- Permessi: `job.manage`
+- Accesso: utenti con accountType `cliente` non consentiti
+
+#### `POST /lavorazioniStatus.php`
+- Permessi: `job.manage`
+- Accesso: utenti con accountType `cliente` non consentiti
+
+#### `POST /lavorazioniUpdate.php`
+- Permessi: `job.manage`
+- Accesso: utenti con accountType `cliente` non consentiti
+
+### Pacchetti
+#### `GET /pacchettiList.php`
+- Query: `q`
+- Permessi: `cfg.view`
+
+### Pacchetti (legacy path)
+#### `POST /Pacchetti/delete.php`
+- Permessi: `cfg.edit`
+- Accesso: utenti con accountType `cliente` non consentiti
+
+#### `GET /Pacchetti/detail.php`
+- Query: `id`, `id_pacchetto`
+- Permessi: `cfg.view`
+
+#### `GET /Pacchetti/list.php`
+- Query: `q`
+- Permessi: `cfg.view`
+
+#### `POST /Pacchetti/save.php`
+- Permessi: `cfg.edit`
+- Accesso: utenti con accountType `cliente` non consentiti
+
+### Pagamenti
+#### `POST /pagamentiAssignAnagrafica.php`
+- Body JSON: `id`, `id_anagrafica`, `id_pagamento`
+- Permessi: `pay.edit`
+- Accesso: utenti con accountType `cliente` non consentiti
+
+#### `GET /pagamentiDashboard.php`
+- Query: `period`
+- Permessi: `pay.view`
+
+#### `GET /pagamentiDetail.php`
+- Query: `id`
+- Permessi: `pay.view`
+
+#### `POST /pagamentiImportConfirm.php`
+- Body JSON: `items`
+- Permessi: `pay.edit`
+- Accesso: utenti con accountType `cliente` non consentiti
+
+#### `POST /pagamentiImportUpload.php`
+- File upload: multipart field `file`
+- Permessi: `pay.edit`
+- Accesso: utenti con accountType `cliente` non consentiti
+
+#### `GET /pagamentiInvoicesSearch.php`
+- Query: `allowed_anagrafiche`, `id_anagrafica`, `limit`, `q`, `solo_aperti`
+- Permessi: `pay.view`
+
+#### `GET /pagamentiLedger.php`
+- Query: `limit`, `q`
+- Permessi: `pay.view`
+
+#### `GET /pagamentiList.php`
+- Query: `allowed_anagrafiche`, `date_from`, `date_to`, `id_anagrafica`, `pending_only_open`, `q`
+- Permessi: `pay.view`
+
+### Preventivi
+#### `POST /preventiviArchive.php`
+- Permessi: `prev.edit`
+- Accesso: utenti con accountType `cliente` non consentiti
+
+#### `GET /preventiviArchiveList.php`
+- Query: `allowed_anagrafiche`
+- Permessi: `prev.view`
+
+#### `POST /preventiviCreate.php`
+- Note: nessun parametro specifico rilevato
+
+#### `GET /preventiviDashboard.php`
+- Query: `period`
+- Permessi: `prev.view`
+
+#### `GET /preventiviDetail.php`
+- Query: `allowed_anagrafiche`
+- Permessi: `prev.view`
+
+#### `POST /preventiviEmitDdt.php`
+- Note: nessun parametro specifico rilevato
+
+#### `POST /preventiviEmitFattura.php`
+- Note: nessun parametro specifico rilevato
+
+#### `POST /preventiviGenerateLavorazione.php`
+- Note: nessun parametro specifico rilevato
+
+#### `GET /preventiviList.php`
+- Query: `allowed_anagrafiche`
+- Permessi: `prev.view`
+
+#### `POST /preventiviOggettiCreate.php`
+- Body JSON: `active`, `attivo`, `label`
+
+#### `GET /preventiviOggettiList.php`
+- Note: nessun parametro specifico rilevato
+
+#### `POST /preventiviReactivate.php`
+- Note: nessun parametro specifico rilevato
+
+#### `GET /preventiviRevisionDetail.php`
+- Query: `id`
+
+#### `POST /preventiviRevisionsSummary.php`
+- Body JSON: `ids`
+
+#### `POST /preventiviSendEmail.php`
+- Note: nessun parametro specifico rilevato
+
+#### `POST /preventiviStatus.php`
+- Note: nessun parametro specifico rilevato
+
+### Prodotti
+#### `GET /prodotti/categorie/list.php`
+- Permessi: `cfg.view`
+
+#### `POST /prodotti/categorie/save.php`
+- Body JSON: `id_categoria`, `nome`
+- Permessi: `cfg.edit`
+- Accesso: utenti con accountType `cliente` non consentiti
+
+#### `POST /prodotti/create.php`
+- Body JSON: `codice`, `id_categoria`, `id_iva`, `id_sdi_natura_iva`, `nome`, `prezzo_listino`
+- Permessi: `cfg.edit`
+- Accesso: utenti con accountType `cliente` non consentiti
+
+#### `POST /prodotti/delete.php`
+- Body JSON: `id`, `id_prodotto`
+- Permessi: `cfg.edit`
+- Accesso: utenti con accountType `cliente` non consentiti
+
+#### `GET /prodotti/detail.php`
+- Query: `id`
+- Permessi: `cfg.view`
+
+#### `GET /prodotti/list.php`
+- Query: `id_categoria`, `q`
+- Permessi: `cfg.view`
+
+#### `POST /prodotti/update.php`
+- Body JSON: `codice`, `id_categoria`, `id_iva`, `id_prodotto`, `id_sdi_natura_iva`, `nome`, `prezzo_listino`
+- Permessi: `cfg.edit`
+- Accesso: utenti con accountType `cliente` non consentiti
+
+#### `POST /prodotti/variazioni/delete.php`
+- Body JSON: `id_variazione`
+- Permessi: `cfg.edit`
+- Accesso: utenti con accountType `cliente` non consentiti
+
+#### `GET /prodotti/variazioni/list.php`
+- Permessi: `cfg.view`
+
+#### `GET/POST /prodotti/variazioni/prezzi.php`
+- Query: `id_prodotto`
+- Body JSON: `action`, `id_prodotto`, `prezzo`, `var_ids`
+- Permessi: `cfg.view`
+
+#### `GET/POST /prodotti/variazioni/prodotto.php`
+- Query: `id_prodotto`
+- Body JSON: `action`, `delta`, `id_prodotto`, `id_variazione`
+- Permessi: `cfg.view`
+
+#### `POST /prodotti/variazioni/save.php`
+- Body JSON: `categoria`, `codice`, `id_variazione`, `nome`, `prezzo`
+- Permessi: `cfg.edit`
+- Accesso: utenti con accountType `cliente` non consentiti
+
+### Sessione
+#### `POST /login.php`
+- Body JSON: `email`, `identifier`, `password`, `username`
+
+#### `GET /me.php`
+- Note: nessun parametro specifico rilevato
+<!-- END: endpoint-details -->
 
 ## Sicurezza e CORS
 

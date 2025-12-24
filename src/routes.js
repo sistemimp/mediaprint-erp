@@ -47,7 +47,6 @@ const PagamentiImport = React.lazy(() => import('./views/pagamenti/PagamentiImpo
 const LavorazioniList = React.lazy(() => import('./views/lavorazioni/LavorazioniList'))
 const LavorazioneDetail = React.lazy(() => import('./views/lavorazioni/LavorazioneDetail'))
 const LavorazioniTemplates = React.lazy(() => import('./views/lavorazioni/LavorazioniTemplates'))
-const ChatRoom = React.lazy(() => import('./views/chat/ChatRoom'))
 const AccountsList = React.lazy(() => import('./views/accounts/AccountsList'))
 
 const routes = [
@@ -90,7 +89,6 @@ const routes = [
   { path: '/lavorazioni/lista', name: 'Lavorazioni - Lista', element: LavorazioniList },
   { path: '/lavorazioni/dettaglio', name: 'Lavorazioni - Dettaglio', element: LavorazioneDetail },
   { path: '/lavorazioni/templates', name: 'Lavorazioni - Template attivita', element: LavorazioniTemplates },
-  { path: '/chat', name: 'Live Chat', element: ChatRoom },
   { path: '/accounts/lista', name: 'Account - Lista', element: AccountsList },
 ]
 
