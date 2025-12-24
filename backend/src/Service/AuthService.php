@@ -48,32 +48,30 @@ final class AuthService
 
         return [
             'token' => $token,
-            'user' => [
-                'id' => (int) $account['id_account'],
-                'accountType' => $account['account_type'],
-                'username' => $account['username'],
-                'email' => $account['email'],
-                'mustChangePassword' => (bool) $account['must_change_pwd'],
-                'hasMfa' => (bool) $account['has_mfa'],
-                'roles' => array_map(
-                    static fn(array $role): array => [
-                        'id' => (int) $role['id_ruolo'],
-                        'code' => $role['code'],
-                        'label' => $role['label'],
-                    ],
-                    $roles
-                ),
-                'permissions' => array_map(
-                    static fn(array $permission): array => [
-                        'id' => (int) $permission['id_permesso'],
-                        'code' => $permission['code'],
-                        'label' => $permission['label'],
-                    ],
-                    $permissions
-                ),
-                'lastLogin' => $account['last_login'],
-            ],
+            'user' => $this->buildUserPayload($account, $roles, $permissions),
         ];
+    }
+
+    public function getUserSnapshot(int $accountId): array
+    {
+        if ($accountId <= 0) {
+            throw new RuntimeException('Account non valido.');
+        }
+
+        $account = $this->repository->findActiveAccountById($accountId);
+        if ($account === null) {
+            throw new RuntimeException('Account non valido o disattivato.', 401);
+        }
+
+        if ($this->allowedAccountTypes !== [] && !in_array(strtolower((string) $account['account_type']), $this->allowedAccountTypes, true)) {
+            throw new RuntimeException('Accesso non autorizzato per il tipo di account.', 403);
+        }
+
+        $roles = $this->repository->getAccountRoles((int) $account['id_account'], isset($account['id_ruolo']) ? (int) $account['id_ruolo'] : null);
+        $roleIds = array_map(static fn(array $role): int => (int) $role['id_ruolo'], $roles);
+        $permissions = $this->repository->getPermissionsForRoles($roleIds);
+
+        return $this->buildUserPayload($account, $roles, $permissions);
     }
 
     private function generateToken(array $account, array $roles, array $permissions): string
@@ -112,5 +110,34 @@ final class AuthService
         ];
 
         return JWT::encode($payload, $secret, 'HS256');
+    }
+
+    private function buildUserPayload(array $account, array $roles, array $permissions): array
+    {
+        return [
+            'id' => (int) $account['id_account'],
+            'accountType' => $account['account_type'],
+            'username' => $account['username'],
+            'email' => $account['email'],
+            'mustChangePassword' => (bool) $account['must_change_pwd'],
+            'hasMfa' => (bool) $account['has_mfa'],
+            'roles' => array_map(
+                static fn(array $role): array => [
+                    'id' => (int) $role['id_ruolo'],
+                    'code' => $role['code'],
+                    'label' => $role['label'],
+                ],
+                $roles
+            ),
+            'permissions' => array_map(
+                static fn(array $permission): array => [
+                    'id' => (int) $permission['id_permesso'],
+                    'code' => $permission['code'],
+                    'label' => $permission['label'],
+                ],
+                $permissions
+            ),
+            'lastLogin' => $account['last_login'],
+        ];
     }
 }
