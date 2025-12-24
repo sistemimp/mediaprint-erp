@@ -1037,6 +1037,13 @@ const PreventiviCreate = () => {
                             .join(' ; ')
                           descr = `${prod.nome} - ${label}`
                         }
+                        const comboKey = Array.isArray(comboIds) && comboIds.length > 0
+                          ? comboIds
+                            .map((idv) => Number(idv) || 0)
+                            .filter((n) => n > 0)
+                            .sort((a, b) => a - b)
+                            .join('+')
+                          : ''
                         const riga = {
                           descrizione: descr,
                           quantita: modalQty,
@@ -1044,6 +1051,7 @@ const PreventiviCreate = () => {
                           iva: ivaPerc,
                           sconto: 0,
                           id_prodotto: prod.id_prodotto,
+                          combo_key: comboKey || null,
                         }
                         if (ivaPerc === 0) {
                           const natId = selNatura

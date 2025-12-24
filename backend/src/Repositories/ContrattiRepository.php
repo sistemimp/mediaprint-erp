@@ -12,6 +12,7 @@ final class ContrattiRepository
     private function ensureSchema(): void
     {
         try {
+            $this->ensureStatusSchema();
             $this->pdo->exec(<<<'SQL'
                 CREATE TABLE IF NOT EXISTS tb_contratti (
                     id_contratto INT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -23,6 +24,7 @@ final class ContrattiRepository
                     data_fine DATE NULL,
                     rinnovo_automatico TINYINT(1) NOT NULL DEFAULT 0,
                     attivo TINYINT(1) NOT NULL DEFAULT 1,
+                    id_stato_contr INT UNSIGNED NULL,
                     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                     PRIMARY KEY (id_contratto),
@@ -40,6 +42,7 @@ final class ContrattiRepository
                     tipo_item ENUM('prodotto','pacchetto') NOT NULL DEFAULT 'prodotto',
                     id_prodotto INT UNSIGNED NULL,
                     id_pacchetto INT NULL,
+                    combo_key VARCHAR(255) NULL,
                     descrizione VARCHAR(255) NULL,
                     prezzo_unitario DECIMAL(12,4) NOT NULL DEFAULT 0.0000,
                     iva DECIMAL(6,2) NULL,
@@ -71,8 +74,104 @@ final class ContrattiRepository
                         REFERENCES tb_contratti_righe (id_riga) ON DELETE CASCADE
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
             SQL);
+
+            $this->ensureComboKeyColumn();
+            $this->ensureStatusColumn();
+            $this->ensureRevisionTable();
         } catch (\Throwable $ignored) {
             // Schema best-effort.
+        }
+    }
+
+    private function ensureStatusSchema(): void
+    {
+        try {
+            $this->pdo->exec(<<<'SQL'
+                CREATE TABLE IF NOT EXISTS cfg_stati_contratto (
+                    id_stato TINYINT(3) UNSIGNED NOT NULL AUTO_INCREMENT,
+                    code VARCHAR(32) NOT NULL,
+                    label VARCHAR(64) NOT NULL,
+                    ordering TINYINT(3) UNSIGNED NOT NULL DEFAULT 0,
+                    attivo TINYINT(1) NOT NULL DEFAULT 1,
+                    PRIMARY KEY (id_stato),
+                    UNIQUE KEY uq_contr_stato_code (code)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            SQL);
+
+            $count = (int) ($this->pdo->query('SELECT COUNT(*) FROM cfg_stati_contratto')->fetchColumn() ?: 0);
+            if ($count === 0) {
+                $ins = $this->pdo->prepare('INSERT INTO cfg_stati_contratto (code, label, ordering, attivo) VALUES (:code, :label, :ordering, 1)');
+                $defaults = [
+                    ['bozza', 'Bozza', 10],
+                    ['inviato', 'Inviato', 20],
+                    ['confermato', 'Confermato', 30],
+                    ['rifiutato', 'Rifiutato', 40],
+                    ['annullato', 'Annullato', 50],
+                ];
+                foreach ($defaults as [$code, $label, $ord]) {
+                    $ins->bindValue(':code', $code, PDO::PARAM_STR);
+                    $ins->bindValue(':label', $label, PDO::PARAM_STR);
+                    $ins->bindValue(':ordering', $ord, PDO::PARAM_INT);
+                    $ins->execute();
+                }
+            }
+        } catch (\Throwable $ignored) {
+            // Best-effort.
+        }
+    }
+
+    private function ensureComboKeyColumn(): void
+    {
+        try {
+            $stmt = $this->pdo->query("SHOW COLUMNS FROM tb_contratti_righe LIKE 'combo_key'");
+            if ($stmt && $stmt->fetchColumn() === false) {
+                $this->pdo->exec("ALTER TABLE tb_contratti_righe ADD COLUMN combo_key VARCHAR(255) NULL AFTER id_pacchetto");
+            }
+        } catch (\Throwable $ignored) {
+            // Best-effort update.
+        }
+    }
+
+    private function ensureStatusColumn(): void
+    {
+        try {
+            $stmt = $this->pdo->query("SHOW COLUMNS FROM tb_contratti LIKE 'id_stato_contr'");
+            if ($stmt && $stmt->fetchColumn() === false) {
+                $this->pdo->exec("ALTER TABLE tb_contratti ADD COLUMN id_stato_contr INT UNSIGNED NULL AFTER attivo");
+            }
+        } catch (\Throwable $ignored) {
+            // Best-effort update.
+        }
+
+        try {
+            $this->pdo->exec(
+                "UPDATE tb_contratti SET id_stato_contr = (SELECT id_stato FROM cfg_stati_contratto WHERE code = 'bozza' LIMIT 1) WHERE id_stato_contr IS NULL"
+            );
+        } catch (\Throwable $ignored) {
+            // Best-effort update.
+        }
+    }
+
+    private function ensureRevisionTable(): void
+    {
+        try {
+            $this->pdo->exec(<<<'SQL'
+                CREATE TABLE IF NOT EXISTS tb_contratti_revisioni (
+                    id_revisione INT AUTO_INCREMENT PRIMARY KEY,
+                    id_contratto INT NOT NULL,
+                    numero_revision INT NOT NULL,
+                    label VARCHAR(32) NOT NULL,
+                    note TEXT NULL,
+                    operatore VARCHAR(255) NULL,
+                    payload JSON NULL,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE KEY uniq_contr_revision (id_contratto, numero_revision),
+                    CONSTRAINT fk_contr_revision_contratto FOREIGN KEY (id_contratto)
+                        REFERENCES tb_contratti (id_contratto) ON DELETE CASCADE
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            SQL);
+        } catch (\Throwable $ignored) {
+            // Best-effort update.
         }
     }
 
@@ -93,10 +192,13 @@ final class ContrattiRepository
                 c.data_fine,
                 c.rinnovo_automatico,
                 c.attivo,
+                sc.code AS stato_code,
+                sc.label AS stato_label,
                 c.updated_at,
                 a.ragione_sociale
             FROM tb_contratti c
             LEFT JOIN tb_anagrafiche a ON a.id_anagrafica = c.id_anagrafica
+            LEFT JOIN cfg_stati_contratto sc ON sc.id_stato = c.id_stato_contr
             WHERE 1=1
         SQL;
         $params = [];
@@ -133,6 +235,8 @@ final class ContrattiRepository
             'data_fine' => $r['data_fine'] ?? null,
             'rinnovo_automatico' => (int) ($r['rinnovo_automatico'] ?? 0),
             'attivo' => (int) ($r['attivo'] ?? 1),
+            'stato_code' => $r['stato_code'] ?? null,
+            'stato_label' => $r['stato_label'] ?? null,
             'updated_at' => $r['updated_at'] ?? null,
             'ragione_sociale' => $r['ragione_sociale'] ?? null,
         ], $rows);
@@ -155,11 +259,14 @@ final class ContrattiRepository
                 c.data_fine,
                 c.rinnovo_automatico,
                 c.attivo,
+                sc.code AS stato_code,
+                sc.label AS stato_label,
                 c.created_at,
                 c.updated_at,
                 a.ragione_sociale
             FROM tb_contratti c
             LEFT JOIN tb_anagrafiche a ON a.id_anagrafica = c.id_anagrafica
+            LEFT JOIN cfg_stati_contratto sc ON sc.id_stato = c.id_stato_contr
             WHERE c.id_contratto = :id
             LIMIT 1
         SQL);
@@ -179,6 +286,8 @@ final class ContrattiRepository
             'data_fine' => $row['data_fine'] ?? null,
             'rinnovo_automatico' => (int) ($row['rinnovo_automatico'] ?? 0),
             'attivo' => (int) ($row['attivo'] ?? 1),
+            'stato_code' => $row['stato_code'] ?? null,
+            'stato_label' => $row['stato_label'] ?? null,
             'created_at' => $row['created_at'] ?? null,
             'updated_at' => $row['updated_at'] ?? null,
             'ragione_sociale' => $row['ragione_sociale'] ?? null,
@@ -198,6 +307,7 @@ final class ContrattiRepository
                 tipo_item,
                 id_prodotto,
                 id_pacchetto,
+                combo_key,
                 descrizione,
                 prezzo_unitario,
                 iva,
@@ -220,6 +330,7 @@ final class ContrattiRepository
                 'tipo_item' => $row['tipo_item'] ?? 'prodotto',
                 'id_prodotto' => isset($row['id_prodotto']) ? (int) $row['id_prodotto'] : null,
                 'id_pacchetto' => isset($row['id_pacchetto']) ? (int) $row['id_pacchetto'] : null,
+                'combo_key' => $row['combo_key'] ?? null,
                 'descrizione' => $row['descrizione'] ?? null,
                 'prezzo_unitario' => isset($row['prezzo_unitario']) ? (float) $row['prezzo_unitario'] : 0.0,
                 'iva' => isset($row['iva']) ? (float) $row['iva'] : null,
@@ -267,10 +378,10 @@ final class ContrattiRepository
         $stmt = $this->pdo->prepare(<<<'SQL'
             INSERT INTO tb_contratti (
                 id_anagrafica, codice, titolo, testo_legale, data_inizio, data_fine,
-                rinnovo_automatico, attivo, created_at, updated_at
+                rinnovo_automatico, attivo, id_stato_contr, created_at, updated_at
             ) VALUES (
                 :id_anagrafica, :codice, :titolo, :testo_legale, :data_inizio, :data_fine,
-                :rinnovo_automatico, :attivo, NOW(), NOW()
+                :rinnovo_automatico, :attivo, (SELECT id_stato FROM cfg_stati_contratto WHERE code = 'bozza' LIMIT 1), NOW(), NOW()
             )
         SQL);
         $stmt->bindValue(':id_anagrafica', (int) $data['id_anagrafica'], PDO::PARAM_INT);
@@ -348,10 +459,10 @@ final class ContrattiRepository
             if (!empty($lines)) {
                 $ins = $this->pdo->prepare(<<<'SQL'
                     INSERT INTO tb_contratti_righe (
-                        id_contratto, tipo_item, id_prodotto, id_pacchetto, descrizione,
+                        id_contratto, tipo_item, id_prodotto, id_pacchetto, combo_key, descrizione,
                         prezzo_unitario, iva, id_sdi_natura_iva, sconto_base, posizione
                     ) VALUES (
-                        :id_contratto, :tipo_item, :id_prodotto, :id_pacchetto, :descrizione,
+                        :id_contratto, :tipo_item, :id_prodotto, :id_pacchetto, :combo_key, :descrizione,
                         :prezzo_unitario, :iva, :id_sdi_natura_iva, :sconto_base, :posizione
                     )
                 SQL);
@@ -368,6 +479,9 @@ final class ContrattiRepository
                     if ($idProdotto !== null && $idProdotto <= 0) { $idProdotto = null; }
                     $idPacchetto = isset($line['id_pacchetto']) ? (int) $line['id_pacchetto'] : null;
                     if ($idPacchetto !== null && $idPacchetto <= 0) { $idPacchetto = null; }
+                    $comboKey = isset($line['combo_key']) ? trim((string) $line['combo_key']) : null;
+                    if ($comboKey === '') { $comboKey = null; }
+                    if ($tipo !== 'prodotto') { $comboKey = null; }
                     $descr = isset($line['descrizione']) ? trim((string) $line['descrizione']) : '';
                     $prezzo = isset($line['prezzo_unitario']) ? (float) $line['prezzo_unitario'] : (isset($line['prezzo']) ? (float) $line['prezzo'] : 0.0);
                     $iva = array_key_exists('iva', $line) ? $line['iva'] : null;
@@ -380,6 +494,7 @@ final class ContrattiRepository
                     $ins->bindValue(':tipo_item', $tipo, PDO::PARAM_STR);
                     $ins->bindValue(':id_prodotto', $idProdotto, $idProdotto === null ? PDO::PARAM_NULL : PDO::PARAM_INT);
                     $ins->bindValue(':id_pacchetto', $idPacchetto, $idPacchetto === null ? PDO::PARAM_NULL : PDO::PARAM_INT);
+                    $ins->bindValue(':combo_key', $comboKey, $comboKey === null ? PDO::PARAM_NULL : PDO::PARAM_STR);
                     $ins->bindValue(':descrizione', $descr !== '' ? $descr : null, $descr !== '' ? PDO::PARAM_STR : PDO::PARAM_NULL);
                     $ins->bindValue(':prezzo_unitario', $prezzo, PDO::PARAM_STR);
                     $ins->bindValue(':iva', $ivaVal, $ivaVal === null ? PDO::PARAM_NULL : PDO::PARAM_STR);
@@ -421,6 +536,196 @@ final class ContrattiRepository
         $stmt = $this->pdo->prepare('DELETE FROM tb_contratti WHERE id_contratto = :id');
         $stmt->bindValue(':id', $idContratto, PDO::PARAM_INT);
         $stmt->execute();
+    }
+
+    /**
+     * @return list<array{id_stato:int, code:string, label:string, ordering:int}>
+     */
+    public function listStatuses(): array
+    {
+        $this->ensureSchema();
+        $stmt = $this->pdo->query(
+            'SELECT id_stato, code, label, ordering FROM cfg_stati_contratto WHERE attivo = 1 ORDER BY ordering ASC, id_stato ASC'
+        );
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+        $out = [];
+        foreach ($rows as $row) {
+            $out[] = [
+                'id_stato' => (int) $row['id_stato'],
+                'code' => (string) $row['code'],
+                'label' => (string) $row['label'],
+                'ordering' => (int) $row['ordering'],
+            ];
+        }
+        return $out;
+    }
+
+    /**
+     * @return array{id_stato:int, code:string, label:string}|null
+     */
+    public function findStatusByCode(string $code): ?array
+    {
+        $this->ensureSchema();
+        $stmt = $this->pdo->prepare(
+            'SELECT id_stato, code, label FROM cfg_stati_contratto WHERE code = :code AND attivo = 1 LIMIT 1'
+        );
+        $stmt->bindValue(':code', $code, PDO::PARAM_STR);
+        $stmt->execute();
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($row === false) {
+            return null;
+        }
+
+        return [
+            'id_stato' => (int) $row['id_stato'],
+            'code' => (string) $row['code'],
+            'label' => (string) $row['label'],
+        ];
+    }
+
+    public function updateStatus(int $idContratto, int $idStato): void
+    {
+        $this->ensureSchema();
+        $stmt = $this->pdo->prepare(
+            'UPDATE tb_contratti SET id_stato_contr = :id_stato, updated_at = NOW() WHERE id_contratto = :id LIMIT 1'
+        );
+        $stmt->bindValue(':id', $idContratto, PDO::PARAM_INT);
+        $stmt->bindValue(':id_stato', $idStato, PDO::PARAM_INT);
+        $stmt->execute();
+    }
+
+    private function normalizeRevisionRow(array $row): array
+    {
+        return [
+            'id_revisione' => isset($row['id_revisione']) ? (int) $row['id_revisione'] : 0,
+            'id_contratto' => isset($row['id_contratto']) ? (int) $row['id_contratto'] : 0,
+            'numero_revision' => isset($row['numero_revision']) ? (int) $row['numero_revision'] : 0,
+            'label' => isset($row['label']) ? (string) $row['label'] : '',
+            'note' => isset($row['note']) && $row['note'] !== null ? (string) $row['note'] : null,
+            'operatore' => isset($row['operatore']) && $row['operatore'] !== null ? (string) $row['operatore'] : null,
+            'payload' => $this->decodeRevisionPayload($row['payload'] ?? null),
+            'created_at' => isset($row['created_at']) && $row['created_at'] !== null ? (string) $row['created_at'] : null,
+        ];
+    }
+
+    private function decodeRevisionPayload(?string $payload): ?array
+    {
+        if ($payload === null) {
+            return null;
+        }
+        $decoded = json_decode($payload, true);
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            return null;
+        }
+        return $decoded;
+    }
+
+    private function getNextRevisionNumber(int $idContratto): int
+    {
+        $this->ensureSchema();
+        try {
+            $stmt = $this->pdo->prepare('SELECT COALESCE(MAX(numero_revision), 0) + 1 AS next FROM tb_contratti_revisioni WHERE id_contratto = :id');
+            $stmt->bindValue(':id', $idContratto, PDO::PARAM_INT);
+            $stmt->execute();
+            $row = $stmt->fetch(PDO::FETCH_ASSOC);
+            if ($row && isset($row['next'])) {
+                return max(1, (int) $row['next']);
+            }
+        } catch (\Throwable $ignored) {
+            // fallback to 1
+        }
+        return 1;
+    }
+
+    private function fetchRevision(int $idRevision): ?array
+    {
+        $this->ensureSchema();
+        try {
+            $stmt = $this->pdo->prepare('SELECT id_revisione, id_contratto, numero_revision, label, note, operatore, payload, created_at FROM tb_contratti_revisioni WHERE id_revisione = :id LIMIT 1');
+            $stmt->bindValue(':id', $idRevision, PDO::PARAM_INT);
+            $stmt->execute();
+            $row = $stmt->fetch(PDO::FETCH_ASSOC);
+            if ($row === false) {
+                return null;
+            }
+            return $this->normalizeRevisionRow($row);
+        } catch (\Throwable $ignored) {
+            return null;
+        }
+    }
+
+    public function listRevisions(int $idContratto): array
+    {
+        $this->ensureSchema();
+        try {
+            $stmt = $this->pdo->prepare(
+                'SELECT id_revisione, id_contratto, numero_revision, label, note, operatore, payload, created_at FROM tb_contratti_revisioni WHERE id_contratto = :id ORDER BY numero_revision DESC, created_at DESC'
+            );
+            $stmt->bindValue(':id', $idContratto, PDO::PARAM_INT);
+            $stmt->execute();
+            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        } catch (\Throwable $ignored) {
+            return [];
+        }
+
+        $out = [];
+        foreach ($rows as $row) {
+            $out[] = $this->normalizeRevisionRow($row);
+        }
+        return $out;
+    }
+
+    public function createRevision(int $idContratto, ?string $note = null, ?string $operatore = null, ?array $payload = null): ?array
+    {
+        $this->ensureSchema();
+        $nextNumber = $this->getNextRevisionNumber($idContratto);
+        $label = sprintf('Rev.%d', $nextNumber);
+        $payloadJson = null;
+        if ($payload !== null) {
+            $encoded = json_encode($payload, JSON_UNESCAPED_UNICODE);
+            if ($encoded !== false) {
+                $payloadJson = $encoded;
+            }
+        }
+        try {
+            $stmt = $this->pdo->prepare(
+                'INSERT INTO tb_contratti_revisioni (id_contratto, numero_revision, label, note, operatore, payload) VALUES (:id, :numero, :label, :note, :operatore, :payload)'
+            );
+            $stmt->bindValue(':id', $idContratto, PDO::PARAM_INT);
+            $stmt->bindValue(':numero', $nextNumber, PDO::PARAM_INT);
+            $stmt->bindValue(':label', $label, PDO::PARAM_STR);
+            if ($note === null) {
+                $stmt->bindValue(':note', null, PDO::PARAM_NULL);
+            } else {
+                $stmt->bindValue(':note', $note, PDO::PARAM_STR);
+            }
+            if ($operatore === null) {
+                $stmt->bindValue(':operatore', null, PDO::PARAM_NULL);
+            } else {
+                $stmt->bindValue(':operatore', $operatore, PDO::PARAM_STR);
+            }
+            if ($payloadJson === null) {
+                $stmt->bindValue(':payload', null, PDO::PARAM_NULL);
+            } else {
+                $stmt->bindValue(':payload', $payloadJson, PDO::PARAM_STR);
+            }
+            $stmt->execute();
+        } catch (\Throwable $ignored) {
+            return null;
+        }
+
+        $revisionId = (int) $this->pdo->lastInsertId();
+        if ($revisionId <= 0) {
+            return null;
+        }
+
+        return $this->fetchRevision($revisionId);
+    }
+
+    public function getRevisionById(int $idRevision): ?array
+    {
+        return $this->fetchRevision($idRevision);
     }
 
     /**
@@ -467,14 +772,40 @@ final class ContrattiRepository
     /**
      * @return array<string,mixed>|null
      */
-    public function resolveProductPricing(int $idAnagrafica, int $idProdotto, float $quantita, ?string $dateRef = null): ?array
+    public function resolveProductPricing(int $idAnagrafica, int $idProdotto, float $quantita, ?string $dateRef = null, ?string $comboKey = null): ?array
     {
         $this->ensureSchema();
         if ($idAnagrafica <= 0 || $idProdotto <= 0) {
             return null;
         }
         $dateRef = $dateRef ?: date('Y-m-d');
-        $stmt = $this->pdo->prepare(<<<'SQL'
+        $comboKey = $comboKey !== null ? trim($comboKey) : null;
+        if ($comboKey === '') { $comboKey = null; }
+
+        $row = null;
+        if ($comboKey !== null) {
+            $row = $this->findProductPricingRow($idAnagrafica, $idProdotto, $dateRef, $comboKey);
+        }
+        if ($row === null) {
+            $row = $this->findProductPricingRow($idAnagrafica, $idProdotto, $dateRef, null);
+        }
+        if ($row === null) { return null; }
+        $idRiga = (int) $row['id_riga'];
+        $base = isset($row['sconto_base']) ? (float) $row['sconto_base'] : 0.0;
+        $sconto = $this->resolveDiscountForLine($idRiga, $quantita, $base);
+        return [
+            'id_contratto' => (int) $row['id_contratto'],
+            'id_riga' => $idRiga,
+            'prezzo_unitario' => isset($row['prezzo_unitario']) ? (float) $row['prezzo_unitario'] : 0.0,
+            'iva' => isset($row['iva']) ? (float) $row['iva'] : null,
+            'id_sdi_natura_iva' => isset($row['id_sdi_natura_iva']) ? (int) $row['id_sdi_natura_iva'] : null,
+            'sconto' => $sconto,
+        ];
+    }
+
+    private function findProductPricingRow(int $idAnagrafica, int $idProdotto, string $dateRef, ?string $comboKey): ?array
+    {
+        $sql = <<<'SQL'
             SELECT
                 c.id_contratto,
                 r.id_riga,
@@ -494,28 +825,24 @@ final class ContrattiRepository
                 OR c.data_fine >= :ref
                 OR c.rinnovo_automatico = 1
               )
-            ORDER BY c.data_inizio DESC, c.id_contratto DESC
-            LIMIT 1
-        SQL);
+        SQL;
+        if ($comboKey !== null) {
+            $sql .= ' AND r.combo_key = :combo';
+        } else {
+            $sql .= " AND (r.combo_key IS NULL OR r.combo_key = '')";
+        }
+        $sql .= ' ORDER BY c.data_inizio DESC, c.id_contratto DESC LIMIT 1';
+
+        $stmt = $this->pdo->prepare($sql);
         $stmt->bindValue(':anag', $idAnagrafica, PDO::PARAM_INT);
         $stmt->bindValue(':prod', $idProdotto, PDO::PARAM_INT);
         $stmt->bindValue(':ref', $dateRef, PDO::PARAM_STR);
+        if ($comboKey !== null) {
+            $stmt->bindValue(':combo', $comboKey, PDO::PARAM_STR);
+        }
         $stmt->execute();
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
-        if ($row === false) {
-            return null;
-        }
-        $idRiga = (int) $row['id_riga'];
-        $base = isset($row['sconto_base']) ? (float) $row['sconto_base'] : 0.0;
-        $sconto = $this->resolveDiscountForLine($idRiga, $quantita, $base);
-        return [
-            'id_contratto' => (int) $row['id_contratto'],
-            'id_riga' => $idRiga,
-            'prezzo_unitario' => isset($row['prezzo_unitario']) ? (float) $row['prezzo_unitario'] : 0.0,
-            'iva' => isset($row['iva']) ? (float) $row['iva'] : null,
-            'id_sdi_natura_iva' => isset($row['id_sdi_natura_iva']) ? (int) $row['id_sdi_natura_iva'] : null,
-            'sconto' => $sconto,
-        ];
+        return $row === false ? null : $row;
     }
 
     /**

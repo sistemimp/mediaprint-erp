@@ -104,6 +104,7 @@ const HtmlEditor = ({ value, onChange, disabled, placeholder, minHeight, classNa
     (nextValue) => {
       const editor = editorRef.current
       if (!editor) return
+      if (typeof document !== 'undefined' && document.activeElement === editor) return
       const normalized = sanitizeHtml(nextValue || '')
       if (normalized === lastHtml.current && normalized === editor.innerHTML) return
       lastHtml.current = normalized
@@ -120,7 +121,8 @@ const HtmlEditor = ({ value, onChange, disabled, placeholder, minHeight, classNa
     const editor = editorRef.current
     if (!editor || typeof onChange !== 'function') return
     const sanitized = sanitizeHtml(editor.innerHTML)
-    if (sanitized !== editor.innerHTML) {
+    const isFocused = typeof document !== 'undefined' && document.activeElement === editor
+    if (!isFocused && sanitized !== editor.innerHTML) {
       editor.innerHTML = sanitized
     }
     if (sanitized === lastHtml.current) return
@@ -248,4 +250,3 @@ HtmlEditor.defaultProps = {
 }
 
 export default HtmlEditor
-

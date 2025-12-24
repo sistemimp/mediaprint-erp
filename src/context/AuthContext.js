@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useEffect, useMemo, useState } from 'react'
-import { buildApiUrl, AUTH_TOKEN_STORAGE_KEY, AUTH_USER_STORAGE_KEY } from '../services/apiClient'
+import { apiFetch, buildApiUrl, AUTH_TOKEN_STORAGE_KEY, AUTH_USER_STORAGE_KEY } from '../services/apiClient'
 
 const AuthContext = createContext({
   token: null,
@@ -10,6 +10,54 @@ const AuthContext = createContext({
   login: async () => {},
   logout: () => {},
 })
+
+const isNonEmptyString = (value) => typeof value === 'string' && value.trim() !== ''
+
+const isValidRole = (role) =>
+  role &&
+  typeof role === 'object' &&
+  Number.isFinite(Number(role.id)) &&
+  isNonEmptyString(role.code) &&
+  isNonEmptyString(role.label)
+
+const isValidPermission = (permission) =>
+  permission &&
+  typeof permission === 'object' &&
+  Number.isFinite(Number(permission.id)) &&
+  isNonEmptyString(permission.code) &&
+  isNonEmptyString(permission.label)
+
+const isValidStoredUser = (storedUser) => {
+  if (!storedUser || typeof storedUser !== 'object') {
+    return false
+  }
+
+  if (!Number.isFinite(Number(storedUser.id))) {
+    return false
+  }
+
+  if (!isNonEmptyString(storedUser.accountType)) {
+    return false
+  }
+
+  if (!isNonEmptyString(storedUser.username) || !isNonEmptyString(storedUser.email)) {
+    return false
+  }
+
+  if (typeof storedUser.mustChangePassword !== 'boolean' || typeof storedUser.hasMfa !== 'boolean') {
+    return false
+  }
+
+  if (!Array.isArray(storedUser.roles) || !storedUser.roles.every(isValidRole)) {
+    return false
+  }
+
+  if (!Array.isArray(storedUser.permissions) || !storedUser.permissions.every(isValidPermission)) {
+    return false
+  }
+
+  return true
+}
 
 export const AuthProvider = ({ children }) => {
   const [token, setToken] = useState(() => localStorage.getItem(AUTH_TOKEN_STORAGE_KEY))
@@ -100,6 +148,75 @@ export const AuthProvider = ({ children }) => {
     setUser(null)
     setError(null)
   }, [])
+
+  useEffect(() => {
+    const rawStored = localStorage.getItem(AUTH_USER_STORAGE_KEY)
+    if (!rawStored) {
+      return
+    }
+
+    let parsed = null
+    try {
+      parsed = JSON.parse(rawStored)
+    } catch (_error) {
+      parsed = null
+    }
+
+    if (!isValidStoredUser(parsed)) {
+      logout()
+    }
+  }, [logout])
+
+  useEffect(() => {
+    if (!token) {
+      return
+    }
+
+    const controller = new AbortController()
+
+    const syncUser = async () => {
+      try {
+        const response = await apiFetch('/me.php', { signal: controller.signal })
+        const dbUser = response?.user ?? null
+        if (!dbUser) {
+          throw new Error('Risposta utente non valida.')
+        }
+
+        let storedUser = null
+        const rawStored = localStorage.getItem(AUTH_USER_STORAGE_KEY)
+        if (rawStored) {
+          try {
+            storedUser = JSON.parse(rawStored)
+          } catch (_error) {
+            storedUser = null
+          }
+        }
+
+        if (storedUser) {
+          const mismatch =
+            String(storedUser.id ?? '') !== String(dbUser.id ?? '') ||
+            String(storedUser.username ?? '') !== String(dbUser.username ?? '') ||
+            String(storedUser.email ?? '') !== String(dbUser.email ?? '') ||
+            String(storedUser.accountType ?? '') !== String(dbUser.accountType ?? '')
+
+          if (mismatch) {
+            logout()
+            return
+          }
+        }
+
+        setUser(dbUser)
+      } catch (syncError) {
+        if (syncError?.name === 'AbortError') {
+          return
+        }
+      }
+    }
+
+    syncUser()
+
+    return () => controller.abort()
+  }, [token, logout])
 
   const value = useMemo(
     () => ({

@@ -2915,7 +2915,7 @@ const PreventiviDetail = () => {
                             ? `${prod.nome} - ${selectedVars.map((v) => `${v.nome}${v.codice ? ' [' + v.codice + ']' : ''}`).join(', ')}`
                             : prod.nome
                           const prezzoFinale = comboPrice != null ? comboPrice : (prezzoBase + delta)
-                          const riga = { descrizione: descr, quantita: q, prezzo: prezzoFinale, iva: ivaPerc, sconto: 0, id_prodotto: prod.id_prodotto }
+                          const riga = { descrizione: descr, quantita: q, prezzo: prezzoFinale, iva: ivaPerc, sconto: 0, id_prodotto: prod.id_prodotto, combo_key: comboKey || null }
                           // Aggiungi categoria del prodotto alla riga per raggruppamento immediato
                           if (prod.id_categoria != null) {
                             riga.id_categoria = Number(prod.id_categoria)

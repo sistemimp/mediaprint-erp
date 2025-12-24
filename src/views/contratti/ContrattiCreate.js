@@ -12,6 +12,11 @@ import {
   CFormInput,
   CFormLabel,
   CFormSelect,
+  CModal,
+  CModalBody,
+  CModalFooter,
+  CModalHeader,
+  CModalTitle,
   CRow,
   CSpinner,
   CTable,
@@ -21,20 +26,20 @@ import {
   CTableHeaderCell,
   CTableRow,
 } from '@coreui/react'
+import { CStepper } from '@coreui/react-pro'
 import CIcon from '@coreui/icons-react'
 import { cilPlus, cilSave, cilTrash } from '@coreui/icons'
 import { useAuth } from '../../context/AuthContext'
 import { fetchAnagrafiche } from '../../services/anagrafiche'
 import { saveContratto } from '../../services/contratti'
-import { fetchNatureIva, fetchProdotti } from '../../services/prodotti'
-import { fetchPacchetti } from '../../services/pacchetti'
+import { fetchCategorieProdotti, fetchNatureIva, fetchProdotti, fetchProdottoPrezziCombinati, fetchProdottoVariazioni } from '../../services/prodotti'
+import { fetchPacchettoDetail, fetchPacchetti } from '../../services/pacchetti'
 import AnagraficaAutocomplete from '../../components/AnagraficaAutocomplete'
 import HtmlEditor from '../../components/HtmlEditor'
 
 const createEmptyLine = () => ({
-  tipo_item: 'prodotto',
   id_prodotto: '',
-  id_pacchetto: '',
+  combo_key: '',
   descrizione: '',
   prezzo_unitario: 0,
   iva: 22,
@@ -59,14 +64,34 @@ const ContrattiCreate = () => {
   const [titolo, setTitolo] = useState('')
   const [dataInizio, setDataInizio] = useState('')
   const [dataFine, setDataFine] = useState('')
+  const [dataFineManual, setDataFineManual] = useState(false)
   const [rinnovoAutomatico, setRinnovoAutomatico] = useState(false)
   const [attivo, setAttivo] = useState(true)
   const [testoLegale, setTestoLegale] = useState('')
 
   const [righe, setRighe] = useState([createEmptyLine()])
   const [prodOptions, setProdOptions] = useState([])
-  const [pkgOptions, setPkgOptions] = useState([])
   const [naturaOptions, setNaturaOptions] = useState([])
+  const [stepperOpen, setStepperOpen] = useState(false)
+  const [prodStep, setProdStep] = useState(1)
+  const [catOptions, setCatOptions] = useState([])
+  const [stepperProdOptions, setStepperProdOptions] = useState([])
+  const [selCat, setSelCat] = useState('')
+  const [prodSearch, setProdSearch] = useState('')
+  const [selProd, setSelProd] = useState('')
+  const [prodVarOptions, setProdVarOptions] = useState([])
+  const [selectedVarIds, setSelectedVarIds] = useState([])
+  const [selectedComboKey, setSelectedComboKey] = useState('')
+  const [prodComboMap, setProdComboMap] = useState({})
+  const [prodComboList, setProdComboList] = useState([])
+  const [selIva, setSelIva] = useState('')
+  const [modalPrice, setModalPrice] = useState(0)
+  const [pkgOpen, setPkgOpen] = useState(false)
+  const [pkgSearch, setPkgSearch] = useState('')
+  const [pkgModalOptions, setPkgModalOptions] = useState([])
+  const [selPacchetto, setSelPacchetto] = useState('')
+  const [pkgPreview, setPkgPreview] = useState([])
+  const [pkgOnlyActive, setPkgOnlyActive] = useState(true)
 
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState(null)
@@ -77,23 +102,125 @@ const ContrattiCreate = () => {
     const controller = new AbortController()
     const load = async () => {
       try {
-        const [{ items: prodotti }, { items: pacchetti }, { items: nature }] = await Promise.all([
+        const [{ items: prodotti }, { items: nature }, { items: cats }] = await Promise.all([
           fetchProdotti({ token, signal: controller.signal }),
-          fetchPacchetti({ token, onlyActive: true, signal: controller.signal }),
           fetchNatureIva({ token, signal: controller.signal }),
+          fetchCategorieProdotti({ token, signal: controller.signal }),
         ])
         setProdOptions(Array.isArray(prodotti) ? prodotti : [])
-        setPkgOptions(Array.isArray(pacchetti) ? pacchetti : [])
         setNaturaOptions(Array.isArray(nature) ? nature : [])
+        setCatOptions(Array.isArray(cats) ? cats : [])
       } catch (_err) {
         setProdOptions([])
-        setPkgOptions([])
         setNaturaOptions([])
+        setCatOptions([])
       }
     }
     load()
     return () => controller.abort()
   }, [token])
+
+  // Carica prodotti per lo stepper in base a categoria/ricerca
+  useEffect(() => {
+    if (!token) return
+    const controller = new AbortController()
+    const load = async () => {
+      try {
+        const idcat = selCat ? Number(selCat) : undefined
+        const { items } = await fetchProdotti({ token, id_categoria: idcat, q: prodSearch, signal: controller.signal })
+        setStepperProdOptions(Array.isArray(items) ? items : [])
+      } catch (_e) {
+        setStepperProdOptions([])
+      }
+    }
+    load()
+    return () => controller.abort()
+  }, [token, selCat, prodSearch])
+
+  // Carica variazioni e prezzi combinati per il prodotto selezionato nello stepper
+  useEffect(() => {
+    setProdVarOptions([])
+    setProdComboMap({})
+    setProdComboList([])
+    setSelectedVarIds([])
+    setSelectedComboKey('')
+    if (!token || !selProd) return
+    const controller = new AbortController()
+    const load = async () => {
+      try {
+        const [{ items }, combo] = await Promise.all([
+          fetchProdottoVariazioni({ token, id_prodotto: Number(selProd), signal: controller.signal }),
+          fetchProdottoPrezziCombinati({ token, id_prodotto: Number(selProd), signal: controller.signal }),
+        ])
+        const sorted = Array.isArray(items) ? items.slice() : []
+        sorted.sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || '')))
+        setProdVarOptions(sorted)
+        const cmap = {}
+        const rows = Array.isArray(combo?.items) ? combo.items : []
+        rows.forEach((r) => { if (r?.combo_key) cmap[String(r.combo_key)] = Number(r.prezzo) || 0 })
+        setProdComboMap(cmap)
+        setProdComboList(rows)
+      } catch (_e) {
+        setProdVarOptions([])
+        setProdComboMap({})
+        setProdComboList([])
+      }
+    }
+    load()
+    return () => controller.abort()
+  }, [token, selProd])
+
+  // Aggiorna prezzo suggerito nel riepilogo del modal
+  useEffect(() => {
+    const prod = stepperProdOptions.find((p) => String(p.id_prodotto) === String(selProd))
+    const base = Number(prod?.prezzo_listino) || 0
+    const comboKey = selectedComboKey && String(selectedComboKey).trim() !== ''
+      ? selectedComboKey
+      : (selectedVarIds
+        .map((id) => Number(id) || 0)
+        .filter((n) => n > 0)
+        .sort((a, b) => a - b)
+        .join('+'))
+    const comboPrice = comboKey && prodComboMap[comboKey] != null ? Number(prodComboMap[comboKey]) : null
+    const delta = prodVarOptions
+      .filter((v) => selectedVarIds.includes(v.id_variazione))
+      .reduce((acc, v) => acc + (Number(v.delta_prezzo) || 0), 0)
+    const suggested = comboPrice != null ? comboPrice : base + delta
+    setModalPrice(suggested)
+  }, [selProd, stepperProdOptions, selectedComboKey, selectedVarIds, prodVarOptions, prodComboMap])
+
+  // Carica pacchetti nel modal
+  useEffect(() => {
+    if (!token || !pkgOpen) return
+    const controller = new AbortController()
+    const load = async () => {
+      try {
+        const { items } = await fetchPacchetti({ token, q: pkgSearch, onlyActive: pkgOnlyActive, signal: controller.signal })
+        setPkgModalOptions(Array.isArray(items) ? items : [])
+      } catch (_e) {
+        setPkgModalOptions([])
+      }
+    }
+    load()
+    return () => controller.abort()
+  }, [token, pkgOpen, pkgSearch, pkgOnlyActive])
+
+  useEffect(() => {
+    if (!token || !pkgOpen) return
+    const controller = new AbortController()
+    const load = async () => {
+      setPkgPreview([])
+      if (!selPacchetto) return
+      try {
+        const { righe } = await fetchPacchettoDetail({ token, id: Number(selPacchetto), signal: controller.signal })
+        setPkgPreview(Array.isArray(righe) ? righe : [])
+      } catch (_e) {
+        setPkgPreview([])
+      }
+    }
+    load()
+    return () => controller.abort()
+  }, [token, pkgOpen, selPacchetto])
 
   useEffect(() => {
     if (!prefill) return
@@ -158,6 +285,50 @@ const ContrattiCreate = () => {
     setRighe((rows) => rows.filter((_, i) => i !== index))
   }
 
+
+  const syncDataFine = (value) => {
+    const raw = String(value || '').trim()
+    setDataInizio(raw)
+  }
+
+  useEffect(() => {
+    if (!dataInizio || dataFineManual) {
+      return
+    }
+    const dt = new Date(`${dataInizio}T00:00:00`)
+    if (Number.isNaN(dt.getTime())) {
+      return
+    }
+    dt.setFullYear(dt.getFullYear() + 1)
+    const next = dt.toISOString().slice(0, 10)
+    setDataFine(next)
+  }, [dataInizio, dataFineManual])
+
+  const handleDataFineChange = (value) => {
+    const raw = String(value || '').trim()
+    setDataFine(raw)
+    setDataFineManual(raw !== '')
+  }
+
+  const resetProductModal = () => {
+    setProdStep(1)
+    setSelCat('')
+    setProdSearch('')
+    setSelProd('')
+    setSelectedVarIds([])
+    setSelectedComboKey('')
+    setSelIva('')
+    setModalPrice(0)
+  }
+
+  const resetPkgModal = () => {
+    setPkgSearch('')
+    setSelPacchetto('')
+    setPkgModalOptions([])
+    setPkgPreview([])
+    setPkgOnlyActive(true)
+  }
+
   const updateLine = (index, patch) => {
     setRighe((rows) => rows.map((row, i) => (i === index ? { ...row, ...patch } : row)))
   }
@@ -198,16 +369,13 @@ const ContrattiCreate = () => {
   const normalizeLines = (rows) => {
     const out = []
     rows.forEach((row) => {
-      const tipo = row.tipo_item === 'pacchetto' ? 'pacchetto' : 'prodotto'
-      const idProd = tipo === 'prodotto' ? Number(row.id_prodotto) : null
-      const idPkg = tipo === 'pacchetto' ? Number(row.id_pacchetto) : null
-      if (tipo === 'prodotto' && (!idProd || Number.isNaN(idProd))) return
-      if (tipo === 'pacchetto' && (!idPkg || Number.isNaN(idPkg))) return
+      const idProd = Number(row.id_prodotto)
+      if (!idProd || Number.isNaN(idProd)) return
 
       out.push({
-        tipo_item: tipo,
-        id_prodotto: tipo === 'prodotto' ? idProd : null,
-        id_pacchetto: tipo === 'pacchetto' ? idPkg : null,
+        tipo_item: 'prodotto',
+        id_prodotto: idProd,
+        combo_key: row.combo_key ? String(row.combo_key) : null,
         descrizione: row.descrizione || null,
         prezzo_unitario: Number(row.prezzo_unitario) || 0,
         iva: row.iva !== '' && row.iva != null ? Number(row.iva) : null,
@@ -268,11 +436,6 @@ const ContrattiCreate = () => {
     return map
   }, [prodOptions])
 
-  const packagesMap = useMemo(() => {
-    const map = new Map()
-    pkgOptions.forEach((p) => map.set(Number(p.id_pacchetto), p))
-    return map
-  }, [pkgOptions])
 
   return (
     <CCard>
@@ -315,7 +478,7 @@ const ContrattiCreate = () => {
                   type="date"
                   required
                   value={dataInizio}
-                  onChange={(e) => setDataInizio(e.target.value)}
+                  onChange={(e) => syncDataFine(e.target.value)}
                 />
               </CCol>
               <CCol md={3}>
@@ -323,7 +486,7 @@ const ContrattiCreate = () => {
                 <CFormInput
                   type="date"
                   value={dataFine}
-                  onChange={(e) => setDataFine(e.target.value)}
+                  onChange={(e) => handleDataFineChange(e.target.value)}
                 />
               </CCol>
               <CCol md={3}>
@@ -358,15 +521,371 @@ const ContrattiCreate = () => {
           <section className="mb-4">
             <div className="d-flex justify-content-between align-items-center mb-3">
               <h6 className="mb-0 text-body-secondary">Righe contratto</h6>
-              <CButton color="secondary" variant="outline" size="sm" onClick={handleAddLine} type="button">
-                <CIcon icon={cilPlus} className="me-2" /> Aggiungi riga
-              </CButton>
+              <div className="d-flex gap-2">
+                <CButton color="secondary" variant="outline" size="sm" onClick={handleAddLine} type="button">
+                  <CIcon icon={cilPlus} className="me-2" /> Aggiungi riga
+                </CButton>
+                <CButton
+                  color="primary"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => { resetProductModal(); setStepperOpen(true) }}
+                  type="button"
+                >
+                  Selettore prodotti
+                </CButton>
+                <CButton
+                  color="primary"
+                  size="sm"
+                  onClick={() => { resetPkgModal(); setPkgOpen(true) }}
+                  type="button"
+                >
+                  Inserisci righe pacchetto
+                </CButton>
+              </div>
             </div>
+            <CModal visible={pkgOpen} onClose={() => setPkgOpen(false)} size="lg" backdrop="static">
+              <CModalHeader>
+                <CModalTitle>Seleziona pacchetto</CModalTitle>
+              </CModalHeader>
+              <CModalBody>
+                <CRow className="g-3 mb-3 align-items-end">
+                  <CCol md={7}>
+                    <CFormLabel>Ricerca</CFormLabel>
+                    <CFormInput
+                      placeholder="Nome o codice pacchetto"
+                      value={pkgSearch}
+                      onChange={(e) => setPkgSearch(e.target.value)}
+                    />
+                  </CCol>
+                  <CCol md={5}>
+                    <CFormLabel>Pacchetto</CFormLabel>
+                    <CFormSelect value={selPacchetto} onChange={(e) => setSelPacchetto(e.target.value)}>
+                      <option value="">Seleziona.</option>
+                      {pkgModalOptions.map((p) => (
+                        <option key={p.id_pacchetto} value={p.id_pacchetto}>
+                          {p.codice ? `${p.codice} - ${p.nome}` : p.nome}
+                        </option>
+                      ))}
+                    </CFormSelect>
+                  </CCol>
+                  <CCol md={12}>
+                    <div className="form-check mt-2">
+                      <input
+                        id="pkgOnlyActive"
+                        type="checkbox"
+                        className="form-check-input"
+                        checked={pkgOnlyActive}
+                        onChange={(e) => setPkgOnlyActive(e.target.checked)}
+                      />
+                      <label htmlFor="pkgOnlyActive" className="form-check-label">Solo attivi</label>
+                    </div>
+                  </CCol>
+                </CRow>
+                {pkgPreview.length > 0 && (
+                  <div className="border rounded p-2">
+                    <div className="fw-semibold mb-2">Righe del pacchetto</div>
+                    <CTable compact hover responsive>
+                      <CTableHead color="light">
+                        <CTableRow>
+                          <CTableHeaderCell>Descrizione</CTableHeaderCell>
+                          <CTableHeaderCell className="text-end">Q.ta</CTableHeaderCell>
+                          <CTableHeaderCell className="text-end">Prezzo</CTableHeaderCell>
+                          <CTableHeaderCell className="text-end">IVA %</CTableHeaderCell>
+                          <CTableHeaderCell className="text-end">Sconto %</CTableHeaderCell>
+                        </CTableRow>
+                      </CTableHead>
+                      <CTableBody>
+                        {pkgPreview.map((r, idx) => (
+                          <CTableRow key={idx}>
+                            <CTableDataCell>{r.descrizione}</CTableDataCell>
+                            <CTableDataCell className="text-end">{Number(r.quantita) || 1}</CTableDataCell>
+                            <CTableDataCell className="text-end">{(Number(r.prezzo_unitario) || 0).toFixed(2)}</CTableDataCell>
+                            <CTableDataCell className="text-end">{r.iva ?? '-'}</CTableDataCell>
+                            <CTableDataCell className="text-end">{r.sconto ?? 0}</CTableDataCell>
+                          </CTableRow>
+                        ))}
+                      </CTableBody>
+                    </CTable>
+                  </div>
+                )}
+              </CModalBody>
+              <CModalFooter className="d-flex justify-content-between">
+                <div />
+                <div className="d-flex gap-2">
+                  <CButton color="link" onClick={() => setPkgOpen(false)}>Annulla</CButton>
+                  <CButton
+                    color="primary"
+                    disabled={!selPacchetto || pkgPreview.length === 0}
+                    onClick={() => {
+                      if (!selPacchetto || pkgPreview.length === 0) return
+                      const newLines = pkgPreview
+                        .map((r) => {
+                          const idProd = Number(r.id_prodotto) || 0
+                          if (idProd <= 0) return null
+                          return {
+                            id_prodotto: idProd,
+                            combo_key: '',
+                            descrizione: r.descrizione ?? '',
+                            prezzo_unitario: Number(r.prezzo_unitario) || 0,
+                            iva: r.iva != null ? Number(r.iva) : 22,
+                            id_sdi_natura_iva: r.id_sdi_natura_iva ?? null,
+                            sconto_base: r.sconto != null ? Number(r.sconto) : 0,
+                            sconti: [],
+                          }
+                        })
+                        .filter(Boolean)
+                      if (newLines.length === 0) return
+                      setRighe((rows) => rows.concat(newLines))
+                      setPkgOpen(false)
+                    }}
+                  >
+                    Inserisci righe pacchetto
+                  </CButton>
+                </div>
+              </CModalFooter>
+            </CModal>
+
+            <CModal visible={stepperOpen} onClose={() => setStepperOpen(false)} size="lg" backdrop="static">
+              <CModalHeader>
+                <CModalTitle>Selettore prodotti</CModalTitle>
+              </CModalHeader>
+              <CModalBody>
+                <CStepper
+                  activeStepNumber={prodStep}
+                  steps={['Categoria', 'Prodotto', 'Variazioni', 'Riepilogo']}
+                  linear={false}
+                  validation={false}
+                  onStepChange={(n) => {
+                    if (Number(n) === prodStep) return
+                    if (n <= prodStep) {
+                      setProdStep(n)
+                      return
+                    }
+                    if (n === 2) {
+                      setProdStep(2)
+                      return
+                    }
+                    if (n === 3) {
+                      if (!selProd) return
+                      if (Array.isArray(prodComboList) && prodComboList.length > 0) {
+                        setProdStep(3)
+                      } else {
+                        setProdStep(4)
+                      }
+                      return
+                    }
+                    if (n === 4) {
+                      if (!selProd) return
+                      setProdStep(4)
+                    }
+                  }}
+                />
+                {prodStep === 1 && (
+                  <CRow className="g-3">
+                    <CCol md={12}>
+                      <CFormLabel>Categoria prodotto</CFormLabel>
+                      <CFormSelect value={selCat} onChange={(e) => setSelCat(e.target.value)}>
+                        <option value="">Tutte</option>
+                        {catOptions.map((c) => (
+                          <option key={c.id_categoria} value={c.id_categoria}>{c.nome}</option>
+                        ))}
+                      </CFormSelect>
+                    </CCol>
+                  </CRow>
+                )}
+                {prodStep === 2 && (
+                  <CRow className="g-3">
+                    <CCol md={6}>
+                      <CFormLabel>Prodotto</CFormLabel>
+                      <CFormSelect
+                        value={selProd}
+                        onChange={(e) => {
+                          const pid = e.target.value
+                          setSelProd(pid)
+                          const prod = stepperProdOptions.find((p) => String(p.id_prodotto) === String(pid))
+                          if (prod && prod.iva_percento != null) setSelIva(String(prod.iva_percento))
+                        }}
+                      >
+                        <option value="">Seleziona...</option>
+                        {stepperProdOptions.map((p) => (
+                          <option key={p.id_prodotto} value={p.id_prodotto}>
+                            {p.codice ? `${p.codice} - ${p.nome}` : p.nome}
+                          </option>
+                        ))}
+                      </CFormSelect>
+                    </CCol>
+                    <CCol md={6}>
+                      <CFormLabel>Ricerca</CFormLabel>
+                      <CFormInput placeholder="Cerca per nome o codice" value={prodSearch} onChange={(e) => setProdSearch(e.target.value)} />
+                    </CCol>
+                  </CRow>
+                )}
+                {prodStep === 3 && (
+                  <CRow className="g-3">
+                    {prodComboList.length > 0 ? (
+                      <CCol md={12}>
+                        <CFormLabel>Combinazioni</CFormLabel>
+                        <CFormSelect
+                          value={selectedComboKey}
+                          onChange={(e) => {
+                            const key = e.target.value
+                            setSelectedComboKey(key)
+                            const opt = prodComboList.find((r) => String(r.combo_key) === String(key))
+                            if (!opt) { setSelectedVarIds([]); return }
+                            const ids = Array.isArray(opt.var_ids) ? opt.var_ids.map(Number) : []
+                            setSelectedVarIds(ids)
+                          }}
+                          disabled={prodComboList.length === 0}
+                        >
+                          <option value="">Seleziona una combinazione.</option>
+                          {prodComboList.map((r, idx) => {
+                            const ids = Array.isArray(r.var_ids) ? r.var_ids : String(r.combo_key).split('+').map((x) => Number(x) || 0)
+                            const groups = {}
+                            ids.forEach((idv) => {
+                              const vv = prodVarOptions.find((x) => Number(x.id_variazione) === Number(idv))
+                              const cat = (vv && vv.categoria) ? String(vv.categoria) : 'Altro'
+                              const nm = vv ? String(vv.nome) : String(idv)
+                              if (!groups[cat]) groups[cat] = []
+                              groups[cat].push(nm)
+                            })
+                            const label = Object.entries(groups).map(([cat, names]) => `${cat}: ${names.join(', ')}`).join(' ; ')
+                            return (
+                              <option key={r.combo_key || idx} value={r.combo_key}>
+                                {label || r.combo_key}
+                              </option>
+                            )
+                          })}
+                        </CFormSelect>
+                      </CCol>
+                    ) : (
+                      <CCol md={12}>
+                        <CAlert color="info" className="mb-0">Nessuna variazione combinata definita per il prodotto selezionato.</CAlert>
+                      </CCol>
+                    )}
+                  </CRow>
+                )}
+                {prodStep === 4 && (
+                  <CRow className="g-3">
+                    <CCol md={12}>
+                      <div className="mb-2">
+                        <strong>Prodotto:</strong> {(() => {
+                          const p = stepperProdOptions.find((x) => String(x.id_prodotto) === String(selProd))
+                          return p ? (p.codice ? `${p.codice} - ${p.nome}` : p.nome) : '-'
+                        })()}
+                      </div>
+                      {(() => {
+                        const ids = selectedComboKey
+                          ? selectedComboKey.split('+').map((x) => Number(x) || 0).filter((n) => n > 0)
+                          : selectedVarIds
+                        if (!ids || ids.length === 0) return null
+                        const groups = {}
+                        ids.forEach((idv) => {
+                          const vv = prodVarOptions.find((x) => Number(x.id_variazione) === Number(idv))
+                          const cat = (vv && vv.categoria) ? String(vv.categoria) : 'Altro'
+                          const nm = vv ? String(vv.nome) : String(idv)
+                          if (!groups[cat]) groups[cat] = []
+                          groups[cat].push(nm)
+                        })
+                        const label = Object.entries(groups).map(([cat, names]) => `${cat}: ${names.join(', ')}`).join(' ; ')
+                        return (<div className="mb-2"><strong>Variazioni:</strong> {label}</div>)
+                      })()}
+                    </CCol>
+                    <CCol md={6}>
+                      <CFormLabel>Prezzo</CFormLabel>
+                      <CFormInput type="number" min="0" step="0.01" value={modalPrice} onChange={(e) => setModalPrice(Number(e.target.value) || 0)} />
+                    </CCol>
+                    <CCol md={6}>
+                      <CFormLabel>IVA %</CFormLabel>
+                      <CFormInput type="number" min="0" max="100" step="1" value={selIva} onChange={(e) => setSelIva(e.target.value)} />
+                    </CCol>
+                  </CRow>
+                )}
+              </CModalBody>
+              <CModalFooter className="d-flex justify-content-between">
+                <div>
+                  {prodStep > 1 && (
+                    <CButton color="secondary" variant="outline" onClick={() => setProdStep((s) => Math.max(1, s - 1))}>Indietro</CButton>
+                  )}
+                </div>
+                <div className="d-flex gap-2">
+                  <CButton color="link" onClick={() => setStepperOpen(false)}>Annulla</CButton>
+                  {prodStep < 4 && (
+                    <CButton
+                      color="primary"
+                      onClick={() => {
+                        if (prodStep === 1) { setProdStep(2); return }
+                        if (prodStep === 2) {
+                          if (!selProd) return
+                          if (prodComboList.length === 0) { setProdStep(4); return }
+                          setProdStep(3); return
+                        }
+                        if (prodStep === 3) { setProdStep(4); return }
+                      }}
+                      disabled={prodStep === 2 && !selProd}
+                    >
+                      Avanti
+                    </CButton>
+                  )}
+                  {prodStep === 4 && (
+                    <CButton
+                      color="primary"
+                      onClick={() => {
+                        const prod = stepperProdOptions.find((p) => String(p.id_prodotto) === String(selProd))
+                        if (!prod) return
+                        const ivaPerc = Number(selIva || prod.iva_percento || 22)
+                        const comboIds = selectedComboKey
+                          ? selectedComboKey.split('+').map((x) => Number(x) || 0).filter((n) => n > 0)
+                          : selectedVarIds
+                        let descr = prod.nome
+                        if (comboIds && comboIds.length > 0) {
+                          const groups = {}
+                          comboIds.forEach((idv) => {
+                            const vv = prodVarOptions.find((x) => Number(x.id_variazione) === Number(idv))
+                            const cat = (vv && vv.categoria) ? String(vv.categoria) : 'Altro'
+                            const nm = vv ? String(vv.nome) : String(idv)
+                            if (!groups[cat]) groups[cat] = []
+                            groups[cat].push(nm)
+                          })
+                          const label = Object.entries(groups).map(([cat, names]) => `${cat}: ${names.join(', ')}`).join(' ; ')
+                          descr = `${prod.nome} - ${label}`
+                        }
+                        const comboKey = Array.isArray(comboIds) && comboIds.length > 0
+                          ? comboIds.map((idv) => Number(idv) || 0).filter((n) => n > 0).sort((a, b) => a - b).join('+')
+                          : ''
+                        const riga = {
+                          id_prodotto: prod.id_prodotto,
+                          combo_key: comboKey || null,
+                          descrizione: descr,
+                          prezzo_unitario: modalPrice,
+                          iva: ivaPerc,
+                          id_sdi_natura_iva: null,
+                          sconto_base: 0,
+                          sconti: [],
+                        }
+                        if (ivaPerc === 0) {
+                          const natId = Number(prod.id_sdi_natura_iva) || 0
+                          if (natId > 0) {
+                            riga.id_sdi_natura_iva = natId
+                          } else {
+                            const nat = naturaOptions[0]
+                            if (nat) riga.id_sdi_natura_iva = nat.id_natura
+                          }
+                        }
+                        setRighe((rows) => rows.concat(riga))
+                        setStepperOpen(false)
+                      }}
+                    >
+                      Inserisci riga
+                    </CButton>
+                  )}
+                </div>
+              </CModalFooter>
+            </CModal>
             <CTable hover responsive>
               <CTableHead color="light">
                 <CTableRow className="align-middle">
-                  <CTableHeaderCell style={{ width: 140 }}>Tipo</CTableHeaderCell>
-                  <CTableHeaderCell>Prodotto/Pacchetto</CTableHeaderCell>
+                  <CTableHeaderCell>Prodotto</CTableHeaderCell>
                   <CTableHeaderCell>Descrizione</CTableHeaderCell>
                   <CTableHeaderCell className="text-end" style={{ width: 140 }}>Prezzo</CTableHeaderCell>
                   <CTableHeaderCell className="text-end" style={{ width: 120 }}>IVA %</CTableHeaderCell>
@@ -377,66 +896,30 @@ const ContrattiCreate = () => {
               </CTableHead>
               <CTableBody>
                 {righe.map((row, idx) => {
-                  const isPackage = row.tipo_item === 'pacchetto'
                   const requireNatura = Number(row.iva) === 0
                   return (
                     <React.Fragment key={`line-${idx}`}>
                       <CTableRow className="align-middle">
                         <CTableDataCell>
                           <CFormSelect
-                            value={row.tipo_item}
-                            onChange={(e) =>
-                              updateLine(idx, {
-                                tipo_item: e.target.value,
-                                id_prodotto: '',
-                                id_pacchetto: '',
-                              })
-                            }
-                          >
-                            <option value="prodotto">Prodotto</option>
-                            <option value="pacchetto">Pacchetto</option>
-                          </CFormSelect>
-                        </CTableDataCell>
-                        <CTableDataCell>
-                          {isPackage ? (
-                            <CFormSelect
-                              value={row.id_pacchetto}
-                              onChange={(e) => {
-                                const id = e.target.value
-                                const item = packagesMap.get(Number(id))
-                                updateLine(idx, {
-                                  id_pacchetto: id,
-                                  descrizione: row.descrizione || item?.nome || '',
-                                })
-                              }}
-                            >
-                              <option value="">Seleziona pacchetto</option>
-                              {pkgOptions.map((p) => (
-                                <option key={p.id_pacchetto} value={p.id_pacchetto}>
-                                  {p.codice ? `${p.codice} - ${p.nome}` : p.nome}
-                                </option>
-                              ))}
-                            </CFormSelect>
-                          ) : (
-                            <CFormSelect
-                              value={row.id_prodotto}
-                              onChange={(e) => {
-                                const id = e.target.value
+                            value={row.id_prodotto}
+                            onChange={(e) => {
+                              const id = e.target.value
                                 const item = productsMap.get(Number(id))
                                 updateLine(idx, {
                                   id_prodotto: id,
+                                  combo_key: '',
                                   descrizione: row.descrizione || item?.nome || '',
                                 })
                               }}
                             >
-                              <option value="">Seleziona prodotto</option>
-                              {prodOptions.map((p) => (
-                                <option key={p.id_prodotto} value={p.id_prodotto}>
-                                  {p.codice ? `${p.codice} - ${p.nome}` : p.nome}
-                                </option>
-                              ))}
-                            </CFormSelect>
-                          )}
+                            <option value="">Seleziona prodotto</option>
+                            {prodOptions.map((p) => (
+                              <option key={p.id_prodotto} value={p.id_prodotto}>
+                                {p.codice ? `${p.codice} - ${p.nome}` : p.nome}
+                              </option>
+                            ))}
+                          </CFormSelect>
                         </CTableDataCell>
                         <CTableDataCell>
                           <CFormInput
@@ -496,7 +979,7 @@ const ContrattiCreate = () => {
                         </CTableDataCell>
                       </CTableRow>
                       <CTableRow>
-                        <CTableDataCell colSpan={8}>
+                        <CTableDataCell colSpan={7}>
                           <div className="d-flex justify-content-between align-items-center mb-2">
                             <span className="text-body-secondary small">Sconti per quantita'</span>
                             <CButton color="secondary" size="sm" variant="outline" onClick={() => addTier(idx)} type="button">

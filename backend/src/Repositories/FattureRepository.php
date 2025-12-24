@@ -1708,9 +1708,11 @@ final class FattureRepository
             $qty = is_numeric($qtyRaw) ? (float) $qtyRaw : 1.0;
             $idProdotto = isset($line['id_prodotto']) ? (int) $line['id_prodotto'] : 0;
             $idPacchetto = isset($line['id_pacchetto']) ? (int) $line['id_pacchetto'] : 0;
+            $comboKey = isset($line['combo_key']) ? trim((string) $line['combo_key']) : null;
+            if ($comboKey === '') { $comboKey = null; }
             $pricing = null;
             if ($idProdotto > 0) {
-                $pricing = $repo->resolveProductPricing($idAnagrafica, $idProdotto, $qty);
+                $pricing = $repo->resolveProductPricing($idAnagrafica, $idProdotto, $qty, null, $comboKey);
             }
             if ($pricing === null && $idPacchetto > 0) {
                 $pricing = $repo->resolvePackagePricing($idAnagrafica, $idPacchetto, $qty);

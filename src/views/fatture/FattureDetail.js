@@ -727,6 +727,7 @@ const FattureDetail = () => {
           ? String(initial.aliquota_iva)
           : '22',
       id_sdi_natura_iva: initial.id_sdi_natura_iva ?? null,
+      combo_key: initial.combo_key ?? null,
     }
   }, [])
 
@@ -1349,6 +1350,7 @@ const FattureDetail = () => {
             id_categoria: line.id_categoria ?? null,
             categoria_nome: line.categoria_nome ?? null,
             id_sdi_natura_iva: line.id_sdi_natura_iva ?? null,
+            combo_key: line.combo_key ?? null,
           }),
         ),
       ])
@@ -1359,7 +1361,7 @@ const FattureDetail = () => {
   )
 
   const insertProductLine = useCallback(
-    ({ product, quantity, price, ivaPerc, description, naturaId }) => {
+    ({ product, quantity, price, ivaPerc, description, naturaId, comboKey }) => {
       if (!product) return
       const catId =
         product.id_categoria !== undefined && product.id_categoria !== null
@@ -1380,6 +1382,7 @@ const FattureDetail = () => {
           id_categoria: catId,
           categoria_nome: catName ?? product.categoria_nome ?? null,
           id_sdi_natura_iva: naturaId ?? null,
+          combo_key: comboKey || null,
         },
       ])
     },
@@ -1466,6 +1469,7 @@ const FattureDetail = () => {
       } else {
         naturaId = undefined
       }
+      const comboKey = row?.combo_key ? String(row.combo_key) : null
 
       normalized.push({
         descrizione: descr,
@@ -1475,6 +1479,7 @@ const FattureDetail = () => {
         aliquota_iva: ivaValue !== null ? ivaValue : undefined,
         id_prodotto: row?.id_prodotto ?? undefined,
         id_sdi_natura_iva: naturaId,
+        combo_key: comboKey || undefined,
       })
     })
     if (normalized.length === 0) {
@@ -2707,6 +2712,13 @@ const FattureDetail = () => {
                             .join(' ; ')
                           descr = `${prod.nome} - ${label}`
                         }
+                        const comboKey = Array.isArray(ids) && ids.length > 0
+                          ? ids
+                            .map((idv) => Number(idv) || 0)
+                            .filter((n) => n > 0)
+                            .sort((a, b) => a - b)
+                            .join('+')
+                          : ''
                         let naturaId = null
                         if (ivaPerc === 0) {
                           const prodNat = Number(prod.id_sdi_natura_iva) || 0
@@ -2723,6 +2735,7 @@ const FattureDetail = () => {
                           ivaPerc,
                           description: descr,
                           naturaId,
+                          comboKey,
                         })
                         setStepperOpen(false)
                       }}
