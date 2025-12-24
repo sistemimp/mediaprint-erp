@@ -22,7 +22,7 @@ npm run serve
 Variabili ambiente frontend (opzionali):
 - `VITE_API_BASE_URL` (default `/api`)
 - `VITE_AUTH_LOGIN_URL`
-- `VITE_IM_WS_URL` (URL WebSocket instant messaging, es. `ws://localhost:4010/ws/im`)
+- `VITE_IM_WS_URL` (URL WebSocket instant messaging, es. `wss://wss.mediaprint.it/ws/im`)
 
 ## Backend
 Da `backend/`:
@@ -38,7 +38,7 @@ node instant-messaging-server.js
 ```
 
 Variabili ambiente (opzionali):
-- `IM_API_BASE_URL` (base URL backend, es. `http://localhost:8000/pubblica`)
+- `IM_API_BASE_URL` (base URL backend, es. `https://gestionale.mediaprint.it/pubblica`)
 - `IM_WS_HOST` (default `0.0.0.0`)
 - `IM_WS_PORT` (default `4010`)
 

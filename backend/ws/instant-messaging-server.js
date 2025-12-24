@@ -40,7 +40,7 @@ applyEnvDefaults()
 const API_BASE_URL = (process.env.IM_API_BASE_URL ||
   process.env.VITE_API_BASE_URL ||
   process.env.API_BASE_URL ||
-  'http://localhost:8000/pubblica').replace(/\/$/, '')
+  'https://gestionale.mediaprint.it/pubblica').replace(/\/$/, '')
 const WS_HOST = process.env.IM_WS_HOST || '0.0.0.0'
 const WS_PORT = Number.parseInt(process.env.IM_WS_PORT || '4010', 10)
 

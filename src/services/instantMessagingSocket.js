@@ -1,16 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { getStoredToken } from './apiClient'
 
-const buildDefaultWsUrl = () => {
-  if (typeof window === 'undefined') {
-    return ''
-  }
-  const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
-  const host = window.location.hostname || 'localhost'
-  return `${protocol}://${host}:4010/ws/im`
-}
-
-export const DEFAULT_IM_WS_URL = import.meta.env.VITE_IM_WS_URL || buildDefaultWsUrl()
+export const DEFAULT_IM_WS_URL =
+  import.meta.env.VITE_IM_WS_URL || 'wss://wss.mediaprint.it/ws/im'
 
 export const useInstantMessagingSocket = ({
   url = DEFAULT_IM_WS_URL,
