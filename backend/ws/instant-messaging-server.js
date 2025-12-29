@@ -42,7 +42,7 @@ const API_BASE_URL = (process.env.IM_API_BASE_URL ||
   process.env.API_BASE_URL ||
   'https://gestionale.mediaprint.it/pubblica').replace(/\/$/, '')
 const WS_HOST = process.env.IM_WS_HOST || '0.0.0.0'
-const WS_PORT = Number.parseInt(process.env.IM_WS_PORT || '4010', 10)
+const WS_PORT = Number.parseInt(process.env.PORT || process.env.IM_WS_PORT || '4010', 10)
 
 const server = http.createServer((_req, res) => {
   res.writeHead(200, { 'Content-Type': 'application/json' })
