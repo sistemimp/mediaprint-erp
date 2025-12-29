@@ -2,6 +2,7 @@
 
 # dependencies
 /node_modules
+/backend/ws/node_modules
 package-lock.json
 yarn.lock
 
@@ -10,6 +11,8 @@ yarn.lock
 
 # production
 /build
+# backend node
+/node_modules
 
 # misc
 .eslintcache
