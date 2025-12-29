@@ -17,6 +17,7 @@
     "lint": "eslint",
     "serve": "vite preview",
     "start": "vite",
+    "start:ws": "npm --prefix backend/ws start",
     "postinstall": "patch-package"
   },
   "dependencies": {
@@ -40,7 +41,8 @@
     "react-router-dom": "^7.7.1",
     "redux": "5.0.1",
     "simplebar-react": "^3.3.2",
-    "xlsx": "^0.25.0"
+    "socket.io-client": "^4.8.1",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^5.0.0",

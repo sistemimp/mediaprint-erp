@@ -1,9 +1,0 @@
-{
-    "name": "mediaprint/im-ws",
-    "description": "Instant messaging WebSocket helper scripts",
-    "type": "project",
-    "scripts": {
-        "im:install": "npm install",
-        "im:start": "IM_API_BASE_URL=https://gestionale.mediaprint.it/pubblica IM_WS_HOST=127.0.0.1 IM_WS_PORT=4010 node instant-messaging-server.js"
-    }
-}

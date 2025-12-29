@@ -10,10 +10,11 @@ export const listImThreads = async () => {
   return response?.data ?? []
 }
 
-export const createImThread = async (accountId) => {
+export const createImThread = async (accountIds) => {
+  const ids = Array.isArray(accountIds) ? accountIds : [accountIds]
   const response = await apiFetch('/imThreadCreate.php', {
     method: 'POST',
-    body: { id_account: accountId },
+    body: { id_accounts: ids },
   })
   return response?.data ?? null
 }

@@ -1,26 +1,78 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { io } from 'socket.io-client'
 import { getStoredToken } from './apiClient'
 
-export const DEFAULT_IM_WS_URL =
-  import.meta.env.VITE_IM_WS_URL || 'wss://wss.mediaprint.it/ws/im'
+const DEFAULT_IM_WS_URL = 'wss://wss.mediaprint.it/ws/im'
+const DEFAULT_IM_WS_PATH = ''
+
+const resolveSocketConfig = () => {
+  const configuredUrl = import.meta.env.VITE_IM_WS_URL
+  const configuredPath = import.meta.env.VITE_IM_WS_PATH
+  return {
+    url: (configuredUrl && configuredUrl.trim()) || DEFAULT_IM_WS_URL,
+    path: (configuredPath && configuredPath.trim()) || DEFAULT_IM_WS_PATH,
+  }
+}
+
+const normalizeSocketUrl = (rawUrl) => {
+  if (!rawUrl) {
+    return null
+  }
+  try {
+    const parsed = new URL(rawUrl)
+    if (parsed.protocol === 'ws:') {
+      parsed.protocol = 'http:'
+    }
+    if (parsed.protocol === 'wss:') {
+      parsed.protocol = 'https:'
+    }
+    return parsed
+  } catch (_error) {
+    return null
+  }
+}
+
+const normalizeSocketPath = (rawPath) => {
+  if (!rawPath) {
+    return null
+  }
+  let normalized = rawPath.trim()
+  if (!normalized.startsWith('/')) {
+    normalized = `/${normalized}`
+  }
+  return normalized
+}
+
 
 export const useInstantMessagingSocket = ({
-  url = DEFAULT_IM_WS_URL,
+  url,
+  path,
   token,
+  enabled = true,
   onMessage,
   onThreadCreated,
+  onThreadRead,
   onError,
 } = {}) => {
   const [status, setStatus] = useState('idle')
   const [lastError, setLastError] = useState(null)
-  const wsRef = useRef(null)
+  const socketRef = useRef(null)
   const reconnectTimer = useRef(null)
   const shouldReconnect = useRef(true)
 
+  const { url: resolvedUrl, path: resolvedPath } = useMemo(() => resolveSocketConfig(), [])
   const resolvedToken = useMemo(() => token || getStoredToken(), [token])
 
   useEffect(() => {
-    if (!url || !resolvedToken) {
+    if (!enabled) {
+      setStatus('disabled')
+      setLastError(null)
+      return undefined
+    }
+    const socketUrl = url || resolvedUrl
+    const socketPathOverride = path || resolvedPath
+    const parsedUrl = normalizeSocketUrl(socketUrl)
+    if (!parsedUrl || !resolvedToken) {
       setStatus('disabled')
       return undefined
     }
@@ -45,35 +97,49 @@ export const useInstantMessagingSocket = ({
       setStatus('connecting')
       setLastError(null)
 
-      const separator = url.includes('?') ? '&' : '?'
-      const wsUrl = `${url}${separator}token=${encodeURIComponent(resolvedToken)}`
-      const socket = new WebSocket(wsUrl)
-      wsRef.current = socket
+      const rawSocketPath =
+        socketPathOverride ||
+        (parsedUrl.pathname && parsedUrl.pathname !== '/' ? parsedUrl.pathname : '/ws/im')
+      let socketPath = normalizeSocketPath(rawSocketPath) || '/ws/im'
+      if (!socketPathOverride && socketPath !== '/socket.io' && socketPath.endsWith('/socket.io')) {
+        socketPath = socketPath.slice(0, -'/socket.io'.length) || '/'
+      }
+      const socketBaseUrl = `${parsedUrl.protocol}//${parsedUrl.host}`
+      const socket = io(socketBaseUrl, {
+        path: socketPath,
+        auth: { token: resolvedToken },
+        query: { token: resolvedToken },
+        reconnection: false,
+      })
+      socketRef.current = socket
 
-      socket.addEventListener('open', () => {
+      socket.on('connect', () => {
         setStatus('connected')
       })
 
-      socket.addEventListener('message', (event) => {
-        let payload = null
-        try {
-          payload = JSON.parse(event.data)
-        } catch (_error) {
-          return
-        }
-
-        if (payload?.type === 'im.message' && onMessage) {
-          onMessage(payload.data, payload.threadId)
-          return
-        }
-
-        if (payload?.type === 'im.thread.created' && onThreadCreated) {
-          onThreadCreated(payload.data)
-          return
+      socket.on('im.message', (payload) => {
+        if (onMessage) {
+          onMessage(payload?.data, payload?.threadId)
         }
       })
 
-      socket.addEventListener('error', (event) => {
+      socket.on('im.thread.created', (payload) => {
+        if (onThreadCreated) {
+          onThreadCreated(payload)
+        }
+      })
+
+      socket.on('im.thread.read', (payload) => {
+        if (onThreadRead) {
+          onThreadRead(payload)
+        }
+      })
+
+      socket.on('im.error', (payload) => {
+        setLastError(payload?.message || 'Errore di connessione realtime.')
+      })
+
+      socket.on('connect_error', (event) => {
         setLastError('Errore di connessione realtime.')
         if (onError) {
           onError(event)
@@ -81,13 +147,20 @@ export const useInstantMessagingSocket = ({
         setStatus('error')
       })
 
-      socket.addEventListener('close', () => {
+      socket.on('disconnect', () => {
+        socketRef.current = null
         if (!shouldReconnect.current) {
           setStatus('disconnected')
           return
         }
         scheduleReconnect()
       })
+
+      if (socket.io) {
+        socket.io.on('reconnect_attempt', () => {
+          setStatus('reconnecting')
+        })
+      }
     }
 
     connectWebSocket()
@@ -97,31 +170,46 @@ export const useInstantMessagingSocket = ({
       if (reconnectTimer.current) {
         window.clearTimeout(reconnectTimer.current)
       }
-      if (wsRef.current) {
-        wsRef.current.close()
+      if (socketRef.current) {
+        socketRef.current.disconnect()
       }
-      wsRef.current = null
+      socketRef.current = null
     }
-  }, [url, resolvedToken, onMessage, onThreadCreated, onError])
+  }, [url, resolvedUrl, path, resolvedPath, resolvedToken, onMessage, onThreadCreated, onError, enabled])
 
-  const sendEvent = useCallback((payload) => {
-    const socket = wsRef.current
-    if (!socket || socket.readyState !== WebSocket.OPEN) {
+  const sendEvent = useCallback((event, payload) => {
+    const socket = socketRef.current
+    if (!socket || !socket.connected) {
       throw new Error('Connessione realtime non disponibile.')
     }
-    socket.send(JSON.stringify(payload))
+    socket.emit(event, payload)
   }, [])
 
   const sendMessage = useCallback(
     ({ threadId, body }) => {
-      sendEvent({ type: 'im.message', data: { threadId, body } })
+      sendEvent('im.message', { threadId, body })
     },
     [sendEvent],
   )
 
   const notifyThreadCreated = useCallback(
-    ({ threadId, targetAccountId }) => {
-      sendEvent({ type: 'im.thread.created', data: { threadId, targetAccountId } })
+    ({ threadId, targetAccountId, targetAccountIds }) => {
+      sendEvent('im.thread.created', {
+        threadId,
+        targetAccountId,
+        targetAccountIds: Array.isArray(targetAccountIds) ? targetAccountIds : undefined,
+      })
+    },
+    [sendEvent],
+  )
+
+  const notifyThreadRead = useCallback(
+    ({ threadId }) => {
+      const socket = socketRef.current
+      if (!socket || !socket.connected) {
+        return
+      }
+      socket.emit('im.thread.read', { threadId })
     },
     [sendEvent],
   )
@@ -131,5 +219,6 @@ export const useInstantMessagingSocket = ({
     lastError,
     sendMessage,
     notifyThreadCreated,
+    notifyThreadRead,
   }
 }

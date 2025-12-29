@@ -248,6 +248,22 @@ body {
   white-space: pre-wrap;
 }
 
+.im-message-footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 0.35rem;
+  font-size: 0.75rem;
+  opacity: 0.8;
+}
+
+.im-message-check {
+  color: currentColor;
+}
+
+.im-message-check-double {
+  margin-left: -0.2rem;
+}
+
 .im-send-form {
   display: flex;
   flex-direction: column;

@@ -16,7 +16,6 @@ import {
 } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
 import {
-  cilBell,
   cilContrast,
   cilEnvelopeOpen,
   cilList,
@@ -27,6 +26,7 @@ import {
 
 import { AppBreadcrumb } from './index'
 import { AppHeaderDropdown } from './header/index'
+import ChatNotificationBell from './header/ChatNotificationBell'
 
 const AppHeader = () => {
   const headerRef = useRef()
@@ -51,6 +51,9 @@ const AppHeader = () => {
         >
           <CIcon icon={cilMenu} size="lg" />
         </CHeaderToggler>
+        <CHeaderNav className="ms-2">
+          <ChatNotificationBell />
+        </CHeaderNav>
         <CHeaderNav className="d-none d-md-flex">
           <CNavItem>
             <CNavLink to="/dashboard" as={NavLink}>
@@ -65,11 +68,6 @@ const AppHeader = () => {
           </CNavItem>
         </CHeaderNav>
         <CHeaderNav className="ms-auto">
-          <CNavItem>
-            <CNavLink href="#">
-              <CIcon icon={cilBell} size="lg" />
-            </CNavLink>
-          </CNavItem>
           <CNavItem>
             <CNavLink href="#">
               <CIcon icon={cilList} size="lg" />

@@ -1,6 +1,6 @@
 const http = require('http')
 const { readFileSync, existsSync } = require('fs')
-const { WebSocketServer } = require('ws')
+const { Server } = require('socket.io')
 
 const parseEnvFile = (path) => {
   if (!existsSync(path)) {
@@ -41,24 +41,29 @@ const API_BASE_URL = (process.env.IM_API_BASE_URL ||
   process.env.VITE_API_BASE_URL ||
   process.env.API_BASE_URL ||
   'https://gestionale.mediaprint.it/pubblica').replace(/\/$/, '')
-const WS_HOST = process.env.IM_WS_HOST || '0.0.0.0'
+const WS_HOST = process.env.IM_WS_HOST || '127.0.0.1'
 const WS_PORT = Number.parseInt(process.env.PORT || process.env.IM_WS_PORT || '4010', 10)
 
 const server = http.createServer((_req, res) => {
   res.writeHead(200, { 'Content-Type': 'application/json' })
-  res.end(JSON.stringify({ ok: true }))
+  res.end(JSON.stringify({
+    ok: true,
+    config: {
+      apiBaseUrl: API_BASE_URL,
+      wsHost: WS_HOST,
+      wsPort: WS_PORT,
+    },
+  }))
 })
 
-const wss = new WebSocketServer({ server, path: '/ws/im' })
+const io = new Server(server, {
+  path: '/ws/im',
+  cors: {
+    origin: true,
+    credentials: true,
+  },
+})
 const connectionsByAccount = new Map()
-
-const safeJson = (input) => {
-  try {
-    return JSON.parse(input)
-  } catch (_error) {
-    return null
-  }
-}
 
 const apiRequest = async (path, token, body = null) => {
   const url = `${API_BASE_URL}/${path.replace(/^\//, '')}`
@@ -107,30 +112,29 @@ const detachConnection = (accountId, ws) => {
   }
 }
 
-const sendToAccount = (accountId, payload) => {
+const sendToAccount = (accountId, event, payload) => {
   const connections = connectionsByAccount.get(accountId)
   if (!connections) {
     return
   }
-  const message = JSON.stringify(payload)
   connections.forEach((socket) => {
-    if (socket.readyState === socket.OPEN) {
-      socket.send(message)
+    if (socket.connected) {
+      socket.emit(event, payload)
     }
   })
 }
 
-wss.on('connection', async (ws, req) => {
-  const requestUrl = new URL(req.url || '', `http://${req.headers.host || 'localhost'}`)
-  const queryToken = requestUrl.searchParams.get('token')
-  const headerTokenRaw = req.headers.authorization || ''
+io.use(async (socket, next) => {
+  const authToken = socket.handshake?.auth?.token
+  const queryToken = socket.handshake?.query?.token
+  const headerTokenRaw = socket.handshake?.headers?.authorization || ''
   const headerToken = headerTokenRaw.toLowerCase().startsWith('bearer ')
     ? headerTokenRaw.slice(7).trim()
     : headerTokenRaw.trim()
-  const token = queryToken || headerToken
+  const token = authToken || queryToken || headerToken
 
   if (!token) {
-    ws.close(1008, 'Token mancante')
+    next(new Error('Token mancante'))
     return
   }
 
@@ -139,79 +143,101 @@ wss.on('connection', async (ws, req) => {
     const user = me?.user
     const accountId = Number.parseInt(user?.id, 10)
     if (!accountId) {
-      ws.close(1008, 'Auth fallita')
+      next(new Error('Auth fallita'))
       return
     }
-
-    ws.accountId = accountId
-    ws.token = token
-    attachConnection(accountId, ws)
-    ws.send(JSON.stringify({ type: 'im.auth', data: { ok: true, accountId } }))
+    socket.data.accountId = accountId
+    socket.data.token = token
+    attachConnection(accountId, socket)
+    next()
   } catch (error) {
-    ws.send(JSON.stringify({ type: 'im.auth', data: { ok: false, message: error.message } }))
-    ws.close(1008, 'Auth fallita')
-    return
+    next(new Error(error.message || 'Auth fallita'))
   }
+})
 
-  ws.on('message', async (raw) => {
-    const message = safeJson(raw)
-    if (!message || typeof message !== 'object') {
-      ws.send(JSON.stringify({ type: 'im.error', data: { message: 'Payload non valido.' } }))
+io.on('connection', (socket) => {
+  const accountId = socket.data.accountId
+  socket.emit('im.auth', { ok: true, accountId })
+
+  socket.on('im.ping', () => {
+    socket.emit('im.pong', { t: Date.now() })
+  })
+
+  socket.on('im.thread.created', (payload) => {
+    const targetId = Number.parseInt(payload?.targetAccountId, 10)
+    const targetIds = Array.isArray(payload?.targetAccountIds) ? payload.targetAccountIds : []
+    const threadId = Number.parseInt(payload?.threadId, 10)
+    if (threadId && Array.isArray(targetIds) && targetIds.length > 0) {
+      targetIds
+        .map((id) => Number.parseInt(id, 10))
+        .filter((id) => Number.isFinite(id) && id > 0)
+        .forEach((id) => {
+          sendToAccount(id, 'im.thread.created', { threadId })
+        })
       return
     }
+    if (targetId && threadId) {
+      sendToAccount(targetId, 'im.thread.created', { threadId })
+    }
+  })
 
-    if (message.type === 'im.ping') {
-      ws.send(JSON.stringify({ type: 'im.pong', data: { t: Date.now() } }))
+  socket.on('im.thread.read', async (payload) => {
+    const threadId = Number.parseInt(payload?.threadId, 10)
+    if (!threadId) {
       return
     }
-
-    if (message.type === 'im.thread.created') {
-      const targetId = Number.parseInt(message?.data?.targetAccountId, 10)
-      const threadId = Number.parseInt(message?.data?.threadId, 10)
-      if (targetId && threadId) {
-        sendToAccount(targetId, { type: 'im.thread.created', data: { threadId } })
-      }
-      return
+    try {
+      await apiRequest('/imThreadRead.php', socket.data.token, { id_thread: threadId })
+      const threads = await apiRequest('/imThreadsList.php', socket.data.token)
+      const match = (threads?.data || []).find((item) => Number.parseInt(item?.id, 10) === threadId)
+      const participants = Array.isArray(match?.participants) ? match.participants : []
+      participants
+        .map((participant) => Number.parseInt(participant?.id, 10))
+        .filter((id) => Number.isFinite(id) && id > 0)
+        .forEach((id) => {
+          sendToAccount(id, 'im.thread.read', {
+            threadId,
+            readAt: new Date().toISOString(),
+          })
+        })
+    } catch (_error) {
+      // ignore
     }
+  })
 
-    if (message.type !== 'im.message') {
-      ws.send(JSON.stringify({ type: 'im.error', data: { message: 'Tipo messaggio non supportato.' } }))
-      return
-    }
-
-    const threadId = Number.parseInt(message?.data?.threadId, 10)
-    const body = String(message?.data?.body || '').trim()
+  socket.on('im.message', async (payload) => {
+    const threadId = Number.parseInt(payload?.threadId, 10)
+    const body = String(payload?.body || '').trim()
     if (!threadId || !body) {
-      ws.send(JSON.stringify({ type: 'im.error', data: { message: 'Messaggio incompleto.' } }))
+      socket.emit('im.error', { message: 'Messaggio incompleto.' })
       return
     }
 
     try {
-      const result = await apiRequest('/imMessagesSend.php', ws.token, {
+      const result = await apiRequest('/imMessagesSend.php', socket.data.token, {
         id_thread: threadId,
         body,
       })
-      const payload = result?.data
-      const participants = payload?.participants || []
+      const data = result?.data
+      const participants = data?.participants || []
       const broadcast = {
-        type: 'im.message',
-        data: payload?.message || null,
-        threadId: payload?.thread_id || threadId,
+        data: data?.message || null,
+        threadId: data?.thread_id || threadId,
       }
       participants.forEach((participantId) => {
-        sendToAccount(participantId, broadcast)
+        sendToAccount(participantId, 'im.message', broadcast)
       })
     } catch (error) {
-      ws.send(JSON.stringify({ type: 'im.error', data: { message: error.message } }))
+      socket.emit('im.error', { message: error.message || 'Errore invio messaggio.' })
     }
   })
 
-  ws.on('close', () => {
-    detachConnection(ws.accountId, ws)
+  socket.on('disconnect', () => {
+    detachConnection(accountId, socket)
   })
 })
 
 server.listen(WS_PORT, WS_HOST, () => {
   // eslint-disable-next-line no-console
-  console.log(`IM WebSocket listening on ws://${WS_HOST}:${WS_PORT}/ws/im`)
+  console.log(`IM Socket.IO listening on http://${WS_HOST}:${WS_PORT}/ws/im`)
 })

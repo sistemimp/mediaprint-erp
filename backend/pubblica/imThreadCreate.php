@@ -28,13 +28,25 @@ try {
         HttpResponse::error('Formato JSON non valido.', 400);
     }
 
-    $targetId = isset($payload['id_account']) ? (int) $payload['id_account'] : 0;
-    if ($targetId <= 0) {
+    $targetIds = [];
+    if (isset($payload['id_accounts']) && is_array($payload['id_accounts'])) {
+        $targetIds = $payload['id_accounts'];
+    } elseif (isset($payload['id_account'])) {
+        $targetIds = [(int) $payload['id_account']];
+    }
+    $hasValidTarget = false;
+    foreach ($targetIds as $targetId) {
+        if ((int) $targetId > 0) {
+            $hasValidTarget = true;
+            break;
+        }
+    }
+    if (!$hasValidTarget) {
         HttpResponse::error('Account di destinazione non valido.', 422);
     }
 
     $service = new InstantMessagingService(new InstantMessagingRepository(Database::getConnection()));
-    $thread = $service->createThread($accountId, $targetId);
+    $thread = $service->createThread($accountId, $targetIds);
     HttpResponse::json(['data' => $thread], 200);
 } catch (RuntimeException $exception) {
     $code = (int) ($exception->getCode() ?: 400);

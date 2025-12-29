@@ -107,11 +107,6 @@ final class InstantMessagingRepository
                 t.created_at,
                 t.last_message_at,
                 p_self.last_read_at,
-                p_other.id_account AS other_account_id,
-                a.username AS other_username,
-                a.account_type AS other_account_type,
-                r.code AS other_role_code,
-                r.label AS other_role_label,
                 last_msg.id_message AS last_message_id,
                 last_msg.body AS last_message_body,
                 last_msg.created_at AS last_message_created_at,
@@ -119,15 +114,11 @@ final class InstantMessagingRepository
                     SELECT COUNT(*)
                     FROM im_messages unread
                     WHERE unread.id_thread = t.id_thread
-                      AND unread.id_account <> :self
+                      AND unread.id_account <> :self_unread
                       AND unread.created_at > COALESCE(p_self.last_read_at, '1970-01-01 00:00:00')
                 ) AS unread_count
             FROM im_participants p_self
             INNER JOIN im_threads t ON t.id_thread = p_self.id_thread
-            INNER JOIN im_participants p_other ON p_other.id_thread = t.id_thread
-              AND p_other.id_account <> p_self.id_account
-            INNER JOIN auth_accounts a ON a.id_account = p_other.id_account
-            LEFT JOIN cfg_auth_ruoli r ON r.id_ruolo = a.id_ruolo
             LEFT JOIN im_messages last_msg ON last_msg.id_message = (
                 SELECT id_message
                 FROM im_messages m
@@ -141,8 +132,66 @@ final class InstantMessagingRepository
 
         $stmt = $this->pdo->prepare($sql);
         $stmt->bindValue(':self', $accountId, PDO::PARAM_INT);
+        $stmt->bindValue(':self_unread', $accountId, PDO::PARAM_INT);
         $stmt->execute();
         return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    }
+
+    /**
+     * @param list<int> $threadIds
+     * @return array<int, list<array<string, mixed>>>
+     */
+    public function listParticipantsForThreads(array $threadIds, int $excludeAccountId): array
+    {
+        if ($threadIds === []) {
+            return [];
+        }
+        $placeholders = [];
+        $params = [];
+        foreach (array_values($threadIds) as $index => $threadId) {
+            $key = ':thread' . $index;
+            $placeholders[] = $key;
+            $params[$key] = $threadId;
+        }
+        $placeholderList = implode(',', $placeholders);
+
+        $sql = <<<SQL
+            SELECT
+                p.id_thread,
+                a.id_account,
+                a.account_type,
+                a.username,
+                a.email,
+                a.is_active,
+                r.code AS role_code,
+                r.label AS role_label
+            FROM im_participants p
+            INNER JOIN auth_accounts a ON a.id_account = p.id_account
+            LEFT JOIN cfg_auth_ruoli r ON r.id_ruolo = a.id_ruolo
+            WHERE p.id_thread IN ({$placeholderList})
+              AND p.id_account <> :exclude
+            ORDER BY r.label ASC, a.username ASC
+        SQL;
+
+        $stmt = $this->pdo->prepare($sql);
+        foreach ($params as $key => $value) {
+            $stmt->bindValue($key, $value, PDO::PARAM_INT);
+        }
+        $stmt->bindValue(':exclude', $excludeAccountId, PDO::PARAM_INT);
+        $stmt->execute();
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        $grouped = [];
+        foreach ($rows as $row) {
+            $threadId = (int) ($row['id_thread'] ?? 0);
+            if ($threadId <= 0) {
+                continue;
+            }
+            if (!isset($grouped[$threadId])) {
+                $grouped[$threadId] = [];
+            }
+            $grouped[$threadId][] = $row;
+        }
+        return $grouped;
     }
 
     /**
@@ -183,6 +232,25 @@ final class InstantMessagingRepository
         }
         $stmt->execute();
         return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    }
+
+    public function getOtherParticipantsReadAt(int $threadId, int $accountId): ?string
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT SUM(CASE WHEN last_read_at IS NULL THEN 1 ELSE 0 END) AS missing, MIN(last_read_at) AS min_read
+             FROM im_participants
+             WHERE id_thread = :thread AND id_account <> :account'
+        );
+        $stmt->bindValue(':thread', $threadId, PDO::PARAM_INT);
+        $stmt->bindValue(':account', $accountId, PDO::PARAM_INT);
+        $stmt->execute();
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        $missing = isset($row['missing']) ? (int) $row['missing'] : 0;
+        if ($missing > 0) {
+            return null;
+        }
+        $value = $row['min_read'] ?? null;
+        return $value ? (string) $value : null;
     }
 
     public function isParticipant(int $threadId, int $accountId): bool
