@@ -22,6 +22,7 @@ if ($method !== 'GET') {
 
 try {
     $auth = AuthGuard::requireAuth();
+    AuthGuard::requirePermissions($auth, ['msg.read']);
     $accountId = AuthGuard::getAccountId($auth);
     $service = new InstantMessagingService(new InstantMessagingRepository(Database::getConnection()));
 

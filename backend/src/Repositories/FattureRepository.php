@@ -21,6 +21,7 @@ final class FattureRepository
     private bool $statusLogTableAvailable = false;
     /** @var array<int,string|null> */
     private array $statusLabelCache = [];
+    private ?bool $comboKeySupported = null;
     /** @var list<array<string,mixed>>|null */
     private ?array $paymentTerms = null;
     /** @var array<string,int|null> */
@@ -229,7 +230,7 @@ final class FattureRepository
     /**
      * @return list<array<string,mixed>>
      */
-    public function listLatest(int $limit = 200, ?array $allowedAnagrafiche = null): array
+    public function listLatest(int $limit = 200, ?array $allowedAnagrafiche = null, bool $excludeDraft = false): array
     {
         $limit = max(1, min($limit, 500));
         $sql = <<<'SQL'
@@ -246,6 +247,7 @@ final class FattureRepository
                 f.saldo,
                 f.note,
                 f.id_stato_fatt,
+                sf.code AS stato_code,
                 sf.label AS stato_label,
                 sz.code AS sezionale_code,
                 sz.descrizione AS sezionale_label,
@@ -268,11 +270,15 @@ final class FattureRepository
                 return [];
             }
         }
-        $where = '';
+        $whereParts = [];
         if ($allowed !== null) {
             $placeholders = implode(',', array_fill(0, count($allowed), '?'));
-            $where = "WHERE f.id_anagrafica IN ({$placeholders})";
+            $whereParts[] = "f.id_anagrafica IN ({$placeholders})";
         }
+        if ($excludeDraft) {
+            $whereParts[] = "(sf.code IS NULL OR sf.code <> 'bozza')";
+        }
+        $where = $whereParts ? ('WHERE ' . implode(' AND ', $whereParts)) : '';
 
         $sql = str_replace('/*FILTERS*/', $where, $sql);
         $sql = str_replace(':limit', (string) $limit, $sql);
@@ -608,6 +614,7 @@ final class FattureRepository
             'saldo' => isset($row['saldo']) ? (float) $row['saldo'] : null,
             'created_at' => $row['created_at'] ?? null,
             'updated_at' => $row['updated_at'] ?? null,
+            'stato_code' => $row['stato_code'] ?? null,
             'stato_label' => $row['stato_label'] ?? null,
             'id_stato_fatt' => isset($row['id_stato_fatt']) ? (int) $row['id_stato_fatt'] : null,
             'id_sdi_tipo_documento' => isset($row['id_sdi_tipo_documento']) ? (int) $row['id_sdi_tipo_documento'] : null,
@@ -658,8 +665,9 @@ final class FattureRepository
      */
     public function getLines(int $id): array
     {
-        $sql = <<<'SQL'
-            SELECT
+        $hasComboKey = $this->ensureComboKeyColumn();
+        $comboSelect = $hasComboKey ? ",\n                r.combo_key" : '';
+        $sql = 'SELECT
                 r.id_riga,
                 r.id_prodotto,
                 r.descrizione,
@@ -672,12 +680,11 @@ final class FattureRepository
                 r.id_sdi_natura_iva,
                 n.code AS sdi_natura_code,
                 r.totale,
-                r.posizione
+                r.posizione' . $comboSelect . '
             FROM tb_fatture_righe r
             LEFT JOIN cfg_sdi_natura_iva n ON n.id_natura = r.id_sdi_natura_iva
             WHERE r.id_fattura = :id
-            ORDER BY COALESCE(r.posizione, r.id_riga) ASC
-        SQL;
+            ORDER BY COALESCE(r.posizione, r.id_riga) ASC';
 
         $stmt = $this->pdo->prepare($sql);
         $stmt->bindValue(':id', $id, PDO::PARAM_INT);
@@ -700,6 +707,7 @@ final class FattureRepository
                 'sdi_natura_code' => $row['sdi_natura_code'] ?? null,
                 'totale' => isset($row['totale']) ? (float) $row['totale'] : null,
                 'posizione' => isset($row['posizione']) ? (int) $row['posizione'] : null,
+                'combo_key' => $hasComboKey ? ($row['combo_key'] ?? null) : null,
             ];
         }
 
@@ -1158,10 +1166,13 @@ final class FattureRepository
 
             $idFattura = (int) $this->pdo->lastInsertId();
 
+            $hasComboKey = $this->ensureComboKeyColumn();
+            $comboColumn = $hasComboKey ? "\n                    combo_key," : '';
+            $comboValue = $hasComboKey ? "\n                    :combo_key," : '';
             $linesStmt = $this->pdo->prepare(
                 'INSERT INTO tb_fatture_righe (
                     id_fattura,
-                    id_prodotto,
+                    id_prodotto,' . $comboColumn . '
                     descrizione,
                     quantita,
                     aliquota_iva,
@@ -1174,7 +1185,7 @@ final class FattureRepository
                     posizione
                 ) VALUES (
                     :id_fattura,
-                    :id_prodotto,
+                    :id_prodotto,' . $comboValue . '
                     :descrizione,
                     :quantita,
                     :aliquota_iva,
@@ -1202,6 +1213,10 @@ final class FattureRepository
                 $aliquota = isset($line['iva']) ? (float) $line['iva'] : 22.0;
                 $idProdotto = isset($line['id_prodotto']) ? (int) $line['id_prodotto'] : null;
                 $idNatura = isset($line['id_sdi_natura_iva']) ? (int) $line['id_sdi_natura_iva'] : null;
+                $comboKey = isset($line['combo_key']) ? trim((string) $line['combo_key']) : null;
+                if ($comboKey === '') {
+                    $comboKey = null;
+                }
 
                 $imponibile = $quantita * $prezzo;
                 if ($sconto > 0) {
@@ -1213,6 +1228,9 @@ final class FattureRepository
 
                 $linesStmt->bindValue(':id_fattura', $idFattura, PDO::PARAM_INT);
                 $linesStmt->bindValue(':id_prodotto', $idProdotto, $idProdotto ? PDO::PARAM_INT : PDO::PARAM_NULL);
+                if ($hasComboKey) {
+                    $linesStmt->bindValue(':combo_key', $comboKey, $comboKey ? PDO::PARAM_STR : PDO::PARAM_NULL);
+                }
                 $linesStmt->bindValue(':descrizione', $descrizione, PDO::PARAM_STR);
                 $linesStmt->bindValue(':quantita', $quantita, PDO::PARAM_STR);
                 $linesStmt->bindValue(':aliquota_iva', $aliquota, PDO::PARAM_STR);
@@ -1582,6 +1600,10 @@ final class FattureRepository
             if ($idNatura !== null && $idNatura <= 0) {
                 $idNatura = null;
             }
+            $comboKey = isset($line['combo_key']) ? trim((string) $line['combo_key']) : null;
+            if ($comboKey === '') {
+                $comboKey = null;
+            }
 
             $lordo = $quantita * $prezzo;
             $scontoValore = 0.0;
@@ -1603,6 +1625,7 @@ final class FattureRepository
                 'iva' => $iva,
                 'id_sdi_natura_iva' => $idNatura,
                 'totale' => $totale,
+                'combo_key' => $comboKey,
             ];
         }
 
@@ -1620,10 +1643,13 @@ final class FattureRepository
             $del->bindValue(':id', $id, PDO::PARAM_INT);
             $del->execute();
 
+            $hasComboKey = $this->ensureComboKeyColumn();
+            $comboColumn = $hasComboKey ? "\n                    combo_key," : '';
+            $comboValue = $hasComboKey ? "\n                    :combo_key," : '';
             $stmt = $this->pdo->prepare(
                 'INSERT INTO tb_fatture_righe (
                     id_fattura,
-                    id_prodotto,
+                    id_prodotto,' . $comboColumn . '
                     descrizione,
                     quantita,
                     aliquota_iva,
@@ -1636,7 +1662,7 @@ final class FattureRepository
                     posizione
                 ) VALUES (
                     :id_fattura,
-                    :id_prodotto,
+                    :id_prodotto,' . $comboValue . '
                     :descrizione,
                     :quantita,
                     :aliquota_iva,
@@ -1654,6 +1680,9 @@ final class FattureRepository
         foreach ($normalized as $line) {
                 $stmt->bindValue(':id_fattura', $id, PDO::PARAM_INT);
                 $stmt->bindValue(':id_prodotto', $line['id_prodotto'], $line['id_prodotto'] ? PDO::PARAM_INT : PDO::PARAM_NULL);
+                if ($hasComboKey) {
+                    $stmt->bindValue(':combo_key', $line['combo_key'], $line['combo_key'] ? PDO::PARAM_STR : PDO::PARAM_NULL);
+                }
                 $stmt->bindValue(':descrizione', $line['descrizione'], PDO::PARAM_STR);
                 $stmt->bindValue(':quantita', $line['quantita'], PDO::PARAM_STR);
                 $stmt->bindValue(':aliquota_iva', $line['aliquota_iva'], PDO::PARAM_STR);
@@ -2440,6 +2469,29 @@ final class FattureRepository
 
         $this->statusLogTableEnsured = true;
         return $this->statusLogTableAvailable;
+    }
+
+    private function ensureComboKeyColumn(): bool
+    {
+        if ($this->comboKeySupported !== null) {
+            return $this->comboKeySupported;
+        }
+
+        $exists = false;
+        try {
+            $stmt = $this->pdo->query("SHOW COLUMNS FROM tb_fatture_righe LIKE 'combo_key'");
+            $exists = $stmt && $stmt->fetch(PDO::FETCH_ASSOC) !== false;
+            if (!$exists) {
+                $this->pdo->exec("ALTER TABLE tb_fatture_righe ADD COLUMN combo_key VARCHAR(255) NULL AFTER id_prodotto");
+                $stmt = $this->pdo->query("SHOW COLUMNS FROM tb_fatture_righe LIKE 'combo_key'");
+                $exists = $stmt && $stmt->fetch(PDO::FETCH_ASSOC) !== false;
+            }
+        } catch (\Throwable $ignored) {
+            $exists = false;
+        }
+
+        $this->comboKeySupported = $exists;
+        return $this->comboKeySupported;
     }
 
     private function logStatusHistory(int $idFattura, ?int $fromStatusId, ?int $toStatusId, ?string $actor = null): void

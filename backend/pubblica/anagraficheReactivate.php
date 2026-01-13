@@ -11,7 +11,7 @@ header('Content-Type: application/json; charset=utf-8');
 try {
     // Parse JSON body
     $auth = AuthGuard::requireAuth();
-    AuthGuard::requirePermissions($auth, ['anag.edit']);
+    AuthGuard::requirePermissions($auth, ['anag.write']);
     if (AuthGuard::getAccountType($auth) === 'cliente') {
         throw new RuntimeException('Accesso non consentito.', 403);
     }

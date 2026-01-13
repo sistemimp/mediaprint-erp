@@ -148,48 +148,58 @@ final class PagamentiRepository
             if ($allowed === []) {
                 return [];
             }
-            $placeholders = [];
+            $assignedPlaceholders = [];
+            $pendingPlaceholders = [];
             foreach ($allowed as $index => $id) {
-                $key = ':allowed_' . $index;
-                $placeholders[] = $key;
-                $params[$key] = $id;
+                $assignedKey = ':allowed_a_' . $index;
+                $pendingKey = ':allowed_p_' . $index;
+                $assignedPlaceholders[] = $assignedKey;
+                $pendingPlaceholders[] = $pendingKey;
+                $params[$assignedKey] = $id;
+                $params[$pendingKey] = $id;
             }
-            $assignedWhere[] = 'f.id_anagrafica IN (' . implode(',', $placeholders) . ')';
-            $pendingWhere[] = 'pag.id_anagrafica_hint IN (' . implode(',', $placeholders) . ')';
+            $assignedWhere[] = 'f.id_anagrafica IN (' . implode(',', $assignedPlaceholders) . ')';
+            $pendingWhere[] = 'pag.id_anagrafica_hint IN (' . implode(',', $pendingPlaceholders) . ')';
         }
 
         if (!empty($filters['id_anagrafica'])) {
-            $assignedWhere[] = 'f.id_anagrafica = :id_anagrafica';
-            $pendingWhere[] = 'pag.id_anagrafica_hint = :id_anagrafica';
-            $params[':id_anagrafica'] = (int) $filters['id_anagrafica'];
+            $assignedWhere[] = 'f.id_anagrafica = :id_anagrafica_a';
+            $pendingWhere[] = 'pag.id_anagrafica_hint = :id_anagrafica_p';
+            $params[':id_anagrafica_a'] = (int) $filters['id_anagrafica'];
+            $params[':id_anagrafica_p'] = (int) $filters['id_anagrafica'];
         }
         if (!empty($filters['date_from'])) {
-            $assignedWhere[] = 'p.data_pagamento >= :date_from';
-            $pendingWhere[] = 'pag.data_pagamento >= :date_from';
-            $params[':date_from'] = $filters['date_from'];
+            $assignedWhere[] = 'p.data_pagamento >= :date_from_a';
+            $pendingWhere[] = 'pag.data_pagamento >= :date_from_p';
+            $params[':date_from_a'] = $filters['date_from'];
+            $params[':date_from_p'] = $filters['date_from'];
         }
         if (!empty($filters['date_to'])) {
-            $assignedWhere[] = 'p.data_pagamento <= :date_to';
-            $pendingWhere[] = 'pag.data_pagamento <= :date_to';
-            $params[':date_to'] = $filters['date_to'];
+            $assignedWhere[] = 'p.data_pagamento <= :date_to_a';
+            $pendingWhere[] = 'pag.data_pagamento <= :date_to_p';
+            $params[':date_to_a'] = $filters['date_to'];
+            $params[':date_to_p'] = $filters['date_to'];
         }
         if (!empty($filters['q'])) {
             $term = '%' . trim((string) $filters['q']) . '%';
             $assignedWhere[] = '('
-                . 'a.ragione_sociale LIKE :term_cliente '
-                . 'OR f.numero_documento LIKE :term_numero '
-                . 'OR CAST(f.anno AS CHAR) LIKE :term_anno '
-                . 'OR p.note LIKE :term_note'
+                . 'a.ragione_sociale LIKE :term_cliente_a '
+                . 'OR f.numero_documento LIKE :term_numero_a '
+                . 'OR CAST(f.anno AS CHAR) LIKE :term_anno_a '
+                . 'OR p.note LIKE :term_note_a'
                 . ')';
             $pendingWhere[] = '('
-                . 'pag.cliente_nome_hint LIKE :term_cliente '
-                . 'OR pag.reference LIKE :term_numero '
-                . 'OR pag.note LIKE :term_note'
+                . 'pag.cliente_nome_hint LIKE :term_cliente_p '
+                . 'OR pag.reference LIKE :term_numero_p '
+                . 'OR pag.note LIKE :term_note_p'
                 . ')';
-            $params[':term_cliente'] = $term;
-            $params[':term_numero'] = $term;
-            $params[':term_anno'] = $term;
-            $params[':term_note'] = $term;
+            $params[':term_cliente_a'] = $term;
+            $params[':term_numero_a'] = $term;
+            $params[':term_anno_a'] = $term;
+            $params[':term_note_a'] = $term;
+            $params[':term_cliente_p'] = $term;
+            $params[':term_numero_p'] = $term;
+            $params[':term_note_p'] = $term;
         }
 
         $assignedSql = <<<'SQL'

@@ -13,7 +13,7 @@ if ($method === 'OPTIONS') { HttpResponse::json(['message' => 'OK']); }
 
 try {
     $auth = AuthGuard::requireAuth();
-    AuthGuard::requirePermissions($auth, ['cfg.view']);
+    AuthGuard::requirePermissions($auth, ['prod.read']);
     if (AuthGuard::getAccountType($auth) === 'cliente') {
         HttpResponse::json(['items' => []], 200);
         return;

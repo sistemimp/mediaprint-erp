@@ -20,6 +20,7 @@ import {
 import { useAuth } from '../../context/AuthContext'
 import { fetchVariazioni, saveVariazione, deleteVariazione } from '../../services/prodotti'
 import BottomToast from '../../components/BottomToast'
+import PermissionButton from '../../components/PermissionButton'
 
 const VariazioniList = () => {
   const { token, logout } = useAuth()
@@ -155,7 +156,14 @@ const VariazioniList = () => {
       <CCardHeader>
         <div className="d-flex justify-content-between align-items-center">
           <h5 className="mb-0">Prodotti - Variazioni</h5>
-          <CButton color="primary" variant="outline" onClick={startCreate}>Nuova variazione</CButton>
+          <PermissionButton
+            color="primary"
+            variant="outline"
+            onClick={startCreate}
+            permission="prod.create"
+          >
+            Nuova variazione
+          </PermissionButton>
         </div>
       </CCardHeader>
       <CCardBody>
@@ -178,7 +186,14 @@ const VariazioniList = () => {
                 </datalist>
               </CCol>
               <CCol md="auto">
-                <CButton type="submit" color="primary" disabled={saving || String(name).trim() === ''}>Salva</CButton>
+                <PermissionButton
+                  type="submit"
+                  color="primary"
+                  disabled={saving || String(name).trim() === ''}
+                  permission="prod.write"
+                >
+                  Salva
+                </PermissionButton>
               </CCol>
               <CCol md="auto">
                 <CButton color="secondary" variant="outline" onClick={cancel}>Annulla</CButton>
@@ -211,14 +226,15 @@ const VariazioniList = () => {
                   <CTableDataCell>{r.nome}</CTableDataCell>
                   <CTableDataCell>{r.codice || '-'}</CTableDataCell>
                   <CTableDataCell className="text-center">
-                    <CButton
+                    <PermissionButton
                       size="sm"
                       color="danger"
                         variant="outline"
                         onClick={(e) => { e.stopPropagation(); handleDelete(r) }}
+                        permission="prod.delete"
                       >
                         Elimina
-                      </CButton>
+                      </PermissionButton>
                     </CTableDataCell>
                   </CTableRow>
                 ))}

@@ -242,6 +242,12 @@ HTML;
                 throw new \RuntimeException('Preventivo non trovato.', 404);
             }
         }
+        if (!empty($input['exclude_draft'])) {
+            $statusCode = strtolower((string) ($row['stato_code'] ?? 'bozza'));
+            if ($statusCode === 'bozza') {
+                throw new \RuntimeException('Preventivo non trovato.', 404);
+            }
+        }
 
         $linkedDdt = isset($row['linked_ddt']) && is_array($row['linked_ddt']) ? $row['linked_ddt'] : [];
         $linkedFatture = isset($row['linked_fatture']) && is_array($row['linked_fatture']) ? $row['linked_fatture'] : [];
@@ -306,7 +312,8 @@ HTML;
         $allowed = isset($input['allowed_anagrafiche']) && is_array($input['allowed_anagrafiche'])
             ? $input['allowed_anagrafiche']
             : null;
-        $rows = $this->repository->listLatest($limit, $allowed);
+        $excludeDraft = !empty($input['exclude_draft']);
+        $rows = $this->repository->listLatest($limit, $allowed, $excludeDraft);
 
         return [
             'data' => $rows,
@@ -329,6 +336,9 @@ HTML;
         ];
         if (isset($input['allowed_anagrafiche']) && is_array($input['allowed_anagrafiche'])) {
             $filters['allowed_ids'] = $input['allowed_anagrafiche'];
+        }
+        if (!empty($input['exclude_draft'])) {
+            $filters['exclude_draft'] = true;
         }
 
         $result = $this->repository->searchArchived($filters);
@@ -451,10 +461,16 @@ HTML;
 
         $send = isset($input['send']) ? (int) $input['send'] === 1 : false;
         $lines = [];
-        if (isset($input['righe']) && is_array($input['righe'])) {
+        $hasLinesPayload = array_key_exists('righe', $input);
+        if ($hasLinesPayload && is_array($input['righe'])) {
             // normalizza righe
             foreach ($input['righe'] as $r) {
                 if (!is_array($r)) continue;
+                $comboKeyRaw = $r['combo_key'] ?? ($r['comboKey'] ?? null);
+                $comboKey = $comboKeyRaw !== null ? trim((string) $comboKeyRaw) : null;
+                if ($comboKey === '') {
+                    $comboKey = null;
+                }
                 $lines[] = [
                     'descrizione' => (string) ($r['descrizione'] ?? ''),
                     'quantita' => isset($r['quantita']) ? (float) $r['quantita'] : 1.0,
@@ -462,6 +478,7 @@ HTML;
                     'sconto' => isset($r['sconto']) ? (float) $r['sconto'] : 0.0,
                     'iva' => isset($r['iva']) ? (float) $r['iva'] : 22.0,
                     'id_prodotto' => isset($r['id_prodotto']) ? (int) $r['id_prodotto'] : null,
+                    'combo_key' => $comboKey,
                     'id_sdi_natura_iva' => isset($r['id_sdi_natura_iva']) ? (int) $r['id_sdi_natura_iva'] : null,
                 ];
             }
@@ -570,8 +587,8 @@ HTML;
             // Aggiorna selezioni oggetto + testo (solo da label selezionate)
             $this->repository->replaceOggettiAndUpdateText($idPrev, $oggettiIds);
 
-            if (!empty($lines)) {
-                // aggiorna righe bozza
+            if ($hasLinesPayload) {
+                // aggiorna righe bozza (consente anche svuotamento)
                 $this->repository->replaceLines($idPrev, $lines);
             }
             // sostituisce CIG e Determine (consente anche svuotamento)
@@ -613,7 +630,7 @@ HTML;
         // Imposta selezioni multi-oggetto e aggiorna testo
         $this->repository->replaceOggettiAndUpdateText($draft['id_preventivo'], $oggettiIds);
 
-        if (!empty($lines)) {
+        if ($hasLinesPayload) {
             $this->repository->replaceLines($draft['id_preventivo'], $lines);
         }
         // Inserisce CIG/Determine per la bozza

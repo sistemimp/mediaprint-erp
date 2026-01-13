@@ -176,7 +176,7 @@ final class ContrattiRepository
     }
 
     /**
-     * @param array{q?:?string,id_anagrafica?:?int,only_active?:?bool,limit?:?int} $filters
+     * @param array{q?:?string,id_anagrafica?:?int,only_active?:?bool,exclude_draft?:?bool,limit?:?int} $filters
      * @return list<array<string,mixed>>
      */
     public function list(array $filters = []): array
@@ -212,6 +212,9 @@ final class ContrattiRepository
         }
         if (array_key_exists('only_active', $filters) && $filters['only_active'] === true) {
             $sql .= ' AND c.attivo = 1';
+        }
+        if (!empty($filters['exclude_draft'])) {
+            $sql .= " AND COALESCE(sc.code, 'bozza') <> 'bozza'";
         }
         $sql .= ' ORDER BY c.data_inizio DESC, c.id_contratto DESC';
         $limit = isset($filters['limit']) ? (int) $filters['limit'] : 200;
@@ -731,22 +734,35 @@ final class ContrattiRepository
     /**
      * @return array<string,mixed>|null
      */
-    public function findActiveContract(int $idAnagrafica, ?string $dateRef = null): ?array
+    public function findActiveContract(int $idAnagrafica, ?string $dateRef = null, bool $excludeDraft = false): ?array
     {
         $this->ensureSchema();
         $dateRef = $dateRef ?: date('Y-m-d');
-        $stmt = $this->pdo->prepare(<<<'SQL'
-            SELECT id_contratto, id_anagrafica, codice, titolo, testo_legale, data_inizio, data_fine, rinnovo_automatico, attivo
-            FROM tb_contratti
-            WHERE id_anagrafica = :anag
-              AND attivo = 1
-              AND data_inizio <= :ref
+        $excludeSql = $excludeDraft ? " AND COALESCE(sc.code, 'bozza') <> 'bozza'" : '';
+        $stmt = $this->pdo->prepare(<<<SQL
+            SELECT
+                c.id_contratto,
+                c.id_anagrafica,
+                c.codice,
+                c.titolo,
+                c.testo_legale,
+                c.data_inizio,
+                c.data_fine,
+                c.rinnovo_automatico,
+                c.attivo,
+                sc.code AS stato_code,
+                sc.label AS stato_label
+            FROM tb_contratti c
+            LEFT JOIN cfg_stati_contratto sc ON sc.id_stato = c.id_stato_contr
+            WHERE c.id_anagrafica = :anag
+              AND c.attivo = 1
+              AND c.data_inizio <= :ref
               AND (
-                data_fine IS NULL
-                OR data_fine >= :ref
-                OR rinnovo_automatico = 1
-              )
-            ORDER BY data_inizio DESC, id_contratto DESC
+                c.data_fine IS NULL
+                OR c.data_fine >= :ref
+                OR c.rinnovo_automatico = 1
+              ){$excludeSql}
+            ORDER BY c.data_inizio DESC, c.id_contratto DESC
             LIMIT 1
         SQL);
         $stmt->bindValue(':anag', $idAnagrafica, PDO::PARAM_INT);
@@ -766,6 +782,8 @@ final class ContrattiRepository
             'data_fine' => $row['data_fine'] ?? null,
             'rinnovo_automatico' => (int) ($row['rinnovo_automatico'] ?? 0),
             'attivo' => (int) ($row['attivo'] ?? 1),
+            'stato_code' => $row['stato_code'] ?? null,
+            'stato_label' => $row['stato_label'] ?? null,
         ];
     }
 
@@ -819,10 +837,10 @@ final class ContrattiRepository
               AND c.attivo = 1
               AND r.tipo_item = 'prodotto'
               AND r.id_prodotto = :prod
-              AND c.data_inizio <= :ref
+              AND c.data_inizio <= :ref_start
               AND (
                 c.data_fine IS NULL
-                OR c.data_fine >= :ref
+                OR c.data_fine >= :ref_end
                 OR c.rinnovo_automatico = 1
               )
         SQL;
@@ -836,7 +854,8 @@ final class ContrattiRepository
         $stmt = $this->pdo->prepare($sql);
         $stmt->bindValue(':anag', $idAnagrafica, PDO::PARAM_INT);
         $stmt->bindValue(':prod', $idProdotto, PDO::PARAM_INT);
-        $stmt->bindValue(':ref', $dateRef, PDO::PARAM_STR);
+        $stmt->bindValue(':ref_start', $dateRef, PDO::PARAM_STR);
+        $stmt->bindValue(':ref_end', $dateRef, PDO::PARAM_STR);
         if ($comboKey !== null) {
             $stmt->bindValue(':combo', $comboKey, PDO::PARAM_STR);
         }
@@ -869,10 +888,10 @@ final class ContrattiRepository
               AND c.attivo = 1
               AND r.tipo_item = 'pacchetto'
               AND r.id_pacchetto = :pkg
-              AND c.data_inizio <= :ref
+              AND c.data_inizio <= :ref_start
               AND (
                 c.data_fine IS NULL
-                OR c.data_fine >= :ref
+                OR c.data_fine >= :ref_end
                 OR c.rinnovo_automatico = 1
               )
             ORDER BY c.data_inizio DESC, c.id_contratto DESC
@@ -880,7 +899,8 @@ final class ContrattiRepository
         SQL);
         $stmt->bindValue(':anag', $idAnagrafica, PDO::PARAM_INT);
         $stmt->bindValue(':pkg', $idPacchetto, PDO::PARAM_INT);
-        $stmt->bindValue(':ref', $dateRef, PDO::PARAM_STR);
+        $stmt->bindValue(':ref_start', $dateRef, PDO::PARAM_STR);
+        $stmt->bindValue(':ref_end', $dateRef, PDO::PARAM_STR);
         $stmt->execute();
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
         if ($row === false) {

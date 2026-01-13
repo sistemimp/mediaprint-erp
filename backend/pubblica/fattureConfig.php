@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require __DIR__ . '/../bootstrap.php';
 
+use MediaPrint\Backend\AuthGuard;
 use MediaPrint\Backend\Database;
 use MediaPrint\Backend\HttpResponse;
 use MediaPrint\Repo\FattureRepository;
@@ -19,7 +20,10 @@ if ($method !== 'GET') {
 }
 
 try {
-    $repo = new FattureRepository(Database::getConnection());
+$auth = AuthGuard::requireAuth();
+    AuthGuard::requirePermissions($auth, ['fatt.read']);
+
+        $repo = new FattureRepository(Database::getConnection());
     $payload = [
         'sezionali' => $repo->listSezionali(),
         'tipi' => $repo->listTipi(),

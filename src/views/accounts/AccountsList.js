@@ -1,7 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   CAlert,
   CButton,
+  CAvatar,
   CCard,
   CCardBody,
   CCardHeader,
@@ -31,6 +33,7 @@ import CIcon from '@coreui/icons-react'
 import { cilCheckCircle, cilPlus, cilPencil, cilReload, cilSend, cilTrash } from '@coreui/icons'
 
 import { useAuth } from '../../context/AuthContext'
+import { buildApiUrl } from '../../services/apiClient'
 import {
   createAccount,
   deleteAccount,
@@ -42,6 +45,8 @@ import {
   sendWelcomeEmail,
   updateAccount,
 } from '../../services/accounts'
+import PermissionButton from '../../components/PermissionButton'
+import avatarFallback from './../../assets/images/avatars/8.jpg'
 
 const emptyForm = {
   id_account: null,
@@ -62,8 +67,38 @@ const formatDateTime = (value) => {
   return parsed.toLocaleString('it-IT')
 }
 
+const resolveUploadsBase = () => {
+  const configured = import.meta.env.VITE_UPLOADS_BASE_URL
+  if (configured && configured.trim() !== '') {
+    return configured.trim()
+  }
+
+  const apiBase = buildApiUrl('/').toString()
+  try {
+    return new URL('uploads/', new URL('../', apiBase)).toString()
+  } catch (_error) {
+    return apiBase
+  }
+}
+
+const resolveAvatarUrl = (avatarPath) => {
+  if (!avatarPath || String(avatarPath).trim() === '') {
+    return null
+  }
+  const normalized = String(avatarPath).trim()
+  if (/^https?:\/\//i.test(normalized)) {
+    return normalized
+  }
+  const withoutUploadsPrefix = normalized.replace(/^\/?uploads\//i, '')
+  const base = resolveUploadsBase()
+  const baseUrl = base.endsWith('/') ? base : `${base}/`
+  const cleanPath = withoutUploadsPrefix.replace(/^\/+/, '')
+  return new URL(cleanPath, baseUrl).toString()
+}
+
 const AccountsList = () => {
   const { token, logout } = useAuth()
+  const navigate = useNavigate()
   const [accounts, setAccounts] = useState([])
   const [roles, setRoles] = useState([])
   const [filters, setFilters] = useState({ search: '', accountType: '', status: 'all' })
@@ -607,10 +642,15 @@ const AccountsList = () => {
             <h5 className="mb-0">Account - Gestione</h5>
             <small className="text-body-secondary">Crea, modifica, disattiva e resetta password</small>
           </div>
-          <CButton color="primary" variant="outline" onClick={openCreateModal}>
+          <PermissionButton
+            color="primary"
+            variant="outline"
+            onClick={openCreateModal}
+            permission="acct.create"
+          >
             <CIcon icon={cilPlus} className="me-2" />
             Nuovo account
-          </CButton>
+          </PermissionButton>
         </div>
       </CCardHeader>
       <CCardBody>
@@ -676,7 +716,12 @@ const AccountsList = () => {
             <CTableBody>
               {accounts.map((row) => (
                 <CTableRow key={row.id_account} className="align-middle">
-                  <CTableDataCell>{row.username || '-'}</CTableDataCell>
+                  <CTableDataCell>
+                    <div className="d-flex align-items-center gap-2">
+                      <CAvatar size="sm" src={resolveAvatarUrl(row.avatar_path) || avatarFallback} />
+                      <span>{row.username || '-'}</span>
+                    </div>
+                  </CTableDataCell>
                   <CTableDataCell>{row.email || '-'}</CTableDataCell>
                   <CTableDataCell className="text-capitalize">{row.account_type || '-'}</CTableDataCell>
                   <CTableDataCell>{row.role_label || '-'}</CTableDataCell>
@@ -690,10 +735,26 @@ const AccountsList = () => {
                   <CTableDataCell>{formatDateTime(row.last_login)}</CTableDataCell>
                   <CTableDataCell className="text-center">
                     <div className="d-flex justify-content-center gap-2">
-                      <CButton color="link" size="sm" className="p-0" onClick={() => openEditModal(row)}>
+                      <PermissionButton
+                        color="secondary"
+                        size="sm"
+                        variant="outline"
+                        className="px-2"
+                        onClick={() => navigate(`/accounts/dettagli?id=${row.id_account}`)}
+                        permission="acct.read"
+                      >
+                        Dettagli
+                      </PermissionButton>
+                      <PermissionButton
+                        color="link"
+                        size="sm"
+                        className="p-0"
+                        onClick={() => openEditModal(row)}
+                        permission="acct.write"
+                      >
                         <CIcon icon={cilPencil} />
-                      </CButton>
-                      <CButton
+                      </PermissionButton>
+                      <PermissionButton
                         color="warning"
                         size="sm"
                         variant="outline"
@@ -701,10 +762,11 @@ const AccountsList = () => {
                         title="Reset password"
                         onClick={() => handleResetPassword(row.id_account)}
                         disabled={resettingId === row.id_account}
+                        permission="acct.write"
                       >
                         {resettingId === row.id_account ? <CSpinner size="sm" /> : <CIcon icon={cilReload} />}
-                      </CButton>
-                      <CButton
+                      </PermissionButton>
+                      <PermissionButton
                         color="info"
                         size="sm"
                         variant="outline"
@@ -712,11 +774,12 @@ const AccountsList = () => {
                         title="Invia email di benvenuto"
                         onClick={() => handleSendWelcome(row)}
                         disabled={!row.email || sendingWelcomeId === row.id_account}
+                        permission="acct.write"
                       >
                         {sendingWelcomeId === row.id_account ? <CSpinner size="sm" /> : <CIcon icon={cilSend} />}
-                      </CButton>
+                      </PermissionButton>
                       {Number(row.is_active) === 1 ? (
-                        <CButton
+                        <PermissionButton
                           color="danger"
                           size="sm"
                           variant="outline"
@@ -724,11 +787,12 @@ const AccountsList = () => {
                           title="Disattiva"
                           onClick={() => handleDelete(row.id_account)}
                           disabled={deletingId === row.id_account}
+                          permission="acct.delete"
                         >
                           {deletingId === row.id_account ? <CSpinner size="sm" /> : <CIcon icon={cilTrash} />}
-                        </CButton>
+                        </PermissionButton>
                       ) : (
-                        <CButton
+                        <PermissionButton
                           color="success"
                           size="sm"
                           variant="outline"
@@ -736,9 +800,10 @@ const AccountsList = () => {
                           title="Riattiva"
                           onClick={() => handleReactivate(row.id_account)}
                           disabled={reactivatingId === row.id_account}
+                          permission="acct.write"
                         >
                           {reactivatingId === row.id_account ? <CSpinner size="sm" /> : <CIcon icon={cilCheckCircle} />}
-                        </CButton>
+                        </PermissionButton>
                       )}
                     </div>
                   </CTableDataCell>

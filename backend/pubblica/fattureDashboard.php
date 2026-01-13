@@ -53,11 +53,13 @@ function resolveDashboardPeriod(?string $periodRaw): array
 
 try {
     $auth = AuthGuard::requireAuth();
-    AuthGuard::requirePermissions($auth, ['fatt.view']);
+    AuthGuard::requirePermissions($auth, ['fatt.read']);
     $allowed = null;
+    $excludeDraftLatest = false;
     if (AuthGuard::getAccountType($auth) === 'cliente') {
         $accountsRepo = new AccountsRepository(Database::getConnection());
         $allowed = $accountsRepo->listAccountAnagraficheIds(AuthGuard::getAccountId($auth));
+        $excludeDraftLatest = true;
         if ($allowed === []) {
             HttpResponse::json([
                 'ok' => true,
@@ -151,7 +153,7 @@ try {
             5,
             $allowed
         ),
-        'latest' => $repo->listLatest(10, $allowed),
+        'latest' => $repo->listLatest(10, $allowed, $excludeDraftLatest),
         'period' => $range['period'],
     ], 200);
 } catch (Throwable $exception) {

@@ -22,15 +22,17 @@ if ($method !== 'GET') {
 
 try {
     $auth = AuthGuard::requireAuth();
-    AuthGuard::requirePermissions($auth, ['fatt.view']);
+    AuthGuard::requirePermissions($auth, ['fatt.read']);
     $allowed = null;
+    $excludeDraft = false;
     if (AuthGuard::getAccountType($auth) === 'cliente') {
         $accountsRepo = new AccountsRepository(Database::getConnection());
         $allowed = $accountsRepo->listAccountAnagraficheIds(AuthGuard::getAccountId($auth));
+        $excludeDraft = true;
     }
     $limit = isset($_GET['limit']) ? (int) $_GET['limit'] : 200;
     $repo = new FattureRepository(Database::getConnection());
-    $items = $repo->listLatest($limit, $allowed);
+    $items = $repo->listLatest($limit, $allowed, $excludeDraft);
 
     HttpResponse::json(['data' => $items], 200);
 } catch (RuntimeException $exception) {

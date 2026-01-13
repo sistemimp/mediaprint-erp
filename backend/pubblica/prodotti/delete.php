@@ -19,7 +19,7 @@ if ($method !== 'POST') {
 
 try {
     $auth = AuthGuard::requireAuth();
-    AuthGuard::requirePermissions($auth, ['cfg.edit']);
+    AuthGuard::requirePermissions($auth, ['prod.delete']);
     if (AuthGuard::getAccountType($auth) === 'cliente') {
         throw new RuntimeException('Accesso non consentito.', 403);
     }

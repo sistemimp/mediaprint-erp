@@ -16,6 +16,7 @@ import {
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { createProdotto, fetchCategorieProdotti } from '../../services/prodotti'
+import PermissionButton from '../../components/PermissionButton'
 
 const ProdottiCreate = () => {
   const navigate = useNavigate()
@@ -108,7 +109,9 @@ const ProdottiCreate = () => {
               </CCol>
             </CRow>
             <div className="mt-4 d-flex gap-2">
-              <CButton type="submit" color="primary" disabled={saving}>Salva</CButton>
+              <PermissionButton type="submit" color="primary" disabled={saving} permission="prod.create">
+                Salva
+              </PermissionButton>
               <CButton color="secondary" variant="outline" onClick={() => navigate('/prodotti/lista')}>Annulla</CButton>
             </div>
           </CForm>
@@ -119,4 +122,3 @@ const ProdottiCreate = () => {
 }
 
 export default ProdottiCreate
-

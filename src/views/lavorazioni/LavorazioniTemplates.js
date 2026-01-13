@@ -28,6 +28,7 @@ import {
   saveLavorazioneActivityTemplate,
 } from '../../services/lavorazioni'
 import BottomToast from '../../components/BottomToast'
+import PermissionButton from '../../components/PermissionButton'
 
 const priorityOptions = [
   { value: 'low', label: 'Bassa' },
@@ -178,9 +179,14 @@ const LavorazioniTemplates = () => {
         <CCardHeader>
           <div className="d-flex justify-content-between align-items-center">
             <h5 className="mb-0">Lavorazioni - Template attivita</h5>
-            <CButton color="primary" variant="outline" onClick={startCreate}>
+            <PermissionButton
+              color="primary"
+              variant="outline"
+              onClick={startCreate}
+              permission="job.create"
+            >
               Nuovo template
-            </CButton>
+            </PermissionButton>
           </div>
         </CCardHeader>
         <CCardBody>
@@ -262,9 +268,14 @@ const LavorazioniTemplates = () => {
                   />
                 </CCol>
                 <CCol md="auto">
-                  <CButton type="submit" color="primary" disabled={saving || form.titolo.trim() === ''}>
+                  <PermissionButton
+                    type="submit"
+                    color="primary"
+                    disabled={saving || form.titolo.trim() === ''}
+                    permission="job.write"
+                  >
                     Salva
-                  </CButton>
+                  </PermissionButton>
                 </CCol>
                 <CCol md="auto">
                   <CButton color="secondary" variant="outline" onClick={cancel} disabled={saving}>
@@ -308,9 +319,15 @@ const LavorazioniTemplates = () => {
                     <CTableDataCell>{Number(row.attivo) === 1 ? 'Si' : 'No'}</CTableDataCell>
                     <CTableDataCell>{row.ordering ?? 100}</CTableDataCell>
                     <CTableDataCell className="text-center">
-                      <CButton color="secondary" size="sm" variant="outline" onClick={() => startEdit(row)}>
+                      <PermissionButton
+                        color="secondary"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => startEdit(row)}
+                        permission="job.write"
+                      >
                         Modifica
-                      </CButton>
+                      </PermissionButton>
                     </CTableDataCell>
                   </CTableRow>
                 ))}

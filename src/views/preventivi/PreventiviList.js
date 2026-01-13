@@ -31,6 +31,7 @@ import CIcon from '@coreui/icons-react'
 import { cilDescription, cilEnvelopeClosed, cilPlus, cilPrint, cilZoom } from '@coreui/icons'
 
 import { useAuth } from '../../context/AuthContext'
+import PermissionButton from '../../components/PermissionButton'
 import {
   fetchLatestPreventivi,
   fetchPreventiviArchivio,
@@ -791,10 +792,15 @@ const PreventiviList = () => {
                   ))}
                 </select>
               </div>
-              <CButton color="primary" variant="outline" onClick={() => navigate('/preventivi/crea')}>
-                <CIcon icon={cilPlus} className="me-2" />
-                Nuovo preventivo
-              </CButton>
+                <PermissionButton
+                  color="primary"
+                  variant="outline"
+                  onClick={() => navigate('/preventivi/crea')}
+                  permission="prev.create"
+                >
+                  <CIcon icon={cilPlus} className="me-2" />
+                  Nuovo preventivo
+                </PermissionButton>
             </div>
           </div>
         </CCardHeader>
@@ -895,33 +901,36 @@ const PreventiviList = () => {
                           </CTableDataCell>
                           <CTableDataCell className="text-center">
                             <div className="d-inline-flex gap-1 flex-wrap justify-content-center">
-                              <CButton
+                              <PermissionButton
                                 color="link"
                                 size="sm"
                                 className="p-0"
                                 onClick={() => handleView(r.id_preventivo)}
                                 title="Apri dettaglio"
+                                permission="prev.read"
                               >
                                 <CIcon icon={cilDescription} />
-                              </CButton>
-                              <CButton
+                              </PermissionButton>
+                              <PermissionButton
                                 color="link"
                                 size="sm"
                                 className="p-0"
                                 onClick={() => handlePrintPDF(r.id_preventivo)}
                                 title="Stampa PDF"
+                                permission="prev.read"
                               >
                                 <CIcon icon={cilPrint} />
-                              </CButton>
-                              <CButton
+                              </PermissionButton>
+                              <PermissionButton
                                 color="link"
                                 size="sm"
                                 className="p-0"
                                 onClick={() => handleOpenEmailModal(r)}
                                 title="Invia PDF via email"
+                                permission="prev.write"
                               >
                                 <CIcon icon={cilEnvelopeClosed} />
-                              </CButton>
+                              </PermissionButton>
                             </div>
                           </CTableDataCell>
                         </CTableRow>
@@ -936,15 +945,16 @@ const PreventiviList = () => {
                                 <span>IVA: {formatCurrency(rev.totale_iva)}</span>
                                 <span>Totale: {formatCurrency(rev.totale)}</span>
                                 <span className="text-muted">({formatDate(rev.created_at)})</span>
-                                <CButton
+                                <PermissionButton
                                   color="link"
                                   size="sm"
                                   className="p-0"
                                   onClick={() => handleOpenRevisionDetail(rev.id_revisione, r.id_preventivo)}
                                   title="Apri dettaglio revisione"
+                                  permission="prev.read"
                                 >
                                   <CIcon icon={cilZoom} />
-                                </CButton>
+                                </PermissionButton>
                               </div>
                             ))}
                           </div>
@@ -1080,9 +1090,15 @@ const PreventiviList = () => {
             <CButton color="secondary" variant="outline" onClick={handleCloseEmailModal} disabled={emailSending}>
               Chiudi
             </CButton>
-            <CButton color="primary" type="submit" form="preventivi-list-email-form" disabled={emailSending}>
+            <PermissionButton
+              color="primary"
+              type="submit"
+              form="preventivi-list-email-form"
+              disabled={emailSending}
+              permission="prev.write"
+            >
               {emailSending ? 'Invio in corso...' : 'Invia email'}
-            </CButton>
+            </PermissionButton>
           </CModalFooter>
         )}
       </CModal>

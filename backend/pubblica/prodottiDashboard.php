@@ -22,7 +22,7 @@ function safeCount(PDO $pdo, string $sql): int
 
 try {
     $auth = AuthGuard::requireAuth();
-    AuthGuard::requirePermissions($auth, ['cfg.view']);
+    AuthGuard::requirePermissions($auth, ['prod.read']);
     if (AuthGuard::getAccountType($auth) === 'cliente') {
         HttpResponse::json([
             'ok' => true,

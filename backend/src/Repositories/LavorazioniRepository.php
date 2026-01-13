@@ -292,6 +292,8 @@ final class LavorazioniRepository
                 n.id_notifica,
                 n.titolo,
                 n.messaggio,
+                n.tipo,
+                n.payload,
                 n.stato,
                 n.created_at,
                 n.read_at,
@@ -1892,6 +1894,81 @@ final class LavorazioniRepository
             $stmt->bindValue(':id_account', $operatorId, PDO::PARAM_INT);
             $stmt->bindValue(':titolo', $title, PDO::PARAM_STR);
             $stmt->bindValue(':messaggio', $message, PDO::PARAM_STR);
+            if ($createdBy !== null && $createdBy > 0) {
+                $stmt->bindValue(':created_by', $createdBy, PDO::PARAM_INT);
+            } else {
+                $stmt->bindValue(':created_by', null, PDO::PARAM_NULL);
+            }
+            $stmt->execute();
+            $count += (int) $stmt->rowCount();
+        }
+
+        return $count;
+    }
+
+    public function createGeneralNotifications(
+        array $accountIds,
+        string $title,
+        string $message,
+        ?array $payload = null,
+        ?int $createdBy = null,
+        string $tipo = 'dashboard',
+    ): int {
+        if ($accountIds === []) {
+            return 0;
+        }
+
+        $unique = array_values(array_unique(array_filter($accountIds, static fn ($value) => (int) $value > 0)));
+        if ($unique === []) {
+            return 0;
+        }
+
+        $payloadValue = null;
+        if ($payload !== null) {
+            $encoded = json_encode($payload, JSON_UNESCAPED_SLASHES);
+            if (is_string($encoded)) {
+                $payloadValue = $encoded;
+            }
+        }
+
+        $sql = <<<SQL
+            INSERT INTO tb_lavorazioni_notifiche (
+                id_lavorazione,
+                id_attivita,
+                id_account,
+                tipo,
+                titolo,
+                messaggio,
+                payload,
+                stato,
+                created_at,
+                created_by
+            ) VALUES (
+                NULL,
+                NULL,
+                :id_account,
+                :tipo,
+                :titolo,
+                :messaggio,
+                :payload,
+                'pending',
+                NOW(),
+                :created_by
+            )
+        SQL;
+
+        $stmt = $this->pdo->prepare($sql);
+        $count = 0;
+        foreach ($unique as $accountId) {
+            $stmt->bindValue(':id_account', (int) $accountId, PDO::PARAM_INT);
+            $stmt->bindValue(':tipo', $tipo, PDO::PARAM_STR);
+            $stmt->bindValue(':titolo', $title, PDO::PARAM_STR);
+            $stmt->bindValue(':messaggio', $message, PDO::PARAM_STR);
+            if ($payloadValue !== null) {
+                $stmt->bindValue(':payload', $payloadValue, PDO::PARAM_STR);
+            } else {
+                $stmt->bindValue(':payload', null, PDO::PARAM_NULL);
+            }
             if ($createdBy !== null && $createdBy > 0) {
                 $stmt->bindValue(':created_by', $createdBy, PDO::PARAM_INT);
             } else {

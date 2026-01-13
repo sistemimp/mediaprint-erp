@@ -22,7 +22,7 @@ if ($method !== 'GET') {
 
 try {
     $auth = AuthGuard::requireAuth();
-    AuthGuard::requirePermissions($auth, ['job.view']);
+    AuthGuard::requirePermissions($auth, ['job.read']);
 
     $fileId = isset($_GET['id']) ? (int) $_GET['id'] : 0;
     if ($fileId <= 0) {

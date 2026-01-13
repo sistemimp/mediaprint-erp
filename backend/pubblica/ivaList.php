@@ -3,11 +3,15 @@ declare(strict_types=1);
 
 require __DIR__ . '/../bootstrap.php';
 
+use MediaPrint\Backend\AuthGuard;
 use MediaPrint\Backend\Database;
 use MediaPrint\Backend\HttpResponse;
 
 try {
-    $pdo = Database::getConnection();
+$auth = AuthGuard::requireAuth();
+    AuthGuard::requirePermissions($auth, ['prod.read']);
+
+        $pdo = Database::getConnection();
     $stmt = $pdo->query('SELECT id_iva, percento, descrizione FROM cfg_iva ORDER BY percento ASC');
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
     $items = array_map(static function ($r) {

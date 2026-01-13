@@ -26,6 +26,7 @@ const FattureDetail = React.lazy(() => import('./views/fatture/FattureDetail'))
 
 // Prodotti
 const ProdottiDashboard = React.lazy(() => import('./views/prodotti/ProdottiDashboard'))
+const ProdottiFatturazione = React.lazy(() => import('./views/prodotti/ProdottiFatturazione'))
 const ProdottiCreate = React.lazy(() => import('./views/prodotti/ProdottiCreate'))
 const ProdottiList = React.lazy(() => import('./views/prodotti/ProdottiList'))
 const ProdottiDetail = React.lazy(() => import('./views/prodotti/ProdottiDetail'))
@@ -48,7 +49,10 @@ const LavorazioniList = React.lazy(() => import('./views/lavorazioni/Lavorazioni
 const LavorazioneDetail = React.lazy(() => import('./views/lavorazioni/LavorazioneDetail'))
 const LavorazioniTemplates = React.lazy(() => import('./views/lavorazioni/LavorazioniTemplates'))
 const InstantMessagingPage = React.lazy(() => import('./views/im/InstantMessagingPage'))
+const NotificationsList = React.lazy(() => import('./views/notifiche/NotificationsList'))
 const AccountsList = React.lazy(() => import('./views/accounts/AccountsList'))
+const AccountsDetail = React.lazy(() => import('./views/accounts/AccountsDetail'))
+const Profile = React.lazy(() => import('./views/profile/Profile'))
 
 const routes = [
   { path: '/', exact: true, name: 'Home' },
@@ -72,6 +76,7 @@ const routes = [
   { path: '/fatture/lista', name: 'Fatture - Lista', element: FattureList },
   { path: '/fatture/dettagli', name: 'Fatture - Dettagli', element: FattureDetail },
   { path: '/prodotti/dashboard', name: 'Prodotti - Dashboard', element: ProdottiDashboard },
+  { path: '/prodotti/fatturazione', name: 'Prodotti - Fatturazione', element: ProdottiFatturazione },
   { path: '/prodotti/crea', name: 'Prodotti - Crea nuovo', element: ProdottiCreate },
   { path: '/prodotti/lista', name: 'Prodotti - Lista', element: ProdottiList },
   { path: '/prodotti/dettagli', name: 'Prodotti - Dettagli', element: ProdottiDetail },
@@ -91,7 +96,10 @@ const routes = [
   { path: '/lavorazioni/dettaglio', name: 'Lavorazioni - Dettaglio', element: LavorazioneDetail },
   { path: '/lavorazioni/templates', name: 'Lavorazioni - Template attivita', element: LavorazioniTemplates },
   { path: '/messaggi', name: 'Messaggi', element: InstantMessagingPage },
+  { path: '/notifiche', name: 'Notifiche', element: NotificationsList },
   { path: '/accounts/lista', name: 'Account - Lista', element: AccountsList },
+  { path: '/accounts/dettagli', name: 'Account - Dettagli', element: AccountsDetail },
+  { path: '/profilo', name: 'Profilo', element: Profile },
 ]
 
 export default routes

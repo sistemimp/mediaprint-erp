@@ -24,7 +24,7 @@ if ($method !== 'POST') {
 
 try {
     $auth = AuthGuard::requireAuth();
-    AuthGuard::requirePermissions($auth, ['job.manage']);
+    AuthGuard::requirePermissions($auth, ['job.write']);
     if (AuthGuard::getAccountType($auth) === 'cliente') {
         throw new RuntimeException('Accesso non consentito.', 403);
     }

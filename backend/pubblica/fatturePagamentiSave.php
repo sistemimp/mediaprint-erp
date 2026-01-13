@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require __DIR__ . '/../bootstrap.php';
 
+use MediaPrint\Backend\AuthGuard;
 use MediaPrint\Backend\Database;
 use MediaPrint\Backend\HttpResponse;
 use MediaPrint\Repo\FattureRepository;
@@ -19,7 +20,10 @@ if ($method !== 'POST') {
 }
 
 try {
-    $input = file_get_contents('php://input');
+$auth = AuthGuard::requireAuth();
+    AuthGuard::requirePermissions($auth, ['fatt.write']);
+
+        $input = file_get_contents('php://input');
     $payload = json_decode($input ?: '[]', true);
     if (!is_array($payload)) {
         $payload = $_POST ?? [];

@@ -26,7 +26,7 @@ import {
 
 import { AppBreadcrumb } from './index'
 import { AppHeaderDropdown } from './header/index'
-import ChatNotificationBell from './header/ChatNotificationBell'
+import AppNotificationBell from './header/AppNotificationBell'
 
 const AppHeader = () => {
   const headerRef = useRef()
@@ -51,9 +51,6 @@ const AppHeader = () => {
         >
           <CIcon icon={cilMenu} size="lg" />
         </CHeaderToggler>
-        <CHeaderNav className="ms-2">
-          <ChatNotificationBell />
-        </CHeaderNav>
         <CHeaderNav className="d-none d-md-flex">
           <CNavItem>
             <CNavLink to="/dashboard" as={NavLink}>
@@ -68,6 +65,7 @@ const AppHeader = () => {
           </CNavItem>
         </CHeaderNav>
         <CHeaderNav className="ms-auto">
+          <AppNotificationBell limit={5} />
           <CNavItem>
             <CNavLink href="#">
               <CIcon icon={cilList} size="lg" />

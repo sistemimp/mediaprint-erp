@@ -22,15 +22,17 @@ if ($method !== 'GET') {
 
 try {
     $auth = AuthGuard::requireAuth();
-    AuthGuard::requirePermissions($auth, ['ddt.view']);
+    AuthGuard::requirePermissions($auth, ['ddt.read']);
     $allowed = null;
+    $excludeDraft = false;
     if (AuthGuard::getAccountType($auth) === 'cliente') {
         $accountsRepo = new AccountsRepository(Database::getConnection());
         $allowed = $accountsRepo->listAccountAnagraficheIds(AuthGuard::getAccountId($auth));
+        $excludeDraft = true;
     }
     $limit = isset($_GET['limit']) ? (int) $_GET['limit'] : 200;
     $repo = new DdtRepository(Database::getConnection());
-    $items = $repo->listLatest($limit, $allowed);
+    $items = $repo->listLatest($limit, $allowed, $excludeDraft);
 
     HttpResponse::json(['data' => $items], 200);
 } catch (RuntimeException $exception) {

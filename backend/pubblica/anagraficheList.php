@@ -17,7 +17,7 @@ header('Content-Type: application/json');
 
 try {
     $auth = AuthGuard::requireAuth();
-    AuthGuard::requirePermissions($auth, ['anag.view']);
+    AuthGuard::requirePermissions($auth, ['anag.read']);
     if (AuthGuard::getAccountType($auth) === 'cliente') {
         $accountsRepo = new AccountsRepository(Database::getConnection());
         $_GET['allowed_anagrafiche'] = $accountsRepo->listAccountAnagraficheIds(AuthGuard::getAccountId($auth));

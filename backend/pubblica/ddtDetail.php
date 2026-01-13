@@ -22,11 +22,13 @@ if ($method !== 'GET') {
 
 try {
     $auth = AuthGuard::requireAuth();
-    AuthGuard::requirePermissions($auth, ['ddt.view']);
+    AuthGuard::requirePermissions($auth, ['ddt.read']);
     $allowed = null;
+    $excludeDraft = false;
     if (AuthGuard::getAccountType($auth) === 'cliente') {
         $accountsRepo = new AccountsRepository(Database::getConnection());
         $allowed = $accountsRepo->listAccountAnagraficheIds(AuthGuard::getAccountId($auth));
+        $excludeDraft = true;
     }
 
     $id = isset($_GET['id']) ? (int) $_GET['id'] : 0;
@@ -40,6 +42,9 @@ try {
         throw new RuntimeException('DDT non trovato.', 404);
     }
     if (is_array($allowed) && $allowed !== [] && !in_array((int) ($detail['id_anagrafica'] ?? 0), $allowed, true)) {
+        throw new RuntimeException('DDT non trovato.', 404);
+    }
+    if ($excludeDraft && (int) ($detail['stato_documento'] ?? 1) === 1) {
         throw new RuntimeException('DDT non trovato.', 404);
     }
 

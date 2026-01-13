@@ -20,6 +20,7 @@ import {
 import { useAuth } from '../../context/AuthContext'
 import { fetchCategorieProdotti, saveCategoriaProdotto } from '../../services/prodotti'
 import BottomToast from '../../components/BottomToast'
+import PermissionButton from '../../components/PermissionButton'
 
 const CategorieList = () => {
   const { token, logout } = useAuth()
@@ -82,7 +83,14 @@ const CategorieList = () => {
         <CCardHeader>
           <div className="d-flex justify-content-between align-items-center">
             <h5 className="mb-0">Prodotti - Categorie</h5>
-            <CButton color="primary" variant="outline" onClick={startCreate}>Nuova categoria</CButton>
+            <PermissionButton
+              color="primary"
+              variant="outline"
+              onClick={startCreate}
+              permission="prod.create"
+            >
+              Nuova categoria
+            </PermissionButton>
           </div>
         </CCardHeader>
         <CCardBody>
@@ -94,7 +102,14 @@ const CategorieList = () => {
                   <CFormInput placeholder="Nome categoria" value={name} onChange={(e) => setName(e.target.value)} required />
                 </CCol>
                 <CCol md="auto">
-                  <CButton type="submit" color="primary" disabled={saving || String(name).trim() === ''}>Salva</CButton>
+                  <PermissionButton
+                    type="submit"
+                    color="primary"
+                    disabled={saving || String(name).trim() === ''}
+                    permission="prod.write"
+                  >
+                    Salva
+                  </PermissionButton>
                 </CCol>
                 <CCol md="auto">
                   <CButton color="secondary" variant="outline" onClick={cancel}>Annulla</CButton>
@@ -118,7 +133,15 @@ const CategorieList = () => {
                     <CTableDataCell>{r.id_categoria}</CTableDataCell>
                     <CTableDataCell>{r.nome}</CTableDataCell>
                     <CTableDataCell className="text-center">
-                      <CButton color="secondary" size="sm" variant="outline" onClick={() => startEdit(r)}>Modifica</CButton>
+                      <PermissionButton
+                        color="secondary"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => startEdit(r)}
+                        permission="prod.write"
+                      >
+                        Modifica
+                      </PermissionButton>
                     </CTableDataCell>
                   </CTableRow>
                 ))}

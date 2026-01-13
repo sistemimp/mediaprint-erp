@@ -52,7 +52,7 @@ function resolveDashboardPeriod(?string $periodRaw): array
 
 try {
     $auth = AuthGuard::requireAuth();
-    AuthGuard::requirePermissions($auth, ['anag.view']);
+    AuthGuard::requirePermissions($auth, ['anag.read']);
     if (AuthGuard::getAccountType($auth) === 'cliente') {
         HttpResponse::json([
             'ok' => true,

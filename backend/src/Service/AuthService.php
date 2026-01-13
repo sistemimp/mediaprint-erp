@@ -40,7 +40,7 @@ final class AuthService
 
         $roles = $this->repository->getAccountRoles((int) $account['id_account'], isset($account['id_ruolo']) ? (int) $account['id_ruolo'] : null);
         $roleIds = array_map(static fn(array $role): int => (int) $role['id_ruolo'], $roles);
-        $permissions = $this->repository->getPermissionsForRoles($roleIds);
+        $permissions = $this->resolveAccountPermissions((int) $account['id_account'], $roleIds);
 
         $this->repository->updateLastLogin((int) $account['id_account']);
 
@@ -69,9 +69,17 @@ final class AuthService
 
         $roles = $this->repository->getAccountRoles((int) $account['id_account'], isset($account['id_ruolo']) ? (int) $account['id_ruolo'] : null);
         $roleIds = array_map(static fn(array $role): int => (int) $role['id_ruolo'], $roles);
-        $permissions = $this->repository->getPermissionsForRoles($roleIds);
+        $permissions = $this->resolveAccountPermissions((int) $account['id_account'], $roleIds);
 
         return $this->buildUserPayload($account, $roles, $permissions);
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    public function listPermissions(): array
+    {
+        return $this->repository->listPermissions();
     }
 
     private function generateToken(array $account, array $roles, array $permissions): string
@@ -112,6 +120,19 @@ final class AuthService
         return JWT::encode($payload, $secret, 'HS256');
     }
 
+    /**
+     * @param list<int> $roleIds
+     * @return list<array<string, mixed>>
+     */
+    private function resolveAccountPermissions(int $accountId, array $roleIds): array
+    {
+        if ($this->repository->hasAccountPermissions($accountId)) {
+            return $this->repository->getAccountPermissions($accountId);
+        }
+
+        return $this->repository->getPermissionsForRoles($roleIds);
+    }
+
     private function buildUserPayload(array $account, array $roles, array $permissions): array
     {
         return [
@@ -121,6 +142,7 @@ final class AuthService
             'email' => $account['email'],
             'mustChangePassword' => (bool) $account['must_change_pwd'],
             'hasMfa' => (bool) $account['has_mfa'],
+            'avatarPath' => isset($account['avatar_path']) && $account['avatar_path'] !== '' ? $account['avatar_path'] : null,
             'roles' => array_map(
                 static fn(array $role): array => [
                     'id' => (int) $role['id_ruolo'],

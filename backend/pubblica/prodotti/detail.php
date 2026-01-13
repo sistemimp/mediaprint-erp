@@ -19,7 +19,7 @@ if ($method !== 'GET') {
 
 try {
     $auth = AuthGuard::requireAuth();
-    AuthGuard::requirePermissions($auth, ['cfg.view']);
+    AuthGuard::requirePermissions($auth, ['prod.read']);
     if (AuthGuard::getAccountType($auth) === 'cliente') {
         HttpResponse::json(['item' => null], 200);
         return;

@@ -22,6 +22,7 @@ import { cilDescription, cilPlus } from '@coreui/icons'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { fetchPacchetti } from '../../services/pacchetti'
+import PermissionButton from '../../components/PermissionButton'
 
 const PacchettiList = () => {
   const navigate = useNavigate()
@@ -68,10 +69,15 @@ const PacchettiList = () => {
             <h5 className="mb-0">Pacchetti - Lista</h5>
             <small className="text-body-secondary">Cerca per nome o codice</small>
           </div>
-          <CButton color="primary" variant="outline" onClick={() => navigate('/pacchetti/crea')}>
+          <PermissionButton
+            color="primary"
+            variant="outline"
+            onClick={() => navigate('/pacchetti/crea')}
+            permission="pack.create"
+          >
             <CIcon icon={cilPlus} className="me-2" />
             Nuovo pacchetto
-          </CButton>
+          </PermissionButton>
         </div>
       </CCardHeader>
       <CCardBody>
@@ -115,9 +121,15 @@ const PacchettiList = () => {
                   <CTableDataCell>{Number(p.attivo) === 1 ? 'attivo' : 'disattivo'}</CTableDataCell>
                   <CTableDataCell className="d-flex justify-content-between align-items-center">
                     <span>{p.updated_at || '-'}</span>
-                    <CButton color="link" size="sm" className="p-0" onClick={() => navigate(`/pacchetti/dettagli?id=${p.id_pacchetto}`)}>
+                    <PermissionButton
+                      color="link"
+                      size="sm"
+                      className="p-0"
+                      onClick={() => navigate(`/pacchetti/dettagli?id=${p.id_pacchetto}`)}
+                      permission="pack.read"
+                    >
                       <CIcon icon={cilDescription} />
-                    </CButton>
+                    </PermissionButton>
                   </CTableDataCell>
                 </CTableRow>
               ))}

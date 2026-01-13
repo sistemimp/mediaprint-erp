@@ -55,7 +55,7 @@ function resolveDashboardPeriod(?string $periodRaw): array
 
 try {
     $auth = AuthGuard::requireAuth();
-    AuthGuard::requirePermissions($auth, ['anag.view']);
+    AuthGuard::requirePermissions($auth, ['anag.read']);
     $allowed = null;
     if (AuthGuard::getAccountType($auth) === 'cliente') {
         $accountsRepo = new AccountsRepository(Database::getConnection());

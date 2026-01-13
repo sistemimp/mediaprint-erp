@@ -64,7 +64,8 @@ final class PacchettiService
         ];
 
         $lines = [];
-        if (isset($input['righe']) && is_array($input['righe'])) {
+        $hasLinesPayload = array_key_exists('righe', $input);
+        if ($hasLinesPayload && is_array($input['righe'])) {
             foreach ($input['righe'] as $r) {
                 if (!is_array($r)) continue;
                 $idCategoria = isset($r['id_categoria']) ? (int) $r['id_categoria'] : null;
@@ -72,6 +73,10 @@ final class PacchettiService
                 $categoriaNome = isset($r['categoria_nome']) && trim((string)$r['categoria_nome']) !== ''
                     ? (string) $r['categoria_nome']
                     : null;
+                $comboKey = isset($r['combo_key']) ? trim((string) $r['combo_key']) : null;
+                if ($comboKey === '') {
+                    $comboKey = null;
+                }
                 $lines[] = [
                     'descrizione' => (string) ($r['descrizione'] ?? ''),
                     'quantita' => isset($r['quantita']) ? (float) $r['quantita'] : 1.0,
@@ -79,6 +84,7 @@ final class PacchettiService
                     'sconto' => isset($r['sconto']) ? (float) $r['sconto'] : 0.0,
                     'iva' => isset($r['iva']) ? (float) $r['iva'] : null,
                     'id_prodotto' => isset($r['id_prodotto']) ? (int) $r['id_prodotto'] : null,
+                    'combo_key' => $comboKey,
                     'id_sdi_natura_iva' => isset($r['id_sdi_natura_iva']) ? (int) $r['id_sdi_natura_iva'] : null,
                     'id_categoria' => $idCategoria,
                     'categoria_nome' => $categoriaNome,
@@ -88,14 +94,14 @@ final class PacchettiService
 
         if ($id > 0) {
             $this->repository->update($id, $data);
-            if (!empty($lines)) {
+            if ($hasLinesPayload) {
                 $this->repository->replaceLines($id, $lines);
             }
             return ['id_pacchetto' => $id];
         }
 
         $newId = $this->repository->create($data);
-        if (!empty($lines)) {
+        if ($hasLinesPayload) {
             $this->repository->replaceLines($newId, $lines);
         }
         return ['id_pacchetto' => $newId];

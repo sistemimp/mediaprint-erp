@@ -55,7 +55,7 @@ function resolveDashboardPeriod(?string $periodRaw): array
 
 try {
     $auth = AuthGuard::requireAuth();
-    AuthGuard::requirePermissions($auth, ['anag.view', 'prev.view', 'fatt.view', 'ddt.view', 'pay.view', 'job.view', 'cfg.view']);
+    AuthGuard::requirePermissions($auth, ['anag.read', 'prev.read', 'fatt.read', 'ddt.read', 'pay.read', 'job.read']);
     if (AuthGuard::getAccountType($auth) === 'cliente') {
         HttpResponse::json([
             'ok' => true,

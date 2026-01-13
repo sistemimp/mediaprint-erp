@@ -11,6 +11,7 @@ import {
   CCol,
   CForm,
   CFormSelect,
+  CFormSwitch,
   CFormTextarea,
   CListGroup,
   CListGroupItem,
@@ -24,6 +25,14 @@ import {
 
 import { useAuth } from '../context/AuthContext'
 import {
+  getDesktopNotificationPermission,
+  getDesktopNotificationsEnabled,
+  isDesktopNotificationSupported,
+  requestDesktopNotificationPermission,
+  setDesktopNotificationsEnabled,
+  showDesktopNotification,
+} from '../services/desktopNotifications'
+import {
   createImThread,
   listImAccounts,
   listImMessages,
@@ -33,6 +42,7 @@ import {
 } from '../services/instantMessagingApi'
 import { useInstantMessagingSocket } from '../services/instantMessagingSocket'
 import BottomToast from './BottomToast'
+import PermissionButton from './PermissionButton'
 
 const formatTime = (value) => {
   if (!value) {
@@ -91,6 +101,9 @@ const InstantMessagingPanel = ({ compact = false, onClose }) => {
   const [selectedAccountIds, setSelectedAccountIds] = useState([])
   const [createError, setCreateError] = useState(null)
   const [toast, setToast] = useState({ open: false, message: '' })
+  const [desktopSupported, setDesktopSupported] = useState(() => isDesktopNotificationSupported())
+  const [desktopEnabled, setDesktopEnabled] = useState(() => getDesktopNotificationsEnabled())
+  const [desktopPermission, setDesktopPermission] = useState(() => getDesktopNotificationPermission())
   const messageListRef = useRef(null)
   const toastTimerRef = useRef(null)
   const notifyThreadReadRef = useRef(null)
@@ -225,7 +238,14 @@ const InstantMessagingPanel = ({ compact = false, onClose }) => {
           const sender = message?.sender?.username || 'Account'
           const body = String(message?.body || '').trim()
           const preview = body.length > 90 ? `${body.slice(0, 87)}...` : body
-          showToast(`Nuovo messaggio da ${sender}${preview ? `: ${preview}` : ''}`)
+          const shown = showDesktopNotification({
+            title: `Nuovo messaggio da ${sender}`,
+            body: preview,
+            tag: threadId ? `im-thread-${threadId}` : undefined,
+          })
+          if (!shown) {
+            showToast(`Nuovo messaggio da ${sender}${preview ? `: ${preview}` : ''}`)
+          }
         }
       } else {
         if (canAutoMarkRead(threadId)) {
@@ -239,6 +259,36 @@ const InstantMessagingPanel = ({ compact = false, onClose }) => {
   const handleThreadCreated = useCallback(() => {
     loadThreads()
   }, [loadThreads])
+
+  const handleDesktopToggle = useCallback(
+    async (event) => {
+      const nextValue = Boolean(event?.target?.checked)
+      if (!nextValue) {
+        setDesktopNotificationsEnabled(false)
+        setDesktopEnabled(false)
+        return
+      }
+      if (!isDesktopNotificationSupported()) {
+        setDesktopNotificationsEnabled(false)
+        setDesktopEnabled(false)
+        setDesktopSupported(false)
+        showToast('Notifiche Windows non supportate da questo browser.')
+        return
+      }
+      const permission = await requestDesktopNotificationPermission()
+      setDesktopPermission(permission)
+      if (permission === 'granted') {
+        setDesktopNotificationsEnabled(true)
+        setDesktopEnabled(true)
+        showToast('Notifiche Windows attivate.')
+        return
+      }
+      setDesktopNotificationsEnabled(false)
+      setDesktopEnabled(false)
+      showToast('Autorizzazione notifiche non concessa dal browser.')
+    },
+    [showToast],
+  )
 
   const handleThreadRead = useCallback(
     (payload) => {
@@ -294,6 +344,23 @@ const InstantMessagingPanel = ({ compact = false, onClose }) => {
   useEffect(() => {
     wsStatusRef.current = wsStatus
   }, [wsStatus])
+
+  useEffect(() => {
+    const supported = isDesktopNotificationSupported()
+    setDesktopSupported(supported)
+    setDesktopPermission(getDesktopNotificationPermission())
+    if (!supported) {
+      setDesktopNotificationsEnabled(false)
+      setDesktopEnabled(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (desktopEnabled && desktopPermission !== 'granted') {
+      setDesktopNotificationsEnabled(false)
+      setDesktopEnabled(false)
+    }
+  }, [desktopEnabled, desktopPermission])
 
   useEffect(() => {
     const handleFocus = () => {
@@ -437,10 +504,16 @@ const InstantMessagingPanel = ({ compact = false, onClose }) => {
             <CCardHeader className="d-flex align-items-center justify-content-between">
               <span className="fw-semibold">Conversazioni</span>
               <div className="d-flex align-items-center gap-2">
-                <CButton size="sm" color="primary" variant="outline" onClick={handleOpenCreate}>
+                <PermissionButton
+                  size="sm"
+                  color="primary"
+                  variant="outline"
+                  onClick={handleOpenCreate}
+                  permission="msg.create"
+                >
                   <CIcon icon={compact ? cilPlus : cilUserPlus} className={compact ? '' : 'me-1'} />
                   {compact ? null : 'Nuova'}
-                </CButton>
+                </PermissionButton>
                 {onClose ? (
                   <CButton size="sm" color="light" variant="outline" onClick={onClose}>
                     {compact ? <CIcon icon={cilXCircle} /> : 'Chiudi'}
@@ -518,8 +591,17 @@ const InstantMessagingPanel = ({ compact = false, onClose }) => {
                   {activeTitle || 'Seleziona una conversazione'}
                 </span>
               </div>
-              <div className="small text-body-secondary text-uppercase">
-                {wsStatus === 'connected' ? 'Online' : 'Offline'}
+              <div className="d-flex align-items-center gap-3">
+                <CFormSwitch
+                  id={`im-desktop-notifications-${compact ? 'compact' : 'full'}`}
+                  label={compact ? 'Notifiche' : 'Notifiche Windows'}
+                  checked={desktopEnabled}
+                  onChange={handleDesktopToggle}
+                  disabled={!desktopSupported || desktopPermission === 'denied'}
+                />
+                <div className="small text-body-secondary text-uppercase">
+                  {wsStatus === 'connected' ? 'Online' : 'Offline'}
+                </div>
               </div>
             </CCardHeader>
             <CCardBody className="im-messages-body">
@@ -585,10 +667,15 @@ const InstantMessagingPanel = ({ compact = false, onClose }) => {
                       ? `Conversazione con ${activeTitle || 'account'}`
                       : 'Seleziona una conversazione per scrivere'}
                   </div>
-                  <CButton type="submit" color="primary" disabled={isSending || !activeThreadId}>
+                  <PermissionButton
+                    type="submit"
+                    color="primary"
+                    disabled={isSending || !activeThreadId}
+                    permission="msg.write"
+                  >
                     {isSending ? <CSpinner size="sm" className="me-2" /> : <CIcon icon={cilPaperPlane} className="me-2" />}
                     Invia
-                  </CButton>
+                  </PermissionButton>
                 </div>
               </CForm>
             </CCardFooter>
@@ -625,9 +712,9 @@ const InstantMessagingPanel = ({ compact = false, onClose }) => {
           <CButton color="secondary" onClick={() => setIsCreating(false)}>
             Annulla
           </CButton>
-          <CButton color="primary" onClick={handleCreateThread}>
+          <PermissionButton color="primary" onClick={handleCreateThread} permission="msg.create">
             Crea
-          </CButton>
+          </PermissionButton>
         </CModalFooter>
       </CModal>
       <BottomToast open={toast.open} message={toast.message} type="success" />

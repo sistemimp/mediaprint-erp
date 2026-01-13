@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require __DIR__ . '/../bootstrap.php';
 
+use MediaPrint\Backend\AuthGuard;
 use MediaPrint\Repo\PreventiviRepository;
 use MediaPrint\Backend\Database;
 use MediaPrint\Backend\HttpResponse;
@@ -18,7 +19,10 @@ if ($method !== 'GET') {
 }
 
 try {
-    $repo = new PreventiviRepository(Database::getConnection());
+$auth = AuthGuard::requireAuth();
+    AuthGuard::requirePermissions($auth, ['prev.read']);
+
+        $repo = new PreventiviRepository(Database::getConnection());
     $items = $repo->listOggettoOptions();
     HttpResponse::json(['data' => $items], 200);
 } catch (Throwable $throwable) {

@@ -23,7 +23,7 @@ if ($method !== 'POST') {
 
 try {
     $auth = AuthGuard::requireAuth();
-    AuthGuard::requirePermissions($auth, ['anag.edit']);
+    AuthGuard::requirePermissions($auth, ['contr.write']);
 
     $payload = json_decode(file_get_contents('php://input') ?: 'null', true);
     if (!is_array($payload)) {

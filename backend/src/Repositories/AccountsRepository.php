@@ -27,6 +27,7 @@ final class AccountsRepository
                 a.is_active,
                 a.must_change_pwd,
                 a.has_mfa,
+                a.avatar_path,
                 a.last_login,
                 a.created_at,
                 a.updated_at,
@@ -120,12 +121,121 @@ final class AccountsRepository
         return $stmt ? ($stmt->fetchAll(PDO::FETCH_ASSOC) ?: []) : [];
     }
 
+    /**
+     * @return list<array<string, mixed>>
+     */
+    public function listPermissionsCatalog(): array
+    {
+        $stmt = $this->pdo->query('SELECT id_permesso, code, label, attivo FROM cfg_auth_permessi ORDER BY code ASC');
+        return $stmt ? ($stmt->fetchAll(PDO::FETCH_ASSOC) ?: []) : [];
+    }
+
+    /**
+     * @param list<int> $roleIds
+     * @return list<array<string, mixed>>
+     */
+    public function listPermissionsForRoles(array $roleIds): array
+    {
+        if ($roleIds === []) {
+            return [];
+        }
+
+        $placeholders = implode(',', array_fill(0, count($roleIds), '?'));
+        $sql = <<<SQL
+            SELECT DISTINCT p.id_permesso, p.code, p.label
+            FROM auth_ruolo_permesso rp
+            INNER JOIN cfg_auth_permessi p ON p.id_permesso = rp.id_permesso
+            WHERE rp.id_ruolo IN ({$placeholders})
+              AND p.attivo = 1
+            ORDER BY p.code
+        SQL;
+
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute($roleIds);
+
+        return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    }
+
+    /**
+     * @return list<array{id_permesso:int,is_allowed:int}>
+     */
+    public function listAccountPermissions(int $accountId): array
+    {
+        $stmt = $this->pdo->prepare('SELECT id_permesso, is_allowed FROM auth_account_permessi WHERE id_account = :id');
+        $stmt->bindValue(':id', $accountId, PDO::PARAM_INT);
+        $stmt->execute();
+        return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    }
+
+    /**
+     * @param list<int> $catalogIds
+     * @param list<int> $allowedIds
+     */
+    public function replaceAccountPermissions(int $accountId, array $catalogIds, array $allowedIds): void
+    {
+        $delete = $this->pdo->prepare('DELETE FROM auth_account_permessi WHERE id_account = :id');
+        $delete->bindValue(':id', $accountId, PDO::PARAM_INT);
+        $delete->execute();
+
+        if ($catalogIds === []) {
+            return;
+        }
+
+        $allowed = array_flip($allowedIds);
+        $insert = $this->pdo->prepare(
+            'INSERT INTO auth_account_permessi (id_account, id_permesso, is_allowed) VALUES (:account, :permesso, :allowed)'
+        );
+
+        foreach ($catalogIds as $permessoId) {
+            $insert->bindValue(':account', $accountId, PDO::PARAM_INT);
+            $insert->bindValue(':permesso', $permessoId, PDO::PARAM_INT);
+            $insert->bindValue(':allowed', isset($allowed[$permessoId]) ? 1 : 0, PDO::PARAM_INT);
+            $insert->execute();
+        }
+    }
+
     public function accountExists(int $accountId): bool
     {
         $stmt = $this->pdo->prepare('SELECT 1 FROM auth_accounts WHERE id_account = :id LIMIT 1');
         $stmt->bindValue(':id', $accountId, PDO::PARAM_INT);
         $stmt->execute();
         return $stmt->fetchColumn() !== false;
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    public function getAccountDetail(int $accountId): ?array
+    {
+        $sql = <<<'SQL'
+            SELECT
+                a.id_account,
+                a.account_type,
+                a.username,
+                a.email,
+                a.id_ruolo,
+                a.id_contatto,
+                a.is_active,
+                a.must_change_pwd,
+                a.has_mfa,
+                a.avatar_path,
+                a.last_login,
+                a.created_at,
+                a.updated_at,
+                r.code AS role_code,
+                r.label AS role_label
+            FROM auth_accounts a
+            LEFT JOIN cfg_auth_ruoli r ON r.id_ruolo = a.id_ruolo
+            WHERE a.id_account = :id
+            LIMIT 1
+        SQL;
+
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->bindValue(':id', $accountId, PDO::PARAM_INT);
+        $stmt->execute();
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        return $row ?: null;
     }
 
     /**
@@ -339,6 +449,7 @@ final class AccountsRepository
             'is_active' => PDO::PARAM_INT,
             'must_change_pwd' => PDO::PARAM_INT,
             'has_mfa' => PDO::PARAM_INT,
+            'avatar_path' => PDO::PARAM_STR,
         ];
 
         foreach ($map as $key => $type) {
@@ -383,6 +494,19 @@ final class AccountsRepository
         $stmt->bindValue(':must_change', $mustChange, PDO::PARAM_INT);
         $stmt->bindValue(':id', $accountId, PDO::PARAM_INT);
         $stmt->execute();
+    }
+
+    public function getAccountAvatarPath(int $accountId): ?string
+    {
+        $stmt = $this->pdo->prepare('SELECT avatar_path FROM auth_accounts WHERE id_account = :id LIMIT 1');
+        $stmt->bindValue(':id', $accountId, PDO::PARAM_INT);
+        $stmt->execute();
+        $value = $stmt->fetchColumn();
+        if ($value === false || $value === null) {
+            return null;
+        }
+        $path = trim((string) $value);
+        return $path === '' ? null : $path;
     }
 
     /**

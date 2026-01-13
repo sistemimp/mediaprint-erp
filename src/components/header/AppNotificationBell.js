@@ -1,8 +1,9 @@
-import React, { useCallback, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   CBadge,
   CButton,
+  CCallout,
   CDropdown,
   CDropdownDivider,
   CDropdownHeader,
@@ -14,6 +15,8 @@ import {
 import CIcon from '@coreui/icons-react'
 import { cilBell } from '@coreui/icons'
 import { useAuth } from '../../context/AuthContext'
+import { showDesktopNotification } from '../../services/desktopNotifications'
+import { useInstantMessagingSocket } from '../../services/instantMessagingSocket'
 import {
   fetchLavorazioneNotifications,
   markLavorazioneNotificationsRead,
@@ -33,10 +36,29 @@ const formatDateTime = (value) => {
   })}`
 }
 
-const AppNotificationBell = () => {
+const parsePayload = (value) => {
+  if (!value) {
+    return null
+  }
+  if (typeof value === 'object') {
+    return value
+  }
+  if (typeof value !== 'string') {
+    return null
+  }
+  try {
+    return JSON.parse(value)
+  } catch (_error) {
+    return null
+  }
+}
+
+const AppNotificationBell = ({ limit = 10 }) => {
   const { token, user } = useAuth()
   const navigate = useNavigate()
   const accountId = user?.id_account ?? user?.id ?? user?.account_id ?? null
+  const initialLoadRef = useRef(true)
+  const notifiedIdsRef = useRef(new Set())
 
   const [visible, setVisible] = useState(false)
   const [notifications, setNotifications] = useState([])
@@ -47,7 +69,7 @@ const AppNotificationBell = () => {
 
   const isAuthenticated = Boolean(token && accountId)
 
-  const loadNotifications = useCallback(async () => {
+  const loadNotifications = useCallback(async (notify = false) => {
     if (!isAuthenticated) {
       return
     }
@@ -57,29 +79,81 @@ const AppNotificationBell = () => {
       const response = await fetchLavorazioneNotifications({
         token,
         accountId,
-        limit: 10,
+        limit: Math.max(20, limit),
+        onlyUnread: notify,
       })
-      setNotifications(Array.isArray(response?.items) ? response.items : [])
+      const items = Array.isArray(response?.items) ? response.items : []
+      setNotifications(items)
       setUnreadCount(Number(response?.unread) || 0)
+      if (notify) {
+        const freshIds = new Set(
+          items
+            .map((item) => Number(item?.id_notifica))
+            .filter((value) => Number.isFinite(value) && value > 0),
+        )
+        if (initialLoadRef.current) {
+          initialLoadRef.current = false
+          notifiedIdsRef.current = freshIds
+          return
+        }
+        items.forEach((item) => {
+          const id = Number(item?.id_notifica)
+          if (!Number.isFinite(id) || id <= 0 || notifiedIdsRef.current.has(id)) {
+            return
+          }
+          const title = item?.titolo || 'Nuova notifica'
+          const body = item?.messaggio || ''
+          const shown = showDesktopNotification({
+            title,
+            body,
+            tag: `notif-${id}`,
+          })
+          if (shown) {
+            notifiedIdsRef.current.add(id)
+          }
+        })
+        if (notifiedIdsRef.current.size > 200) {
+          notifiedIdsRef.current.clear()
+        }
+      }
     } catch (err) {
       console.error('Impossibile caricare le notifiche:', err)
       setError(err)
     } finally {
       setLoading(false)
     }
-  }, [token, accountId, isAuthenticated])
+  }, [token, accountId, isAuthenticated, limit])
 
-  const handleVisibleChange = (next) => {
-    setVisible(next)
-    if (next) {
-      loadNotifications()
-    }
+  const handleShow = () => {
+    setVisible(true)
+    loadNotifications()
+  }
+
+  const handleHide = () => {
+    setVisible(false)
   }
 
   const unreadItems = useMemo(
     () => notifications.filter((item) => String(item?.stato).toLowerCase() !== 'read'),
     [notifications],
   )
+
+  const visibleNotifications = useMemo(() => notifications.slice(0, limit), [notifications, limit])
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      return undefined
+    }
+    loadNotifications(true)
+  }, [isAuthenticated, loadNotifications])
+
+  useInstantMessagingSocket({
+    token,
+    enabled: isAuthenticated,
+    onNotification: () => {
+      loadNotifications(true)
+    },
+  })
 
   const markNotifications = useCallback(
     async (ids) => {
@@ -128,9 +202,28 @@ const AppNotificationBell = () => {
       await markNotifications([notificationId])
     }
     setVisible(false)
+    const payload = parsePayload(item.payload)
+    const directRoute = payload?.route
+    if (typeof directRoute === 'string' && directRoute.trim() !== '') {
+      navigate(directRoute)
+      return
+    }
+    if (payload?.entity === 'preventivo' && payload?.id_preventivo) {
+      navigate(`/preventivi/dettagli?id=${payload.id_preventivo}`)
+      return
+    }
+    if (payload?.entity === 'fattura' && payload?.id_fattura) {
+      navigate(`/fatture/dettagli?id=${payload.id_fattura}`)
+      return
+    }
     if (item.id_lavorazione) {
       navigate(`/lavorazioni/dettaglio?id=${item.id_lavorazione}`)
     }
+  }
+
+  const handleShowAll = () => {
+    setVisible(false)
+    navigate('/notifiche')
   }
 
   return (
@@ -138,7 +231,8 @@ const AppNotificationBell = () => {
       variant="nav-item"
       placement="bottom-end"
       visible={visible}
-      onVisibleChange={handleVisibleChange}
+      onShow={handleShow}
+      onHide={handleHide}
     >
       <CDropdownToggle caret={false} className="position-relative" disabled={!isAuthenticated}>
         <CIcon icon={cilBell} size="lg" />
@@ -168,6 +262,9 @@ const AppNotificationBell = () => {
             >
               Segna tutte come lette
             </CButton>
+            <CButton color="link" size="sm" className="p-0" onClick={handleShowAll}>
+              Mostra tutte
+            </CButton>
           </div>
         </CDropdownHeader>
         <CDropdownDivider className="my-0" />
@@ -183,35 +280,40 @@ const AppNotificationBell = () => {
           <CDropdownItem className="text-danger small py-3">
             {error?.message || 'Impossibile caricare le notifiche.'}
           </CDropdownItem>
-        ) : notifications.length === 0 ? (
+        ) : visibleNotifications.length === 0 ? (
           <CDropdownItem className="text-body-secondary small py-3">
             Nessuna notifica disponibile.
           </CDropdownItem>
         ) : (
-          notifications.map((item) => {
+          visibleNotifications.map((item) => {
             const isUnread = String(item?.stato).toLowerCase() !== 'read'
             return (
               <CDropdownItem
                 key={item.id_notifica}
-                className="py-3"
+                className="p-0"
                 onClick={() => handleItemClick(item)}
               >
-                <div className="d-flex justify-content-between align-items-start gap-2">
-                  <div>
-                    <div className="fw-semibold">{item.titolo || 'Notifica'}</div>
-                    <div className="text-body-secondary small">{item.messaggio || '-'}</div>
-                    <div className="text-body-tertiary small mt-1">
-                      {formatDateTime(item.created_at)}
+                <CCallout
+                  color={isUnread ? 'warning' : 'secondary'}
+                  className="m-0 py-3 px-3"
+                >
+                  <div className="d-flex justify-content-between align-items-start gap-2">
+                    <div>
+                      <div className="fw-semibold">{item.titolo || 'Notifica'}</div>
+                      <div className="text-body-secondary small">{item.messaggio || '-'}</div>
+                      <div className="text-body-tertiary small mt-1">
+                        {formatDateTime(item.created_at)}
+                      </div>
                     </div>
+                    {isUnread ? <CBadge color="primary">New</CBadge> : null}
                   </div>
-                  {isUnread ? <CBadge color="primary">New</CBadge> : null}
-                </div>
-                {item.lavorazione_codice || item.attivita_titolo ? (
-                  <div className="text-body-secondary small mt-2">
-                    {item.lavorazione_codice ? `Lavorazione ${item.lavorazione_codice}` : ''}
-                    {item.attivita_titolo ? ` • Attivita ${item.attivita_titolo}` : ''}
-                  </div>
-                ) : null}
+                  {item.lavorazione_codice || item.attivita_titolo ? (
+                    <div className="text-body-secondary small mt-2">
+                      {item.lavorazione_codice ? `Lavorazione ${item.lavorazione_codice}` : ''}
+                      {item.attivita_titolo ? `   Attivita ${item.attivita_titolo}` : ''}
+                    </div>
+                  ) : null}
+                </CCallout>
               </CDropdownItem>
             )
           })

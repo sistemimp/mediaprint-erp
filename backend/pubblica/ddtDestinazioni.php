@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require __DIR__ . '/../bootstrap.php';
 
+use MediaPrint\Backend\AuthGuard;
 use MediaPrint\Backend\Database;
 use MediaPrint\Backend\HttpResponse;
 use MediaPrint\Repo\DdtRepository;
@@ -19,7 +20,10 @@ if ($method !== 'GET') {
 }
 
 try {
-    $repo = new DdtRepository(Database::getConnection());
+$auth = AuthGuard::requireAuth();
+    AuthGuard::requirePermissions($auth, ['ddt.read']);
+
+        $repo = new DdtRepository(Database::getConnection());
     $items = $repo->listDestinazioniPredefinite();
     HttpResponse::json(['data' => $items], 200);
 } catch (RuntimeException $exception) {

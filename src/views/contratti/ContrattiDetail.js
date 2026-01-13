@@ -44,6 +44,7 @@ import { fetchCategorieProdotti, fetchNatureIva, fetchProdotti, fetchProdottoPre
 import { fetchPacchettoDetail, fetchPacchetti } from '../../services/pacchetti'
 import AnagraficaAutocomplete from '../../components/AnagraficaAutocomplete'
 import HtmlEditor from '../../components/HtmlEditor'
+import PermissionButton from '../../components/PermissionButton'
 
 const createEmptyLine = () => ({
   id_prodotto: '',
@@ -1420,17 +1421,23 @@ const ContrattiDetail = () => {
             </section>
 
             <div className="d-flex gap-2">
-              <CButton color="primary" type="submit" disabled={uiDisabled}>
-              {saving ? <CSpinner size="sm" className="me-2" /> : <CIcon icon={cilSave} className="me-2" />}
-              Salva
-              </CButton>
+              <PermissionButton color="primary" type="submit" disabled={uiDisabled} permission="contr.write">
+                {saving ? <CSpinner size="sm" className="me-2" /> : <CIcon icon={cilSave} className="me-2" />}
+                Salva
+              </PermissionButton>
             </div>
           </fieldset>
           <div className="d-flex gap-2 mt-2">
-            <CButton color="danger" variant="outline" onClick={handleDelete} disabled={deleting}>
+            <PermissionButton
+              color="danger"
+              variant="outline"
+              onClick={handleDelete}
+              disabled={deleting}
+              permission="contr.delete"
+            >
               {deleting ? <CSpinner size="sm" className="me-2" /> : <CIcon icon={cilTrash} className="me-2" />}
               Elimina
-            </CButton>
+            </PermissionButton>
           </div>
         </CForm>
 
@@ -1455,13 +1462,14 @@ const ContrattiDetail = () => {
                     <CTableDataCell>{rev.note || '-'}</CTableDataCell>
                     <CTableDataCell>{formatDateTime(rev.created_at)}</CTableDataCell>
                     <CTableDataCell className="text-end">
-                      <CButton
+                      <PermissionButton
                         color="link"
                         size="sm"
                         onClick={() => handleOpenRevisionDetail(rev.id_revisione)}
+                        permission="contr.read"
                       >
                         Dettaglio
-                      </CButton>
+                      </PermissionButton>
                     </CTableDataCell>
                   </CTableRow>
                 ))}

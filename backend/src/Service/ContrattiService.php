@@ -171,6 +171,7 @@ HTML;
             'q' => isset($input['q']) ? (string) $input['q'] : null,
             'id_anagrafica' => isset($input['id_anagrafica']) ? (int) $input['id_anagrafica'] : null,
             'only_active' => isset($input['only_active']) ? (int) $input['only_active'] === 1 : null,
+            'exclude_draft' => !empty($input['exclude_draft']),
         ];
         $items = $this->repository->list($filters);
         return ['items' => $items];
@@ -189,6 +190,12 @@ HTML;
         $header = $this->repository->getById($id);
         if ($header === null) {
             throw new \RuntimeException('Contratto non trovato.', 404);
+        }
+        if (!empty($input['exclude_draft'])) {
+            $statusCode = strtolower((string) ($header['stato_code'] ?? 'bozza'));
+            if ($statusCode === 'bozza') {
+                throw new \RuntimeException('Contratto non trovato.', 404);
+            }
         }
         $lines = $this->repository->getLines($id);
         foreach ($lines as &$line) {
@@ -226,7 +233,8 @@ HTML;
             throw new \RuntimeException('Anagrafica mancante o non valida.', 422);
         }
         $ref = isset($input['date']) ? (string) $input['date'] : null;
-        $header = $this->repository->findActiveContract($idAnag, $ref);
+        $excludeDraft = !empty($input['exclude_draft']);
+        $header = $this->repository->findActiveContract($idAnag, $ref, $excludeDraft);
         if ($header === null) {
             return ['contratto' => null, 'righe' => []];
         }

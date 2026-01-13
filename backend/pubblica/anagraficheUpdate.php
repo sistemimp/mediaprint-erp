@@ -30,7 +30,7 @@ if (!is_array($payload)) {
 
 try {
     $auth = AuthGuard::requireAuth();
-    AuthGuard::requirePermissions($auth, ['anag.edit']);
+    AuthGuard::requirePermissions($auth, ['anag.write']);
     if (AuthGuard::getAccountType($auth) === 'cliente') {
         throw new RuntimeException('Accesso non consentito.', 403);
     }

@@ -22,6 +22,7 @@ if ($method !== 'GET') {
 
 try {
     $auth = AuthGuard::requireAuth();
+    AuthGuard::requirePermissions($auth, ['msg.read']);
     $accountId = AuthGuard::getAccountId($auth);
     $threadId = isset($_GET['id_thread']) ? (int) $_GET['id_thread'] : 0;
     if ($threadId <= 0) {

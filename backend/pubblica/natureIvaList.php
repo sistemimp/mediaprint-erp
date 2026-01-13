@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require __DIR__ . '/../bootstrap.php';
 
+use MediaPrint\Backend\AuthGuard;
 use MediaPrint\Repo\ConfigRepository;
 use MediaPrint\Backend\Database;
 use MediaPrint\Backend\HttpResponse;
@@ -17,7 +18,10 @@ if ($method !== 'GET') {
 }
 
 try {
-    $repo = new ConfigRepository(Database::getConnection());
+$auth = AuthGuard::requireAuth();
+    AuthGuard::requirePermissions($auth, ['prod.read']);
+
+        $repo = new ConfigRepository(Database::getConnection());
     $items = $repo->listNaturaIva();
     HttpResponse::json(['items' => $items], 200);
 } catch (RuntimeException $exception) {

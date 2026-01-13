@@ -35,6 +35,7 @@ import { savePacchetto } from '../../services/pacchetti'
 import { fetchNatureIva, fetchCategorieProdotti, fetchProdotti, fetchProdottoVariazioni, fetchProdottoPrezziCombinati } from '../../services/prodotti'
 import { useNavigate } from 'react-router-dom'
 import { CStepper } from '@coreui/react-pro'
+import PermissionButton from '../../components/PermissionButton'
 
 const currencyFormatter = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' })
 const formatCurrency = (value) => {
@@ -169,7 +170,7 @@ const PacchettiCreate = () => {
   }
 
   const handleAddRiga = () => {
-    setRighe((rows) => rows.concat({ descrizione: '', quantita: 1, prezzo: 0, iva: 22, sconto: 0 }))
+    setRighe((rows) => rows.concat({ descrizione: '', quantita: 1, prezzo: 0, iva: 22, sconto: 0, combo_key: null }))
   }
   const handleRemoveRiga = (index) => {
     setRighe((rows) => rows.filter((_, i) => i !== index))
@@ -419,7 +420,7 @@ const PacchettiCreate = () => {
               <div className="d-flex gap-2">
                 <CButton color="link" onClick={() => setStepperOpen(false)}>Annulla</CButton>
                 {prodStep < 4 && (
-                  <CButton
+                  <PermissionButton
                     color="primary"
                     onClick={() => {
                       if (prodStep === 1) { setProdStep(2); return }
@@ -431,12 +432,13 @@ const PacchettiCreate = () => {
                       if (prodStep === 3) { setProdStep(4); return }
                     }}
                     disabled={(prodStep === 2 && !selProd)}
+                    permission="pack.create"
                   >
                     Avanti
-                  </CButton>
+                  </PermissionButton>
                 )}
                 {prodStep === 4 && (
-                  <CButton
+                  <PermissionButton
                     color="primary"
                     onClick={() => {
                       const prod = prodOptions.find((p) => String(p.id_prodotto) === String(selProd))
@@ -456,7 +458,15 @@ const PacchettiCreate = () => {
                         const label = Object.entries(groups).map(([cat, names]) => `${cat}: ${names.join(', ')}`).join(' ; ')
                         descr = `${prod.nome} - ${label}`
                       }
-                      const riga = { descrizione: descr, quantita: modalQty, prezzo: modalPrice, iva: ivaPerc, sconto: 0, id_prodotto: prod.id_prodotto }
+                        const riga = {
+                          descrizione: descr,
+                          quantita: modalQty,
+                          prezzo: modalPrice,
+                          iva: ivaPerc,
+                          sconto: 0,
+                          id_prodotto: prod.id_prodotto,
+                          combo_key: selectedComboKey || null,
+                        }
                       if (prod.id_categoria != null) {
                         const catId = Number(prod.id_categoria)
                         if (Number.isFinite(catId) && catId > 0) {
@@ -472,9 +482,10 @@ const PacchettiCreate = () => {
                       setRighe((rows) => rows.concat(riga))
                       setStepperOpen(false)
                     }}
+                    permission="pack.create"
                   >
                     Inserisci riga
-                  </CButton>
+                  </PermissionButton>
                 )}
               </div>
             </CModalFooter>
@@ -484,12 +495,26 @@ const PacchettiCreate = () => {
             <div className="d-flex justify-content-between align-items-center mb-3">
               <h6 className="mb-0 text-body-secondary">Righe pacchetto</h6>
               <div className="d-flex gap-2">
-                <CButton color="secondary" variant="outline" size="sm" onClick={handleAddRiga} type="button">
+                <PermissionButton
+                  color="secondary"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleAddRiga}
+                  type="button"
+                  permission="pack.create"
+                >
                   <CIcon icon={cilPlus} className="me-2" /> Riga manuale
-                </CButton>
-                <CButton color="primary" variant="outline" size="sm" type="button" onClick={() => { resetProductModal(); setStepperOpen(true) }}>
+                </PermissionButton>
+                <PermissionButton
+                  color="primary"
+                  variant="outline"
+                  size="sm"
+                  type="button"
+                  onClick={() => { resetProductModal(); setStepperOpen(true) }}
+                  permission="pack.create"
+                >
                   Selettore prodotti
-                </CButton>
+                </PermissionButton>
               </div>
             </div>
             <CTable hover responsive>
@@ -556,9 +581,15 @@ const PacchettiCreate = () => {
                       <CTableDataCell className="text-end">{formatCurrency(ivaVal)}</CTableDataCell>
                       <CTableDataCell className="text-end">{formatCurrency(tot)}</CTableDataCell>
                       <CTableDataCell className="text-center">
-                        <CButton color="link" size="sm" className="p-0" onClick={() => handleRemoveRiga(idx)}>
+                        <PermissionButton
+                          color="link"
+                          size="sm"
+                          className="p-0"
+                          onClick={() => handleRemoveRiga(idx)}
+                          permission="pack.create"
+                        >
                           <CIcon icon={cilTrash} />
-                        </CButton>
+                        </PermissionButton>
                       </CTableDataCell>
                     </CTableRow>
                   )
@@ -568,9 +599,9 @@ const PacchettiCreate = () => {
           </section>
 
           <div className="d-flex gap-2">
-            <CButton color="primary" type="submit" disabled={submitting}>
+            <PermissionButton color="primary" type="submit" disabled={submitting} permission="pack.create">
               <CIcon icon={cilSave} className="me-2" /> Salva
-            </CButton>
+            </PermissionButton>
           </div>
         </CForm>
       </CCardBody>

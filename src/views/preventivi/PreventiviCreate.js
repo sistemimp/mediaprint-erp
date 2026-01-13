@@ -111,6 +111,7 @@ const PreventiviCreate = () => {
   const [selectedComboKey, setSelectedComboKey] = useState('')
   const [prodComboMap, setProdComboMap] = useState({})
   const [prodComboList, setProdComboList] = useState([])
+  const [comboSelectionError, setComboSelectionError] = useState(null)
   // Campi riepilogo
   const [modalQty, setModalQty] = useState(1)
   const [modalPrice, setModalPrice] = useState(0)
@@ -459,6 +460,7 @@ const PreventiviCreate = () => {
     setSelProd('')
     setSelectedVarIds([])
     setSelectedComboKey('')
+    setComboSelectionError(null)
     setSelIva('')
     setSelNatura('')
     setModalQty(1)
@@ -541,7 +543,9 @@ const PreventiviCreate = () => {
   }, [oggettoLabels, selectedOggetti, token])
 
   const handleAddRiga = () => {
-    setRighe((rows) => rows.concat({ descrizione: '', quantita: 1, prezzo: 0, iva: 22, sconto: 0 }))
+    setRighe((rows) =>
+      rows.concat({ descrizione: '', quantita: 1, prezzo: 0, iva: 22, sconto: 0, combo_key: null }),
+    )
   }
   const handleRemoveRiga = (index) => {
     setRighe((rows) => rows.filter((_, i) => i !== index))
@@ -642,6 +646,10 @@ const PreventiviCreate = () => {
       : Array.isArray(selectedOggetti)
         ? selectedOggetti.map((v) => Number(v)).filter((n) => Number.isFinite(n) && n > 0)
         : []
+    const normalizedRighe = (Array.isArray(righe) ? righe : []).map((r) => ({
+      ...r,
+      combo_key: r?.combo_key ?? null,
+    }))
     return {
       id_preventivo: idPreventivo ?? undefined,
       id_anagrafica: Number(idAnagrafica) || 0,
@@ -651,7 +659,7 @@ const PreventiviCreate = () => {
       oggetti: oggettiList,
       riferimento_cliente: rifCliente,
       contatti: serializePreventivoContacts(preventivoContatti, Number(idAnagrafica) || null),
-      righe,
+      righe: normalizedRighe,
       totals: {
         imponibile: totals.imponibile,
         totaleIva: totals.totaleIva,
@@ -817,6 +825,13 @@ const PreventiviCreate = () => {
                 )}
                 {prodStep === 3 && (
                   <CRow className="g-3">
+                    {comboSelectionError && (
+                      <CCol md={12}>
+                        <CAlert color="danger" className="mb-0">
+                          {comboSelectionError}
+                        </CAlert>
+                      </CCol>
+                    )}
                     {prodComboList.length > 0 ? (
                       <CCol md={12}>
                         <CFormLabel>Combinazioni</CFormLabel>
@@ -825,6 +840,7 @@ const PreventiviCreate = () => {
                           onChange={(e) => {
                             const key = e.target.value
                             setSelectedComboKey(key)
+                            setComboSelectionError(null)
                             const opt = prodComboList.find(
                               (r) => String(r.combo_key) === String(key),
                             )
@@ -875,6 +891,13 @@ const PreventiviCreate = () => {
                 )}
                 {prodStep === 4 && (
                   <CRow className="g-3">
+                    {comboSelectionError && (
+                      <CCol md={12}>
+                        <CAlert color="danger" className="mb-0">
+                          {comboSelectionError}
+                        </CAlert>
+                      </CCol>
+                    )}
                     <CCol md={12}>
                       <div className="mb-2">
                         <strong>Prodotto:</strong>{' '}
@@ -1013,6 +1036,10 @@ const PreventiviCreate = () => {
                           (p) => String(p.id_prodotto) === String(selProd),
                         )
                         if (!prod) return
+                        if (prodComboList.length > 0 && !selectedComboKey) {
+                          setComboSelectionError('Seleziona una combinazione prima di inserire la riga.')
+                          return
+                        }
                         const ivaPerc = Number(selIva || prod.iva_percento || 22)
                         const comboIds = selectedComboKey
                           ? selectedComboKey
@@ -1315,6 +1342,7 @@ const PreventiviCreate = () => {
                           iva: r.iva != null ? Number(r.iva) : 22,
                           sconto: r.sconto != null ? Number(r.sconto) : 0,
                           id_prodotto: r.id_prodotto ?? null,
+                          combo_key: r.combo_key ?? null,
                           id_pacchetto: Number(selPacchetto) || null,
                           id_sdi_natura_iva: r.id_sdi_natura_iva ?? null,
                         }

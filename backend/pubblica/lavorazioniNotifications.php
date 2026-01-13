@@ -24,7 +24,7 @@ if ($method !== 'GET') {
 
 try {
     $auth = AuthGuard::requireAuth();
-    AuthGuard::requirePermissions($auth, ['job.view']);
+    AuthGuard::requirePermissions($auth, ['job.read']);
     $_GET['id_account'] = AuthGuard::getAccountId($auth);
 
     $service = new LavorazioniService(new LavorazioniRepository(Database::getConnection()));

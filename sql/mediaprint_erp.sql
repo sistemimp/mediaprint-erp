@@ -330,6 +330,35 @@ LOCK TABLES `auth_account_ruoli` WRITE;
 UNLOCK TABLES;
 
 --
+-- Table structure for table `auth_account_permessi`
+--
+
+DROP TABLE IF EXISTS `auth_account_permessi`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `auth_account_permessi` (
+  `id_account` bigint(20) unsigned NOT NULL,
+  `id_permesso` smallint(5) unsigned NOT NULL,
+  `is_allowed` tinyint(1) NOT NULL DEFAULT 1,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id_account`,`id_permesso`),
+  KEY `fk_ap_permesso` (`id_permesso`),
+  CONSTRAINT `fk_ap_account` FOREIGN KEY (`id_account`) REFERENCES `auth_accounts` (`id_account`) ON DELETE CASCADE,
+  CONSTRAINT `fk_ap_permesso` FOREIGN KEY (`id_permesso`) REFERENCES `cfg_auth_permessi` (`id_permesso`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `auth_account_permessi`
+--
+
+LOCK TABLES `auth_account_permessi` WRITE;
+/*!40000 ALTER TABLE `auth_account_permessi` DISABLE KEYS */;
+/*!40000 ALTER TABLE `auth_account_permessi` ENABLE KEYS */;
+UNLOCK TABLES;
+
+--
 -- Table structure for table `auth_account_contatti`
 --
 
@@ -376,6 +405,7 @@ CREATE TABLE `auth_accounts` (
   `must_change_pwd` tinyint(1) NOT NULL DEFAULT 0,
   `has_mfa` tinyint(1) NOT NULL DEFAULT 0,
   `mfa_secret` varchar(128) DEFAULT NULL,
+  `avatar_path` varchar(255) DEFAULT NULL,
   `last_login` datetime DEFAULT NULL,
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
   `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
@@ -395,8 +425,8 @@ CREATE TABLE `auth_accounts` (
 LOCK TABLES `auth_accounts` WRITE;
 /*!40000 ALTER TABLE `auth_accounts` DISABLE KEYS */;
 INSERT INTO `auth_accounts` VALUES
-(1,'operatore','Alex Olivieri','alex.o@mediaprint.it','$2y$10$JkB3w1sOK6qwNJ2MJRSJeubmFPXJ5p7swDshAcocO/.jTQ0XtTNDW',1,NULL,1,0,0,NULL,'2025-11-21 16:12:49','2025-10-01 10:41:38','2025-11-21 16:12:49'),
-(2,'operatore','Simona Cappelletti','simona.c@mediaprint.it','$2y$10$z14y/3dYOkBrwAI0AQmIYevXrCN4vyELFDDIt7KyDm2spPmory6l2',2,NULL,1,0,0,NULL,NULL,'2025-10-15 16:18:53','2025-10-15 16:18:53');
+(1,'operatore','Alex Olivieri','alex.o@mediaprint.it','$2y$10$JkB3w1sOK6qwNJ2MJRSJeubmFPXJ5p7swDshAcocO/.jTQ0XtTNDW',1,NULL,1,0,0,NULL,NULL,'2025-11-21 16:12:49','2025-10-01 10:41:38','2025-11-21 16:12:49'),
+(2,'operatore','Simona Cappelletti','simona.c@mediaprint.it','$2y$10$z14y/3dYOkBrwAI0AQmIYevXrCN4vyELFDDIt7KyDm2spPmory6l2',2,NULL,1,0,0,NULL,NULL,NULL,'2025-10-15 16:18:53','2025-10-15 16:18:53');
 /*!40000 ALTER TABLE `auth_accounts` ENABLE KEYS */;
 UNLOCK TABLES;
 /*!50003 SET @saved_cs_client      = @@character_set_client */ ;
@@ -540,68 +570,89 @@ CREATE TABLE `auth_ruolo_permesso` (
 LOCK TABLES `auth_ruolo_permesso` WRITE;
 /*!40000 ALTER TABLE `auth_ruolo_permesso` DISABLE KEYS */;
 INSERT INTO `auth_ruolo_permesso` VALUES
-(1,1),
-(1,2),
-(1,10),
-(1,11),
-(1,68),
-(1,69),
-(1,20),
-(1,21),
-(1,22),
-(1,30),
-(1,31),
-(1,32),
-(1,33),
-(1,40),
-(1,41),
-(1,50),
-(1,51),
-(1,60),
-(1,61),
-(1,62),
-(1,63),
-(1,64),
-(1,65),
-(1,66),
-(1,67),
-(2,1),
-(2,2),
-(2,10),
-(2,11),
-(2,68),
-(2,69),
-(2,20),
-(2,21),
-(2,22),
-(2,30),
-(2,31),
-(2,32),
-(2,33),
-(2,40),
-(2,41),
-(2,50),
-(2,51),
-(2,60),
-(2,62),
-(2,63),
-(2,64),
-(2,65),
-(2,66),
-(3,1),
-(3,10),
-(3,68),
-(3,20),
-(3,30),
-(3,50),
-(4,10),
-(4,68),
-(4,69),
-(4,20),
-(4,21),
-(4,22),
-(4,62),
-(4,63);
+  (1,19),
+  (1,20),
+  (1,17),
+  (1,18),
+  (1,15),
+  (1,16),
+  (1,13),
+  (1,14),
+  (1,11),
+  (1,12),
+  (1,9),
+  (1,10),
+  (1,27),
+  (1,28),
+  (1,25),
+  (1,26),
+  (1,31),
+  (1,32),
+  (1,29),
+  (1,30),
+  (1,39),
+  (1,40),
+  (1,37),
+  (1,38),
+  (1,43),
+  (1,44),
+  (1,41),
+  (1,42),
+  (1,7),
+  (1,8),
+  (1,5),
+  (1,6),
+  (1,35),
+  (1,36),
+  (1,33),
+  (1,34),
+  (1,23),
+  (1,24),
+  (1,21),
+  (1,22),
+  (1,3),
+  (1,4),
+  (1,1),
+  (1,2),
+  (2,17),
+  (2,15),
+  (2,13),
+  (2,14),
+  (2,11),
+  (2,9),
+  (2,10),
+  (2,27),
+  (2,25),
+  (2,26),
+  (2,31),
+  (2,29),
+  (2,30),
+  (2,39),
+  (2,37),
+  (2,38),
+  (2,5),
+  (2,35),
+  (2,33),
+  (2,34),
+  (2,23),
+  (2,21),
+  (2,22),
+  (2,1),
+  (3,13),
+  (3,9),
+  (3,29),
+  (3,33),
+  (3,21),
+  (4,13),
+  (4,11),
+  (4,9),
+  (4,10),
+  (4,39),
+  (4,37),
+  (4,38),
+  (4,23),
+  (4,21),
+  (4,22);
 /*!40000 ALTER TABLE `auth_ruolo_permesso` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -619,7 +670,7 @@ CREATE TABLE `cfg_auth_permessi` (
   `attivo` tinyint(1) NOT NULL DEFAULT 1,
   PRIMARY KEY (`id_permesso`),
   UNIQUE KEY `uq_code` (`code`)
-) ENGINE=InnoDB AUTO_INCREMENT=70 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=45 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -629,31 +680,50 @@ CREATE TABLE `cfg_auth_permessi` (
 LOCK TABLES `cfg_auth_permessi` WRITE;
 /*!40000 ALTER TABLE `cfg_auth_permessi` DISABLE KEYS */;
 INSERT INTO `cfg_auth_permessi` VALUES
-(1,'auth.login','Accesso al sistema',1),
-(2,'auth.mfa','Autenticazione a più fattori',1),
-(10,'anag.view','Visualizzare anagrafiche',1),
-(11,'anag.edit','Creare/Modificare anagrafiche',1),
-(20,'prev.view','Visualizzare preventivi',1),
-(21,'prev.edit','Creare/Modificare preventivi',1),
-(22,'prev.approve','Approvare preventivi',1),
-(30,'fatt.view','Visualizzare fatture',1),
-(31,'fatt.edit','Creare/Modificare fatture',1),
-(32,'fatt.send_sdi','Inviare fatture al SdI',1),
-(33,'fatt.storno','Emettere note di credito',1),
-(40,'ddt.view','Visualizzare DDT',1),
-(41,'ddt.edit','Creare/Modificare DDT',1),
-(50,'pay.view','Visualizzare pagamenti',1),
-(51,'pay.edit','Registrare pagamenti',1),
-(60,'cfg.view','Visualizzare configurazioni',1),
-(61,'cfg.edit','Gestire configurazioni',1),
-(62,'job.view','Visualizzare lavorazioni e attivita',1),
-(63,'job.manage','Creare e aggiornare lavorazioni e attivita',1),
-(64,'job.assign','Assegnare attivita agli operatori',1),
-(65,'job.report','Generare ed esportare report di produzione',1),
-(66,'job.analytics','Visualizzare dashboard e analytics produzione',1),
-(67,'job.admin','Gestire configurazioni e SLA lavorazioni',1),
-(68,'contratti.view','Visualizzare contratti',1),
-(69,'contratti.edit','Creare/Modificare contratti',1);
+  (1,'prod.read','Prodotti - Leggere',1),
+  (2,'prod.write','Prodotti - Scrivere/Modificare',1),
+  (3,'prod.create','Prodotti - Creare',1),
+  (4,'prod.delete','Prodotti - Eliminare',1),
+  (5,'pack.read','Pacchetti - Leggere',1),
+  (6,'pack.write','Pacchetti - Scrivere/Modificare',1),
+  (7,'pack.create','Pacchetti - Creare',1),
+  (8,'pack.delete','Pacchetti - Eliminare',1),
+  (9,'contr.read','Contratti - Leggere',1),
+  (10,'contr.write','Contratti - Scrivere/Modificare',1),
+  (11,'contr.create','Contratti - Creare',1),
+  (12,'contr.delete','Contratti - Eliminare',1),
+  (13,'anag.read','Anagrafica - Leggere',1),
+  (14,'anag.write','Anagrafica - Scrivere/Modificare',1),
+  (15,'anag.create','Anagrafica - Creare',1),
+  (16,'anag.delete','Anagrafica - Eliminare',1),
+  (17,'acct.read','Account - Leggere',1),
+  (18,'acct.write','Account - Scrivere/Modificare',1),
+  (19,'acct.create','Account - Creare',1),
+  (20,'acct.delete','Account - Eliminare',1),
+  (21,'prev.read','Preventivi - Leggere',1),
+  (22,'prev.write','Preventivi - Scrivere/Modificare',1),
+  (23,'prev.create','Preventivi - Creare',1),
+  (24,'prev.delete','Preventivi - Eliminare',1),
+  (25,'ddt.read','DDT - Leggere',1),
+  (26,'ddt.write','DDT - Scrivere/Modificare',1),
+  (27,'ddt.create','DDT - Creare',1),
+  (28,'ddt.delete','DDT - Eliminare',1),
+  (29,'fatt.read','Fatture - Leggere',1),
+  (30,'fatt.write','Fatture - Scrivere/Modificare',1),
+  (31,'fatt.create','Fatture - Creare',1),
+  (32,'fatt.delete','Fatture - Eliminare',1),
+  (33,'pay.read','Pagamenti - Leggere',1),
+  (34,'pay.write','Pagamenti - Scrivere/Modificare',1),
+  (35,'pay.create','Pagamenti - Creare',1),
+  (36,'pay.delete','Pagamenti - Eliminare',1),
+  (37,'job.read','Lavorazioni - Leggere',1),
+  (38,'job.write','Lavorazioni - Scrivere/Modificare',1),
+  (39,'job.create','Lavorazioni - Creare',1),
+  (40,'job.delete','Lavorazioni - Eliminare',1),
+  (41,'msg.read','Messaggi - Leggere',1),
+  (42,'msg.write','Messaggi - Scrivere/Modificare',1),
+  (43,'msg.create','Messaggi - Creare',1),
+  (44,'msg.delete','Messaggi - Eliminare',1);
 /*!40000 ALTER TABLE `cfg_auth_permessi` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -2286,6 +2356,7 @@ CREATE TABLE `tb_ddt_righe` (
   `id_riga` int(10) unsigned NOT NULL AUTO_INCREMENT,
   `id_ddt` int(10) unsigned NOT NULL,
   `id_prodotto` int(10) unsigned DEFAULT NULL,
+  `combo_key` varchar(255) DEFAULT NULL,
   `descrizione` varchar(255) NOT NULL,
   `quantita` decimal(12,3) NOT NULL DEFAULT 1.000,
   `peso_unitario_kg` decimal(12,3) DEFAULT NULL,
@@ -2308,7 +2379,7 @@ CREATE TABLE `tb_ddt_righe` (
 LOCK TABLES `tb_ddt_righe` WRITE;
 /*!40000 ALTER TABLE `tb_ddt_righe` DISABLE KEYS */;
 INSERT INTO `tb_ddt_righe` VALUES
-(188,14,NULL,'prova ddt',1.000,10.000,10.000,'1',NULL,1);
+(188,14,NULL,NULL,'prova ddt',1.000,10.000,10.000,'1',NULL,1);
 /*!40000 ALTER TABLE `tb_ddt_righe` ENABLE KEYS */;
 UNLOCK TABLES;
 /*!50003 SET @saved_cs_client      = @@character_set_client */ ;
@@ -2529,6 +2600,7 @@ CREATE TABLE `tb_fatture_righe` (
   `id_riga` int(10) unsigned NOT NULL AUTO_INCREMENT,
   `id_fattura` int(10) unsigned NOT NULL,
   `id_prodotto` int(10) unsigned DEFAULT NULL,
+  `combo_key` varchar(255) DEFAULT NULL,
   `descrizione` varchar(255) NOT NULL,
   `quantita` decimal(12,3) NOT NULL DEFAULT 1.000,
   `aliquota_iva` decimal(5,2) NOT NULL DEFAULT 22.00,
@@ -2556,8 +2628,8 @@ CREATE TABLE `tb_fatture_righe` (
 LOCK TABLES `tb_fatture_righe` WRITE;
 /*!40000 ALTER TABLE `tb_fatture_righe` DISABLE KEYS */;
 INSERT INTO `tb_fatture_righe` VALUES
-(143,12,37,'Attivazione Servizio Giano',1.000,22.00,150.0000,0.00,150.00,33.00,NULL,183.00,1),
-(144,12,8,'Rendicontazione - Rendicontazione Postale: Posta Certificata',1.000,22.00,0.6000,0.00,0.60,0.13,NULL,0.73,2);
+(143,12,37,NULL,'Attivazione Servizio Giano',1.000,22.00,150.0000,0.00,150.00,33.00,NULL,183.00,1),
+(144,12,8,NULL,'Rendicontazione - Rendicontazione Postale: Posta Certificata',1.000,22.00,0.6000,0.00,0.60,0.13,NULL,0.73,2);
 /*!40000 ALTER TABLE `tb_fatture_righe` ENABLE KEYS */;
 UNLOCK TABLES;
 /*!50003 SET @saved_cs_client      = @@character_set_client */ ;
@@ -3158,6 +3230,7 @@ CREATE TABLE `tb_pacchetti_righe` (
   `id_riga` int(11) NOT NULL AUTO_INCREMENT,
   `id_pacchetto` int(11) NOT NULL,
   `id_prodotto` int(11) DEFAULT NULL,
+  `combo_key` varchar(255) DEFAULT NULL,
   `id_categoria` int(11) DEFAULT NULL,
   `categoria_nome` varchar(191) DEFAULT NULL,
   `descrizione` varchar(255) NOT NULL,
@@ -3182,35 +3255,35 @@ CREATE TABLE `tb_pacchetti_righe` (
 LOCK TABLES `tb_pacchetti_righe` WRITE;
 /*!40000 ALTER TABLE `tb_pacchetti_righe` DISABLE KEYS */;
 INSERT INTO `tb_pacchetti_righe` VALUES
-(86,3,11,2,'Tariffe postali','Posta Massiva - Peso: Fino a 20 gr ; Altro: 3 ; Destinazione: AM',1.00,0.3400,0.00,0.00,1,1),
-(87,3,11,2,'Tariffe postali','Posta Massiva - Peso: Fino a 20 gr ; Altro: 3 ; Destinazione: CP',1.00,0.5200,0.00,0.00,1,2),
-(88,3,11,2,'Tariffe postali','Posta Massiva - Peso: Fino a 20 gr ; Altro: 3 ; Destinazione: EU',1.00,0.6500,0.00,0.00,1,3),
-(89,3,11,2,'Tariffe postali','Posta Massiva - Peso: Oltre 20g fino a 50gr ; Tipo Spedizione: Omologato ; Destinazione: AM',1.00,0.6200,0.00,0.00,1,4),
-(90,3,11,2,'Tariffe postali','Posta Massiva - Peso: Oltre 20g fino a 50gr ; Tipo Spedizione: Omologato ; Destinazione: CP',1.00,0.9200,0.00,0.00,1,5),
-(91,3,11,2,'Tariffe postali','Posta Massiva - Peso: Oltre 20g fino a 50gr ; Tipo Spedizione: Omologato ; Destinazione: EU',1.00,1.2200,0.00,0.00,1,6),
-(92,3,20,2,'Tariffe postali','Posta Mail Internationale - Peso: Fino a 20 gr ; Destinazione: EX Zona 1',1.00,1.3500,0.00,22.00,NULL,7),
-(93,3,20,2,'Tariffe postali','Posta Mail Internationale - Peso: Fino a 20 gr ; Destinazione: EX Zona 2',1.00,2.5500,0.00,22.00,NULL,8),
-(94,3,20,2,'Tariffe postali','Posta Mail Internationale - Peso: Fino a 20 gr ; Destinazione: EX Zona 3',1.00,3.3500,0.00,22.00,NULL,9),
-(95,3,19,4,'Posta Ordinaria Cartacea','Posta Massiva',1.00,0.0000,0.00,22.00,NULL,10),
-(115,4,12,2,'Tariffe postali','Raccomandata AR Smart - Peso: Fino a 20 gr ; Destinazione: AM',1.00,2.8100,0.00,22.00,NULL,1),
-(116,4,12,2,'Tariffe postali','Raccomandata AR Smart - Peso: Fino a 20 gr ; Destinazione: CP',1.00,3.1800,0.00,22.00,NULL,2),
-(117,4,12,2,'Tariffe postali','Raccomandata AR Smart - Peso: Fino a 20 gr ; Destinazione: EU',1.00,4.0300,0.00,22.00,NULL,3),
-(118,4,14,2,'Tariffe postali','Raccomandata AR Internazionale - Peso: Fino a 20 gr ; Destinazione: EX Zona 1',1.00,7.6500,0.00,22.00,NULL,4),
-(119,4,14,2,'Tariffe postali','Raccomandata AR Internazionale - Peso: Fino a 20 gr ; Destinazione: EX Zona 2',1.00,9.0500,0.00,22.00,NULL,5),
-(120,4,14,2,'Tariffe postali','Raccomandata AR Internazionale - Peso: Fino a 20 gr ; Destinazione: EX Zona 3',1.00,9.7000,0.00,22.00,NULL,6),
-(136,2,11,2,'Tariffe postali','Posta Massiva - Peso: Fino a 20 gr ; Tipo Spedizione: Omologato ; Destinazione: AM',1.00,0.3400,0.00,0.00,1,1),
-(137,2,11,2,'Tariffe postali','Posta Massiva - Peso: Fino a 20 gr ; Tipo Spedizione: Omologato ; Destinazione: CP',1.00,0.5200,0.00,0.00,1,2),
-(138,2,11,2,'Tariffe postali','Posta Massiva - Peso: Fino a 20 gr ; Tipo Spedizione: Omologato ; Destinazione: EU',1.00,0.6500,0.00,0.00,1,3),
-(139,2,20,2,'Tariffe postali','Posta 4 (internazionale) - Peso: Fino a 20 gr ; Destinazione: EX Zona 1',1.00,1.3500,0.00,0.00,1,4),
-(140,2,20,2,'Tariffe postali','Posta 4 (internazionale) - Peso: Fino a 20 gr ; Destinazione: EX Zona 2',1.00,2.5500,0.00,0.00,1,5),
-(141,2,20,2,'Tariffe postali','Posta 4 (internazionale) - Peso: Fino a 20 gr ; Destinazione: EX Zona 3',1.00,3.3500,0.00,0.00,1,6),
-(142,2,6,1,'GianoSystem.eu','Centro Elaborazione Dati - File Dati: PDF-Omologato',1.00,50.0000,0.00,22.00,NULL,7),
-(143,2,6,1,'GianoSystem.eu','Centro Elaborazione Dati - File Dati: PDF-Non Omologato',1.00,150.0000,0.00,22.00,NULL,8),
-(144,2,6,1,'GianoSystem.eu','Centro Elaborazione Dati - File Dati: Dati grezzi da elaborare',1.00,150.0000,0.00,22.00,NULL,9),
-(145,5,37,1,'Servizi Giano System','Attivazione Servizio Giano',1.00,150.0000,0.00,22.00,NULL,1),
-(146,5,8,1,'Servizi Giano System','Rendicontazione - Rendicontazione Postale: Posta Ordinaria',1.00,0.4500,0.00,22.00,NULL,2),
-(147,5,8,1,'Servizi Giano System','Rendicontazione - Rendicontazione Postale: Posta Certificata',1.00,0.6000,0.00,22.00,NULL,3),
-(148,5,8,1,'Servizi Giano System','Rendicontazione - Rendicontazione Postale: Posta Digitale',1.00,0.4000,0.00,22.00,NULL,4);
+(86,3,11,NULL,2,'Tariffe postali','Posta Massiva - Peso: Fino a 20 gr ; Altro: 3 ; Destinazione: AM',1.00,0.3400,0.00,0.00,1,1),
+(87,3,11,NULL,2,'Tariffe postali','Posta Massiva - Peso: Fino a 20 gr ; Altro: 3 ; Destinazione: CP',1.00,0.5200,0.00,0.00,1,2),
+(88,3,11,NULL,2,'Tariffe postali','Posta Massiva - Peso: Fino a 20 gr ; Altro: 3 ; Destinazione: EU',1.00,0.6500,0.00,0.00,1,3),
+(89,3,11,NULL,2,'Tariffe postali','Posta Massiva - Peso: Oltre 20g fino a 50gr ; Tipo Spedizione: Omologato ; Destinazione: AM',1.00,0.6200,0.00,0.00,1,4),
+(90,3,11,NULL,2,'Tariffe postali','Posta Massiva - Peso: Oltre 20g fino a 50gr ; Tipo Spedizione: Omologato ; Destinazione: CP',1.00,0.9200,0.00,0.00,1,5),
+(91,3,11,NULL,2,'Tariffe postali','Posta Massiva - Peso: Oltre 20g fino a 50gr ; Tipo Spedizione: Omologato ; Destinazione: EU',1.00,1.2200,0.00,0.00,1,6),
+(92,3,20,NULL,2,'Tariffe postali','Posta Mail Internationale - Peso: Fino a 20 gr ; Destinazione: EX Zona 1',1.00,1.3500,0.00,22.00,NULL,7),
+(93,3,20,NULL,2,'Tariffe postali','Posta Mail Internationale - Peso: Fino a 20 gr ; Destinazione: EX Zona 2',1.00,2.5500,0.00,22.00,NULL,8),
+(94,3,20,NULL,2,'Tariffe postali','Posta Mail Internationale - Peso: Fino a 20 gr ; Destinazione: EX Zona 3',1.00,3.3500,0.00,22.00,NULL,9),
+(95,3,19,NULL,4,'Posta Ordinaria Cartacea','Posta Massiva',1.00,0.0000,0.00,22.00,NULL,10),
+(115,4,12,NULL,2,'Tariffe postali','Raccomandata AR Smart - Peso: Fino a 20 gr ; Destinazione: AM',1.00,2.8100,0.00,22.00,NULL,1),
+(116,4,12,NULL,2,'Tariffe postali','Raccomandata AR Smart - Peso: Fino a 20 gr ; Destinazione: CP',1.00,3.1800,0.00,22.00,NULL,2),
+(117,4,12,NULL,2,'Tariffe postali','Raccomandata AR Smart - Peso: Fino a 20 gr ; Destinazione: EU',1.00,4.0300,0.00,22.00,NULL,3),
+(118,4,14,NULL,2,'Tariffe postali','Raccomandata AR Internazionale - Peso: Fino a 20 gr ; Destinazione: EX Zona 1',1.00,7.6500,0.00,22.00,NULL,4),
+(119,4,14,NULL,2,'Tariffe postali','Raccomandata AR Internazionale - Peso: Fino a 20 gr ; Destinazione: EX Zona 2',1.00,9.0500,0.00,22.00,NULL,5),
+(120,4,14,NULL,2,'Tariffe postali','Raccomandata AR Internazionale - Peso: Fino a 20 gr ; Destinazione: EX Zona 3',1.00,9.7000,0.00,22.00,NULL,6),
+(136,2,11,NULL,2,'Tariffe postali','Posta Massiva - Peso: Fino a 20 gr ; Tipo Spedizione: Omologato ; Destinazione: AM',1.00,0.3400,0.00,0.00,1,1),
+(137,2,11,NULL,2,'Tariffe postali','Posta Massiva - Peso: Fino a 20 gr ; Tipo Spedizione: Omologato ; Destinazione: CP',1.00,0.5200,0.00,0.00,1,2),
+(138,2,11,NULL,2,'Tariffe postali','Posta Massiva - Peso: Fino a 20 gr ; Tipo Spedizione: Omologato ; Destinazione: EU',1.00,0.6500,0.00,0.00,1,3),
+(139,2,20,NULL,2,'Tariffe postali','Posta 4 (internazionale) - Peso: Fino a 20 gr ; Destinazione: EX Zona 1',1.00,1.3500,0.00,0.00,1,4),
+(140,2,20,NULL,2,'Tariffe postali','Posta 4 (internazionale) - Peso: Fino a 20 gr ; Destinazione: EX Zona 2',1.00,2.5500,0.00,0.00,1,5),
+(141,2,20,NULL,2,'Tariffe postali','Posta 4 (internazionale) - Peso: Fino a 20 gr ; Destinazione: EX Zona 3',1.00,3.3500,0.00,0.00,1,6),
+(142,2,6,NULL,1,'GianoSystem.eu','Centro Elaborazione Dati - File Dati: PDF-Omologato',1.00,50.0000,0.00,22.00,NULL,7),
+(143,2,6,NULL,1,'GianoSystem.eu','Centro Elaborazione Dati - File Dati: PDF-Non Omologato',1.00,150.0000,0.00,22.00,NULL,8),
+(144,2,6,NULL,1,'GianoSystem.eu','Centro Elaborazione Dati - File Dati: Dati grezzi da elaborare',1.00,150.0000,0.00,22.00,NULL,9),
+(145,5,37,NULL,1,'Servizi Giano System','Attivazione Servizio Giano',1.00,150.0000,0.00,22.00,NULL,1),
+(146,5,8,NULL,1,'Servizi Giano System','Rendicontazione - Rendicontazione Postale: Posta Ordinaria',1.00,0.4500,0.00,22.00,NULL,2),
+(147,5,8,NULL,1,'Servizi Giano System','Rendicontazione - Rendicontazione Postale: Posta Certificata',1.00,0.6000,0.00,22.00,NULL,3),
+(148,5,8,NULL,1,'Servizi Giano System','Rendicontazione - Rendicontazione Postale: Posta Digitale',1.00,0.4000,0.00,22.00,NULL,4);
 /*!40000 ALTER TABLE `tb_pacchetti_righe` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -3584,6 +3657,7 @@ CREATE TABLE `tb_preventivi_righe` (
   `id_riga` int(10) unsigned NOT NULL AUTO_INCREMENT,
   `id_preventivo` int(10) unsigned NOT NULL,
   `id_prodotto` int(10) unsigned DEFAULT NULL,
+  `combo_key` varchar(255) DEFAULT NULL,
   `descrizione` varchar(255) NOT NULL,
   `quantita` decimal(12,3) NOT NULL DEFAULT 1.000,
   `prezzo_unitario` decimal(12,4) NOT NULL DEFAULT 0.0000,
@@ -3610,8 +3684,8 @@ CREATE TABLE `tb_preventivi_righe` (
 LOCK TABLES `tb_preventivi_righe` WRITE;
 /*!40000 ALTER TABLE `tb_preventivi_righe` DISABLE KEYS */;
 INSERT INTO `tb_preventivi_righe` VALUES
-(1058,33,37,'Attivazione Servizio Giano',1.000,150.0000,0.00,150.00,22.00,NULL,183.00,1),
-(1059,33,8,'Rendicontazione - Rendicontazione Postale: Posta Certificata',1.000,0.6000,0.00,0.60,22.00,NULL,0.73,2);
+(1058,33,37,NULL,'Attivazione Servizio Giano',1.000,150.0000,0.00,150.00,22.00,NULL,183.00,1),
+(1059,33,8,NULL,'Rendicontazione - Rendicontazione Postale: Posta Certificata',1.000,0.6000,0.00,0.60,22.00,NULL,0.73,2);
 /*!40000 ALTER TABLE `tb_preventivi_righe` ENABLE KEYS */;
 UNLOCK TABLES;
 /*!50003 SET @saved_cs_client      = @@character_set_client */ ;
@@ -3738,6 +3812,7 @@ CREATE TABLE `tb_preventivi_righe_archive` (
   `id_riga` int(11) NOT NULL,
   `id_preventivo` int(11) NOT NULL,
   `id_prodotto` int(11) DEFAULT NULL,
+  `combo_key` varchar(255) DEFAULT NULL,
   `descrizione` varchar(1024) NOT NULL,
   `quantita` decimal(18,6) NOT NULL DEFAULT 1.000000,
   `prezzo_unitario` decimal(18,6) NOT NULL DEFAULT 0.000000,

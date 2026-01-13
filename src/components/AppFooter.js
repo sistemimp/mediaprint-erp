@@ -1,6 +1,8 @@
 import React from 'react'
 import { CFooter } from '@coreui/react'
 
+import InstantMessagingWidget from './InstantMessagingWidget'
+
 const AppFooter = () => {
   return (
     <CFooter className="px-4">
@@ -10,8 +12,10 @@ const AppFooter = () => {
         </a>
         <span className="ms-1">&copy; 2025.</span>
       </div>
-      <div className="ms-auto">
-        <span className="me-1">Powered by Alex Olivieri</span>
+      <div className="ms-auto d-flex align-items-center">
+        <div className="footer-chat-slot">
+          <InstantMessagingWidget showLabel />
+        </div>
       </div>
     </CFooter>
   )

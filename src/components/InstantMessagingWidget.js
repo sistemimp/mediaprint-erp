@@ -2,15 +2,17 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import CIcon from '@coreui/icons-react'
 import { cilChatBubble } from '@coreui/icons'
-import { CBadge, CButton } from '@coreui/react'
+import { CBadge } from '@coreui/react'
 
 import { useAuth } from '../context/AuthContext'
+import { showDesktopNotification } from '../services/desktopNotifications'
 import { listImThreads } from '../services/instantMessagingApi'
 import { useInstantMessagingSocket } from '../services/instantMessagingSocket'
 import BottomToast from './BottomToast'
 import InstantMessagingPanel from './InstantMessagingPanel'
+import PermissionButton from './PermissionButton'
 
-const InstantMessagingWidget = () => {
+const InstantMessagingWidget = ({ showLabel = false }) => {
   const location = useLocation()
   const { user } = useAuth()
   const [isOpen, setIsOpen] = useState(false)
@@ -54,7 +56,14 @@ const InstantMessagingWidget = () => {
         const sender = message?.sender?.username || 'Account'
         const body = String(message?.body || '').trim()
         const preview = body.length > 90 ? `${body.slice(0, 87)}...` : body
-        showToast(`Nuovo messaggio da ${sender}${preview ? `: ${preview}` : ''}`)
+        const shown = showDesktopNotification({
+          title: `Nuovo messaggio da ${sender}`,
+          body: preview,
+          tag: message?.threadId ? `im-thread-${message.threadId}` : undefined,
+        })
+        if (!shown) {
+          showToast(`Nuovo messaggio da ${sender}${preview ? `: ${preview}` : ''}`)
+        }
       }
     },
     [isOpen, ownUserId, refreshUnread, showToast],
@@ -88,14 +97,20 @@ const InstantMessagingWidget = () => {
 
   return (
     <div className="im-widget">
-      <CButton color="primary" className="im-widget-button" onClick={() => setIsOpen((v) => !v)}>
+      <PermissionButton
+        color="primary"
+        className="im-widget-button"
+        onClick={() => setIsOpen((v) => !v)}
+        permission="msg.read"
+      >
         <CIcon icon={cilChatBubble} />
+        {showLabel ? <span className="im-widget-label">Messaggi</span> : null}
         {unreadCount > 0 ? (
           <CBadge color="danger" className="im-widget-badge">
             {unreadCount}
           </CBadge>
         ) : null}
-      </CButton>
+      </PermissionButton>
       {isOpen ? (
         <div className="im-widget-panel">
           <InstantMessagingPanel compact onClose={() => setIsOpen(false)} />

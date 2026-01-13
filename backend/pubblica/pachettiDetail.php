@@ -23,7 +23,7 @@ if ($method !== 'GET') {
 
 try {
     $auth = AuthGuard::requireAuth();
-    AuthGuard::requirePermissions($auth, ['cfg.view']);
+    AuthGuard::requirePermissions($auth, ['pack.read']);
     if (AuthGuard::getAccountType($auth) === 'cliente') {
         HttpResponse::json(['data' => null, 'righe' => []], 200);
         return;

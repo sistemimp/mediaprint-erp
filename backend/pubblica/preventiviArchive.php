@@ -12,7 +12,7 @@ try {
     require __DIR__ . '/../bootstrap.php';
 
     $auth = AuthGuard::requireAuth();
-    AuthGuard::requirePermissions($auth, ['prev.edit']);
+    AuthGuard::requirePermissions($auth, ['prev.write']);
     if (AuthGuard::getAccountType($auth) === 'cliente') {
         throw new RuntimeException('Accesso non consentito.', 403);
     }

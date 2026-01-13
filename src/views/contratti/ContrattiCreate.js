@@ -36,6 +36,7 @@ import { fetchCategorieProdotti, fetchNatureIva, fetchProdotti, fetchProdottoPre
 import { fetchPacchettoDetail, fetchPacchetti } from '../../services/pacchetti'
 import AnagraficaAutocomplete from '../../components/AnagraficaAutocomplete'
 import HtmlEditor from '../../components/HtmlEditor'
+import PermissionButton from '../../components/PermissionButton'
 
 const createEmptyLine = () => ({
   id_prodotto: '',
@@ -522,26 +523,35 @@ const ContrattiCreate = () => {
             <div className="d-flex justify-content-between align-items-center mb-3">
               <h6 className="mb-0 text-body-secondary">Righe contratto</h6>
               <div className="d-flex gap-2">
-                <CButton color="secondary" variant="outline" size="sm" onClick={handleAddLine} type="button">
+                <PermissionButton
+                  color="secondary"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleAddLine}
+                  type="button"
+                  permission="contr.create"
+                >
                   <CIcon icon={cilPlus} className="me-2" /> Aggiungi riga
-                </CButton>
-                <CButton
+                </PermissionButton>
+                <PermissionButton
                   color="primary"
                   variant="outline"
                   size="sm"
                   onClick={() => { resetProductModal(); setStepperOpen(true) }}
                   type="button"
+                  permission="contr.create"
                 >
                   Selettore prodotti
-                </CButton>
-                <CButton
+                </PermissionButton>
+                <PermissionButton
                   color="primary"
                   size="sm"
                   onClick={() => { resetPkgModal(); setPkgOpen(true) }}
                   type="button"
+                  permission="contr.create"
                 >
                   Inserisci righe pacchetto
-                </CButton>
+                </PermissionButton>
               </div>
             </div>
             <CModal visible={pkgOpen} onClose={() => setPkgOpen(false)} size="lg" backdrop="static">
@@ -614,7 +624,7 @@ const ContrattiCreate = () => {
                 <div />
                 <div className="d-flex gap-2">
                   <CButton color="link" onClick={() => setPkgOpen(false)}>Annulla</CButton>
-                  <CButton
+                  <PermissionButton
                     color="primary"
                     disabled={!selPacchetto || pkgPreview.length === 0}
                     onClick={() => {
@@ -639,9 +649,10 @@ const ContrattiCreate = () => {
                       setRighe((rows) => rows.concat(newLines))
                       setPkgOpen(false)
                     }}
+                    permission="contr.create"
                   >
                     Inserisci righe pacchetto
-                  </CButton>
+                  </PermissionButton>
                 </div>
               </CModalFooter>
             </CModal>
@@ -811,7 +822,7 @@ const ContrattiCreate = () => {
                 <div className="d-flex gap-2">
                   <CButton color="link" onClick={() => setStepperOpen(false)}>Annulla</CButton>
                   {prodStep < 4 && (
-                    <CButton
+                    <PermissionButton
                       color="primary"
                       onClick={() => {
                         if (prodStep === 1) { setProdStep(2); return }
@@ -823,12 +834,13 @@ const ContrattiCreate = () => {
                         if (prodStep === 3) { setProdStep(4); return }
                       }}
                       disabled={prodStep === 2 && !selProd}
+                      permission="contr.create"
                     >
                       Avanti
-                    </CButton>
+                    </PermissionButton>
                   )}
                   {prodStep === 4 && (
-                    <CButton
+                    <PermissionButton
                       color="primary"
                       onClick={() => {
                         const prod = stepperProdOptions.find((p) => String(p.id_prodotto) === String(selProd))
@@ -875,9 +887,10 @@ const ContrattiCreate = () => {
                         setRighe((rows) => rows.concat(riga))
                         setStepperOpen(false)
                       }}
+                      permission="contr.create"
                     >
                       Inserisci riga
-                    </CButton>
+                    </PermissionButton>
                   )}
                 </div>
               </CModalFooter>
@@ -973,18 +986,30 @@ const ContrattiCreate = () => {
                           />
                         </CTableDataCell>
                         <CTableDataCell className="text-center">
-                          <CButton color="link" size="sm" onClick={() => handleRemoveLine(idx)}>
+                          <PermissionButton
+                            color="link"
+                            size="sm"
+                            onClick={() => handleRemoveLine(idx)}
+                            permission="contr.create"
+                          >
                             <CIcon icon={cilTrash} />
-                          </CButton>
+                          </PermissionButton>
                         </CTableDataCell>
                       </CTableRow>
                       <CTableRow>
                         <CTableDataCell colSpan={7}>
                           <div className="d-flex justify-content-between align-items-center mb-2">
                             <span className="text-body-secondary small">Sconti per quantita'</span>
-                            <CButton color="secondary" size="sm" variant="outline" onClick={() => addTier(idx)} type="button">
+                            <PermissionButton
+                              color="secondary"
+                              size="sm"
+                              variant="outline"
+                              onClick={() => addTier(idx)}
+                              type="button"
+                              permission="contr.create"
+                            >
                               <CIcon icon={cilPlus} className="me-2" /> Aggiungi soglia
-                            </CButton>
+                            </PermissionButton>
                           </div>
                           {row.sconti && row.sconti.length > 0 ? (
                             <CTable small responsive className="mb-0">
@@ -1028,9 +1053,14 @@ const ContrattiCreate = () => {
                                       />
                                     </CTableDataCell>
                                     <CTableDataCell className="text-center">
-                                      <CButton color="link" size="sm" onClick={() => removeTier(idx, tIdx)}>
+                                      <PermissionButton
+                                        color="link"
+                                        size="sm"
+                                        onClick={() => removeTier(idx, tIdx)}
+                                        permission="contr.create"
+                                      >
                                         <CIcon icon={cilTrash} />
-                                      </CButton>
+                                      </PermissionButton>
                                     </CTableDataCell>
                                   </CTableRow>
                                 ))}
@@ -1049,10 +1079,10 @@ const ContrattiCreate = () => {
           </section>
 
           <div className="d-flex gap-2">
-            <CButton color="primary" type="submit" disabled={saving}>
+            <PermissionButton color="primary" type="submit" disabled={saving} permission="contr.create">
               {saving ? <CSpinner size="sm" className="me-2" /> : <CIcon icon={cilSave} className="me-2" />}
               Salva
-            </CButton>
+            </PermissionButton>
           </div>
         </CForm>
       </CCardBody>

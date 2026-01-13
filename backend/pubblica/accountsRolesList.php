@@ -13,7 +13,7 @@ header('Content-Type: application/json');
 
 try {
     $auth = AuthGuard::requireAuth();
-    AuthGuard::requirePermissions($auth, ['cfg.view']);
+    AuthGuard::requirePermissions($auth, ['acct.read']);
     if (AuthGuard::getAccountType($auth) === 'cliente') {
         HttpResponse::json(['data' => []], 200);
         return;

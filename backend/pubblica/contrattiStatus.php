@@ -8,8 +8,12 @@ use MediaPrint\Backend\Database;
 header('Content-Type: application/json; charset=utf-8');
 
 try {
-    require __DIR__ . '/../bootstrap.php';
+$auth = AuthGuard::requireAuth();
+    AuthGuard::requirePermissions($auth, ['contr.write']);
 
+        require __DIR__ . '/../bootstrap.php';
+
+use MediaPrint\Backend\AuthGuard;
     $raw = file_get_contents('php://input') ?: '';
     $data = json_decode($raw, true);
     if (!is_array($data)) { $data = []; }

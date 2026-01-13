@@ -22,7 +22,7 @@ if ($method !== 'POST') {
 
 try {
     $auth = AuthGuard::requireAuth();
-    AuthGuard::requirePermissions($auth, ['pay.edit']);
+    AuthGuard::requirePermissions($auth, ['pay.write']);
     if (AuthGuard::getAccountType($auth) === 'cliente') {
         throw new RuntimeException('Accesso non consentito.', 403);
     }

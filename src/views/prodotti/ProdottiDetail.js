@@ -22,6 +22,7 @@ import {
 } from '@coreui/react'
 import { useAuth } from '../../context/AuthContext'
 import BottomToast from '../../components/BottomToast'
+import PermissionButton from '../../components/PermissionButton'
 import {
   fetchCategorieProdotti,
   fetchProdottoDetail,
@@ -461,7 +462,9 @@ const ProdottiDetail = () => {
                 </CCol>
               </CRow>
               <div className="mt-3 d-flex gap-2">
-                <CButton type="submit" color="primary" disabled={saving}>Salva</CButton>
+                <PermissionButton type="submit" color="primary" disabled={saving} permission="prod.write">
+                  Salva
+                </PermissionButton>
               </div>
             </CForm>
 
@@ -501,7 +504,14 @@ const ProdottiDetail = () => {
                 </CFormSelect>
               </CCol>
               <CCol md="auto">
-                <CButton color="primary" onClick={handleLink} disabled={!selectedVar}>Aggiungi</CButton>
+                <PermissionButton
+                  color="primary"
+                  onClick={handleLink}
+                  disabled={!selectedVar}
+                  permission="prod.write"
+                >
+                  Aggiungi
+                </PermissionButton>
               </CCol>
             </CRow>
 
@@ -526,7 +536,15 @@ const ProdottiDetail = () => {
                         <CTableDataCell>{v.nome}</CTableDataCell>
                         <CTableDataCell>{v.codice || '-'}</CTableDataCell>
                         <CTableDataCell className="text-center">
-                          <CButton color="danger" size="sm" variant="outline" onClick={() => handleUnlink(v.id_variazione)}>Rimuovi</CButton>
+                          <PermissionButton
+                            color="danger"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleUnlink(v.id_variazione)}
+                            permission="prod.delete"
+                          >
+                            Rimuovi
+                          </PermissionButton>
                         </CTableDataCell>
                       </CTableRow>
                     ))}
@@ -564,7 +582,15 @@ const ProdottiDetail = () => {
                 <CFormInput type="number" step="0.01" value={comboPrezzoVal} onChange={(e) => setComboPrezzoVal(e.target.value)} placeholder="Es. 0.65" />
               </CCol>
               <CCol md="auto" className="d-flex gap-2">
-                <CButton color="primary" variant="outline" onClick={handleComboAdd} disabled={comboSelIds.length === 0}>{comboEditing ? 'Salva' : 'Aggiungi'}</CButton>
+                <PermissionButton
+                  color="primary"
+                  variant="outline"
+                  onClick={handleComboAdd}
+                  disabled={comboSelIds.length === 0}
+                  permission="prod.write"
+                >
+                  {comboEditing ? 'Salva' : 'Aggiungi'}
+                </PermissionButton>
                 {comboEditing && (
                   <CButton color="secondary" variant="outline" onClick={handleComboCancel}>Annulla</CButton>
                 )}
@@ -618,8 +644,24 @@ const ProdottiDetail = () => {
                             <CTableDataCell className="text-end">{Number(r.prezzo) ?? 0}</CTableDataCell>
                             <CTableDataCell className="text-center">
                               <div className="d-flex justify-content-center gap-2">
-                                <CButton color="primary" size="sm" variant="outline" onClick={() => handleComboEdit(r)}>Modifica</CButton>
-                                <CButton color="danger" size="sm" variant="outline" onClick={() => handleComboDelete(r.var_ids)}>Rimuovi</CButton>
+                                <PermissionButton
+                                  color="primary"
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => handleComboEdit(r)}
+                                  permission="prod.write"
+                                >
+                                  Modifica
+                                </PermissionButton>
+                                <PermissionButton
+                                  color="danger"
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => handleComboDelete(r.var_ids)}
+                                  permission="prod.delete"
+                                >
+                                  Rimuovi
+                                </PermissionButton>
                               </div>
                             </CTableDataCell>
                           </CTableRow>
@@ -637,8 +679,24 @@ const ProdottiDetail = () => {
                                 <CTableDataCell className="text-end">{Number(r.prezzo) ?? 0}</CTableDataCell>
                                 <CTableDataCell className="text-center">
                                   <div className="d-flex justify-content-center gap-2">
-                                    <CButton color="primary" size="sm" variant="outline" onClick={() => handleComboEdit(r)}>Modifica</CButton>
-                                    <CButton color="danger" size="sm" variant="outline" onClick={() => handleComboDelete(r.var_ids)}>Rimuovi</CButton>
+                                    <PermissionButton
+                                      color="primary"
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => handleComboEdit(r)}
+                                      permission="prod.write"
+                                    >
+                                      Modifica
+                                    </PermissionButton>
+                                    <PermissionButton
+                                      color="danger"
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => handleComboDelete(r.var_ids)}
+                                      permission="prod.delete"
+                                    >
+                                      Rimuovi
+                                    </PermissionButton>
                                   </div>
                                 </CTableDataCell>
                               </CTableRow>
@@ -663,8 +721,24 @@ const ProdottiDetail = () => {
                       <CTableDataCell className="text-end">{Number(r.prezzo) ?? 0}</CTableDataCell>
                       <CTableDataCell className="text-center">
                         <div className="d-flex justify-content-center gap-2">
-                          <CButton color="primary" size="sm" variant="outline" onClick={() => handleComboEdit(r)}>Modifica</CButton>
-                          <CButton color="danger" size="sm" variant="outline" onClick={() => handleComboDelete(r.var_ids)}>Rimuovi</CButton>
+                          <PermissionButton
+                            color="primary"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleComboEdit(r)}
+                            permission="prod.write"
+                          >
+                            Modifica
+                          </PermissionButton>
+                          <PermissionButton
+                            color="danger"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleComboDelete(r.var_ids)}
+                            permission="prod.delete"
+                          >
+                            Rimuovi
+                          </PermissionButton>
                         </div>
                       </CTableDataCell>
                     </CTableRow>

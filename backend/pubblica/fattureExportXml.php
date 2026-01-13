@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require __DIR__ . '/../bootstrap.php';
 
+use MediaPrint\Backend\AuthGuard;
 use MediaPrint\Backend\Database;
 use MediaPrint\Backend\HttpResponse;
 use MediaPrint\Service\FatturaXmlExporter;
@@ -20,7 +21,10 @@ if ($method !== 'GET') {
 }
 
 try {
-    $id = isset($_GET['id']) ? (int) $_GET['id'] : 0;
+$auth = AuthGuard::requireAuth();
+    AuthGuard::requirePermissions($auth, ['fatt.read']);
+
+        $id = isset($_GET['id']) ? (int) $_GET['id'] : 0;
     if ($id <= 0) {
         throw new RuntimeException('ID fattura mancante o non valido.', 422);
     }

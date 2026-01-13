@@ -24,6 +24,7 @@ final class AuthRepository
             a.must_change_pwd,
             a.has_mfa,
             a.mfa_secret,
+            a.avatar_path,
             a.last_login,
             a.created_at,
             a.updated_at,
@@ -60,6 +61,7 @@ final class AuthRepository
             a.must_change_pwd,
             a.has_mfa,
             a.mfa_secret,
+            a.avatar_path,
             a.last_login,
             a.created_at,
             a.updated_at,
@@ -118,7 +120,7 @@ final class AuthRepository
         SELECT DISTINCT p.id_permesso, p.code, p.label
         FROM auth_ruolo_permesso rp
         INNER JOIN cfg_auth_permessi p ON p.id_permesso = rp.id_permesso
-        WHERE rp.id_ruolo IN ({$placeholders})
+        WHERE rp.id_ruolo IN ({$placeholders}) AND p.attivo = 1
         ORDER BY p.code
         SQL;
 
@@ -126,6 +128,45 @@ final class AuthRepository
         $stmt->execute($roleIds);
 
         return $stmt->fetchAll() ?: [];
+    }
+
+    public function hasAccountPermissions(int $accountId): bool
+    {
+        $stmt = $this->pdo->prepare('SELECT 1 FROM auth_account_permessi WHERE id_account = :id LIMIT 1');
+        $stmt->bindValue(':id', $accountId, PDO::PARAM_INT);
+        $stmt->execute();
+        return $stmt->fetchColumn() !== false;
+    }
+
+    public function getAccountPermissions(int $accountId): array
+    {
+        $sql = <<<SQL
+        SELECT p.id_permesso, p.code, p.label
+        FROM auth_account_permessi ap
+        INNER JOIN cfg_auth_permessi p ON p.id_permesso = ap.id_permesso
+        WHERE ap.id_account = :id_account
+          AND ap.is_allowed = 1
+          AND p.attivo = 1
+        ORDER BY p.code
+        SQL;
+
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute(['id_account' => $accountId]);
+
+        return $stmt->fetchAll() ?: [];
+    }
+
+    public function listPermissions(): array
+    {
+        $sql = <<<SQL
+        SELECT p.id_permesso, p.code, p.label, p.attivo
+        FROM cfg_auth_permessi p
+        ORDER BY p.code
+        SQL;
+
+        $stmt = $this->pdo->query($sql);
+
+        return $stmt ? ($stmt->fetchAll() ?: []) : [];
     }
 
     public function updateLastLogin(int $accountId): void

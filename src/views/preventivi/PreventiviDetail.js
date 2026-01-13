@@ -322,6 +322,7 @@ const PreventiviDetail = () => {
   const [selectedComboKey, setSelectedComboKey] = useState('')
   const [prodComboMap, setProdComboMap] = useState({})
   const [prodComboList, setProdComboList] = useState([])
+  const [comboSelectionError, setComboSelectionError] = useState(null)
   const [selIva, setSelIva] = useState('')
   const [modalQty, setModalQty] = useState(1)
   const [modalPrice, setModalPrice] = useState(0)
@@ -809,7 +810,6 @@ const PreventiviDetail = () => {
         // Righe dal server -> mappa a forma UI (nessun fallback sintetico)
         if (Array.isArray(righeSrv)) {
           setRighe(
-
             righeSrv.map((r) => {
               const idCategoria =
                 r.id_categoria ?? r.id_categoria_prodotto ?? r.id_categoria_prodotto_default ?? null
@@ -822,12 +822,12 @@ const PreventiviDetail = () => {
                 iva: r.iva ?? 22,
                 sconto: r.sconto ?? 0,
                 id_prodotto: r.id_prodotto ?? null,
+                combo_key: r.combo_key ?? null,
                 id_sdi_natura_iva: r.id_sdi_natura_iva ?? null,
                 id_categoria: idCategoria != null ? Number(idCategoria) : null,
                 categoria_nome: categoriaNome != null ? String(categoriaNome) : undefined,
               }
             }),
-
           )
         } else {
           setRighe([])
@@ -1218,7 +1218,9 @@ const PreventiviDetail = () => {
     setRighe((rows) => rows.map((r, i) => (i === index ? { ...r, ...patch } : r)))
   }
   const handleAddRiga = () => {
-    setRighe((rows) => rows.concat({ descrizione: '', quantita: 1, prezzo: 0, iva: 22, sconto: 0 }))
+    setRighe((rows) =>
+      rows.concat({ descrizione: '', quantita: 1, prezzo: 0, iva: 22, sconto: 0, combo_key: null }),
+    )
   }
 
   const resetProductModal = () => {
@@ -1228,6 +1230,7 @@ const PreventiviDetail = () => {
     setSelProd('')
     setSelectedVarIds([])
     setSelectedComboKey('')
+    setComboSelectionError(null)
     setSelIva('')
     setModalQty(1)
     setModalPrice(0)
@@ -1483,6 +1486,10 @@ const PreventiviDetail = () => {
   // sono gestite direttamente, mentre il passo 3 (Finale) usa la select.
 
   const buildPayload = () => {
+    const normalizedRighe = (Array.isArray(righe) ? righe : []).map((r) => ({
+      ...r,
+      combo_key: r?.combo_key ?? null,
+    }))
     return {
       id_preventivo: id,
       id_anagrafica: Number(idAnagrafica) || 0,
@@ -1494,7 +1501,7 @@ const PreventiviDetail = () => {
       cig: cigList.map((c) => ({ cig: c.cig, data_cig: c.data_cig || null, motivazione: c.motivazione || null })),
       determine: determineList.map((d) => ({ determina: d.determina, data_determina: d.data_determina || null, motivazione: d.motivazione || null })),
       contatti: serializePreventivoContacts(preventivoContatti, Number(idAnagrafica) || null),
-      righe,
+      righe: normalizedRighe,
       totals: {
         imponibile: totals.imponibile,
         totaleIva: totals.totaleIva,
@@ -2761,6 +2768,7 @@ const PreventiviDetail = () => {
                             iva: r.iva != null ? Number(r.iva) : 22,
                             sconto: r.sconto != null ? Number(r.sconto) : 0,
                             id_prodotto: r.id_prodotto ?? null,
+                            combo_key: r.combo_key ?? null,
                             id_pacchetto: Number(selPacchetto) || null,
                             id_sdi_natura_iva: r.id_sdi_natura_iva ?? null,
                           }
@@ -3025,6 +3033,13 @@ const PreventiviDetail = () => {
                   )}
                   {prodStep === 3 && (
                     <CRow className="g-3">
+                      {comboSelectionError && (
+                        <CCol md={12}>
+                          <CAlert color="danger" className="mb-0">
+                            {comboSelectionError}
+                          </CAlert>
+                        </CCol>
+                      )}
                       {prodComboList.length > 0 ? (
                         <CCol md={12}>
                           <CFormLabel>Combinazioni</CFormLabel>
@@ -3033,6 +3048,7 @@ const PreventiviDetail = () => {
                             onChange={(e) => {
                               const key = e.target.value
                               setSelectedComboKey(key)
+                              setComboSelectionError(null)
                               const opt = prodComboList.find((r) => String(r.combo_key) === String(key))
                               if (!opt) { setSelectedVarIds([]); return }
                               const ids = Array.isArray(opt.var_ids) ? opt.var_ids.map(Number) : []
@@ -3068,6 +3084,13 @@ const PreventiviDetail = () => {
                   )}
                   {prodStep === 4 && (
                     <CRow className="g-3">
+                      {comboSelectionError && (
+                        <CCol md={12}>
+                          <CAlert color="danger" className="mb-0">
+                            {comboSelectionError}
+                          </CAlert>
+                        </CCol>
+                      )}
                       <CCol md={12}>
                         <div className="mb-2"><strong>Prodotto:</strong> {(() => { const p = prodOptions.find((x) => String(x.id_prodotto) === String(selProd)); return p ? (p.codice ? `${p.codice} - ${p.nome}` : p.nome) : '-' })()}</div>
                         {(() => {
@@ -3138,10 +3161,17 @@ const PreventiviDetail = () => {
                         onClick={() => {
                           const prod = prodOptions.find((p) => String(p.id_prodotto) === String(selProd))
                           if (!prod) return
+                          if (prodComboList.length > 0 && !selectedComboKey) {
+                            setComboSelectionError('Seleziona una combinazione prima di inserire la riga.')
+                            return
+                          }
                           const ivaPerc = Number(selIva || prod.iva_percento || 22)
                           const comboIds = selectedComboKey
                             ? selectedComboKey.split('+').map((x) => Number(x) || 0).filter((n) => n > 0)
                             : selectedVarIds
+                          const comboKey = Array.isArray(comboIds) && comboIds.length > 0
+                            ? comboIds.map((idv) => Number(idv) || 0).filter((n) => n > 0).sort((a, b) => a - b).join('+')
+                            : ''
                           let descr = prod.nome
                           if (comboIds && comboIds.length > 0) {
                             const groups = {}
@@ -3155,7 +3185,7 @@ const PreventiviDetail = () => {
                             const label = Object.entries(groups).map(([cat, names]) => `${cat}: ${names.join(', ')}`).join(' ; ')
                             descr = `${prod.nome} - ${label}`
                           }
-                          const riga = { descrizione: descr, quantita: modalQty, prezzo: modalPrice, iva: ivaPerc, sconto: 0, id_prodotto: prod.id_prodotto }
+                          const riga = { descrizione: descr, quantita: modalQty, prezzo: modalPrice, iva: ivaPerc, sconto: 0, id_prodotto: prod.id_prodotto, combo_key: comboKey || null }
                           // Aggiungi categoria del prodotto alla riga per raggruppamento immediato
                           if (prod.id_categoria != null) {
                             riga.id_categoria = Number(prod.id_categoria)

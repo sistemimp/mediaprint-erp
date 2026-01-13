@@ -54,6 +54,73 @@ final class AccountsService
     }
 
     /**
+     * @return array<string, mixed>
+     */
+    public function detail(int $accountId): array
+    {
+        if ($accountId <= 0) {
+            throw new RuntimeException('ID account non valido.', 422);
+        }
+
+        $account = $this->repository->getAccountDetail($accountId);
+        if ($account === null) {
+            throw new RuntimeException('Account non trovato.', 404);
+        }
+
+        $catalog = $this->repository->listPermissionsCatalog();
+        $catalogIds = array_map(static fn(array $row): int => (int) $row['id_permesso'], $catalog);
+
+        $overrides = $this->repository->listAccountPermissions($accountId);
+        $hasCustom = $overrides !== [];
+
+        $accountAllowed = [];
+        foreach ($overrides as $row) {
+            if ((int) ($row['is_allowed'] ?? 0) === 1) {
+                $accountAllowed[] = (int) $row['id_permesso'];
+            }
+        }
+
+        $roleId = isset($account['id_ruolo']) ? (int) $account['id_ruolo'] : 0;
+        $roleIds = $roleId > 0 ? [$roleId] : [];
+        $rolePermissions = $this->repository->listPermissionsForRoles($roleIds);
+        $roleAllowed = array_map(static fn(array $row): int => (int) $row['id_permesso'], $rolePermissions);
+
+        $effective = $hasCustom ? $accountAllowed : $roleAllowed;
+
+        return [
+            'account' => $account,
+            'permissions_catalog' => $catalog,
+            'account_permissions' => array_values(array_unique($accountAllowed)),
+            'role_permissions' => array_values(array_unique($roleAllowed)),
+            'effective_permissions' => array_values(array_unique(array_intersect($effective, $catalogIds))),
+            'has_custom_permissions' => $hasCustom,
+        ];
+    }
+
+    /**
+     * @return array{ok: bool}
+     */
+    public function updatePermissions(array $input): array
+    {
+        $accountId = isset($input['id_account']) ? (int) $input['id_account'] : (isset($input['id']) ? (int) $input['id'] : 0);
+        if ($accountId <= 0) {
+            throw new RuntimeException('ID account non valido.', 422);
+        }
+        if (!$this->repository->accountExists($accountId)) {
+            throw new RuntimeException('Account non trovato.', 404);
+        }
+
+        $allowed = $this->sanitizeIdList($input['permissions'] ?? []);
+        $catalog = $this->repository->listPermissionsCatalog();
+        $catalogIds = array_map(static fn(array $row): int => (int) $row['id_permesso'], $catalog);
+
+        $validAllowed = array_values(array_intersect($allowed, $catalogIds));
+        $this->repository->replaceAccountPermissions($accountId, $catalogIds, $validAllowed);
+
+        return ['ok' => true];
+    }
+
+    /**
      * @return array{items: list<array<string,mixed>>, selected: list<int>, default_id:?int}
      */
     public function listAnagrafiche(array $input): array
@@ -458,6 +525,74 @@ final class AccountsService
         return ['ok' => true];
     }
 
+    /**
+     * @return array{avatar_path:string}
+     */
+    public function uploadAvatar(int $accountId, array $file): array
+    {
+        if ($accountId <= 0) {
+            throw new RuntimeException('ID account non valido.', 422);
+        }
+        if (!$this->repository->accountExists($accountId)) {
+            throw new RuntimeException('Account non trovato.', 404);
+        }
+        if (!isset($file['tmp_name']) || !is_uploaded_file($file['tmp_name'])) {
+            throw new RuntimeException('File mancante o non valido.', 422);
+        }
+        if (isset($file['error']) && (int) $file['error'] !== UPLOAD_ERR_OK) {
+            throw new RuntimeException('Errore durante il caricamento del file.', 422);
+        }
+
+        $maxBytes = (int) (getenv('ACCOUNT_AVATAR_MAX_BYTES') ?: (2 * 1024 * 1024));
+        if (isset($file['size']) && (int) $file['size'] > $maxBytes) {
+            throw new RuntimeException('Il file supera la dimensione massima consentita.', 422);
+        }
+
+        $imageInfo = @getimagesize((string) $file['tmp_name']);
+        if (!$imageInfo || empty($imageInfo['mime'])) {
+            throw new RuntimeException('Immagine non valida.', 422);
+        }
+
+        $allowed = [
+            'image/jpeg' => 'jpg',
+            'image/png' => 'png',
+            'image/webp' => 'webp',
+        ];
+        $mime = (string) $imageInfo['mime'];
+        if (!isset($allowed[$mime])) {
+            throw new RuntimeException('Formato immagine non supportato.', 422);
+        }
+
+        $extension = $allowed[$mime];
+        $fileName = sprintf('avatar_%s.%s', uniqid('', true), $extension);
+        $uploadsBase = $this->resolveUploadsBasePath();
+        $baseDir = $uploadsBase . '/avatars/' . $accountId;
+        if (!is_dir($baseDir) && !mkdir($baseDir, 0775, true) && !is_dir($baseDir)) {
+            throw new RuntimeException('Impossibile creare la cartella di upload.', 500);
+        }
+
+        $destination = $baseDir . '/' . $fileName;
+        if (!move_uploaded_file($file['tmp_name'], $destination)) {
+            throw new RuntimeException('Impossibile salvare il file caricato.', 500);
+        }
+
+        $relativePath = 'avatars/' . $accountId . '/' . $fileName;
+        $previous = $this->repository->getAccountAvatarPath($accountId);
+        if ($previous) {
+            $previousSafe = ltrim($previous, '/');
+            if (strpos($previousSafe, '..') === false) {
+                $previousPath = $uploadsBase . '/' . $previousSafe;
+                if (is_file($previousPath)) {
+                    @unlink($previousPath);
+                }
+            }
+        }
+
+        $this->repository->updateAccount($accountId, ['avatar_path' => $relativePath]);
+
+        return ['avatar_path' => $relativePath];
+    }
+
     private function generatePassword(): string
     {
         $alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
@@ -481,6 +616,26 @@ final class AccountsService
             return $default;
         }
         return (string) (gethostname() ?: 'mediaprint.it');
+    }
+
+    private function resolveUploadsBasePath(): string
+    {
+        $envPath = getenv('UPLOADS_DIR') ?: (getenv('UPLOADS_BASE_PATH') ?: '');
+        if (is_string($envPath) && $envPath !== '') {
+            return rtrim($envPath, '/');
+        }
+
+        $backendBase = dirname(__DIR__, 2) . '/uploads';
+        if (is_dir($backendBase)) {
+            return $backendBase;
+        }
+
+        $rootBase = dirname(__DIR__, 3) . '/uploads';
+        if (is_dir($rootBase)) {
+            return $rootBase;
+        }
+
+        return $backendBase;
     }
 
     /**

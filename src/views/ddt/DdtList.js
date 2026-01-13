@@ -24,6 +24,7 @@ import { cilArrowRight, cilPrint, cilReload } from '@coreui/icons'
 
 import { useAuth } from '../../context/AuthContext'
 import { fetchDdtList } from '../../services/ddt'
+import PermissionButton from '../../components/PermissionButton'
 
 const formatDate = (value) => {
   if (!value) return '-'
@@ -169,9 +170,9 @@ const DdtList = () => {
               <CIcon icon={cilReload} className="me-2" />
               Aggiorna
             </CButton>
-            <CButton color="primary" onClick={() => navigate('/ddt/crea')} disabled>
+            <PermissionButton color="primary" onClick={() => navigate('/ddt/crea')} permission="ddt.create">
               Nuovo DDT
-            </CButton>
+            </PermissionButton>
           </div>
         </div>
       </CCardHeader>
@@ -273,24 +274,26 @@ const DdtList = () => {
                     </CTableDataCell>
                     <CTableDataCell className="text-center">
                       <div className="d-inline-flex gap-2 flex-wrap justify-content-center">
-                        <CButton
+                        <PermissionButton
                           color="link"
                           size="sm"
                           className="p-0"
                           onClick={() => handleView(row.id_ddt)}
                           title="Apri dettaglio"
+                          permission="ddt.read"
                         >
                           <CIcon icon={cilArrowRight} />
-                        </CButton>
-                        <CButton
+                        </PermissionButton>
+                        <PermissionButton
                           color="link"
                           size="sm"
                           className="p-0"
                           onClick={() => handlePrintPdf(row.id_ddt)}
                           title="Stampa PDF"
+                          permission="ddt.read"
                         >
                           <CIcon icon={cilPrint} />
-                        </CButton>
+                        </PermissionButton>
                       </div>
                     </CTableDataCell>
                   </CTableRow>

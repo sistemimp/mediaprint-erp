@@ -37,6 +37,7 @@ import { fetchPacchettoDetail, savePacchetto, deletePacchetto } from '../../serv
 import { fetchNatureIva, fetchCategorieProdotti, fetchProdotti, fetchProdottoVariazioni, fetchProdottoPrezziCombinati } from '../../services/prodotti'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { CStepper } from '@coreui/react-pro'
+import PermissionButton from '../../components/PermissionButton'
 
 const currencyFormatter = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' })
 const formatCurrency = (value) => {
@@ -114,6 +115,7 @@ const PacchettiDetail = () => {
           iva: r.iva ?? 22,
           sconto: r.sconto ?? 0,
           id_prodotto: r.id_prodotto ?? null,
+          combo_key: r.combo_key ?? null,
           id_sdi_natura_iva: r.id_sdi_natura_iva ?? null,
           id_categoria: r.id_categoria ?? null,
           categoria_nome: r.categoria_nome ?? null,
@@ -288,11 +290,11 @@ const PacchettiDetail = () => {
       <CCardHeader>
         <div className="d-flex justify-content-between align-items-center">
           <h5 className="mb-0">Pacchetti - Dettagli</h5>
-          <div className="d-flex gap-2">
-            <CButton color="danger" variant="outline" onClick={handleDelete}>
-              Elimina
-            </CButton>
-          </div>
+            <div className="d-flex gap-2">
+              <PermissionButton color="danger" variant="outline" onClick={handleDelete} permission="pack.delete">
+                Elimina
+              </PermissionButton>
+            </div>
         </div>
       </CCardHeader>
       <CCardBody>
@@ -496,28 +498,29 @@ const PacchettiDetail = () => {
                 <div className="d-flex gap-2">
                   <CButton color="link" onClick={() => setStepperOpen(false)}>Annulla</CButton>
                   {prodStep < 4 && (
-                    <CButton
-                      color="primary"
-                      onClick={() => {
-                        if (prodStep === 1) { setProdStep(2); return }
-                        if (prodStep === 2) {
+                  <PermissionButton
+                    color="primary"
+                    onClick={() => {
+                      if (prodStep === 1) { setProdStep(2); return }
+                      if (prodStep === 2) {
                           if (!selProd) return
                           if (prodComboList.length === 0) { setProdStep(4); return }
                           setProdStep(3); return
                         }
                         if (prodStep === 3) { setProdStep(4); return }
-                      }}
-                      disabled={(prodStep === 2 && !selProd)}
-                    >
-                      Avanti
-                    </CButton>
-                  )}
-                  {prodStep === 4 && (
-                    <CButton
-                      color="primary"
-                      onClick={() => {
-                        const prod = prodOptions.find((p) => String(p.id_prodotto) === String(selProd))
-                        if (!prod) return
+                    }}
+                    disabled={(prodStep === 2 && !selProd)}
+                    permission="pack.write"
+                  >
+                    Avanti
+                  </PermissionButton>
+                )}
+                {prodStep === 4 && (
+                  <PermissionButton
+                    color="primary"
+                    onClick={() => {
+                      const prod = prodOptions.find((p) => String(p.id_prodotto) === String(selProd))
+                      if (!prod) return
                         const ivaPerc = Number(selIva || prod.iva_percento || 22)
                         const selectedIds = (selectedComboKey || '').split('+').map((x) => Number(x) || 0).filter((n) => n > 0)
                         let descr = prod.nome
@@ -533,7 +536,15 @@ const PacchettiDetail = () => {
                           const label = Object.entries(groups).map(([cat, names]) => `${cat}: ${names.join(', ')}`).join(' ; ')
                           descr = `${prod.nome} - ${label}`
                         }
-                        const riga = { descrizione: descr, quantita: modalQty, prezzo: modalPrice, iva: ivaPerc, sconto: 0, id_prodotto: prod.id_prodotto }
+                        const riga = {
+                          descrizione: descr,
+                          quantita: modalQty,
+                          prezzo: modalPrice,
+                          iva: ivaPerc,
+                          sconto: 0,
+                          id_prodotto: prod.id_prodotto,
+                          combo_key: selectedComboKey || null,
+                        }
                         // Aggiungi categoria del prodotto per futuri raggruppamenti o usi
                         if (prod.id_categoria != null) {
                           const catId = Number(prod.id_categoria)
@@ -546,24 +557,43 @@ const PacchettiDetail = () => {
                         if (ivaPerc === 0) {
                           const natId = selNatura ? Number(selNatura) : 0
                           if (natId > 0) riga.id_sdi_natura_iva = natId
-                        }
-                        setRighe((rows) => rows.concat(riga))
-                        setStepperOpen(false)
-                      }}
-                    >
-                      Inserisci riga
-                    </CButton>
-                  )}
-                </div>
-              </CModalFooter>
-            </CModal>
+                      }
+                      setRighe((rows) => rows.concat(riga))
+                      setStepperOpen(false)
+                    }}
+                    permission="pack.write"
+                  >
+                    Inserisci riga
+                  </PermissionButton>
+                )}
+              </div>
+            </CModalFooter>
+          </CModal>
 
             <section className="mb-4">
               <div className="d-flex justify-content-between align-items-center mb-3">
                 <h6 className="mb-0 text-body-secondary">Righe pacchetto</h6>
                 <div className="d-flex gap-2">
-                  <CButton color="secondary" variant="outline" size="sm" type="button" onClick={() => setRighe((rows) => rows.concat({ descrizione: '', quantita: 1, prezzo: 0, iva: 22, sconto: 0 }))}>Riga manuale</CButton>
-                  <CButton color="primary" variant="outline" size="sm" type="button" onClick={() => { resetProductModal(); setStepperOpen(true) }}>Selettore prodotti</CButton>
+                  <PermissionButton
+                    color="secondary"
+                    variant="outline"
+                    size="sm"
+                    type="button"
+                    onClick={() => setRighe((rows) => rows.concat({ descrizione: '', quantita: 1, prezzo: 0, iva: 22, sconto: 0, combo_key: null }))}
+                    permission="pack.write"
+                  >
+                    Riga manuale
+                  </PermissionButton>
+                  <PermissionButton
+                    color="primary"
+                    variant="outline"
+                    size="sm"
+                    type="button"
+                    onClick={() => { resetProductModal(); setStepperOpen(true) }}
+                    permission="pack.write"
+                  >
+                    Selettore prodotti
+                  </PermissionButton>
                 </div>
               </div>
               <CTable hover responsive small>
@@ -632,9 +662,15 @@ const PacchettiDetail = () => {
                         <CTableDataCell className="text-end">{formatCurrency(ivaVal)}</CTableDataCell>
                         <CTableDataCell className="text-end">{formatCurrency(tot)}</CTableDataCell>
                         <CTableDataCell className="text-center">
-                          <CButton color="link" size="sm" className="p-0" onClick={() => handleRemoveRiga(idx)}>
+                          <PermissionButton
+                            color="link"
+                            size="sm"
+                            className="p-0"
+                            onClick={() => handleRemoveRiga(idx)}
+                            permission="pack.write"
+                          >
                             <CIcon icon={cilTrash} />
-                          </CButton>
+                          </PermissionButton>
                         </CTableDataCell>
                       </CTableRow>
                     )
@@ -644,9 +680,9 @@ const PacchettiDetail = () => {
             </section>
 
             <div className="d-flex gap-2">
-              <CButton color="primary" type="submit" disabled={submitting}>
+              <PermissionButton color="primary" type="submit" disabled={submitting} permission="pack.write">
                 <CIcon icon={cilSave} className="me-2" /> Salva
-              </CButton>
+              </PermissionButton>
             </div>
           </CForm>
         )}

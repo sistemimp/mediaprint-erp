@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require __DIR__ . '/../bootstrap.php';
 
+use MediaPrint\Backend\AuthGuard;
 use MediaPrint\Repo\PreventiviRepository;
 use MediaPrint\Backend\Database;
 use MediaPrint\Backend\HttpResponse;
@@ -19,7 +20,10 @@ if ($method !== 'POST') {
 }
 
 try {
-    $payload = json_decode(file_get_contents('php://input') ?: 'null', true);
+$auth = AuthGuard::requireAuth();
+    AuthGuard::requirePermissions($auth, ['prev.write']);
+
+        $payload = json_decode(file_get_contents('php://input') ?: 'null', true);
     $label = isset($payload['label']) ? trim((string) $payload['label']) : '';
     if ($label === '') {
         throw new RuntimeException('Label mancante.', 422);

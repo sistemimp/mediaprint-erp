@@ -8,8 +8,12 @@ use MediaPrint\Repo\PreventiviRepository;
 header('Content-Type: application/json; charset=utf-8');
 require __DIR__ . '/../bootstrap.php';
 
+use MediaPrint\Backend\AuthGuard;
 try {
-    $raw = file_get_contents('php://input') ?: '';
+$auth = AuthGuard::requireAuth();
+    AuthGuard::requirePermissions($auth, ['prev.read']);
+
+        $raw = file_get_contents('php://input') ?: '';
     $input = json_decode($raw, true);
     if (!is_array($input)) {
         $input = [];

@@ -8,9 +8,11 @@ const DEFAULT_IM_WS_PATH = ''
 const resolveSocketConfig = () => {
   const configuredUrl = import.meta.env.VITE_IM_WS_URL
   const configuredPath = import.meta.env.VITE_IM_WS_PATH
+  const configuredTransports = import.meta.env.VITE_IM_WS_TRANSPORTS
   return {
     url: (configuredUrl && configuredUrl.trim()) || DEFAULT_IM_WS_URL,
     path: (configuredPath && configuredPath.trim()) || DEFAULT_IM_WS_PATH,
+    transports: (configuredTransports && configuredTransports.trim()) || '',
   }
 }
 
@@ -50,6 +52,7 @@ export const useInstantMessagingSocket = ({
   token,
   enabled = true,
   onMessage,
+  onNotification,
   onThreadCreated,
   onThreadRead,
   onError,
@@ -60,7 +63,20 @@ export const useInstantMessagingSocket = ({
   const reconnectTimer = useRef(null)
   const shouldReconnect = useRef(true)
 
-  const { url: resolvedUrl, path: resolvedPath } = useMemo(() => resolveSocketConfig(), [])
+  const { url: resolvedUrl, path: resolvedPath, transports: resolvedTransports } = useMemo(
+    () => resolveSocketConfig(),
+    [],
+  )
+  const transportOverride = useMemo(() => {
+    if (!resolvedTransports) {
+      return null
+    }
+    const parts = resolvedTransports
+      .split(',')
+      .map((value) => value.trim())
+      .filter((value) => value !== '')
+    return parts.length > 0 ? parts : null
+  }, [resolvedTransports])
   const resolvedToken = useMemo(() => token || getStoredToken(), [token])
 
   useEffect(() => {
@@ -101,7 +117,7 @@ export const useInstantMessagingSocket = ({
         socketPathOverride ||
         (parsedUrl.pathname && parsedUrl.pathname !== '/' ? parsedUrl.pathname : '/ws/im')
       let socketPath = normalizeSocketPath(rawSocketPath) || '/ws/im'
-      if (!socketPathOverride && socketPath !== '/socket.io' && socketPath.endsWith('/socket.io')) {
+      if (socketPath !== '/socket.io' && socketPath.endsWith('/socket.io')) {
         socketPath = socketPath.slice(0, -'/socket.io'.length) || '/'
       }
       const socketBaseUrl = `${parsedUrl.protocol}//${parsedUrl.host}`
@@ -109,6 +125,7 @@ export const useInstantMessagingSocket = ({
         path: socketPath,
         auth: { token: resolvedToken },
         query: { token: resolvedToken },
+        transports: transportOverride || undefined,
         reconnection: false,
       })
       socketRef.current = socket
@@ -120,6 +137,12 @@ export const useInstantMessagingSocket = ({
       socket.on('im.message', (payload) => {
         if (onMessage) {
           onMessage(payload?.data, payload?.threadId)
+        }
+      })
+
+      socket.on('im.notification', (payload) => {
+        if (onNotification) {
+          onNotification(payload)
         }
       })
 
@@ -175,7 +198,7 @@ export const useInstantMessagingSocket = ({
       }
       socketRef.current = null
     }
-  }, [url, resolvedUrl, path, resolvedPath, resolvedToken, onMessage, onThreadCreated, onError, enabled])
+  }, [url, resolvedUrl, path, resolvedPath, resolvedToken, onMessage, onThreadCreated, onError, enabled, transportOverride])
 
   const sendEvent = useCallback((event, payload) => {
     const socket = socketRef.current

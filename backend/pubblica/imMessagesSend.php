@@ -22,6 +22,7 @@ if ($method !== 'POST') {
 
 try {
     $auth = AuthGuard::requireAuth();
+    AuthGuard::requirePermissions($auth, ['msg.write']);
     $accountId = AuthGuard::getAccountId($auth);
     $payload = json_decode(file_get_contents('php://input') ?: '[]', true);
     if (!is_array($payload)) {

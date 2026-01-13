@@ -58,6 +58,24 @@ export const fetchAccountRoles = async ({ token, signal } = {}) => {
   return Array.isArray(response?.data) ? response.data : []
 }
 
+export const fetchAccountDetail = async ({ token, id, signal } = {}) => {
+  const numericId = Number(id)
+  if (!Number.isFinite(numericId) || numericId <= 0) {
+    throw new Error('ID account non valido.')
+  }
+  const params = { id: numericId }
+  return apiFetch('/accountsDetail.php', { token, params, signal })
+}
+
+export const updateAccountPermissions = async ({ token, id, permissions, signal } = {}) => {
+  const numericId = Number(id)
+  if (!Number.isFinite(numericId) || numericId <= 0) {
+    throw new Error('ID account non valido.')
+  }
+  const body = { id_account: numericId, permissions }
+  return apiFetch('/accountsPermissionsUpdate.php', { method: 'POST', token, body, signal })
+}
+
 export const fetchAccountAnagraficheOptions = async ({ token, accountId, signal } = {}) => {
   const params = {}
   if (accountId) params.id_account = accountId

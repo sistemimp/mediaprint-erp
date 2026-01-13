@@ -22,11 +22,13 @@ if ($method !== 'GET') {
 
 try {
     $auth = AuthGuard::requireAuth();
-    AuthGuard::requirePermissions($auth, ['fatt.view']);
+    AuthGuard::requirePermissions($auth, ['fatt.read']);
     $allowed = null;
+    $excludeDraft = false;
     if (AuthGuard::getAccountType($auth) === 'cliente') {
         $accountsRepo = new AccountsRepository(Database::getConnection());
         $allowed = $accountsRepo->listAccountAnagraficheIds(AuthGuard::getAccountId($auth));
+        $excludeDraft = true;
     }
 
     $id = isset($_GET['id']) ? (int) $_GET['id'] : 0;
@@ -40,6 +42,9 @@ try {
         throw new RuntimeException('Fattura non trovata.', 404);
     }
     if (is_array($allowed) && $allowed !== [] && !in_array((int) ($detail['id_anagrafica'] ?? 0), $allowed, true)) {
+        throw new RuntimeException('Fattura non trovata.', 404);
+    }
+    if ($excludeDraft && strtolower((string) ($detail['stato_code'] ?? '')) === 'bozza') {
         throw new RuntimeException('Fattura non trovata.', 404);
     }
 

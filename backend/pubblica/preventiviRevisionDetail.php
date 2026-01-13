@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require __DIR__ . '/../bootstrap.php';
 
+use MediaPrint\Backend\AuthGuard;
 use MediaPrint\Backend\Database;
 use MediaPrint\Backend\HttpResponse;
 use MediaPrint\Repo\PreventiviRepository;
@@ -21,7 +22,10 @@ if ($method !== 'GET') {
 }
 
 try {
-    $id = isset($_GET['id']) ? (int) $_GET['id'] : 0;
+$auth = AuthGuard::requireAuth();
+    AuthGuard::requirePermissions($auth, ['prev.read']);
+
+        $id = isset($_GET['id']) ? (int) $_GET['id'] : 0;
     $service = new PreventiviService(new PreventiviRepository(Database::getConnection()));
     $result = $service->revisionDetail(['id' => $id]);
     HttpResponse::json($result, 200);

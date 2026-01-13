@@ -3,10 +3,13 @@ declare(strict_types=1);
 
 require __DIR__ . '/../bootstrap.php';
 
+use MediaPrint\Backend\AuthGuard;
 use MediaPrint\Backend\Database;
 use MediaPrint\Backend\HttpResponse;
 use MediaPrint\Repo\FattureRepository;
+use MediaPrint\Repo\LavorazioniRepository;
 use MediaPrint\Repo\PreventiviRepository;
+use MediaPrint\Service\NotificationsService;
 use MediaPrint\Service\PreventiviService;
 
 $method = $_SERVER['REQUEST_METHOD'] ?? 'POST';
@@ -21,7 +24,10 @@ if ($method !== 'POST') {
 }
 
 try {
-    $payload = json_decode(file_get_contents('php://input') ?: 'null', true);
+$auth = AuthGuard::requireAuth();
+    AuthGuard::requirePermissions($auth, ['prev.write']);
+
+        $payload = json_decode(file_get_contents('php://input') ?: 'null', true);
     if (!is_array($payload)) {
         $payload = [];
     }
@@ -34,6 +40,24 @@ try {
     );
 
     $result = $service->emitFattura($payload);
+
+    if (!empty($result['fattura']['id_fattura'])) {
+        $idFattura = (int) $result['fattura']['id_fattura'];
+        $payloadData = [
+            'entity' => 'fattura',
+            'action' => 'created',
+            'id_fattura' => $idFattura,
+            'route' => '/fatture/dettagli?id=' . $idFattura,
+        ];
+        $notifications = new NotificationsService(new LavorazioniRepository($pdo));
+        $notifications->notifyAllOperators(
+            'Nuova fattura',
+            'Fattura #' . $idFattura . ' generata.',
+            $payloadData,
+            AuthGuard::getAccountId($auth),
+        );
+    }
+
     HttpResponse::json($result, 201);
 } catch (RuntimeException $exception) {
     $code = (int) $exception->getCode();

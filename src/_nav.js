@@ -27,6 +27,7 @@ const _nav = [
     component: CNavGroup,
     name: 'Prodotti',
     icon: <CIcon icon={cilTags} customClassName="nav-icon" />,
+    permissions: ['prod.read'],
     items: [
       {
         component: CNavItem,
@@ -35,8 +36,14 @@ const _nav = [
       },
       {
         component: CNavItem,
+        name: 'Statistiche di Fatturazione',
+        to: '/prodotti/fatturazione',
+      },
+      {
+        component: CNavItem,
         name: 'Crea nuovo',
         to: '/prodotti/crea',
+        permission: 'prod.create',
       },
       {
         component: CNavItem,
@@ -64,11 +71,13 @@ const _nav = [
     component: CNavGroup,
     name: 'Pacchetti',
     icon: <CIcon icon={cilLibraryAdd} customClassName="nav-icon" />,
+    permissions: ['pack.read'],
     items: [
       {
         component: CNavItem,
         name: 'Crea nuovo',
         to: '/pacchetti/crea',
+        permission: 'pack.create',
       },
       {
         component: CNavItem,
@@ -86,11 +95,13 @@ const _nav = [
     component: CNavGroup,
     name: 'Contratti',
     icon: <CIcon icon={cilDescription} customClassName="nav-icon" />,
+    permissions: ['contr.read'],
     items: [
       {
         component: CNavItem,
         name: 'Crea nuovo',
         to: '/contratti/crea',
+        permission: 'contr.create',
       },
       {
         component: CNavItem,
@@ -108,6 +119,7 @@ const _nav = [
     component: CNavGroup,
     name: 'Anagrafica',
     icon: <CIcon icon={cilUser} customClassName="nav-icon" />,
+    permissions: ['anag.read'],
     items: [
       {
         component: CNavItem,
@@ -118,6 +130,7 @@ const _nav = [
         component: CNavItem,
         name: 'Crea nuova',
         to: '/anagrafica/crea',
+        permission: 'anag.create',
       },
       {
         component: CNavItem,
@@ -135,6 +148,7 @@ const _nav = [
     component: CNavGroup,
     name: 'Account',
     icon: <CIcon icon={cilPeople} customClassName="nav-icon" />,
+    permissions: ['acct.read'],
     items: [
       {
         component: CNavItem,
@@ -147,6 +161,7 @@ const _nav = [
     component: CNavGroup,
     name: 'Preventivi',
     icon: <CIcon icon={cilNotes} customClassName="nav-icon" />,
+    permissions: ['prev.read'],
     items: [
       {
         component: CNavItem,
@@ -157,6 +172,7 @@ const _nav = [
         component: CNavItem,
         name: 'Crea nuovo',
         to: '/preventivi/crea',
+        permission: 'prev.create',
       },
       {
         component: CNavItem,
@@ -174,6 +190,7 @@ const _nav = [
     component: CNavGroup,
     name: 'DDT',
     icon: <CIcon icon={cilTruck} customClassName="nav-icon" />,
+    permissions: ['ddt.read'],
     items: [
       {
         component: CNavItem,
@@ -184,6 +201,7 @@ const _nav = [
         component: CNavItem,
         name: 'Crea nuovo',
         to: '/ddt/crea',
+        permission: 'ddt.create',
       },
       {
         component: CNavItem,
@@ -201,6 +219,7 @@ const _nav = [
     component: CNavGroup,
     name: 'Fatture',
     icon: <CIcon icon={cilMoney} customClassName="nav-icon" />,
+    permissions: ['fatt.read'],
     items: [
       {
         component: CNavItem,
@@ -211,6 +230,7 @@ const _nav = [
         component: CNavItem,
         name: 'Crea nuova',
         to: '/fatture/crea',
+        permission: 'fatt.create',
       },
       {
         component: CNavItem,
@@ -228,6 +248,7 @@ const _nav = [
     component: CNavGroup,
     name: 'Pagamenti',
     icon: <CIcon icon={cilCreditCard} customClassName="nav-icon" />,
+    permissions: ['pay.read'],
     items: [
       {
         component: CNavItem,
@@ -243,6 +264,7 @@ const _nav = [
         component: CNavItem,
         name: 'Importa',
         to: '/pagamenti/import',
+        permission: 'pay.write',
       },
       {
         component: CNavItem,
@@ -255,6 +277,7 @@ const _nav = [
     component: CNavGroup,
     name: 'Lavorazioni',
     icon: <CIcon icon={cilViewColumn} customClassName="nav-icon" />,
+    permissions: ['job.read'],
     items: [
       {
         component: CNavItem,
@@ -278,6 +301,7 @@ const _nav = [
     name: 'Messaggi',
     to: '/messaggi',
     icon: <CIcon icon={cilChatBubble} customClassName="nav-icon" />,
+    permissions: ['msg.read'],
   },
 ]
 

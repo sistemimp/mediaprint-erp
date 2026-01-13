@@ -7,7 +7,32 @@ use PDO;
 
 final class PacchettiRepository
 {
+    private ?bool $comboKeySupported = null;
+
     public function __construct(private PDO $pdo) {}
+
+    private function ensureComboKeyColumn(): bool
+    {
+        if ($this->comboKeySupported !== null) {
+            return $this->comboKeySupported;
+        }
+
+        $exists = false;
+        try {
+            $stmt = $this->pdo->query("SHOW COLUMNS FROM tb_pacchetti_righe LIKE 'combo_key'");
+            $exists = $stmt && $stmt->fetch(PDO::FETCH_ASSOC) !== false;
+            if (!$exists) {
+                $this->pdo->exec("ALTER TABLE tb_pacchetti_righe ADD COLUMN combo_key VARCHAR(255) NULL AFTER id_prodotto");
+                $stmt = $this->pdo->query("SHOW COLUMNS FROM tb_pacchetti_righe LIKE 'combo_key'");
+                $exists = $stmt && $stmt->fetch(PDO::FETCH_ASSOC) !== false;
+            }
+        } catch (\Throwable $ignored) {
+            $exists = false;
+        }
+
+        $this->comboKeySupported = $exists;
+        return $this->comboKeySupported;
+    }
 
     /**
      * @return list<array{id_pacchetto:int,codice:?string,nome:string,attivo:int,updated_at:?string}>
@@ -69,7 +94,9 @@ final class PacchettiRepository
      */
     public function getLines(int $idPacchetto): array
     {
-        $sql = 'SELECT id_riga, id_prodotto, id_categoria, categoria_nome, descrizione, quantita, prezzo_unitario, sconto, iva, id_sdi_natura_iva, posizione FROM tb_pacchetti_righe WHERE id_pacchetto = :id ORDER BY COALESCE(posizione, id_riga) ASC';
+        $hasComboKey = $this->ensureComboKeyColumn();
+        $comboSelect = $hasComboKey ? ', combo_key' : '';
+        $sql = 'SELECT id_riga, id_prodotto' . $comboSelect . ', id_categoria, categoria_nome, descrizione, quantita, prezzo_unitario, sconto, iva, id_sdi_natura_iva, posizione FROM tb_pacchetti_righe WHERE id_pacchetto = :id ORDER BY COALESCE(posizione, id_riga) ASC';
         $stmt = $this->pdo->prepare($sql);
         $stmt->bindValue(':id', $idPacchetto, PDO::PARAM_INT);
         $stmt->execute();
@@ -86,6 +113,7 @@ final class PacchettiRepository
                 'sconto' => isset($r['sconto']) ? (float) $r['sconto'] : null,
                 'iva' => isset($r['iva']) ? (float) $r['iva'] : null,
                 'id_prodotto' => isset($r['id_prodotto']) ? (int) $r['id_prodotto'] : null,
+                'combo_key' => $hasComboKey ? ($r['combo_key'] ?? null) : null,
                 'id_categoria' => $idCategoria,
                 'categoria_nome' => isset($r['categoria_nome']) && $r['categoria_nome'] !== null ? (string) $r['categoria_nome'] : null,
                 'id_sdi_natura_iva' => isset($r['id_sdi_natura_iva']) ? (int) $r['id_sdi_natura_iva'] : null,
@@ -138,13 +166,16 @@ final class PacchettiRepository
             $del->execute();
 
             if (!empty($lines)) {
-                $ins = $this->pdo->prepare(<<<'SQL'
-                    INSERT INTO tb_pacchetti_righe (
-                        id_pacchetto, id_prodotto, id_categoria, categoria_nome, descrizione, quantita, prezzo_unitario, sconto, iva, id_sdi_natura_iva, posizione
+                $hasComboKey = $this->ensureComboKeyColumn();
+                $comboColumn = $hasComboKey ? ', combo_key' : '';
+                $comboValue = $hasComboKey ? ', :combo_key' : '';
+                $ins = $this->pdo->prepare(
+                    'INSERT INTO tb_pacchetti_righe (
+                        id_pacchetto, id_prodotto' . $comboColumn . ', id_categoria, categoria_nome, descrizione, quantita, prezzo_unitario, sconto, iva, id_sdi_natura_iva, posizione
                     ) VALUES (
-                        :id_pacchetto, :id_prodotto, :id_categoria, :categoria_nome, :descrizione, :quantita, :prezzo_unitario, :sconto, :iva, :id_sdi_natura_iva, :posizione
-                    )
-                SQL);
+                        :id_pacchetto, :id_prodotto' . $comboValue . ', :id_categoria, :categoria_nome, :descrizione, :quantita, :prezzo_unitario, :sconto, :iva, :id_sdi_natura_iva, :posizione
+                    )'
+                );
 
                 $pos = 1;
                 foreach ($lines as $line) {
@@ -156,6 +187,10 @@ final class PacchettiRepository
                     $iva = isset($line['iva']) ? (float) $line['iva'] : null;
                     $idProd = isset($line['id_prodotto']) ? (int) $line['id_prodotto'] : null;
                     if ($idProd !== null && $idProd <= 0) { $idProd = null; }
+                    $comboKey = isset($line['combo_key']) ? trim((string) $line['combo_key']) : null;
+                    if ($comboKey === '') {
+                        $comboKey = null;
+                    }
                     $idCategoria = isset($line['id_categoria']) ? (int) $line['id_categoria'] : null;
                     if ($idCategoria !== null && $idCategoria <= 0) { $idCategoria = null; }
                     $categoriaNome = isset($line['categoria_nome']) && trim((string)$line['categoria_nome']) !== '' ? (string) $line['categoria_nome'] : null;
@@ -163,6 +198,9 @@ final class PacchettiRepository
 
                     $ins->bindValue(':id_pacchetto', $idPacchetto, PDO::PARAM_INT);
                     $ins->bindValue(':id_prodotto', $idProd, $idProd === null ? PDO::PARAM_NULL : PDO::PARAM_INT);
+                    if ($hasComboKey) {
+                        $ins->bindValue(':combo_key', $comboKey, $comboKey === null ? PDO::PARAM_NULL : PDO::PARAM_STR);
+                    }
                     $ins->bindValue(':id_categoria', $idCategoria, $idCategoria === null ? PDO::PARAM_NULL : PDO::PARAM_INT);
                     $ins->bindValue(':categoria_nome', $categoriaNome, $categoriaNome === null ? PDO::PARAM_NULL : PDO::PARAM_STR);
                     $ins->bindValue(':descrizione', $descr, PDO::PARAM_STR);

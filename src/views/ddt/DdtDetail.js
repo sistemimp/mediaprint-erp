@@ -29,6 +29,7 @@ import { cilArrowLeft, cilPlus, cilTrash, cilReload, cilSave, cibAdobeAcrobatRea
 
 import { useAuth } from '../../context/AuthContext'
 import { useBreadcrumbActions } from '../../context/BreadcrumbActionsContext'
+import PermissionButton from '../../components/PermissionButton'
 import {
   fetchDdtDetail,
   fetchDdtCausali,
@@ -811,16 +812,17 @@ const DdtDetail = () => {
             </CBadge>
             {statusSaving && <CSpinner size="sm" color="success" />}
             {record?.id_ddt && (
-              <CButton
+              <PermissionButton
                 color="danger"
                 variant="outline"
                 size="sm"
                 type="button"
                 onClick={handleOpenPdf}
+                permission="ddt.read"
               >
                 <CIcon icon={cibAdobeAcrobatReader} className="me-2" />
                 Stampa PDF
-              </CButton>
+              </PermissionButton>
             )}
             <CButton color="secondary" variant="outline" onClick={() => navigate(-1)}>
               <CIcon icon={cilArrowLeft} className="me-2" />
@@ -887,26 +889,28 @@ const DdtDetail = () => {
                       Seleziona uno step per aggiornare rapidamente lo stato del documento.
                     </small>
                     {currentStatus === 2 && (
-                      <CButton
+                      <PermissionButton
                         size="sm"
                         color="warning"
                         variant="outline"
                         disabled={statusSaving || saving}
                         onClick={() => handleStatusChange(1)}
+                        permission="ddt.write"
                       >
                         Torna a bozza
-                      </CButton>
+                      </PermissionButton>
                     )}
                     {currentStatus === 1 && (
-                      <CButton
+                      <PermissionButton
                         size="sm"
                         color="success"
                         variant="outline"
                         disabled={statusSaving || saving}
                         onClick={() => handleStatusChange(2)}
+                        permission="ddt.write"
                       >
                         Segna come emesso
-                      </CButton>
+                      </PermissionButton>
                     )}
                   </div>
                 </div>
@@ -1123,16 +1127,17 @@ const DdtDetail = () => {
 
             <div className="d-flex justify-content-between align-items-center mb-3">
               <h6 className="mb-0 text-body-secondary">Righe documento</h6>
-              <CButton
+              <PermissionButton
                 color="secondary"
                 variant="ghost"
                 size="sm"
                 onClick={handleAddRow}
                 disabled={formDisabled}
+                permission="ddt.write"
               >
                 <CIcon icon={cilPlus} className="me-2" />
                 Aggiungi riga
-              </CButton>
+              </PermissionButton>
             </div>
             {rows.length === 0 ? (
               <CAlert color="info">Nessuna riga presente nel DDT.</CAlert>
@@ -1214,15 +1219,16 @@ const DdtDetail = () => {
                           />
                         </CTableDataCell>
                         <CTableDataCell className="text-center">
-                          <CButton
+                          <PermissionButton
                             color="danger"
                             variant="ghost"
                             size="sm"
                             onClick={() => handleRemoveRow(row.localId)}
                             disabled={formDisabled || rows.length <= 1}
+                            permission="ddt.write"
                           >
                             <CIcon icon={cilTrash} />
-                          </CButton>
+                          </PermissionButton>
                         </CTableDataCell>
                       </CTableRow>
                     )
@@ -1275,9 +1281,15 @@ const DdtDetail = () => {
               >
                 Annulla
               </CButton>
-              <CButton color="primary" type="submit" form="ddt-detail-form" disabled={formDisabled}>
+              <PermissionButton
+                color="primary"
+                type="submit"
+                form="ddt-detail-form"
+                disabled={formDisabled}
+                permission="ddt.write"
+              >
                 {saving ? 'Salvataggio...' : 'Salva modifiche'}
-              </CButton>
+              </PermissionButton>
             </div>
           </>
         )}

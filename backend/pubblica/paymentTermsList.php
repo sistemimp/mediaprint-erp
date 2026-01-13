@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require __DIR__ . '/../bootstrap.php';
 
+use MediaPrint\Backend\AuthGuard;
 use MediaPrint\Backend\Database;
 use MediaPrint\Backend\HttpResponse;
 use MediaPrint\Service\PaymentTerms;
@@ -19,7 +20,10 @@ if ($method !== 'GET') {
 }
 
 try {
-    $pdo = Database::getConnection();
+$auth = AuthGuard::requireAuth();
+    AuthGuard::requirePermissions($auth, ['anag.read', 'fatt.read']);
+
+        $pdo = Database::getConnection();
     $items = PaymentTerms::all($pdo);
     HttpResponse::json(['items' => $items], 200);
 } catch (Throwable $throwable) {

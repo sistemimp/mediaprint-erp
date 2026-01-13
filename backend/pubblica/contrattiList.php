@@ -24,15 +24,19 @@ if ($method !== 'GET') {
 
 try {
     $auth = AuthGuard::requireAuth();
-    AuthGuard::requirePermissions($auth, ['anag.view']);
-
-    $service = new ContrattiService(new ContrattiRepository(Database::getConnection()));
-    $result = $service->list($_GET);
+    AuthGuard::requirePermissions($auth, ['contr.read']);
 
     if (AuthGuard::getAccountType($auth) === 'cliente') {
         $accountsRepo = new AccountsRepository(Database::getConnection());
         $allowed = $accountsRepo->listAccountAnagraficheIds(AuthGuard::getAccountId($auth));
         $allowedMap = array_fill_keys(array_map('intval', $allowed), true);
+        $_GET['exclude_draft'] = 1;
+    }
+
+    $service = new ContrattiService(new ContrattiRepository(Database::getConnection()));
+    $result = $service->list($_GET);
+
+    if (AuthGuard::getAccountType($auth) === 'cliente') {
         $items = array_values(array_filter($result['items'] ?? [], static function ($item) use ($allowedMap) {
             $id = isset($item['id_anagrafica']) ? (int) $item['id_anagrafica'] : 0;
             return $id > 0 && isset($allowedMap[$id]);

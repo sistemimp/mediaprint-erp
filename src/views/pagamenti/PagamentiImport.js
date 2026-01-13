@@ -28,6 +28,7 @@ import CIcon from '@coreui/icons-react'
 import { cilCloudUpload, cilMagnifyingGlass, cilPlus, cilTrash } from '@coreui/icons'
 
 import { useAuth } from '../../context/AuthContext'
+import PermissionButton from '../../components/PermissionButton'
 import { fetchFattureConfig } from '../../services/fatture'
 import {
   confirmPagamentiImport,
@@ -497,10 +498,17 @@ const PagamentiImport = () => {
                           Attenzione
                         </CBadge>
                       )}
-                      <CButton color="danger" variant="ghost" size="sm" type="button" onClick={() => handleRemoveRow(row.tempId)}>
+                      <PermissionButton
+                        color="danger"
+                        variant="ghost"
+                        size="sm"
+                        type="button"
+                        onClick={() => handleRemoveRow(row.tempId)}
+                        permission="pay.write"
+                      >
                         <CIcon icon={cilTrash} className="me-2" />
                         Elimina riga
-                      </CButton>
+                      </PermissionButton>
                     </div>
                   </div>
                 </CCardHeader>
@@ -599,10 +607,16 @@ const PagamentiImport = () => {
 
                   <div className="d-flex justify-content-between align-items-center mb-2">
                     <h6 className="text-body-secondary mb-0">Fatture associate</h6>
-                    <CButton color="secondary" size="sm" variant="outline" onClick={() => handleAddAllocation(row.tempId)}>
+                    <PermissionButton
+                      color="secondary"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => handleAddAllocation(row.tempId)}
+                      permission="pay.write"
+                    >
                       <CIcon icon={cilPlus} className="me-2" />
                       Aggiungi fattura
-                    </CButton>
+                    </PermissionButton>
                   </div>
 
                   {row.allocations.map((alloc) => (
@@ -622,14 +636,15 @@ const PagamentiImport = () => {
                               }
                               className="bg-white"
                             />
-                            <CButton
+                            <PermissionButton
                               type="button"
                               color="secondary"
                               variant="outline"
                               onClick={() => openInvoiceModal(row.tempId, alloc.id)}
+                              permission="pay.write"
                             >
                               <CIcon icon={cilMagnifyingGlass} />
-                            </CButton>
+                            </PermissionButton>
                           </CInputGroup>
                           {alloc.fattura?.saldo != null && (
                             <small className="text-body-secondary">
@@ -649,14 +664,15 @@ const PagamentiImport = () => {
                         </CCol>
                         <CCol md={2}>
                           <CFormLabel> </CFormLabel>
-                          <CButton
+                          <PermissionButton
                             color="danger"
                             variant="ghost"
                             type="button"
                             onClick={() => handleRemoveAllocation(row.tempId, alloc.id)}
+                            permission="pay.write"
                           >
                             <CIcon icon={cilTrash} />
-                          </CButton>
+                          </PermissionButton>
                         </CCol>
                       </CRow>
                   </div>
@@ -693,10 +709,21 @@ const PagamentiImport = () => {
             )}
 
             <div className="d-flex justify-content-between">
-              <CButton color="secondary" variant="ghost" type="button" onClick={resetWizard}>
+              <PermissionButton
+                color="secondary"
+                variant="ghost"
+                type="button"
+                onClick={resetWizard}
+                permission="pay.write"
+              >
                 Nuovo caricamento
-              </CButton>
-              <CButton color="primary" type="submit" disabled={submitting || rowsWithTotals.length === 0}>
+              </PermissionButton>
+              <PermissionButton
+                color="primary"
+                type="submit"
+                disabled={submitting || rowsWithTotals.length === 0}
+                permission="pay.write"
+              >
                 {submitting ? (
                   <>
                     <CSpinner size="sm" className="me-2" />
@@ -705,7 +732,7 @@ const PagamentiImport = () => {
                 ) : (
                   'Registra pagamenti'
                 )}
-              </CButton>
+              </PermissionButton>
             </div>
           </CForm>
         )}
@@ -734,9 +761,15 @@ const PagamentiImport = () => {
                 }
               }}
             />
-            <CButton color="primary" type="button" onClick={performInvoiceSearch} disabled={invoiceModal.loading}>
+            <PermissionButton
+              color="primary"
+              type="button"
+              onClick={performInvoiceSearch}
+              disabled={invoiceModal.loading}
+              permission="pay.write"
+            >
               Cerca
-            </CButton>
+            </PermissionButton>
           </CInputGroup>
           {invoiceModal.loading ? (
             <div className="d-flex justify-content-center py-3">

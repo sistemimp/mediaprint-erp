@@ -22,6 +22,7 @@ import CIcon from '@coreui/icons-react'
 import { cilPlus, cilDescription } from '@coreui/icons'
 import { useAuth } from '../../context/AuthContext'
 import { fetchContratti } from '../../services/contratti'
+import PermissionButton from '../../components/PermissionButton'
 
 const formatDate = (value) => {
   if (!value) return '-'
@@ -71,9 +72,14 @@ const ContrattiList = () => {
     <CCard>
       <CCardHeader className="d-flex justify-content-between align-items-center">
         <h5 className="mb-0">Contratti - Lista</h5>
-        <CButton color="primary" variant="outline" onClick={() => navigate('/contratti/crea')}>
+        <PermissionButton
+          color="primary"
+          variant="outline"
+          onClick={() => navigate('/contratti/crea')}
+          permission="contr.create"
+        >
           <CIcon icon={cilPlus} className="me-2" /> Nuovo contratto
-        </CButton>
+        </PermissionButton>
       </CCardHeader>
       <CCardBody>
         {error && (
@@ -142,13 +148,14 @@ const ContrattiList = () => {
                     {Number(row.attivo) === 1 ? 'Si' : 'No'}
                   </CTableDataCell>
                   <CTableDataCell className="text-end">
-                    <CButton
+                    <PermissionButton
                       color="link"
                       size="sm"
                       onClick={() => navigate(`/contratti/dettagli?id=${row.id_contratto}`)}
+                      permission="contr.read"
                     >
                       <CIcon icon={cilDescription} />
-                    </CButton>
+                    </PermissionButton>
                   </CTableDataCell>
                 </CTableRow>
               ))}
@@ -161,4 +168,3 @@ const ContrattiList = () => {
 }
 
 export default ContrattiList
-

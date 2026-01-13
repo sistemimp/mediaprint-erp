@@ -1,14 +1,17 @@
-import React, { createContext, useCallback, useEffect, useMemo, useState } from 'react'
-import { apiFetch, buildApiUrl, AUTH_TOKEN_STORAGE_KEY, AUTH_USER_STORAGE_KEY } from '../services/apiClient'
+import React, { createContext, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { apiFetch, AUTH_TOKEN_STORAGE_KEY, AUTH_USER_STORAGE_KEY, buildApiUrl } from '../services/apiClient'
+import { fetchProfileAvatar } from '../services/profileAvatar'
 
 const AuthContext = createContext({
   token: null,
   user: null,
+  avatarUrl: null,
   isAuthenticated: false,
   loading: false,
   error: null,
   login: async () => {},
   logout: () => {},
+  refreshAvatar: async () => null,
 })
 
 const isNonEmptyString = (value) => typeof value === 'string' && value.trim() !== ''
@@ -73,6 +76,8 @@ export const AuthProvider = ({ children }) => {
       return null
     }
   })
+  const [avatarUrl, setAvatarUrl] = useState(null)
+  const avatarUrlRef = useRef(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
 
@@ -144,6 +149,11 @@ export const AuthProvider = ({ children }) => {
   const logout = useCallback(() => {
     localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY)
     localStorage.removeItem(AUTH_USER_STORAGE_KEY)
+    if (avatarUrlRef.current && avatarUrlRef.current.startsWith('blob:')) {
+      URL.revokeObjectURL(avatarUrlRef.current)
+    }
+    avatarUrlRef.current = null
+    setAvatarUrl(null)
     setToken(null)
     setUser(null)
     setError(null)
@@ -218,17 +228,65 @@ export const AuthProvider = ({ children }) => {
     return () => controller.abort()
   }, [token, logout])
 
+  const updateAvatarUrl = useCallback((nextUrl) => {
+    if (avatarUrlRef.current && avatarUrlRef.current !== nextUrl && avatarUrlRef.current.startsWith('blob:')) {
+      URL.revokeObjectURL(avatarUrlRef.current)
+    }
+    avatarUrlRef.current = nextUrl
+    setAvatarUrl(nextUrl)
+  }, [])
+
+  const refreshAvatar = useCallback(
+    async ({ signal } = {}) => {
+      if (!token || !user) {
+        updateAvatarUrl(null)
+        return null
+      }
+
+      try {
+        const blob = await fetchProfileAvatar({ token, signal })
+        if (!blob) {
+          updateAvatarUrl(null)
+          return null
+        }
+        const url = URL.createObjectURL(blob)
+        updateAvatarUrl(url)
+        return url
+      } catch (error) {
+        if (error?.name === 'AbortError') {
+          return null
+        }
+        updateAvatarUrl(null)
+        return null
+      }
+    },
+    [token, user, updateAvatarUrl],
+  )
+
+  useEffect(() => {
+    if (!token || !user) {
+      updateAvatarUrl(null)
+      return
+    }
+
+    const controller = new AbortController()
+    refreshAvatar({ signal: controller.signal })
+    return () => controller.abort()
+  }, [token, user, refreshAvatar, updateAvatarUrl])
+
   const value = useMemo(
     () => ({
       token,
       user,
+      avatarUrl,
       loading,
       error,
       isAuthenticated: Boolean(token),
       login,
       logout,
+      refreshAvatar,
     }),
-    [token, user, loading, error, login, logout],
+    [token, user, avatarUrl, loading, error, login, logout, refreshAvatar],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

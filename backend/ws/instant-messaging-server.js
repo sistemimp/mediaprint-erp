@@ -64,9 +64,23 @@ const io = new Server(server, {
   },
 })
 const connectionsByAccount = new Map()
+const notificationPollers = new Map()
 
-const apiRequest = async (path, token, body = null) => {
-  const url = `${API_BASE_URL}/${path.replace(/^\//, '')}`
+const apiRequest = async (path, token, body = null, params = null) => {
+  let url = `${API_BASE_URL}/${path.replace(/^\//, '')}`
+  if (params && !body) {
+    const search = new URLSearchParams()
+    Object.entries(params).forEach(([key, value]) => {
+      if (value === undefined || value === null) {
+        return
+      }
+      search.append(key, String(value))
+    })
+    const query = search.toString()
+    if (query) {
+      url += `?${query}`
+    }
+  }
   const headers = {
     Accept: 'application/json',
     Authorization: `Bearer ${token}`,
@@ -109,6 +123,11 @@ const detachConnection = (accountId, ws) => {
   existing.delete(ws)
   if (existing.size === 0) {
     connectionsByAccount.delete(accountId)
+    const poller = notificationPollers.get(accountId)
+    if (poller) {
+      clearInterval(poller.timer)
+      notificationPollers.delete(accountId)
+    }
   }
 }
 
@@ -122,6 +141,62 @@ const sendToAccount = (accountId, event, payload) => {
       socket.emit(event, payload)
     }
   })
+}
+
+const ensureNotificationPolling = (accountId, token) => {
+  if (!accountId || !token) {
+    return
+  }
+  const existing = notificationPollers.get(accountId)
+  if (existing) {
+    existing.token = token
+    return
+  }
+  const poller = {
+    token,
+    lastId: 0,
+    initialized: false,
+    timer: null,
+  }
+
+  const poll = async () => {
+    try {
+      const response = await apiRequest('/lavorazioniNotifications.php', poller.token, null, {
+        limit: 5,
+        only_unread: 1,
+      })
+      const items = Array.isArray(response?.items) ? response.items : []
+      let maxId = poller.lastId
+      items.forEach((item) => {
+        const id = Number.parseInt(item?.id_notifica, 10)
+        if (Number.isFinite(id) && id > maxId) {
+          maxId = id
+        }
+      })
+      if (!poller.initialized) {
+        poller.initialized = true
+        poller.lastId = maxId
+        return
+      }
+      const fresh = items.filter((item) => {
+        const id = Number.parseInt(item?.id_notifica, 10)
+        return Number.isFinite(id) && id > poller.lastId
+      })
+      if (fresh.length > 0) {
+        poller.lastId = maxId
+        sendToAccount(accountId, 'im.notification', {
+          items: fresh,
+          unread: response?.unread,
+        })
+      }
+    } catch (_error) {
+      // ignore
+    }
+  }
+
+  poller.timer = setInterval(poll, 30000)
+  poll()
+  notificationPollers.set(accountId, poller)
 }
 
 io.use(async (socket, next) => {
@@ -149,6 +224,7 @@ io.use(async (socket, next) => {
     socket.data.accountId = accountId
     socket.data.token = token
     attachConnection(accountId, socket)
+    ensureNotificationPolling(accountId, token)
     next()
   } catch (error) {
     next(new Error(error.message || 'Auth fallita'))

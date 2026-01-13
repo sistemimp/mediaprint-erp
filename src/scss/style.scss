@@ -290,7 +290,13 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 0.5rem;
   box-shadow: 0 18px 45px rgba(0, 0, 0, 0.2);
+}
+
+.im-widget-label {
+  font-weight: 600;
+  font-size: 0.9rem;
 }
 
 .im-widget-badge {
@@ -320,5 +326,61 @@ body {
 
   .im-input {
     min-height: 70px;
+  }
+}
+
+.footer {
+  position: relative;
+
+  .footer-chat-slot {
+    display: flex;
+    align-items: center;
+  }
+
+  .im-widget {
+    position: static;
+    right: auto;
+    bottom: auto;
+  }
+
+  .im-widget-button {
+    width: auto;
+    height: 2.5rem;
+    padding: 0 0.75rem;
+    border-radius: 0.75rem;
+    box-shadow: none;
+  }
+
+  .im-widget-badge {
+    top: -0.25rem;
+    right: -0.25rem;
+  }
+
+  .im-widget-panel {
+    position: absolute;
+    right: 0;
+    bottom: calc(100% + 0.5rem);
+  }
+}
+
+body.read-only-mode {
+  form input,
+  form select,
+  form textarea,
+  form button,
+  form .form-check-input {
+    pointer-events: none;
+  }
+
+  form input,
+  form select,
+  form textarea,
+  form .form-check-input {
+    background-color: #f3f4f6;
+    opacity: 0.7;
+  }
+
+  form button {
+    opacity: 0.6;
   }
 }

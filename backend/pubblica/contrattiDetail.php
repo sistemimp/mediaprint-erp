@@ -24,15 +24,19 @@ if ($method !== 'GET') {
 
 try {
     $auth = AuthGuard::requireAuth();
-    AuthGuard::requirePermissions($auth, ['anag.view']);
-
-    $service = new ContrattiService(new ContrattiRepository(Database::getConnection()));
-    $result = $service->detail($_GET);
+    AuthGuard::requirePermissions($auth, ['contr.read']);
 
     if (AuthGuard::getAccountType($auth) === 'cliente') {
         $accountsRepo = new AccountsRepository(Database::getConnection());
         $allowed = $accountsRepo->listAccountAnagraficheIds(AuthGuard::getAccountId($auth));
         $allowedMap = array_fill_keys(array_map('intval', $allowed), true);
+        $_GET['exclude_draft'] = 1;
+    }
+
+    $service = new ContrattiService(new ContrattiRepository(Database::getConnection()));
+    $result = $service->detail($_GET);
+
+    if (AuthGuard::getAccountType($auth) === 'cliente') {
         $idAnag = isset($result['contratto']['id_anagrafica']) ? (int) $result['contratto']['id_anagrafica'] : 0;
         if ($idAnag <= 0 || !isset($allowedMap[$idAnag])) {
             throw new RuntimeException('Contratto non trovato.', 404);

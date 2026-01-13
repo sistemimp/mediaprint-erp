@@ -355,6 +355,9 @@ const FattureDetail = () => {
   const [statusLog, setStatusLog] = useState([])
   const [statusLogLoading, setStatusLogLoading] = useState(false)
   const [statusLogError, setStatusLogError] = useState(null)
+  const [statusUpdating, setStatusUpdating] = useState(false)
+  const [statusUpdateError, setStatusUpdateError] = useState(null)
+  const [statusUpdateSuccess, setStatusUpdateSuccess] = useState(null)
   const [statusTab, setStatusTab] = useState('timeline')
   const formRef = useRef(null)
   const rowCounterRef = useRef(0)
@@ -928,6 +931,78 @@ const FattureDetail = () => {
       }
     })
   }, [timelineSteps])
+
+  const handleTimelineStatusChange = useCallback(async (nextStatusId) => {
+    if (!record || !token) return
+    const numericId = Number(nextStatusId)
+    if (!Number.isFinite(numericId) || numericId <= 0) return
+    const previousStatusId = record?.id_stato_fatt ? Number(record.id_stato_fatt) : null
+    if (previousStatusId === numericId) return
+
+    const wantsRejectTransition =
+      rifiutataStatusId !== null &&
+      numericId === rifiutataStatusId &&
+      previousStatusId !== rifiutataStatusId
+    if (wantsRejectTransition) {
+      const confirmMessage =
+        'Confermi di generare automaticamente una nota di credito e impostare lo stato su "Rifiutata"?'
+      const confirmed = typeof window !== 'undefined' ? window.confirm(confirmMessage) : true
+      if (!confirmed) {
+        return
+      }
+    }
+
+    setStatusUpdating(true)
+    setStatusUpdateError(null)
+    setStatusUpdateSuccess(null)
+    try {
+      const updated = await updateFatturaDetail({
+        token,
+        id: record.id_fattura,
+        id_stato_fatt: numericId,
+      })
+      if (updated) {
+        setRecord(updated)
+        setFormValues((prev) => ({
+          ...prev,
+          id_stato_fatt: updated.id_stato_fatt ? String(updated.id_stato_fatt) : '',
+        }))
+        const updatedStatusId = updated.id_stato_fatt ? Number(updated.id_stato_fatt) : null
+        if (updatedStatusId !== null && updatedStatusId !== previousStatusId) {
+          const now = new Date().toISOString()
+          const fromLabel =
+            previousStatusId !== null
+              ? statiById[previousStatusId]?.label || record?.stato_label || `#${previousStatusId}`
+              : 'N.D.'
+          const toLabel =
+            statiById[updatedStatusId]?.label ||
+            updated?.stato_label ||
+            `#${updatedStatusId}`
+          const operatorName = user?.username || user?.name || user?.email || 'Operatore'
+          setStatusLog((prev) => [
+            {
+              at: now,
+              from_status_id: previousStatusId,
+              from_status: fromLabel,
+              to_status_id: updatedStatusId,
+              to_status: toLabel,
+              user_name: operatorName,
+            },
+            ...prev,
+          ])
+        }
+      }
+      setStatusUpdateSuccess('Stato fattura aggiornato correttamente.')
+    } catch (err) {
+      if (err?.status === 401 && logout) {
+        logout()
+        return
+      }
+      setStatusUpdateError(err)
+    } finally {
+      setStatusUpdating(false)
+    }
+  }, [logout, record, rifiutataStatusId, statiById, token, user])
 
   const sezionaliOptions = useMemo(
     () => (Array.isArray(config?.sezionali) ? config.sezionali : []),
@@ -1824,6 +1899,15 @@ const FattureDetail = () => {
                   <CTabPane visible={statusTab === 'timeline'} role="tabpanel">
                     {timelineSteps.length > 0 ? (
                       <>
+                        {statusUpdateError && (
+                          <CAlert color="danger" className="mb-3">
+                            {statusUpdateError?.message ||
+                              "Errore durante l'aggiornamento dello stato."}
+                          </CAlert>
+                        )}
+                        {statusUpdateSuccess && (
+                          <CAlert color="success" className="mb-3">{statusUpdateSuccess}</CAlert>
+                        )}
                         <div className="d-flex align-items-center gap-2 flex-wrap mb-3">
                           <small className="text-body-secondary">Stato attuale:</small>
                           {currentStatusLabel ? (
@@ -1831,6 +1915,7 @@ const FattureDetail = () => {
                           ) : (
                             <span className="text-body-secondary">N.D.</span>
                           )}
+                          {statusUpdating && <CSpinner size="sm" />}
                         </div>
                         <div className={timelineStepperClass}>
                           <CStepper
@@ -1839,6 +1924,16 @@ const FattureDetail = () => {
                             steps={timelineSteps.map((step) => step.label)}
                             linear={false}
                             validation={false}
+                            onStepChange={(step) => {
+                              if (statusUpdating || saving) return
+                              const index = Number(step) - 1
+                              if (!Number.isFinite(index) || index < 0) return
+                              const meta = timelineSteps[index]
+                              if (!meta || !Array.isArray(meta.matchIds) || meta.matchIds.length !== 1) {
+                                return
+                              }
+                              handleTimelineStatusChange(meta.matchIds[0])
+                            }}
                           />
                         </div>
                       </>

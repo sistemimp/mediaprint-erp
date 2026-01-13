@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require __DIR__ . '/../bootstrap.php';
 
+use MediaPrint\Backend\AuthGuard;
 use MediaPrint\Backend\Database;
 use MediaPrint\Backend\HttpResponse;
 use MediaPrint\Repo\ContrattiRepository;
@@ -21,7 +22,10 @@ if ($method !== 'POST') {
 }
 
 try {
-    $raw = file_get_contents('php://input') ?: '';
+$auth = AuthGuard::requireAuth();
+    AuthGuard::requirePermissions($auth, ['contr.write']);
+
+        $raw = file_get_contents('php://input') ?: '';
     $input = json_decode($raw, true);
     if (!is_array($input)) {
         $input = [];

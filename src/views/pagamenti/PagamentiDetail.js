@@ -27,6 +27,7 @@ import CIcon from '@coreui/icons-react'
 import { cilArrowLeft, cilMagnifyingGlass, cilPlus, cilTrash } from '@coreui/icons'
 
 import AnagraficaAutocomplete from '../../components/AnagraficaAutocomplete'
+import PermissionButton from '../../components/PermissionButton'
 import { useAuth } from '../../context/AuthContext'
 import { fetchAnagrafiche } from '../../services/anagrafiche'
 import { assignPagamentoToAnagrafica, fetchPagamentoDetail, searchPagamentiFatture } from '../../services/pagamenti'
@@ -524,7 +525,13 @@ const PagamentiDetail = () => {
             <small className="text-body-secondary">Dettaglio movimento registrato</small>
           </div>
           <div className="d-flex gap-2">
-            <CButton color="danger" variant="outline" disabled={deleteDisabled} onClick={handleDelete}>
+            <PermissionButton
+              color="danger"
+              variant="outline"
+              disabled={deleteDisabled}
+              onClick={handleDelete}
+              permission="pay.delete"
+            >
               {deleting ? (
                 <>
                   <CSpinner size="sm" className="me-2" />
@@ -536,7 +543,7 @@ const PagamentiDetail = () => {
                   Elimina
                 </>
               )}
-            </CButton>
+            </PermissionButton>
             <CButton color="secondary" variant="ghost" onClick={() => navigate(-1)}>
               <CIcon icon={cilArrowLeft} className="me-2" />
               Indietro
@@ -608,9 +615,15 @@ const PagamentiDetail = () => {
               <div className="d-flex justify-content-between align-items-start mb-2">
                 <h6 className="text-body-secondary mb-0">Cliente</h6>
                 {isStaging && (
-                  <CButton size="sm" color="primary" variant="outline" onClick={openAssignCustomerModal}>
+                  <PermissionButton
+                    size="sm"
+                    color="primary"
+                    variant="outline"
+                    onClick={openAssignCustomerModal}
+                    permission="pay.write"
+                  >
                     Assegna cliente
-                  </CButton>
+                  </PermissionButton>
                 )}
               </div>
               <div className="border rounded p-3 bg-body-tertiary">

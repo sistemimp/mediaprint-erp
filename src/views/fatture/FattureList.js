@@ -24,6 +24,7 @@ import { cilArrowRight, cilPrint, cilReload } from '@coreui/icons'
 
 import { useAuth } from '../../context/AuthContext'
 import { buildFatturaPdfUrl, fetchFattureList } from '../../services/fatture'
+import PermissionButton from '../../components/PermissionButton'
 
 const currencyFormatter = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' })
 
@@ -193,9 +194,13 @@ const FattureList = () => {
               <CIcon icon={cilReload} className="me-2" />
               Aggiorna
             </CButton>
-            <CButton color="primary" onClick={() => navigate('/fatture/crea')} disabled>
+            <PermissionButton
+              color="primary"
+              permission="fatt.create"
+              onClick={() => navigate('/fatture/crea')}
+            >
               Nuova fattura
-            </CButton>
+            </PermissionButton>
           </div>
         </div>
       </CCardHeader>
@@ -309,24 +314,26 @@ const FattureList = () => {
                   </CTableDataCell>
                   <CTableDataCell className="text-center">
                     <div className="d-inline-flex gap-2 flex-wrap justify-content-center">
-                      <CButton
+                      <PermissionButton
                         color="link"
                         size="sm"
                         className="p-0"
                         onClick={() => handleView(row.id_fattura)}
                         title="Apri dettaglio"
+                        permission="fatt.read"
                       >
                         <CIcon icon={cilArrowRight} />
-                      </CButton>
-                      <CButton
+                      </PermissionButton>
+                      <PermissionButton
                         color="link"
                         size="sm"
                         className="p-0"
                         onClick={() => handlePrintPdf(row.id_fattura)}
                         title="Stampa PDF"
+                        permission="fatt.read"
                       >
                         <CIcon icon={cilPrint} />
-                      </CButton>
+                      </PermissionButton>
                     </div>
                   </CTableDataCell>
                 </CTableRow>

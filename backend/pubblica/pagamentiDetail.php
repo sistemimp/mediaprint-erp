@@ -22,7 +22,7 @@ if ($method !== 'GET') {
 
 try {
     $auth = AuthGuard::requireAuth();
-    AuthGuard::requirePermissions($auth, ['pay.view']);
+    AuthGuard::requirePermissions($auth, ['pay.read']);
     $allowed = null;
     if (AuthGuard::getAccountType($auth) === 'cliente') {
         $accountsRepo = new AccountsRepository(Database::getConnection());

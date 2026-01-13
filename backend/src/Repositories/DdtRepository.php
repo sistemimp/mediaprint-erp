@@ -9,6 +9,8 @@ use RuntimeException;
 
 final class DdtRepository
 {
+    private ?bool $comboKeySupported = null;
+
     public function __construct(private PDO $pdo) {}
 
     /**
@@ -83,6 +85,29 @@ final class DdtRepository
         return $last + 1;
     }
 
+    private function ensureComboKeyColumn(): bool
+    {
+        if ($this->comboKeySupported !== null) {
+            return $this->comboKeySupported;
+        }
+
+        $exists = false;
+        try {
+            $stmt = $this->pdo->query("SHOW COLUMNS FROM tb_ddt_righe LIKE 'combo_key'");
+            $exists = $stmt && $stmt->fetch(PDO::FETCH_ASSOC) !== false;
+            if (!$exists) {
+                $this->pdo->exec("ALTER TABLE tb_ddt_righe ADD COLUMN combo_key VARCHAR(255) NULL AFTER id_prodotto");
+                $stmt = $this->pdo->query("SHOW COLUMNS FROM tb_ddt_righe LIKE 'combo_key'");
+                $exists = $stmt && $stmt->fetch(PDO::FETCH_ASSOC) !== false;
+            }
+        } catch (\Throwable $ignored) {
+            $exists = false;
+        }
+
+        $this->comboKeySupported = $exists;
+        return $this->comboKeySupported;
+    }
+
     /**
      * @param array<string,mixed> $data
      * @param list<array<string,mixed>> $righe
@@ -142,11 +167,14 @@ final class DdtRepository
                 $linkStmt->execute();
             }
 
+            $hasComboKey = $this->ensureComboKeyColumn();
+            $comboColumn = $hasComboKey ? ', combo_key' : '';
+            $comboValue = $hasComboKey ? ', :combo_key' : '';
             $righeStmt = $this->pdo->prepare(
                 'INSERT INTO tb_ddt_righe (
-                    id_ddt, id_prodotto, descrizione, quantita, peso_unitario_kg, unita_misura, note, posizione
+                    id_ddt, id_prodotto' . $comboColumn . ', descrizione, quantita, peso_unitario_kg, unita_misura, note, posizione
                 ) VALUES (
-                    :id_ddt, :id_prodotto, :descrizione, :quantita, :peso_unitario_kg, :unita_misura, :note, :posizione
+                    :id_ddt, :id_prodotto' . $comboValue . ', :descrizione, :quantita, :peso_unitario_kg, :unita_misura, :note, :posizione
                 )'
             );
             $posizione = 1;
@@ -160,6 +188,10 @@ final class DdtRepository
                     $quantita = 1.0;
                 }
                 $idProdotto = isset($line['id_prodotto']) ? (int) $line['id_prodotto'] : null;
+                $comboKey = isset($line['combo_key']) ? trim((string) $line['combo_key']) : null;
+                if ($comboKey === '') {
+                    $comboKey = null;
+                }
                 $pesoUnit = isset($line['peso_unitario_kg']) ? (float) $line['peso_unitario_kg'] : null;
                 $unitaMisura = isset($line['unita_misura']) && trim((string) $line['unita_misura']) !== ''
                     ? strtoupper(trim((string) $line['unita_misura']))
@@ -167,6 +199,9 @@ final class DdtRepository
 
                 $righeStmt->bindValue(':id_ddt', $idDdt, PDO::PARAM_INT);
                 $righeStmt->bindValue(':id_prodotto', $idProdotto, $idProdotto ? PDO::PARAM_INT : PDO::PARAM_NULL);
+                if ($hasComboKey) {
+                    $righeStmt->bindValue(':combo_key', $comboKey, $comboKey ? PDO::PARAM_STR : PDO::PARAM_NULL);
+                }
                 $righeStmt->bindValue(':descrizione', $descrizione, PDO::PARAM_STR);
                 $righeStmt->bindValue(':quantita', $quantita, PDO::PARAM_STR);
                 $righeStmt->bindValue(':peso_unitario_kg', $pesoUnit, $pesoUnit !== null ? PDO::PARAM_STR : PDO::PARAM_NULL);
@@ -540,6 +575,8 @@ final class DdtRepository
      */
     public function getLines(int $id): array
     {
+        $hasComboKey = $this->ensureComboKeyColumn();
+        $comboSelect = $hasComboKey ? ",\n                combo_key" : '';
         $stmt = $this->pdo->prepare(
             'SELECT
                 id_riga,
@@ -550,7 +587,7 @@ final class DdtRepository
                 peso_totale_kg,
                 unita_misura,
                 note,
-                posizione
+                posizione' . $comboSelect . '
             FROM tb_ddt_righe
             WHERE id_ddt = :id
             ORDER BY COALESCE(posizione, id_riga) ASC'
@@ -570,6 +607,7 @@ final class DdtRepository
                 'unita_misura' => $row['unita_misura'] ?? null,
                 'note' => $row['note'] ?? null,
                 'posizione' => isset($row['posizione']) ? (int) $row['posizione'] : null,
+                'combo_key' => $hasComboKey ? ($row['combo_key'] ?? null) : null,
             ];
         }
         return $lines;
@@ -640,12 +678,19 @@ final class DdtRepository
             if ($unita === '') {
                 $unita = null;
             }
+            $idProdotto = isset($line['id_prodotto']) ? (int) $line['id_prodotto'] : null;
+            $comboKey = isset($line['combo_key']) ? trim((string) $line['combo_key']) : null;
+            if ($comboKey === '') {
+                $comboKey = null;
+            }
 
             $normalized[] = [
+                'id_prodotto' => $idProdotto,
                 'descrizione' => $descrizione,
                 'quantita' => $quantita,
                 'peso_unitario_kg' => $pesoUnitario,
                 'unita_misura' => $unita,
+                'combo_key' => $comboKey,
             ];
         }
 
@@ -659,11 +704,14 @@ final class DdtRepository
             $del->bindValue(':id', $id, PDO::PARAM_INT);
             $del->execute();
 
+            $hasComboKey = $this->ensureComboKeyColumn();
+            $comboColumn = $hasComboKey ? ', combo_key' : '';
+            $comboValue = $hasComboKey ? ', :combo_key' : '';
             $stmt = $this->pdo->prepare(
                 'INSERT INTO tb_ddt_righe (
-                    id_ddt, id_prodotto, descrizione, quantita, peso_unitario_kg, unita_misura, note, posizione
+                    id_ddt, id_prodotto' . $comboColumn . ', descrizione, quantita, peso_unitario_kg, unita_misura, note, posizione
                 ) VALUES (
-                    :id_ddt, NULL, :descrizione, :quantita, :peso_unitario_kg, :unita_misura, NULL, :posizione
+                    :id_ddt, :id_prodotto' . $comboValue . ', :descrizione, :quantita, :peso_unitario_kg, :unita_misura, NULL, :posizione
                 )'
             );
 
@@ -674,6 +722,10 @@ final class DdtRepository
             $posizione = 1;
             foreach ($normalized as $line) {
                 $stmt->bindValue(':id_ddt', $id, PDO::PARAM_INT);
+                $stmt->bindValue(':id_prodotto', $line['id_prodotto'], $line['id_prodotto'] ? PDO::PARAM_INT : PDO::PARAM_NULL);
+                if ($hasComboKey) {
+                    $stmt->bindValue(':combo_key', $line['combo_key'], $line['combo_key'] ? PDO::PARAM_STR : PDO::PARAM_NULL);
+                }
                 $stmt->bindValue(':descrizione', $line['descrizione'], PDO::PARAM_STR);
                 $stmt->bindValue(':quantita', $line['quantita'], PDO::PARAM_STR);
                 if ($line['peso_unitario_kg'] !== null) {
@@ -855,7 +907,7 @@ final class DdtRepository
     /**
      * @return list<array<string,mixed>>
      */
-    public function listLatest(int $limit = 200, ?array $allowedAnagrafiche = null): array
+    public function listLatest(int $limit = 200, ?array $allowedAnagrafiche = null, bool $excludeDraft = false): array
     {
         $limit = max(1, min($limit, 500));
         $sql = <<<'SQL'
@@ -889,11 +941,15 @@ final class DdtRepository
                 return [];
             }
         }
-        $where = '';
+        $whereParts = [];
         if ($allowed !== null) {
             $placeholders = implode(',', array_fill(0, count($allowed), '?'));
-            $where = "WHERE d.id_anagrafica IN ({$placeholders})";
+            $whereParts[] = "d.id_anagrafica IN ({$placeholders})";
         }
+        if ($excludeDraft) {
+            $whereParts[] = 'd.stato_documento <> 1';
+        }
+        $where = $whereParts ? ('WHERE ' . implode(' AND ', $whereParts)) : '';
 
         $sql = str_replace('/*FILTERS*/', $where, $sql);
         $sql = str_replace(':limit', (string) $limit, $sql);

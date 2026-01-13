@@ -27,6 +27,18 @@ export const fetchProdottiDashboard = async ({ token, period, signal } = {}) => 
   return payload
 }
 
+export const fetchProdottiFatturazione = async ({ token, period, signal } = {}) => {
+  const params = {}
+  if (period) {
+    params.period = period
+  }
+  const payload = await apiFetch('/prodottiFatturazione.php', { token, params, signal })
+  if (!payload?.ok) {
+    throw new Error(payload?.message || 'API error')
+  }
+  return payload
+}
+
 export const fetchNatureIva = async ({ token, signal } = {}) => {
   const response = await apiFetch('/natureIvaList.php', { token, signal })
   const items = Array.isArray(response?.items) ? response.items : []

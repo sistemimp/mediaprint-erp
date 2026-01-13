@@ -8,6 +8,9 @@ use MediaPrint\Repo\ContrattiRepository;
 
 final class PreventiviRepository
 {
+    private ?bool $comboKeySupported = null;
+    private ?bool $comboKeyArchiveSupported = null;
+
     public function __construct(private PDO $pdo) {}
 
     /**
@@ -82,6 +85,61 @@ final class PreventiviRepository
         } catch (\Throwable $ignored) {
             // Ignore ensure failures; subsequent calls will handle absence gracefully
         }
+    }
+
+    private function ensureComboKeyColumn(): bool
+    {
+        if ($this->comboKeySupported !== null) {
+            return $this->comboKeySupported;
+        }
+
+        $exists = false;
+        try {
+            $stmt = $this->pdo->query("SHOW COLUMNS FROM tb_preventivi_righe LIKE 'combo_key'");
+            $exists = $stmt && $stmt->fetch(PDO::FETCH_ASSOC) !== false;
+            if (!$exists) {
+                $this->pdo->exec("ALTER TABLE tb_preventivi_righe ADD COLUMN combo_key VARCHAR(255) NULL AFTER id_prodotto");
+                $stmt = $this->pdo->query("SHOW COLUMNS FROM tb_preventivi_righe LIKE 'combo_key'");
+                $exists = $stmt && $stmt->fetch(PDO::FETCH_ASSOC) !== false;
+            }
+        } catch (\Throwable $ignored) {
+            try {
+                $probe = $this->pdo->query('SELECT combo_key FROM tb_preventivi_righe LIMIT 1');
+                $exists = $probe !== false;
+            } catch (\Throwable $ignoredProbe) {
+                $exists = false;
+            }
+        }
+
+        $this->comboKeySupported = $exists;
+        return $this->comboKeySupported;
+    }
+
+    private function ensureComboKeyArchiveColumn(): bool
+    {
+        if ($this->comboKeyArchiveSupported !== null) {
+            return $this->comboKeyArchiveSupported;
+        }
+
+        $exists = false;
+        try {
+            $tableStmt = $this->pdo->query("SHOW TABLES LIKE 'tb_preventivi_righe_archive'");
+            $tableExists = $tableStmt && $tableStmt->fetch(PDO::FETCH_ASSOC) !== false;
+            if ($tableExists) {
+                $stmt = $this->pdo->query("SHOW COLUMNS FROM tb_preventivi_righe_archive LIKE 'combo_key'");
+                $exists = $stmt && $stmt->fetch(PDO::FETCH_ASSOC) !== false;
+                if (!$exists) {
+                    $this->pdo->exec("ALTER TABLE tb_preventivi_righe_archive ADD COLUMN combo_key VARCHAR(255) NULL AFTER id_prodotto");
+                    $stmt = $this->pdo->query("SHOW COLUMNS FROM tb_preventivi_righe_archive LIKE 'combo_key'");
+                    $exists = $stmt && $stmt->fetch(PDO::FETCH_ASSOC) !== false;
+                }
+            }
+        } catch (\Throwable $ignored) {
+            $exists = false;
+        }
+
+        $this->comboKeyArchiveSupported = $exists;
+        return $this->comboKeyArchiveSupported;
     }
 
     private function ensureContattiTables(): void
@@ -360,7 +418,7 @@ final class PreventiviRepository
     /**
      * @return list<array<string, mixed>>
      */
-    public function listLatest(int $limit = 10, ?array $allowedAnagrafiche = null): array
+    public function listLatest(int $limit = 10, ?array $allowedAnagrafiche = null, bool $excludeDraft = false): array
     {
         $sql = <<<'SQL'
             SELECT
@@ -399,11 +457,15 @@ final class PreventiviRepository
             }
         }
 
-        $where = '';
+        $whereParts = [];
         if ($allowed !== null) {
             $placeholders = implode(',', array_fill(0, count($allowed), '?'));
-            $where = "WHERE p.id_anagrafica IN ({$placeholders})";
+            $whereParts[] = "p.id_anagrafica IN ({$placeholders})";
         }
+        if ($excludeDraft) {
+            $whereParts[] = "COALESCE(sp.code, 'bozza') <> 'bozza'";
+        }
+        $where = $whereParts ? ('WHERE ' . implode(' AND ', $whereParts)) : '';
 
         $sql = str_replace('/*FILTERS*/', $where, $sql);
         $sql = str_replace('LIMIT :limit', 'LIMIT ' . (int) $effectiveLimit, $sql);
@@ -1026,6 +1088,9 @@ final class PreventiviRepository
             $where[] = "pa.id_anagrafica IN ({$placeholders})";
         }
 
+        if (!empty($filters['exclude_draft'])) {
+            $where[] = "COALESCE(pa.stato, 'bozza') <> 'bozza'";
+        }
         if (!empty($filters['search'])) {
             $where[] = '(
                 COALESCE(a.ragione_sociale, aa.ragione_sociale) LIKE :needle
@@ -1281,6 +1346,8 @@ final class PreventiviRepository
     public function archiveById(int $idPreventivo): void
     {
         $this->ensureOggettoSchema();
+        $hasComboKey = $this->ensureComboKeyColumn();
+        $hasComboKeyArchive = $this->ensureComboKeyArchiveColumn();
         $this->pdo->beginTransaction();
         try {
             // Copia testata in archivio
@@ -1304,12 +1371,14 @@ final class PreventiviRepository
 
             // Copia righe in archivio (se tabella esiste)
             try {
+                $comboColumn = $hasComboKey && $hasComboKeyArchive ? ', combo_key' : '';
+                $comboSelect = $hasComboKey && $hasComboKeyArchive ? ', r.combo_key' : '';
                 $this->pdo->prepare(
                     "INSERT INTO tb_preventivi_righe_archive (
-                        id_riga, id_preventivo, id_prodotto, descrizione, quantita, prezzo_unitario,
+                        id_riga, id_preventivo, id_prodotto{$comboColumn}, descrizione, quantita, prezzo_unitario,
                         sconto, importo_scontato, iva, id_sdi_natura_iva, totale, posizione
                     )
-                    SELECT r.id_riga, r.id_preventivo, r.id_prodotto, r.descrizione, r.quantita, r.prezzo_unitario,
+                    SELECT r.id_riga, r.id_preventivo, r.id_prodotto{$comboSelect}, r.descrizione, r.quantita, r.prezzo_unitario,
                            r.sconto, r.importo_scontato, r.iva, r.id_sdi_natura_iva, r.totale, r.posizione
                     FROM tb_preventivi_righe r
                     WHERE r.id_preventivo = :id
@@ -1732,13 +1801,13 @@ final class PreventiviRepository
      */
     public function getLines(int $idPreventivo): array
     {
-        $sql = <<<'SQL'
-            SELECT id_riga, id_prodotto, descrizione, quantita, prezzo_unitario, sconto, importo_scontato,
+        $hasComboKey = $this->ensureComboKeyColumn();
+        $comboSelect = $hasComboKey ? ', combo_key' : '';
+        $sql = 'SELECT id_riga, id_prodotto' . $comboSelect . ', descrizione, quantita, prezzo_unitario, sconto, importo_scontato,
                    iva, id_sdi_natura_iva, totale, posizione
             FROM tb_preventivi_righe
             WHERE id_preventivo = :id
-            ORDER BY COALESCE(posizione, id_riga) ASC
-        SQL;
+            ORDER BY COALESCE(posizione, id_riga) ASC';
 
         $stmt = $this->pdo->prepare($sql);
         $stmt->bindValue(':id', $idPreventivo, PDO::PARAM_INT);
@@ -1759,6 +1828,7 @@ final class PreventiviRepository
                 'id_sdi_natura_iva' => isset($r['id_sdi_natura_iva']) ? (int) $r['id_sdi_natura_iva'] : null,
                 'totale' => isset($r['totale']) ? (float) $r['totale'] : null,
                 'posizione' => isset($r['posizione']) ? (int) $r['posizione'] : null,
+                'combo_key' => $hasComboKey ? ($r['combo_key'] ?? null) : null,
             ];
         }
         return $out;
@@ -2034,15 +2104,18 @@ final class PreventiviRepository
             $del->execute();
 
             if (!empty($lines)) {
-                $ins = $this->pdo->prepare(<<<'SQL'
-                    INSERT INTO tb_preventivi_righe (
-                        id_preventivo, id_prodotto, descrizione, quantita, prezzo_unitario,
+                $hasComboKey = $this->ensureComboKeyColumn();
+                $comboColumn = $hasComboKey ? ', combo_key' : '';
+                $comboValue = $hasComboKey ? ', :combo_key' : '';
+                $ins = $this->pdo->prepare(
+                    'INSERT INTO tb_preventivi_righe (
+                        id_preventivo, id_prodotto' . $comboColumn . ', descrizione, quantita, prezzo_unitario,
                         sconto, importo_scontato, iva, id_sdi_natura_iva, totale, posizione
                     ) VALUES (
-                        :id_preventivo, :id_prodotto, :descrizione, :quantita, :prezzo_unitario,
+                        :id_preventivo, :id_prodotto' . $comboValue . ', :descrizione, :quantita, :prezzo_unitario,
                         :sconto, :importo_scontato, :iva, :id_sdi_natura_iva, :totale, :posizione
-                    )
-                SQL);
+                    )'
+                );
 
                 $pos = 1;
                 foreach ($lines as $line) {
@@ -2056,6 +2129,10 @@ final class PreventiviRepository
                     $iva = isset($line['iva']) ? (float) $line['iva'] : null;
                     $idProd = isset($line['id_prodotto']) ? (int) $line['id_prodotto'] : null;
                     $idNatura = isset($line['id_sdi_natura_iva']) ? (int) $line['id_sdi_natura_iva'] : null;
+                    $comboKey = isset($line['combo_key']) ? trim((string) $line['combo_key']) : null;
+                    if ($comboKey === '') {
+                        $comboKey = null;
+                    }
 
                     // Calcoli base
                     $imponibile = max(0.0, $q * $pu * (1 - $s / 100));
@@ -2064,6 +2141,9 @@ final class PreventiviRepository
 
                     $ins->bindValue(':id_preventivo', $idPreventivo, PDO::PARAM_INT);
                     $ins->bindValue(':id_prodotto', $idProd, $idProd === null ? PDO::PARAM_NULL : PDO::PARAM_INT);
+                    if ($hasComboKey) {
+                        $ins->bindValue(':combo_key', $comboKey, $comboKey === null ? PDO::PARAM_NULL : PDO::PARAM_STR);
+                    }
                     $ins->bindValue(':descrizione', $descr, PDO::PARAM_STR);
                     $ins->bindValue(':quantita', $q, PDO::PARAM_STR);
                     $ins->bindValue(':prezzo_unitario', $pu, PDO::PARAM_STR);

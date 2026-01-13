@@ -566,7 +566,9 @@ specifiche sopra.
 - GET `/lavorazioniFilesDownload.php` - download file (query: `id`)
 - POST `/lavorazioniFilesUpload.php` - upload file (multipart, field `file`)
 - GET `/lavorazioniNotifications.php` - lista notifiche (query: `id_account`)
+- GET `/lavorazioniNotificationsLatest.php` - ultime notifiche (query: `limit`)
 - POST `/lavorazioniNotificationsRead.php` - segna notifiche lette
+- POST `/lavorazioniNotificationsLatestRead.php` - segna notifiche lette (ultime)
 - POST `/lavorazioniNotifyOperators.php` - notifica operatori
 - POST `/lavorazioniActivityCreate.php` - crea attivita
 - POST `/lavorazioniActivityUpdate.php` - aggiorna attivita
@@ -848,7 +850,15 @@ specifiche sopra.
 - Query: `id_account`
 - Permessi: `job.view`
 
+#### `GET /lavorazioniNotificationsLatest.php`
+- Query: `limit`
+- Permessi: `job.view`
+
 #### `POST /lavorazioniNotificationsRead.php`
+- Body JSON: `id_account`
+- Permessi: `job.view`
+
+#### `POST /lavorazioniNotificationsLatestRead.php`
 - Body JSON: `id_account`
 - Permessi: `job.view`
 

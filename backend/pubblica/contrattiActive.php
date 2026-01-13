@@ -24,7 +24,7 @@ if ($method !== 'GET') {
 
 try {
     $auth = AuthGuard::requireAuth();
-    AuthGuard::requirePermissions($auth, ['anag.view']);
+    AuthGuard::requirePermissions($auth, ['contr.read']);
 
     if (AuthGuard::getAccountType($auth) === 'cliente') {
         $accountsRepo = new AccountsRepository(Database::getConnection());
@@ -33,6 +33,7 @@ try {
         if ($requested > 0 && !in_array($requested, $allowed, true)) {
             throw new RuntimeException('Anagrafica non autorizzata.', 403);
         }
+        $_GET['exclude_draft'] = 1;
     }
 
     $service = new ContrattiService(new ContrattiRepository(Database::getConnection()));

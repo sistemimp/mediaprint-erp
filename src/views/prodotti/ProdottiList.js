@@ -24,6 +24,7 @@ import { cilDescription, cilPlus, cilTrash } from '@coreui/icons'
 
 import { useAuth } from '../../context/AuthContext'
 import { fetchCategorieProdotti, fetchProdotti, deleteProdotto } from '../../services/prodotti'
+import PermissionButton from '../../components/PermissionButton'
 
 const ProdottiList = () => {
   const navigate = useNavigate()
@@ -177,10 +178,15 @@ const ProdottiList = () => {
             <small className="text-body-secondary">Ricerca e filtro per categoria</small><br />
             <small className="text-body-secondary">Premi shift+click sulla colonna per ordinare più colonne insieme</small>
           </div>
-          <CButton color="primary" variant="outline" onClick={() => navigate('/prodotti/crea')}>
+          <PermissionButton
+            color="primary"
+            variant="outline"
+            onClick={() => navigate('/prodotti/crea')}
+            permission="prod.create"
+          >
             <CIcon icon={cilPlus} className="me-2" />
             Nuovo prodotto
-          </CButton>
+          </PermissionButton>
         </div>
       </CCardHeader>
       <CCardBody>
@@ -245,10 +251,16 @@ const ProdottiList = () => {
                   <CTableDataCell>{row.prezzo_listino ?? '-'}</CTableDataCell>
                 <CTableDataCell className="text-center">
                     <div className="d-flex justify-content-center gap-2">
-                      <CButton color="link" size="sm" className="p-0" onClick={() => handleView(row.id_prodotto)}>
+                      <PermissionButton
+                        color="link"
+                        size="sm"
+                        className="p-0"
+                        onClick={() => handleView(row.id_prodotto)}
+                        permission="prod.read"
+                      >
                         <CIcon icon={cilDescription} />
-                      </CButton>
-                      <CButton
+                      </PermissionButton>
+                      <PermissionButton
                         color="danger"
                         size="sm"
                         variant="outline"
@@ -256,9 +268,10 @@ const ProdottiList = () => {
                         title="Elimina"
                         onClick={() => handleDelete(row.id_prodotto)}
                         disabled={deletingId === row.id_prodotto}
+                        permission="prod.delete"
                       >
                         {deletingId === row.id_prodotto ? <CSpinner size="sm" /> : <CIcon icon={cilTrash} />}
-                      </CButton>
+                      </PermissionButton>
                     </div>
                 </CTableDataCell>
                 </CTableRow>
