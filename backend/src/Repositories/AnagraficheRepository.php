@@ -303,20 +303,26 @@ final class AnagraficheRepository
 
         $baseSql = <<<'SQL'
             SELECT
-                id_anagrafica,
-                id_tipologia,
-                id_sdi_regime_fiscale,
-                is_pa,
-                is_active,
-                stato,
-                ragione_sociale,
-                piva,
-                codice_fiscale,
-                note,
-                created_at,
-                updated_at
-            FROM tb_anagrafiche
-            WHERE id_anagrafica = :id
+                a.id_anagrafica,
+                a.id_tipologia,
+                ta.code AS tipologia_code,
+                ta.label AS tipologia_label,
+                a.id_sdi_regime_fiscale,
+                rf.code AS regime_code,
+                rf.label AS regime_label,
+                a.is_pa,
+                a.is_active,
+                a.stato,
+                a.ragione_sociale,
+                a.piva,
+                a.codice_fiscale,
+                a.note,
+                a.created_at,
+                a.updated_at
+            FROM tb_anagrafiche a
+            LEFT JOIN cfg_tipologia_anagrafica ta ON ta.id_tipologia = a.id_tipologia
+            LEFT JOIN cfg_sdi_regime_fiscale rf ON rf.id_regime = a.id_sdi_regime_fiscale
+            WHERE a.id_anagrafica = :id
             LIMIT 1
         SQL;
 
@@ -359,6 +365,7 @@ final class AnagraficheRepository
                 sc.telefono,
                 sc.cellulare,
                 sc.email,
+                sc.note,
                 sc.stato,
                 sc.is_predefinito,
                 sc.id_sede,
@@ -392,6 +399,7 @@ final class AnagraficheRepository
                 ca.telefono,
                 ca.cellulare,
                 ca.email,
+                ca.note,
                 ca.is_predefinito,
                 ca.id_sede,
                 sa.denominazione AS sede_denominazione,
@@ -1075,6 +1083,7 @@ final class AnagraficheRepository
             'telefono' => ['column' => 'telefono', 'type' => PDO::PARAM_STR],
             'cellulare' => ['column' => 'cellulare', 'type' => PDO::PARAM_STR],
             'email' => ['column' => 'email', 'type' => PDO::PARAM_STR],
+            'note' => ['column' => 'note', 'type' => PDO::PARAM_STR],
             'is_predefinito' => ['column' => 'is_predefinito', 'type' => PDO::PARAM_INT],
             'id_sede' => ['column' => 'id_sede', 'type' => PDO::PARAM_INT],
         ];
@@ -1153,6 +1162,7 @@ final class AnagraficheRepository
             'telefono' => ['column' => 'telefono', 'type' => PDO::PARAM_STR],
             'cellulare' => ['column' => 'cellulare', 'type' => PDO::PARAM_STR],
             'email' => ['column' => 'email', 'type' => PDO::PARAM_STR],
+            'note' => ['column' => 'note', 'type' => PDO::PARAM_STR],
             'is_predefinito' => ['column' => 'is_predefinito', 'type' => PDO::PARAM_INT],
             'id_sede' => ['column' => 'id_sede', 'type' => PDO::PARAM_INT],
         ];
@@ -1281,7 +1291,7 @@ final class AnagraficheRepository
                 created_at, updated_at, archived_at, archived_by, archive_batch_id, archive_note
             )
             SELECT c.id_contatto, c.id_sede, c.nome, c.ruolo, c.telefono, c.cellulare, c.email,
-                   NULL AS note, 0 AS is_referente, c.is_predefinito,
+                   c.note, 0 AS is_referente, c.is_predefinito,
                    c.created_at, c.updated_at, NOW(), SUBSTRING_INDEX(CURRENT_USER(), '@', 1), UUID(),
                    'Archiviato manualmente da anagrafica'
             FROM tb_sedi_contatti c
@@ -1619,13 +1629,14 @@ final class AnagraficheRepository
             $unset->execute();
         }
 
-        $ins = $this->pdo->prepare('INSERT INTO tb_sedi_contatti (id_sede, nome, ruolo, telefono, cellulare, email, is_predefinito) VALUES (:sede, :nome, :ruolo, :tel, :cell, :email, :pref)');
+        $ins = $this->pdo->prepare('INSERT INTO tb_sedi_contatti (id_sede, nome, ruolo, telefono, cellulare, email, note, is_predefinito) VALUES (:sede, :nome, :ruolo, :tel, :cell, :email, :note, :pref)');
         $ins->bindValue(':sede', $targetSedeId, PDO::PARAM_INT);
         $ins->bindValue(':nome', (string)($row['nome'] ?? ''), PDO::PARAM_STR);
         $ins->bindValue(':ruolo', isset($row['ruolo']) ? (string)$row['ruolo'] : null, $row['ruolo'] !== null && $row['ruolo'] !== '' ? PDO::PARAM_STR : PDO::PARAM_NULL);
         $ins->bindValue(':tel', isset($row['telefono']) ? (string)$row['telefono'] : null, $row['telefono'] !== null && $row['telefono'] !== '' ? PDO::PARAM_STR : PDO::PARAM_NULL);
         $ins->bindValue(':cell', isset($row['cellulare']) ? (string)$row['cellulare'] : null, $row['cellulare'] !== null && $row['cellulare'] !== '' ? PDO::PARAM_STR : PDO::PARAM_NULL);
         $ins->bindValue(':email', isset($row['email']) ? (string)$row['email'] : null, $row['email'] !== null && $row['email'] !== '' ? PDO::PARAM_STR : PDO::PARAM_NULL);
+        $ins->bindValue(':note', isset($row['note']) ? (string)$row['note'] : null, $row['note'] !== null && $row['note'] !== '' ? PDO::PARAM_STR : PDO::PARAM_NULL);
         $ins->bindValue(':pref', $setDefault, PDO::PARAM_INT);
         $ins->execute();
 

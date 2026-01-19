@@ -29,16 +29,21 @@ import {
 } from '@coreui/react'
 import { CStepper } from '@coreui/react-pro'
 import CIcon from '@coreui/icons-react'
-import { cilSave, cilTrash, cilPlus, cilArrowLeft, cilEnvelopeClosed } from '@coreui/icons'
+import { cilSave, cilTrash, cilPlus, cilArrowLeft, cilEnvelopeClosed, cilCloudDownload } from '@coreui/icons'
 import { useAuth } from '../../context/AuthContext'
+import usePermissions from '../../hooks/usePermissions'
 import { fetchAnagrafiche } from '../../services/anagrafiche'
+import { buildApiUrl, getStoredToken } from '../../services/apiClient'
 import {
   deleteContratto,
+  deleteContrattoFile,
   fetchContrattoDetail,
+  fetchContrattoFiles,
   fetchContrattoRevisionDetail,
   saveContratto,
   sendContrattoEmail,
   updateContrattoStatus,
+  uploadContrattoFile,
 } from '../../services/contratti'
 import { fetchCategorieProdotti, fetchNatureIva, fetchProdotti, fetchProdottoPrezziCombinati, fetchProdottoVariazioni } from '../../services/prodotti'
 import { fetchPacchettoDetail, fetchPacchetti } from '../../services/pacchetti'
@@ -64,12 +69,29 @@ const formatDateTime = (value) => {
   return date.toLocaleString('it-IT')
 }
 
+const formatFileSize = (value) => {
+  const bytes = Number(value) || 0
+  if (bytes <= 0) {
+    return '0 B'
+  }
+  const units = ['B', 'KB', 'MB', 'GB', 'TB']
+  let size = bytes
+  let index = 0
+  while (size >= 1024 && index < units.length - 1) {
+    size /= 1024
+    index += 1
+  }
+  const formatted = index === 0 ? Math.round(size) : size.toFixed(2)
+  return `${formatted} ${units[index]}`
+}
+
 const ContrattiDetail = () => {
   const navigate = useNavigate()
   const location = useLocation()
   const query = new URLSearchParams(location.search)
   const id = Number(query.get('id') || 0)
   const { token, logout, user } = useAuth()
+  const { has } = usePermissions()
 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -91,6 +113,17 @@ const ContrattiDetail = () => {
   const [revisionModalLoading, setRevisionModalLoading] = useState(false)
   const [revisionModalError, setRevisionModalError] = useState(null)
   const [revisionModalData, setRevisionModalData] = useState(null)
+  const [files, setFiles] = useState([])
+  const [filesLoading, setFilesLoading] = useState(false)
+  const [filesError, setFilesError] = useState(null)
+  const [filesVersion, setFilesVersion] = useState(0)
+  const [fileUploading, setFileUploading] = useState(false)
+  const [fileUploadError, setFileUploadError] = useState(null)
+  const [fileUploadSuccess, setFileUploadSuccess] = useState(null)
+  const [fileDownloadError, setFileDownloadError] = useState(null)
+  const [fileDeletingId, setFileDeletingId] = useState(null)
+  const [fileDeleteError, setFileDeleteError] = useState(null)
+  const [fileForm, setFileForm] = useState({ file: null })
 
   const [emailModalVisible, setEmailModalVisible] = useState(false)
   const [emailSending, setEmailSending] = useState(false)
@@ -139,6 +172,7 @@ const ContrattiDetail = () => {
   const [selPacchetto, setSelPacchetto] = useState('')
   const [pkgPreview, setPkgPreview] = useState([])
   const [pkgOnlyActive, setPkgOnlyActive] = useState(true)
+  const canUploadContrattoFiles = has('contr.write')
 
   useEffect(() => {
     if (!id) {
@@ -345,6 +379,33 @@ const ContrattiDetail = () => {
     return () => controller.abort()
   }, [token, pkgOpen, selPacchetto])
 
+  useEffect(() => {
+    if (!token || !id) return
+    const controller = new AbortController()
+    setFilesLoading(true)
+    setFilesError(null)
+    fetchContrattoFiles({
+      token,
+      id,
+      signal: controller.signal,
+    })
+      .then((items) => {
+        if (controller.signal.aborted) return
+        setFiles(Array.isArray(items) ? items : [])
+      })
+      .catch((err) => {
+        if (controller.signal.aborted) return
+        console.error('Impossibile caricare i file firmati del contratto:', err)
+        setFilesError(err)
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          setFilesLoading(false)
+        }
+      })
+    return () => controller.abort()
+  }, [token, id, filesVersion, refreshCounter])
+
   const loadAnagrafiche = async (query) => {
     if (!token) return
     if (searchAbortRef.current) {
@@ -376,39 +437,6 @@ const ContrattiDetail = () => {
 
   const updateLine = (index, patch) => {
     setRighe((rows) => rows.map((row, i) => (i === index ? { ...row, ...patch } : row)))
-  }
-
-  const addTier = (lineIndex) => {
-    setRighe((rows) =>
-      rows.map((row, i) =>
-        i === lineIndex
-          ? { ...row, sconti: [...(row.sconti || []), { quantita_min: 0, quantita_max: '', sconto: 0 }] }
-          : row,
-      ),
-    )
-  }
-
-  const updateTier = (lineIndex, tierIndex, patch) => {
-    setRighe((rows) =>
-      rows.map((row, i) => {
-        if (i !== lineIndex) return row
-        const tiers = Array.isArray(row.sconti) ? row.sconti : []
-        return {
-          ...row,
-          sconti: tiers.map((t, idx) => (idx === tierIndex ? { ...t, ...patch } : t)),
-        }
-      }),
-    )
-  }
-
-  const removeTier = (lineIndex, tierIndex) => {
-    setRighe((rows) =>
-      rows.map((row, i) => {
-        if (i !== lineIndex) return row
-        const tiers = Array.isArray(row.sconti) ? row.sconti : []
-        return { ...row, sconti: tiers.filter((_, idx) => idx !== tierIndex) }
-      }),
-    )
   }
 
   const handleAddLine = () => {
@@ -552,6 +580,108 @@ const ContrattiDetail = () => {
       setEmailSending(false)
     }
   }, [token, id, emailTo, emailCc, emailSubject, emailBody, logout, user])
+
+
+  const handleFileInputChange = (event) => {
+    const file = event?.target?.files?.[0] ?? null
+    setFileForm({ file })
+    setFileUploadError(null)
+    setFileUploadSuccess(null)
+  }
+
+  const handleFileUpload = async (event) => {
+    if (event?.preventDefault) {
+      event.preventDefault()
+    }
+    if (!token || !id || !fileForm.file || !canUploadContrattoFiles) {
+      return
+    }
+    setFileUploading(true)
+    setFileUploadError(null)
+    setFileUploadSuccess(null)
+    try {
+      await uploadContrattoFile({
+        token,
+        id,
+        file: fileForm.file,
+        createdBy: user?.id,
+      })
+      setFileUploadSuccess('File caricato correttamente.')
+      setFileForm({ file: null })
+      setFilesVersion((value) => value + 1)
+    } catch (err) {
+      console.error('Impossibile caricare il file firmato:', err)
+      setFileUploadError(err)
+    } finally {
+      setFileUploading(false)
+    }
+  }
+
+  const handleFileDownload = async (file) => {
+    if (!file?.id_file) {
+      return
+    }
+    const tokenValue = token || getStoredToken()
+    if (!tokenValue) {
+      return
+    }
+    setFileDownloadError(null)
+    try {
+      const url = buildApiUrl('/contrattiFilesDownload.php', { id: file.id_file })
+      const response = await fetch(url.toString(), {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${tokenValue}`,
+          'X-Authorization': `Bearer ${tokenValue}`,
+          'X-Access-Token': tokenValue,
+        },
+      })
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null)
+        const message = payload?.message || `Errore ${response.status}`
+        throw new Error(message)
+      }
+      const blob = await response.blob()
+      const header = response.headers.get('content-disposition') || ''
+      const match = header.match(/filename=\"?([^\";]+)\"?/i)
+      const name = match?.[1] || file.original_name || file.file_name || 'documento.pdf'
+      const urlBlob = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = urlBlob
+      link.download = name
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.URL.revokeObjectURL(urlBlob)
+    } catch (err) {
+      console.error('Impossibile scaricare il file firmato:', err)
+      setFileDownloadError(err)
+    }
+  }
+
+  const handleFileDelete = async (file) => {
+    if (!file?.id_file || !token) {
+      return
+    }
+    if (!window.confirm('Confermi l\'eliminazione di questo file dal database? Il PDF rimane disponibile sul server.')) {
+      return
+    }
+    setFileDeleteError(null)
+    setFileDeletingId(file.id_file)
+    try {
+      await deleteContrattoFile({ token, id: file.id_file })
+      setFilesVersion((value) => value + 1)
+    } catch (err) {
+      if (err?.status === 401 && logout) {
+        logout()
+        return
+      }
+      console.error('Impossibile eliminare il file dal database:', err)
+      setFileDeleteError(err)
+    } finally {
+      setFileDeletingId(null)
+    }
+  }
 
 
   const syncDataFine = (value) => {
@@ -1350,69 +1480,6 @@ const ContrattiDetail = () => {
                           </CButton>
                         </CTableDataCell>
                       </CTableRow>
-                      <CTableRow>
-                        <CTableDataCell colSpan={7}>
-                          <div className="d-flex justify-content-between align-items-center mb-2">
-                            <span className="text-body-secondary small">Sconti per quantita'</span>
-                            <CButton color="secondary" size="sm" variant="outline" onClick={() => addTier(idx)} type="button">
-                              <CIcon icon={cilPlus} className="me-2" /> Aggiungi soglia
-                            </CButton>
-                          </div>
-                          {row.sconti && row.sconti.length > 0 ? (
-                            <CTable small responsive className="mb-0">
-                              <CTableHead color="light">
-                                <CTableRow>
-                                  <CTableHeaderCell style={{ width: 160 }}>Q.ta min</CTableHeaderCell>
-                                  <CTableHeaderCell style={{ width: 160 }}>Q.ta max</CTableHeaderCell>
-                                  <CTableHeaderCell style={{ width: 160 }}>Sconto %</CTableHeaderCell>
-                                  <CTableHeaderCell style={{ width: 80 }} />
-                                </CTableRow>
-                              </CTableHead>
-                              <CTableBody>
-                                {row.sconti.map((tier, tIdx) => (
-                                  <CTableRow key={`tier-${idx}-${tIdx}`}>
-                                    <CTableDataCell>
-                                      <CFormInput
-                                        type="number"
-                                        min="0"
-                                        step="0.01"
-                                        value={tier.quantita_min}
-                                        onChange={(e) => updateTier(idx, tIdx, { quantita_min: e.target.value })}
-                                      />
-                                    </CTableDataCell>
-                                    <CTableDataCell>
-                                      <CFormInput
-                                        type="number"
-                                        min="0"
-                                        step="0.01"
-                                        value={tier.quantita_max}
-                                        onChange={(e) => updateTier(idx, tIdx, { quantita_max: e.target.value })}
-                                      />
-                                    </CTableDataCell>
-                                    <CTableDataCell>
-                                      <CFormInput
-                                        type="number"
-                                        min="0"
-                                        max="100"
-                                        step="0.1"
-                                        value={tier.sconto}
-                                        onChange={(e) => updateTier(idx, tIdx, { sconto: e.target.value })}
-                                      />
-                                    </CTableDataCell>
-                                    <CTableDataCell className="text-center">
-                                      <CButton color="link" size="sm" onClick={() => removeTier(idx, tIdx)}>
-                                        <CIcon icon={cilTrash} />
-                                      </CButton>
-                                    </CTableDataCell>
-                                  </CTableRow>
-                                ))}
-                              </CTableBody>
-                            </CTable>
-                          ) : (
-                            <div className="small text-body-secondary">Nessuna soglia configurata.</div>
-                          )}
-                        </CTableDataCell>
-                      </CTableRow>
                     </React.Fragment>
                   )
                 })}
@@ -1427,22 +1494,141 @@ const ContrattiDetail = () => {
               </PermissionButton>
             </div>
           </fieldset>
-          <div className="d-flex gap-2 mt-2">
-            <PermissionButton
-              color="danger"
-              variant="outline"
-              onClick={handleDelete}
-              disabled={deleting}
-              permission="contr.delete"
-            >
-              {deleting ? <CSpinner size="sm" className="me-2" /> : <CIcon icon={cilTrash} className="me-2" />}
-              Elimina
-            </PermissionButton>
-          </div>
-        </CForm>
+        <div className="d-flex gap-2 mt-2">
+          <PermissionButton
+            color="danger"
+            variant="outline"
+            onClick={handleDelete}
+            disabled={deleting}
+            permission="contr.delete"
+          >
+            {deleting ? <CSpinner size="sm" className="me-2" /> : <CIcon icon={cilTrash} className="me-2" />}
+            Elimina
+          </PermissionButton>
+        </div>
+      </CForm>
 
-        <section className="mt-4">
-          <h6 className="mb-3 text-body-secondary">Revisioni</h6>
+      <section className="mt-4">
+        <div className="d-flex align-items-start justify-content-between mb-3">
+          <div>
+            <h6 className="mb-1 text-body-secondary">PDF firmati</h6>
+            <div className="small text-body-secondary">Carica una copia firmata del contratto.</div>
+          </div>
+        </div>
+        {fileUploadError && (
+          <CAlert color="danger">
+            {fileUploadError?.payload?.message || fileUploadError.message || 'Impossibile caricare il file.'}
+          </CAlert>
+        )}
+        {fileUploadSuccess && <CAlert color="success">{fileUploadSuccess}</CAlert>}
+        {fileDownloadError && (
+          <CAlert color="danger">
+            {fileDownloadError?.payload?.message || fileDownloadError.message || 'Impossibile scaricare il file.'}
+          </CAlert>
+        )}
+        {fileDeleteError && (
+          <CAlert color="danger">
+            {fileDeleteError?.payload?.message || fileDeleteError.message || 'Impossibile eliminare il file dal database.'}
+          </CAlert>
+        )}
+        <CForm onSubmit={handleFileUpload} className="mb-3">
+          <CRow className="g-3 align-items-end">
+            <CCol xs={12} md={8}>
+              <CFormLabel htmlFor="contratto-file">File PDF firmato</CFormLabel>
+              <CFormInput
+                id="contratto-file"
+                type="file"
+                accept=".pdf,application/pdf"
+                onChange={handleFileInputChange}
+                disabled={!canUploadContrattoFiles || fileUploading}
+              />
+              <div className="form-text">Solo PDF firmati. Trascina o seleziona il file.</div>
+              {fileForm.file && (
+                <div className="small text-body-secondary mt-1">Selezionato: {fileForm.file.name}</div>
+              )}
+            </CCol>
+            <CCol xs="auto">
+              <PermissionButton
+                color="primary"
+                type="submit"
+                permission="contr.write"
+                disabled={!canUploadContrattoFiles || fileUploading || !fileForm.file}
+              >
+                {fileUploading ? (
+                  <>
+                    <CSpinner size="sm" className="me-2" /> Caricamento...
+                  </>
+                ) : (
+                  'Carica file'
+                )}
+              </PermissionButton>
+            </CCol>
+          </CRow>
+        </CForm>
+        {filesError && (
+          <CAlert color="danger">
+            {filesError?.message || 'Impossibile caricare i file firmati.'}
+          </CAlert>
+        )}
+        {filesLoading ? (
+          <div className="text-center py-3">
+            <CSpinner />
+          </div>
+        ) : files.length === 0 ? (
+          <div className="small text-body-secondary">Nessun file caricato.</div>
+        ) : (
+          <CTable hover responsive small>
+            <CTableHead color="light">
+              <CTableRow>
+                <CTableHeaderCell>File</CTableHeaderCell>
+                <CTableHeaderCell>Dimensione</CTableHeaderCell>
+                <CTableHeaderCell>Data</CTableHeaderCell>
+                <CTableHeaderCell>Caricato da</CTableHeaderCell>
+                <CTableHeaderCell className="text-end">Azioni</CTableHeaderCell>
+              </CTableRow>
+            </CTableHead>
+            <CTableBody>
+              {files.map((file) => (
+                <CTableRow key={file.id_file}>
+                  <CTableDataCell>{file.original_name || file.file_name || 'Documento'}</CTableDataCell>
+                  <CTableDataCell>{formatFileSize(file.size_bytes)}</CTableDataCell>
+                  <CTableDataCell>{formatDateTime(file.created_at)}</CTableDataCell>
+                  <CTableDataCell>{file.username || '-'}</CTableDataCell>
+                  <CTableDataCell className="text-end">
+                    <PermissionButton
+                      color="link"
+                      size="sm"
+                      permission="contr.read"
+                      onClick={() => handleFileDownload(file)}
+                      aria-label="Scarica file firmato"
+                    >
+                      <CIcon icon={cilCloudDownload} />
+                    </PermissionButton>
+                    <PermissionButton
+                      color="link"
+                      size="sm"
+                      className="ms-2 text-danger"
+                      permission="contr.write"
+                      onClick={() => handleFileDelete(file)}
+                      disabled={fileDeletingId === file.id_file}
+                      aria-label="Elimina dal database"
+                    >
+                      {fileDeletingId === file.id_file ? (
+                        <CSpinner size="sm" className="me-1" />
+                      ) : (
+                        <CIcon icon={cilTrash} />
+                      )}
+                    </PermissionButton>
+                  </CTableDataCell>
+                </CTableRow>
+              ))}
+            </CTableBody>
+          </CTable>
+        )}
+      </section>
+
+      <section className="mt-4">
+        <h6 className="mb-3 text-body-secondary">Revisioni</h6>
           {revisions.length === 0 ? (
             <div className="small text-body-secondary">Nessuna revisione registrata.</div>
           ) : (

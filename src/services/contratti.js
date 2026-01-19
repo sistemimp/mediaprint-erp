@@ -1,4 +1,4 @@
-import { apiFetch } from './apiClient'
+import { apiFetch, buildApiUrl, getStoredToken } from './apiClient'
 
 export const fetchContratti = async ({ token, q, id_anagrafica, onlyActive, signal } = {}) => {
   const params = {}
@@ -126,4 +126,83 @@ export const fetchContrattoRevisionDetail = async ({ token, id, signal } = {}) =
     signal,
   })
   return response ?? {}
+}
+
+export const fetchContrattoFiles = async ({ token, id, signal } = {}) => {
+  const numericId = Number(id)
+  if (!Number.isFinite(numericId) || numericId <= 0) {
+    throw new Error('ID contratto mancante o non valido.')
+  }
+  const payload = await apiFetch('/contrattiFilesList.php', {
+    token,
+    params: { id: numericId },
+    signal,
+  })
+  return Array.isArray(payload?.items) ? payload.items : []
+}
+
+export const uploadContrattoFile = async ({ token, id, file, createdBy, signal } = {}) => {
+  const numericId = Number(id)
+  if (!Number.isFinite(numericId) || numericId <= 0) {
+    throw new Error('ID contratto mancante o non valido.')
+  }
+  if (!file) {
+    throw new Error('File mancante.')
+  }
+
+  const formData = new FormData()
+  formData.append('id_contratto', numericId)
+  if (createdBy) {
+    formData.append('created_by', createdBy)
+  }
+  formData.append('file', file)
+
+  const url = buildApiUrl('/contrattiFilesUpload.php')
+  const headers = {}
+  const resolvedToken = token || getStoredToken()
+  if (resolvedToken) {
+    headers.Authorization = `Bearer ${resolvedToken}`
+    headers['X-Authorization'] = `Bearer ${resolvedToken}`
+    headers['X-Access-Token'] = resolvedToken
+  }
+
+  const response = await fetch(url.toString(), {
+    method: 'POST',
+    headers,
+    body: formData,
+    signal,
+  })
+
+  let payload = null
+  try {
+    payload = await response.json()
+  } catch (_error) {
+    payload = null
+  }
+
+  if (!response.ok) {
+    const message = payload?.message || `Errore ${response.status}`
+    const error = new Error(message)
+    error.status = response.status
+    error.payload = payload
+    throw error
+  }
+
+  return payload ?? {}
+}
+
+export const deleteContrattoFile = async ({ token, id, signal } = {}) => {
+  const numericId = Number(id)
+  if (!Number.isFinite(numericId) || numericId <= 0) {
+    throw new Error('ID file contratto mancante o non valido.')
+  }
+
+  const response = await apiFetch('/contrattiFilesDelete.php', {
+    method: 'POST',
+    token,
+    body: { id: numericId },
+    signal,
+  })
+
+  return response ?? { ok: true }
 }

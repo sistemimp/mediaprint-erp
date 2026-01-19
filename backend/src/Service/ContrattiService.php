@@ -571,4 +571,112 @@ HTML;
             'revision' => $revision,
         ];
     }
+
+    /**
+     * @return array{items:list<array<string,mixed>>}
+     */
+    public function filesList(array $input): array
+    {
+        $id = isset($input['id']) ? (int) $input['id'] : (isset($input['id_contratto']) ? (int) $input['id_contratto'] : 0);
+        if ($id <= 0) {
+            throw new \RuntimeException('ID contratto mancante o non valido.', 422);
+        }
+        $contratto = $this->repository->getById($id);
+        if ($contratto === null) {
+            throw new \RuntimeException('Contratto non trovato.', 404);
+        }
+        $items = $this->repository->listFiles($id);
+        return ['items' => $items];
+    }
+
+    /**
+     * @param array<string, mixed> $input
+     * @param array<string, mixed> $file
+     * @return array<string, int>
+     */
+    public function uploadFile(array $input, array $file): array
+    {
+        $id = isset($input['id']) ? (int) $input['id'] : (isset($input['id_contratto']) ? (int) $input['id_contratto'] : 0);
+        if ($id <= 0) {
+            throw new \RuntimeException('ID contratto mancante o non valido.', 422);
+        }
+        $contratto = $this->repository->getById($id);
+        if ($contratto === null) {
+            throw new \RuntimeException('Contratto non trovato.', 404);
+        }
+
+        if (!isset($file['tmp_name']) || !is_uploaded_file($file['tmp_name'])) {
+            throw new \RuntimeException('File mancante o non valido.', 422);
+        }
+        if (isset($file['error']) && (int) $file['error'] !== UPLOAD_ERR_OK) {
+            throw new \RuntimeException('Errore durante il caricamento del file.', 422);
+        }
+
+        $originalName = isset($file['name']) ? basename((string) $file['name']) : 'contratto.pdf';
+        $extension = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
+        if ($extension !== 'pdf') {
+            throw new \RuntimeException('È possibile caricare solo file PDF firmati.', 422);
+        }
+
+        $signature = file_get_contents($file['tmp_name'], false, null, 0, 4);
+        if (!is_string($signature) || strpos($signature, '%PDF') !== 0) {
+            throw new \RuntimeException('Il file caricato non sembra essere un PDF valido.', 422);
+        }
+
+        $finfo = new \finfo(FILEINFO_MIME_TYPE);
+        $detectedMime = $finfo->file($file['tmp_name']);
+        $mimeType = is_string($detectedMime) && $detectedMime !== '' ? $detectedMime : 'application/pdf';
+
+        $safeName = sprintf('%s.pdf', uniqid('ctr_', true));
+        $baseDir = dirname(__DIR__, 2) . '/uploads/contratti/' . $id;
+        if (!is_dir($baseDir) && !mkdir($baseDir, 0775, true) && !is_dir($baseDir)) {
+            throw new \RuntimeException('Impossibile creare la cartella di upload.', 500);
+        }
+
+        $destination = $baseDir . '/' . $safeName;
+        if (!move_uploaded_file($file['tmp_name'], $destination)) {
+            throw new \RuntimeException('Impossibile salvare il file caricato.', 500);
+        }
+
+        $createdBy = isset($input['created_by']) ? (int) $input['created_by'] : null;
+        if ($createdBy <= 0) {
+            $createdBy = null;
+        }
+
+        $fileId = $this->repository->createFile($id, [
+            'file_name' => $safeName,
+            'original_name' => $originalName,
+            'mime_type' => $mimeType,
+            'size_bytes' => isset($file['size']) ? (int) $file['size'] : 0,
+            'created_by' => $createdBy,
+        ]);
+
+        return ['id_file' => $fileId];
+    }
+
+    public function deleteFile(array $input): array
+    {
+        $fileId = isset($input['id']) ? (int) $input['id'] : 0;
+        if ($fileId <= 0) {
+            throw new \RuntimeException('File mancante o non valido.', 422);
+        }
+
+        $file = $this->repository->findFile($fileId);
+        if ($file === null) {
+            throw new \RuntimeException('File non trovato.', 404);
+        }
+
+        $contrattoId = isset($file['id_contratto']) ? (int) $file['id_contratto'] : 0;
+        if ($contrattoId <= 0) {
+            throw new \RuntimeException('File non valido.', 422);
+        }
+
+        $contratto = $this->repository->getById($contrattoId);
+        if ($contratto === null) {
+            throw new \RuntimeException('Contratto non trovato.', 404);
+        }
+
+        $this->repository->deleteFile($fileId);
+        return ['ok' => true];
+    }
 }

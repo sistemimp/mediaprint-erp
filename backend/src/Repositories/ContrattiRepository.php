@@ -78,6 +78,7 @@ final class ContrattiRepository
             $this->ensureComboKeyColumn();
             $this->ensureStatusColumn();
             $this->ensureRevisionTable();
+            $this->ensureFilesSchema();
         } catch (\Throwable $ignored) {
             // Schema best-effort.
         }
@@ -168,6 +169,46 @@ final class ContrattiRepository
                     UNIQUE KEY uniq_contr_revision (id_contratto, numero_revision),
                     CONSTRAINT fk_contr_revision_contratto FOREIGN KEY (id_contratto)
                         REFERENCES tb_contratti (id_contratto) ON DELETE CASCADE
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            SQL);
+        } catch (\Throwable $ignored) {
+            // Best-effort update.
+        }
+    }
+
+    private function ensureFilesSchema(): void
+    {
+        try {
+            $this->pdo->exec(<<<'SQL'
+                CREATE TABLE IF NOT EXISTS tb_contratti_files (
+                    id_file INT UNSIGNED NOT NULL AUTO_INCREMENT,
+                    id_contratto INT UNSIGNED NOT NULL,
+                    file_name VARCHAR(255) NOT NULL,
+                    original_name VARCHAR(255) NOT NULL,
+                    mime_type VARCHAR(128) NOT NULL,
+                    size_bytes INT UNSIGNED NOT NULL DEFAULT 0,
+                    created_by BIGINT(20) UNSIGNED NULL,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (id_file),
+                    KEY idx_contratti_files_contratto (id_contratto),
+                    CONSTRAINT fk_contratti_files_contratto FOREIGN KEY (id_contratto)
+                        REFERENCES tb_contratti (id_contratto) ON DELETE CASCADE,
+                    CONSTRAINT fk_contratti_files_account FOREIGN KEY (created_by)
+                        REFERENCES auth_accounts (id_account) ON DELETE SET NULL
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            SQL);
+            $this->pdo->exec(<<<'SQL'
+                CREATE TABLE IF NOT EXISTS tb_contratti_files_downloads (
+                    id_download INT UNSIGNED NOT NULL AUTO_INCREMENT,
+                    id_file INT UNSIGNED NOT NULL,
+                    downloaded_by BIGINT(20) UNSIGNED NULL,
+                    downloaded_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (id_download),
+                    KEY idx_contratti_files_downloads_file (id_file),
+                    CONSTRAINT fk_contratti_files_downloads_file FOREIGN KEY (id_file)
+                        REFERENCES tb_contratti_files (id_file) ON DELETE CASCADE,
+                    CONSTRAINT fk_contratti_files_downloads_account FOREIGN KEY (downloaded_by)
+                        REFERENCES auth_accounts (id_account) ON DELETE SET NULL
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
             SQL);
         } catch (\Throwable $ignored) {
@@ -729,6 +770,126 @@ final class ContrattiRepository
     public function getRevisionById(int $idRevision): ?array
     {
         return $this->fetchRevision($idRevision);
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function listFiles(int $idContratto): array
+    {
+        $this->ensureSchema();
+        $stmt = $this->pdo->prepare(<<<'SQL'
+            SELECT
+                f.id_file,
+                f.id_contratto,
+                f.file_name,
+                f.original_name,
+                f.mime_type,
+                f.size_bytes,
+                f.created_at,
+                f.created_by,
+                acc.username
+            FROM tb_contratti_files f
+            LEFT JOIN auth_accounts acc ON acc.id_account = f.created_by
+            WHERE f.id_contratto = :id
+            ORDER BY f.created_at DESC, f.id_file DESC
+        SQL);
+        $stmt->bindValue(':id', $idContratto, PDO::PARAM_INT);
+        $stmt->execute();
+        return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     */
+    public function createFile(int $idContratto, array $data): int
+    {
+        $this->ensureSchema();
+        $stmt = $this->pdo->prepare(<<<'SQL'
+            INSERT INTO tb_contratti_files (
+                id_contratto,
+                file_name,
+                original_name,
+                mime_type,
+                size_bytes,
+                created_by,
+                created_at
+            ) VALUES (
+                :id_contratto,
+                :file_name,
+                :original_name,
+                :mime_type,
+                :size_bytes,
+                :created_by,
+                NOW()
+            )
+        SQL);
+        $stmt->bindValue(':id_contratto', $idContratto, PDO::PARAM_INT);
+        $stmt->bindValue(':file_name', (string) $data['file_name'], PDO::PARAM_STR);
+        $stmt->bindValue(':original_name', (string) $data['original_name'], PDO::PARAM_STR);
+        $stmt->bindValue(':mime_type', (string) $data['mime_type'], PDO::PARAM_STR);
+        $stmt->bindValue(':size_bytes', (int) ($data['size_bytes'] ?? 0), PDO::PARAM_INT);
+        if (isset($data['created_by']) && (int) $data['created_by'] > 0) {
+            $stmt->bindValue(':created_by', (int) $data['created_by'], PDO::PARAM_INT);
+        } else {
+            $stmt->bindValue(':created_by', null, PDO::PARAM_NULL);
+        }
+        $stmt->execute();
+        return (int) $this->pdo->lastInsertId();
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    public function findFile(int $fileId): ?array
+    {
+        $this->ensureSchema();
+        $stmt = $this->pdo->prepare(<<<'SQL'
+            SELECT
+                id_file,
+                id_contratto,
+                file_name,
+                original_name,
+                mime_type,
+                size_bytes,
+                created_at,
+                created_by
+            FROM tb_contratti_files
+            WHERE id_file = :id
+            LIMIT 1
+        SQL);
+        $stmt->bindValue(':id', $fileId, PDO::PARAM_INT);
+        $stmt->execute();
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        return $row === false ? null : $row;
+    }
+
+    public function deleteFile(int $fileId): void
+    {
+        $this->ensureSchema();
+        $stmt = $this->pdo->prepare('DELETE FROM tb_contratti_files WHERE id_file = :id');
+        $stmt->bindValue(':id', $fileId, PDO::PARAM_INT);
+        $stmt->execute();
+    }
+
+    public function logFileDownload(int $fileId, ?int $accountId): void
+    {
+        $this->ensureSchema();
+        try {
+            $stmt = $this->pdo->prepare(<<<'SQL'
+                INSERT INTO tb_contratti_files_downloads (id_file, downloaded_by, downloaded_at)
+                VALUES (:id_file, :downloaded_by, NOW())
+            SQL);
+            $stmt->bindValue(':id_file', $fileId, PDO::PARAM_INT);
+            if ($accountId !== null && $accountId > 0) {
+                $stmt->bindValue(':downloaded_by', $accountId, PDO::PARAM_INT);
+            } else {
+                $stmt->bindValue(':downloaded_by', null, PDO::PARAM_NULL);
+            }
+            $stmt->execute();
+        } catch (\Throwable $ignored) {
+            // best-effort logging
+        }
     }
 
     /**

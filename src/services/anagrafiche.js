@@ -241,3 +241,18 @@ export const reactivateAnagrafica = async ({ token, id, signal } = {}) => {
 
   return response ?? { ok: true }
 }
+
+export const fetchTipologieAnagrafiche = async ({ token, signal } = {}) => {
+  const response = await apiFetch('/tipologieAnagraficheList.php', { token, signal })
+  return Array.isArray(response?.items) ? response.items : []
+}
+
+export const fetchRegimiFiscali = async ({ token, signal } = {}) => {
+  const response = await apiFetch('/regimiFiscaliList.php', { token, signal })
+  return Array.isArray(response?.items) ? response.items : []
+}
+
+export const fetchTipologieSedi = async ({ token, signal } = {}) => {
+  const response = await apiFetch('/tipologieSediList.php', { token, signal })
+  return Array.isArray(response?.items) ? response.items : []
+}

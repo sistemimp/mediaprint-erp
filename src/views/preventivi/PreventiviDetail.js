@@ -12,6 +12,7 @@ import {
   CForm,
   CFormInput,
   CFormLabel,
+  CFormCheck,
   CFormSelect,
   CFormTextarea,
   CInputGroup,
@@ -167,6 +168,77 @@ const mergeOggettoOptionLists = (base = [], extra = []) => {
   return merged
 }
 
+const buildAnagraficaOptions = ({
+  baseList,
+  currentId,
+  display = {},
+  query = '',
+}) => {
+  const list = Array.isArray(baseList) ? [...baseList] : []
+  const numericId = Number(currentId)
+  const shouldInjectFallback =
+    Number.isFinite(numericId) && numericId > 0
+  if (shouldInjectFallback) {
+    const fallbackLabel =
+      display?.label ??
+      display?.ragione_sociale ??
+      display?.ragioneSociale ??
+      ''
+    const fallbackEntry = {
+      id_anagrafica: numericId,
+      ragione_sociale: fallbackLabel || '--',
+      codice_cliente:
+        display?.codiceCliente ?? display?.codice_cliente ?? null,
+      piva: display?.piva ?? display?.partita_iva ?? null,
+      codice_fiscale:
+        display?.codiceFiscale ?? display?.codice_fiscale ?? null,
+      email: display?.email ?? null,
+    }
+    const exists = list.some(
+      (c) => Number(c?.id_anagrafica ?? c?.id ?? 0) === numericId,
+    )
+    if (!exists) {
+      list.unshift(fallbackEntry)
+    }
+  }
+
+  const mapById = new Map()
+  for (const item of list) {
+    const cid = item?.id_anagrafica ?? item?.id
+    if (cid == null) continue
+    if (!mapById.has(cid)) {
+      mapById.set(cid, item)
+    }
+  }
+
+  const normalizedList = Array.from(mapById.values())
+  const normalizedQuery = String(query || '').trim().toLowerCase()
+  if (normalizedQuery === '') {
+    return normalizedList
+  }
+
+  const queryNoSep = normalizedQuery.replace(/[ .-]/g, '')
+  return normalizedList.filter((item) => {
+    const rgSociale = String(
+      item?.ragione_sociale ?? item?.ragioneSociale ?? '',
+    ).toLowerCase()
+    const rawPiva = String(
+      item?.piva ?? item?.partita_iva ?? item?.partitaIva ?? '',
+    ).toLowerCase()
+    const pivaNoSep = rawPiva.replace(/[ .-]/g, '')
+    const cf = String(item?.codice_fiscale ?? item?.codiceFiscale ?? '').toLowerCase()
+    const codice = String(
+      item?.codice_cliente ?? item?.codiceCliente ?? '',
+    ).toLowerCase()
+    return (
+      rgSociale.includes(normalizedQuery) ||
+      pivaNoSep.includes(queryNoSep) ||
+      cf.includes(normalizedQuery) ||
+      (codice && codice.includes(normalizedQuery))
+    )
+  })
+}
+
 const DEFAULT_OGGETTO_OPTIONS = [
   { id: 1, id_oggetto: 1, value: '1', label: 'Stampa', attivo: 1 },
   { id: 2, id_oggetto: 2, value: '2', label: 'Imbustamento', attivo: 1 },
@@ -236,6 +308,10 @@ const PreventiviDetail = () => {
     codiceFiscale: null,
     email: null,
   })
+  const [mittenteMode, setMittenteMode] = useState('cliente')
+  const [mittenteAnagraficaId, setMittenteAnagraficaId] = useState('')
+  const [customMittente, setCustomMittente] = useState(null)
+  const [mittenteSearch, setMittenteSearch] = useState('')
   const [dataPreventivo, setDataPreventivo] = useState('')
   const [note, setNote] = useState('')
   const [oggetto, setOggetto] = useState('')
@@ -1030,53 +1106,75 @@ const PreventiviDetail = () => {
     return () => controller.abort()
   }, [token])
 
-  const clientiOptions = useMemo(() => {
-    let list = Array.isArray(allClientiOptions) ? [...allClientiOptions] : []
-    const currentId = clienteDisplay.id ?? (idAnagrafica ? Number(idAnagrafica) : null)
-    if (
-      currentId &&
-      !list.some(
-        (c) => Number(c?.id_anagrafica ?? c?.id ?? 0) === Number(currentId),
-      )
-    ) {
-      list = [
-        {
-          id_anagrafica: currentId,
-          ragione_sociale: clienteDisplay.label || '--',
-          codice_cliente: clienteDisplay.codiceCliente ?? null,
-          piva: clienteDisplay.piva ?? null,
-          codice_fiscale: clienteDisplay.codiceFiscale ?? null,
-        },
-        ...list,
-      ]
-    }
-    // Deduplica per id per evitare duplicati che possono confondere l'autocomplete
-    const mapById = new Map()
-    for (const c of list) {
-      const cid = c?.id_anagrafica ?? c?.id
-      if (cid == null) continue
-      if (!mapById.has(cid)) mapById.set(cid, c)
-    }
-    list = Array.from(mapById.values())
-    const q = (clienteSearch || '').trim().toLowerCase()
-    if (q === '') return list
-    const norm = (s) => String(s || '').toLowerCase()
-    const qNoSep = q.replace(/[ .-]/g, '')
-    return list.filter((c) => {
-      const rs = norm(c.ragione_sociale)
-      const piva = norm(c.piva).replace(/[ .-]/g, '')
-      const cf = norm(c.codice_fiscale)
-      const codice = norm(c.codice_cliente)
-      return (
-        rs.includes(q) ||
-        piva.includes(qNoSep) ||
-        cf.includes(q) ||
-        (codice && codice.includes(q))
-      )
-    })
-  }, [allClientiOptions, clienteSearch, clienteDisplay, idAnagrafica])
+  const clientiOptions = useMemo(
+    () =>
+      buildAnagraficaOptions({
+        baseList: allClientiOptions,
+        currentId: clienteDisplay.id ?? (idAnagrafica ? Number(idAnagrafica) : null),
+        display: clienteDisplay,
+        query: clienteSearch,
+      }),
+    [allClientiOptions, clienteDisplay, clienteSearch, idAnagrafica],
+  )
 
   // Opzioni già filtrate a monte; il componente si occupa solo del rendering/controllo
+  const mittenteInfo = useMemo(() => {
+    const resolvedClienteId =
+      clienteDisplay.id ?? (idAnagrafica ? Number(idAnagrafica) : null)
+    const generalInfo = {
+      id:
+        Number.isFinite(Number(resolvedClienteId)) && Number(resolvedClienteId) > 0
+          ? Number(resolvedClienteId)
+          : null,
+      label: clienteDisplay.label ?? '',
+      codiceCliente: clienteDisplay.codiceCliente ?? null,
+      piva: clienteDisplay.piva ?? null,
+      codiceFiscale: clienteDisplay.codiceFiscale ?? null,
+      email: clienteDisplay.email ?? null,
+    }
+    if (mittenteMode === 'cliente') {
+      return generalInfo
+    }
+    if (!customMittente) {
+      return {
+        id: null,
+        label: '',
+        codiceCliente: null,
+        piva: null,
+        codiceFiscale: null,
+        email: null,
+      }
+    }
+    const rawId = Number(customMittente?.id_anagrafica ?? customMittente?.id ?? null)
+    return {
+      id: Number.isFinite(rawId) && rawId > 0 ? rawId : null,
+      label:
+        customMittente.ragione_sociale ??
+        customMittente.ragioneSociale ??
+        customMittente.nome ??
+        '',
+      codiceCliente: customMittente.codice_cliente ?? customMittente.codiceCliente ?? null,
+      piva:
+        customMittente.piva ??
+        customMittente.partita_iva ??
+        customMittente.partitaIva ??
+        null,
+      codiceFiscale:
+        customMittente.codice_fiscale ?? customMittente.codiceFiscale ?? null,
+      email: customMittente.email ?? customMittente.contatto_email ?? null,
+    }
+  }, [clienteDisplay, customMittente, idAnagrafica, mittenteMode])
+
+  const mittenteOptions = useMemo(
+    () =>
+      buildAnagraficaOptions({
+        baseList: allClientiOptions,
+        currentId: mittenteInfo.id,
+        display: mittenteInfo,
+        query: mittenteSearch,
+      }),
+    [allClientiOptions, mittenteInfo, mittenteSearch],
+  )
 
   // Carica categorie e nature IVA per stepper
   useEffect(() => {
@@ -2663,6 +2761,87 @@ const PreventiviDetail = () => {
                 </CCol>
                 <CCol md={12}>
                   <CFormLabel>Oggetto:{selectedOggetti}</CFormLabel>
+                </CCol>
+              </CRow>
+            </section>
+
+            <section className="mb-4">
+              <div className="d-flex align-items-start justify-content-between mb-2">
+                <h6 className="mb-0 text-body-secondary">Mittente spedizione</h6>
+                <small className="text-body-secondary">
+                  Puoi spedire dal cliente indicato o selezionare un altro mittente.
+                </small>
+              </div>
+              <CRow className="g-3">
+                <CCol md={12}>
+                  <div className="d-flex flex-wrap gap-3">
+                    <CFormCheck
+                      type="radio"
+                      id="mittente-mode-cliente"
+                      name="mittente-mode"
+                      label="Usa l'anagrafica del preventivo"
+                      checked={mittenteMode === 'cliente'}
+                      onChange={() => setMittenteMode('cliente')}
+                      disabled={uiDisabled}
+                    />
+                    <CFormCheck
+                      type="radio"
+                      id="mittente-mode-altro"
+                      name="mittente-mode"
+                      label="Seleziona un mittente alternativo"
+                      checked={mittenteMode === 'altro'}
+                      onChange={() => setMittenteMode('altro')}
+                      disabled={uiDisabled}
+                    />
+                  </div>
+                </CCol>
+                {mittenteMode === 'altro' && (
+                  <CCol md={6}>
+                    <CFormLabel>Mittente alternativo</CFormLabel>
+                    <AnagraficaAutocomplete
+                      items={mittenteOptions}
+                      value={mittenteAnagraficaId}
+                      onChange={(id) => setMittenteAnagraficaId(id)}
+                      onChangeCliente={(cliente) => setCustomMittente(cliente)}
+                      onSearch={(q) => {
+                        const s = String(q || '')
+                        setMittenteSearch((prev) => (prev === s ? prev : s))
+                      }}
+                      loading={loadingClienti}
+                      disabled={uiDisabled}
+                      placeholder="Seleziona mittente spedizione"
+                    />
+                  </CCol>
+                )}
+                <CCol md={12}>
+                  <div className="border rounded-3 p-3 bg-body">
+                    <div className="text-body-secondary small mb-1">Mittente attivo</div>
+                    <div className="fw-semibold mb-2">
+                      {mittenteInfo.label || 'Mittente non definito'}
+                    </div>
+                    <CRow className="gy-2">
+                      <CCol xs={6} sm={4} md={3}>
+                        <div className="text-body-secondary small">P.IVA</div>
+                        <div className="fw-semibold">{mittenteInfo.piva || '-'}</div>
+                      </CCol>
+                      <CCol xs={6} sm={4} md={3}>
+                        <div className="text-body-secondary small">Codice fiscale</div>
+                        <div className="fw-semibold">
+                          {mittenteInfo.codiceFiscale || '-'}
+                        </div>
+                      </CCol>
+                      <CCol xs={6} sm={4} md={3}>
+                        <div className="text-body-secondary small">Codice cliente</div>
+                        <div className="fw-semibold">
+                          {mittenteInfo.codiceCliente || '-'}
+                        </div>
+                      </CCol>
+                      <CCol xs={6} sm={4} md={3}>
+                        <div className="text-body-secondary small">Email</div>
+                        <div className="fw-semibold">{mittenteInfo.email || '-'}</div>
+                      </CCol>
+                    </CRow>
+                  </div>
                 </CCol>
               </CRow>
             </section>

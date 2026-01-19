@@ -5,6 +5,10 @@ import {
   CAlert,
   CBadge,
   CButton,
+  CAccordion,
+  CAccordionBody,
+  CAccordionHeader,
+  CAccordionItem,
   CCard,
   CCardBody,
   CCardHeader,
@@ -39,9 +43,16 @@ import {
   cilTrash,
 } from "@coreui/icons"
 
-import { fetchAnagraficaDetail, updateAnagraficaDetail } from "../../services/anagrafiche"
+import {
+  fetchAnagraficaDetail,
+  updateAnagraficaDetail,
+  fetchTipologieAnagrafiche,
+  fetchRegimiFiscali,
+  fetchTipologieSedi,
+} from "../../services/anagrafiche"
 import { apiFetch } from "../../services/apiClient"
 import { fetchPaymentTerms } from "../../services/paymentTerms"
+import { fetchFattureConfig } from "../../services/fatture"
 import BottomToast from "../../components/BottomToast"
 import { useAuth } from "../../context/AuthContext"
 import { useBreadcrumbActions } from "../../context/BreadcrumbActionsContext"
@@ -167,11 +178,66 @@ const renderValue = (value) => {
   return value
 }
 
-const renderBooleanBadge = (value) =>
-  Number(value) === 1 ? (
-    <CBadge color="primary">Si</CBadge>
-  ) : (
-    <span className="text-body-secondary">No</span>
+const formatLookupOptionLabel = (label, code, fallbackValue) => {
+  if (label && code) {
+    return `${label} (${code})`
+  }
+  if (label) {
+    return label
+  }
+  if (code) {
+    return code
+  }
+  if (fallbackValue !== undefined && fallbackValue !== null) {
+    return String(fallbackValue)
+  }
+  return ""
+}
+
+const formatLookupValue = (label, code, fallbackValue) => {
+  if (label && code) {
+    return `${label} (${code})`
+  }
+  if (label) {
+    return label
+  }
+  if (code) {
+    return code
+  }
+  if (fallbackValue !== undefined && fallbackValue !== null) {
+    return fallbackValue
+  }
+  return null
+}
+
+const formatTipoLabel = (item) => {
+  if (!item) {
+    return null
+  }
+  if (item.label) {
+    return item.label
+  }
+  if (item.code) {
+    return item.code
+  }
+  if (item.id_tipo !== undefined && item.id_tipo !== null) {
+    return `ID ${item.id_tipo}`
+  }
+  return null
+}
+
+const getTipologiaValue = (anagrafica) =>
+  formatLookupValue(
+    anagrafica?.tipologia_label,
+    anagrafica?.tipologia_code,
+    anagrafica?.id_tipologia,
+  )
+
+const getRegimeFiscaleValue = (anagrafica) =>
+  formatLookupValue(
+    anagrafica?.regime_label,
+    anagrafica?.regime_code,
+    anagrafica?.id_sdi_regime_fiscale,
   )
 
 const DetailField = ({ label, value, compact = false }) => (
@@ -238,6 +304,12 @@ const statoOptions = [
   { label: "Disattiva", value: "disattiva" },
 ]
 
+const DEFAULT_TIPOLOGIE_SEDI = [
+  { id_tipo: 1, code: "LEGALE", label: "Sede legale" },
+  { id_tipo: 2, code: "OPERATIVA", label: "Sede operativa" },
+  { id_tipo: 3, code: "MAGAZZINO", label: "Magazzino" },
+]
+
 const KPI_PERIOD_OPTIONS = [
   { value: 'all', label: 'Tutti' },
   { value: 'month', label: 'Mese' },
@@ -259,6 +331,12 @@ const AnagraficaDetail = () => {
   const [paymentTerms, setPaymentTerms] = useState([])
   const [paymentTermsLoading, setPaymentTermsLoading] = useState(false)
   const [paymentTermsError, setPaymentTermsError] = useState(null)
+  const [modalitaOptions, setModalitaOptions] = useState([])
+  const [modalitaLoading, setModalitaLoading] = useState(false)
+  const [modalitaError, setModalitaError] = useState(null)
+  const [tipologieLookup, setTipologieLookup] = useState([])
+  const [regimiLookup, setRegimiLookup] = useState([])
+  const [tipologieSediLookup, setTipologieSediLookup] = useState([])
 
   const [mutationError, setMutationError] = useState(null)
   const [toast, setToast] = useState({ open: false, type: 'success', message: '' })
@@ -292,6 +370,12 @@ const AnagraficaDetail = () => {
     () => (Array.isArray(detail?.contatti) ? detail.contatti : []),
     [detail?.contatti],
   )
+  const editingContact = useMemo(() => {
+    if (!editingContactId || editingContactId === 'new') {
+      return null
+    }
+    return contatti.find((c) => c.id_contatto === editingContactId) ?? null
+  }, [editingContactId, contatti])
   const contattiArchiviati = useMemo(
     () => (Array.isArray(detail?.contatti_archiviati) ? detail.contatti_archiviati : []),
     [detail?.contatti_archiviati],
@@ -320,10 +404,96 @@ const AnagraficaDetail = () => {
       label: term.label,
     }))
   }, [paymentTerms])
+  const modalitaSelectOptions = useMemo(() => {
+    if (!Array.isArray(modalitaOptions)) {
+      return []
+    }
+    const seen = new Set()
+    return modalitaOptions
+      .filter((item) => item && item.attivo !== false)
+      .map((item) => {
+        if (!item) {
+          return null
+        }
+        const rawValue =
+          item.code ?? item.label ?? (item.id_modalita !== undefined && item.id_modalita !== null ? String(item.id_modalita) : "")
+        const value = rawValue !== undefined && rawValue !== null ? String(rawValue) : ""
+        if (!value) {
+          return null
+        }
+        const labelParts = []
+        if (item.code) {
+          labelParts.push(item.code)
+        }
+        if (item.label) {
+          labelParts.push(item.label)
+        }
+        const label = labelParts.length > 0 ? labelParts.join(" - ") : value
+        return { value, label }
+      })
+      .filter(Boolean)
+      .filter((option) => {
+        if (seen.has(option.value)) {
+          return false
+        }
+        seen.add(option.value)
+        return true
+      })
+  }, [modalitaOptions])
+  const sedeAccordionItems = useMemo(() => {
+    if (editingSedeId === "new") {
+      return [{ id_sede: "new" }, ...sedi]
+    }
+    return [...sedi]
+  }, [editingSedeId, sedi])
   const currentPaymentTermSelection =
     fiscaleForm && fiscaleForm.id_cond_pagamento !== "" && fiscaleForm.id_cond_pagamento !== undefined && fiscaleForm.id_cond_pagamento !== null
       ? paymentTermsMap.get(String(fiscaleForm.id_cond_pagamento))
       : null
+  const tipologiaSelectOptions = useMemo(() => {
+    if (!Array.isArray(tipologieLookup)) {
+      return []
+    }
+    return tipologieLookup
+      .filter((item) => item && item.id_tipologia !== undefined && item.id_tipologia !== null)
+      .map((item) => ({
+        value: String(item.id_tipologia),
+        label: formatLookupOptionLabel(item.label, item.code, item.id_tipologia),
+      }))
+  }, [tipologieLookup])
+  const regimiSelectOptions = useMemo(() => {
+    if (!Array.isArray(regimiLookup)) {
+      return []
+    }
+    return regimiLookup
+      .filter((item) => item && item.id_regime !== undefined && item.id_regime !== null)
+      .map((item) => ({
+        value: String(item.id_regime),
+        label: formatLookupOptionLabel(item.label, item.code, item.id_regime),
+      }))
+  }, [regimiLookup])
+  const tipologieSediSelectOptions = useMemo(() => {
+    if (!Array.isArray(tipologieSediLookup)) {
+      return []
+    }
+    return tipologieSediLookup
+      .filter((item) => item && item.id_tipo !== undefined && item.id_tipo !== null)
+      .map((item) => ({
+        value: String(item.id_tipo),
+        label: formatTipoLabel(item) ?? String(item.id_tipo),
+      }))
+  }, [tipologieSediLookup])
+  const tipologieSediLookupMap = useMemo(() => {
+    const map = new Map()
+    if (Array.isArray(tipologieSediLookup)) {
+      tipologieSediLookup.forEach((item) => {
+        if (item && item.id_tipo !== undefined && item.id_tipo !== null) {
+          map.set(String(item.id_tipo), formatTipoLabel(item) ?? String(item.id_tipo))
+        }
+      })
+    }
+    return map
+  }, [tipologieSediLookup])
 
   const locationStateId =
     location && typeof location.state === "object" && location.state !== null
@@ -439,6 +609,94 @@ const AnagraficaDetail = () => {
           setPaymentTermsLoading(false)
         }
       })
+
+    return () => {
+      isMounted = false
+      controller.abort()
+    }
+  }, [token])
+
+  useEffect(() => {
+    if (!token) {
+      setModalitaOptions([])
+      setModalitaError(null)
+      setModalitaLoading(false)
+      return
+    }
+
+    const controller = new AbortController()
+    let isMounted = true
+    setModalitaLoading(true)
+    setModalitaError(null)
+
+    fetchFattureConfig({ token, signal: controller.signal })
+      .then((data) => {
+        if (!isMounted) {
+          return
+        }
+        const modalita = Array.isArray(data?.modalita_pagamento) ? data.modalita_pagamento : []
+        setModalitaOptions(modalita)
+      })
+      .catch((fetchError) => {
+        if (fetchError.name === "AbortError" || !isMounted) {
+          return
+        }
+        if (fetchError.status === 401 && logout) {
+          logout()
+          return
+        }
+        setModalitaError(fetchError)
+        setModalitaOptions([])
+      })
+      .finally(() => {
+        if (isMounted) {
+          setModalitaLoading(false)
+        }
+      })
+
+    return () => {
+      isMounted = false
+      controller.abort()
+    }
+  }, [token, logout])
+
+  useEffect(() => {
+    if (!token) {
+      setTipologieLookup([])
+      setRegimiLookup([])
+      setTipologieSediLookup(DEFAULT_TIPOLOGIE_SEDI)
+      return
+    }
+
+    const controller = new AbortController()
+    let isMounted = true
+
+    const loadLookups = async () => {
+      try {
+        const [tipologie, regimi, tipologieSedi] = await Promise.all([
+          fetchTipologieAnagrafiche({ token, signal: controller.signal }),
+          fetchRegimiFiscali({ token, signal: controller.signal }),
+          fetchTipologieSedi({ token, signal: controller.signal }),
+        ])
+        if (!isMounted) {
+          return
+        }
+        setTipologieLookup(Array.isArray(tipologie) ? tipologie : [])
+        setRegimiLookup(Array.isArray(regimi) ? regimi : [])
+        const normalizedTipologieSedi =
+          Array.isArray(tipologieSedi) && tipologieSedi.length > 0 ? tipologieSedi : DEFAULT_TIPOLOGIE_SEDI
+        setTipologieSediLookup(normalizedTipologieSedi)
+      } catch {
+        if (!isMounted) {
+          return
+        }
+        setTipologieLookup([])
+        setRegimiLookup([])
+        setTipologieSediLookup(DEFAULT_TIPOLOGIE_SEDI)
+      }
+    }
+
+    loadLookups()
 
     return () => {
       isMounted = false
@@ -888,6 +1146,60 @@ const AnagraficaDetail = () => {
     }
   }
 
+  const handleContactRestore = useCallback(async (contattoId) => {
+    if (!recordId || !contattoId) {
+      return
+    }
+    setMutationError(null)
+    setRestoringArchivedId(contattoId)
+    try {
+      const response = await updateAnagraficaDetail({
+        token,
+        id: recordId,
+        kpiPeriod,
+        contatti: [{ action: "restore", id_contatto: contattoId }],
+      })
+      handleMutationSuccess(response)
+    } catch (mutationErrorInstance) {
+      if (mutationErrorInstance.status === 401 && logout) {
+        logout()
+        return
+      }
+      setMutationError(mutationErrorInstance.payload?.message || mutationErrorInstance.message)
+    } finally {
+      setRestoringArchivedId(null)
+    }
+  }, [handleMutationSuccess, kpiPeriod, logout, recordId, token])
+
+  const handleArchivedDelete = useCallback(async (contattoId) => {
+    if (!recordId || !contattoId) {
+      return
+    }
+    const confirmed = window.confirm(`Confermi l'eliminazione definitiva del contatto archiviato ${contattoId}?`)
+    if (!confirmed) {
+      return
+    }
+    setMutationError(null)
+    setDeletingArchivedId(contattoId)
+    try {
+      const response = await updateAnagraficaDetail({
+        token,
+        id: recordId,
+        kpiPeriod,
+        contatti: [{ action: "hard_delete", id_contatto: contattoId }],
+      })
+      handleMutationSuccess(response)
+    } catch (mutationErrorInstance) {
+      if (mutationErrorInstance.status === 401 && logout) {
+        logout()
+        return
+      }
+      setMutationError(mutationErrorInstance.payload?.message || mutationErrorInstance.message)
+    } finally {
+      setDeletingArchivedId(null)
+    }
+  }, [handleMutationSuccess, kpiPeriod, logout, recordId, token])
+
   const handleContactFieldChange = (field) => (event) => {
     const value = event.target.type === "checkbox" ? event.target.checked : event.target.value
     setContactForm((current) => ({
@@ -909,6 +1221,7 @@ const AnagraficaDetail = () => {
       telefono: contactForm.telefono,
       cellulare: contactForm.cellulare,
       email: contactForm.email,
+      note: contactForm.note,
       id_sede: contactForm.id_sede === "" ? null : Number(contactForm.id_sede),
       is_referente: contactForm.is_referente ? 1 : 0,
       is_predefinito: contactForm.is_predefinito ? 1 : 0,
@@ -1186,13 +1499,13 @@ const AnagraficaDetail = () => {
     const formatSedeFromContact = (c) => {
       const composed = (c?.sede_denominazione || c?.sede_indirizzo)
         ? [
-            c.sede_denominazione,
-            c.sede_indirizzo,
-            [c.sede_cap, c.sede_comune].filter(Boolean).join(' '),
-            c.sede_provincia ? `(${c.sede_provincia})` : null,
-          ]
-            .filter(Boolean)
-            .join(' ')
+          c.sede_denominazione,
+          c.sede_indirizzo,
+          [c.sede_cap, c.sede_comune].filter(Boolean).join(' '),
+          c.sede_provincia ? `(${c.sede_provincia})` : null,
+        ]
+          .filter(Boolean)
+          .join(' ')
         : '-'
       return composed && composed !== '-' ? composed : 'Sede non assegnata'
     }
@@ -1238,6 +1551,271 @@ const AnagraficaDetail = () => {
     return items
   }, [totalContattiArchPages])
 
+  const renderContactFormCard = ({ isNew, contact }) => {
+    if (!contactForm) {
+      return null
+    }
+    const targetId = isNew ? "new" : contact?.id_contatto
+    const isSavingCurrent = savingContactId === targetId
+    const displayName = String(contact?.nome || contactForm.nome || "").trim()
+    const headerTitle = isNew ? "Nuovo contatto" : `Modifica contatto ${displayName || ""}`
+    const headerSubtitle = !isNew && contact?.id_contatto ? `ID ${contact.id_contatto}` : null
+
+    return (
+      <div className="border border-primary-subtle rounded-3 p-3 bg-body">
+        <div className="d-flex justify-content-between align-items-center mb-3 gap-3">
+          <div>
+            <div className="fw-semibold">{headerTitle}</div>
+            {headerSubtitle && <div className="text-body-secondary small">{headerSubtitle}</div>}
+          </div>
+          <CBadge color="primary" className="text-uppercase small">
+            In modifica
+          </CBadge>
+        </div>
+        <CRow className="g-3">
+          <CCol md={6}>
+            <CFormInput
+              value={contactForm.nome}
+              onChange={handleContactFieldChange("nome")}
+              placeholder="Nome"
+              disabled={isSavingCurrent || isDisabled}
+            />
+          </CCol>
+          <CCol md={6}>
+            <CFormInput
+              value={contactForm.ruolo}
+              onChange={handleContactFieldChange("ruolo")}
+              placeholder="Ruolo"
+              disabled={isSavingCurrent || isDisabled}
+            />
+          </CCol>
+          <CCol md={6}>
+            <CFormInput
+              value={contactForm.telefono}
+              onChange={handleContactFieldChange("telefono")}
+              placeholder="Telefono"
+              disabled={isSavingCurrent || isDisabled}
+            />
+          </CCol>
+          <CCol md={6}>
+            <CFormInput
+              value={contactForm.cellulare}
+              onChange={handleContactFieldChange("cellulare")}
+              placeholder="Cellulare"
+              disabled={isSavingCurrent || isDisabled}
+            />
+          </CCol>
+          <CCol md={6}>
+            <CFormInput
+              value={contactForm.email}
+              onChange={handleContactFieldChange("email")}
+              placeholder="Email"
+              disabled={isSavingCurrent || isDisabled}
+            />
+          </CCol>
+          <CCol md={6}>
+            <CFormSelect
+              value={String(contactForm.id_sede ?? "")}
+              onChange={handleContactFieldChange("id_sede")}
+              disabled={isSavingCurrent || isDisabled}
+            >
+              {sedeOptions.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </CFormSelect>
+          </CCol>
+          <CCol md={6}>
+            <CFormCheck
+              type="checkbox"
+              label="Predefinito"
+              checked={contactForm.is_predefinito}
+              onChange={handleContactFieldChange("is_predefinito")}
+              disabled={isSavingCurrent || isDisabled}
+            />
+          </CCol>
+          <CCol xs={12}>
+            <CFormTextarea
+              value={contactForm.note}
+              onChange={handleContactFieldChange("note")}
+              rows={2}
+              className="mt-2"
+              placeholder="Note"
+              disabled={isSavingCurrent || isDisabled}
+            />
+          </CCol>
+        </CRow>
+        <div className="d-flex gap-2 flex-wrap justify-content-end mt-3">
+          <CButton
+            color="secondary"
+            variant="outline"
+            size="sm"
+            type="button"
+            onClick={handleContactCancel}
+            disabled={isSavingCurrent || isDisabled}
+          >
+            Annulla
+          </CButton>
+          <CButton
+            color="primary"
+            size="sm"
+            type="button"
+            onClick={() => handleContactSave(targetId)}
+            disabled={isSavingCurrent || isDisabled}
+          >
+            {isSavingCurrent ? "Salvataggio..." : "Salva"}
+          </CButton>
+        </div>
+      </div>
+    )
+  }
+
+  const renderContactAccordionItem = (contatto, groupLabel) => {
+    if (!contatto) {
+      return null
+    }
+    const fullName = String(contatto.nome || "").trim() || "-"
+    const isDefault = Number(contatto.is_predefinito) === 1
+    const isReferente = Number(contatto.is_referente) === 1
+    const actionDisabled = isDisabled || savingContactId !== null || isEditingGeneral || isEditingFiscal
+    return (
+      <CAccordionItem key={`contatto-${contatto.id_contatto}`} itemKey={`contatto-${contatto.id_contatto}`}>
+        <CAccordionHeader className="py-2">
+          <div className="d-flex flex-wrap gap-3 align-items-center justify-content-between w-100">
+            <div>
+              <strong>{fullName}</strong>
+              <div className="small text-body-secondary">{contatto.ruolo || "-"}</div>
+            </div>
+            <div className="d-flex gap-2 flex-wrap">
+              {isReferente && (
+                <CBadge color="info" className="text-uppercase small">
+                  Referente
+                </CBadge>
+              )}
+              {isDefault && (
+                <CBadge color="primary" className="text-uppercase small">
+                  Predefinito
+                </CBadge>
+              )}
+            </div>
+          </div>
+        </CAccordionHeader>
+        <CAccordionBody className="pt-0">
+          <CRow className="g-3">
+            <CCol md={6}>
+              <DetailField label="Telefono" value={contatto.telefono || "-"} compact />
+            </CCol>
+            <CCol md={6}>
+              <DetailField label="Cellulare" value={contatto.cellulare || "-"} compact />
+            </CCol>
+            <CCol md={6}>
+              <DetailField label="Email" value={contatto.email || "-"} compact />
+            </CCol>
+            <CCol md={6}>
+              <DetailField label="Sede" value={groupLabel || "-"} compact />
+            </CCol>
+            <CCol xs={12}>
+              <DetailField label="Note" value={contatto.note} />
+            </CCol>
+          </CRow>
+          <div className="d-flex gap-2 flex-wrap justify-content-end mt-3">
+            <CButton
+              color="secondary"
+              variant="outline"
+              size="sm"
+              onClick={() => handleContactEdit(contatto)}
+              disabled={actionDisabled}
+            >
+              <CIcon icon={cilSettings} />
+            </CButton>
+            <CButton
+              color="secondary"
+              variant="outline"
+              size="sm"
+              onClick={() => handleContactArchive(contatto.id_contatto)}
+              disabled={actionDisabled}
+            >
+              {savingContactId === contatto.id_contatto ? "Archiviazione..." : "Archivia"}
+            </CButton>
+          </div>
+        </CAccordionBody>
+      </CAccordionItem>
+    )
+  }
+
+  const renderArchivedContactAccordionItem = (contatto, groupLabel) => {
+    if (!contatto) {
+      return null
+    }
+    const fullName = String(contatto.nome || "").trim() || "-"
+    const isDefault = Number(contatto.is_predefinito) === 1
+    const archivedLabel = formatDateTime(contatto.archived_at)
+    const isRestoring = restoringArchivedId === contatto.id_contatto
+    const isDeleting = deletingArchivedId === contatto.id_contatto
+    return (
+      <CAccordionItem key={`arch-${contatto.id_contatto}`} itemKey={`arch-${contatto.id_contatto}`}>
+        <CAccordionHeader className="py-2">
+          <div className="d-flex flex-wrap gap-3 align-items-center justify-content-between w-100">
+            <div>
+              <strong>{fullName}</strong>
+              <div className="small text-body-secondary">{contatto.ruolo || "-"}</div>
+            </div>
+            <div className="d-flex gap-2 flex-wrap">
+              {isDefault && (
+                <CBadge color="primary" className="text-uppercase small">
+                  Predefinito
+                </CBadge>
+              )}
+            </div>
+          </div>
+        </CAccordionHeader>
+        <CAccordionBody className="pt-0">
+          <CRow className="g-3">
+            <CCol md={6}>
+              <DetailField label="Telefono" value={contatto.telefono || "-"} compact />
+            </CCol>
+            <CCol md={6}>
+              <DetailField label="Cellulare" value={contatto.cellulare || "-"} compact />
+            </CCol>
+            <CCol md={6}>
+              <DetailField label="Email" value={contatto.email || "-"} compact />
+            </CCol>
+            <CCol md={6}>
+              <DetailField label="Sede" value={groupLabel || "-"} compact />
+            </CCol>
+            <CCol xs={12}>
+              <DetailField label="Note" value={contatto.note} />
+            </CCol>
+          </CRow>
+          <div className="d-flex flex-column flex-md-row gap-3 justify-content-between align-items-center mt-3">
+            <small className="text-body-secondary">Archiviato {archivedLabel}</small>
+            <div className="d-flex gap-2 flex-wrap">
+              <CButton
+                color="secondary"
+                variant="outline"
+                size="sm"
+                onClick={() => handleContactRestore(contatto.id_contatto)}
+                disabled={isDisabled || isRestoring}
+              >
+                {isRestoring ? "Ripristino..." : "Ripristina"}
+              </CButton>
+              <CButton
+                color="danger"
+                variant="outline"
+                size="sm"
+                onClick={() => handleArchivedDelete(contatto.id_contatto)}
+                disabled={isDisabled || isDeleting}
+              >
+                {isDeleting ? "Eliminazione..." : (<><CIcon icon={cilTrash} /> Elimina</>)}
+              </CButton>
+            </div>
+          </div>
+        </CAccordionBody>
+      </CAccordionItem>
+    )
+  }
+
   const errorMessage = error?.payload?.message ?? error?.message
 
   const generalFields = useMemo(() => {
@@ -1252,8 +1830,8 @@ const AnagraficaDetail = () => {
       { label: "Stato", value: getStatusBadge(anagrafica.stato) },
       { label: "Partita IVA", value: anagrafica.piva },
       { label: "Codice fiscale", value: anagrafica.codice_fiscale },
-      { label: "ID tipologia", value: anagrafica.id_tipologia },
-      { label: "ID regime fiscale", value: anagrafica.id_sdi_regime_fiscale },
+      { label: "Tipologia", value: getTipologiaValue(anagrafica) },
+      { label: "Regime fiscale", value: getRegimeFiscaleValue(anagrafica) },
       { label: "Pubblica amministrazione", value: Number(anagrafica.is_pa) === 1 ? "Si" : "No" },
       { label: "Attiva", value: Number(anagrafica.is_active) === 1 ? "Si" : "No" },
       { label: "Creato il", value: formatDateTime(anagrafica.created_at) },
@@ -1280,7 +1858,7 @@ const AnagraficaDetail = () => {
         label: "Condizioni di pagamento",
         value: paymentTerm?.label ?? "-",
       },
-      { label: "ID condizione pagamento", value: fiscale.id_cond_pagamento },
+      { label: "Altri dati", value: fiscale.altri_dati, fullWidth: true },
     ]
   }, [detail, paymentTermsMap])
   const anagraficaStatus = String(detail?.anagrafica?.stato || '').toLowerCase()
@@ -1440,290 +2018,292 @@ const AnagraficaDetail = () => {
 
   return (
     <>
-    <CCard className={`anagrafica-detail ${isCompact ? 'compact' : ''}`}>
-      <CCardHeader className={`sticky-card-header ${isDisabled ? 'anagrafica-disabled' : ''} d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-3`}>
-        <div className="d-flex flex-column">
-          <h2 className="h5 mb-1">Dettaglio anagrafica</h2>
-          <div className="d-flex flex-wrap align-items-center gap-2 text-body-secondary">
-            <span className="mb-0">
-              {recordId
-                ? `ID ${recordId}`
-                : "Seleziona un record valido dalla lista per visualizzare i dettagli."}
-            </span>
-            {detail?.anagrafica?.ragione_sociale && (
-              <span className="text-body fw-semibold">· {detail.anagrafica.ragione_sociale}</span>
-            )}
-            {detail?.anagrafica?.stato && (
-              <span>{getStatusBadge(detail.anagrafica.stato)}</span>
-            )}
+      <CCard className={`anagrafica-detail ${isCompact ? 'compact' : ''}`}>
+        <CCardHeader className={`sticky-card-header ${isDisabled ? 'anagrafica-disabled' : ''} d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-3`}>
+          <div className="d-flex flex-column">
+            <h2 className="h5 mb-1">Dettaglio anagrafica</h2>
+            <div className="d-flex flex-wrap align-items-center gap-2 text-body-secondary">
+              <span className="mb-0">
+                {recordId
+                  ? `ID ${recordId}`
+                  : "Seleziona un record valido dalla lista per visualizzare i dettagli."}
+              </span>
+              {detail?.anagrafica?.ragione_sociale && (
+                <span className="text-body fw-semibold">· {detail.anagrafica.ragione_sociale}</span>
+              )}
+              {detail?.anagrafica?.stato && (
+                <span>{getStatusBadge(detail.anagrafica.stato)}</span>
+              )}
+            </div>
           </div>
-        </div>
-        <div className="d-flex flex-wrap gap-2">
-          <CButton color="secondary" variant="outline" onClick={handleGoBack}>
-            <CIcon icon={cilArrowLeft} className="me-2" /> Torna indietro
-          </CButton>
-          <CButton
-            color="primary"
-            variant="outline"
-            onClick={handleRefresh}
-            disabled={loading || !recordId}
-          >
-            <CIcon icon={cilReload} className="me-2" /> Aggiorna
-          </CButton>
-          {isDisabled && recordId && (
-            <CButton color="success" variant="outline" onClick={handleReactivateStato} disabled={loading}>
-              Riattiva
+          <div className="d-flex flex-wrap gap-2">
+            <CButton color="secondary" variant="outline" onClick={handleGoBack}>
+              <CIcon icon={cilArrowLeft} className="me-2" /> Torna indietro
             </CButton>
-          )}
-        </div>
-      </CCardHeader>
-      <CCardBody className={`d-flex flex-column ${isCompact ? 'gap-3' : 'gap-4'}`}>
-        {isDisabled && (
-          <CAlert color="warning" className="mb-0">
-            Anagrafica disattivata: modifiche non consentite. Puoi solo riattivarla.
-          </CAlert>
-        )}
-
-        {mutationError && (
-          <CAlert color="danger" className="mb-0">
-            {mutationError}
-          </CAlert>
-        )}
-
-        {!recordId && (
-          <CAlert color="warning" className="mb-0">
-            Nessun identificativo fornito. Scegli una anagrafica dalla lista per visualizzarne i
-            dettagli.
-          </CAlert>
-        )}
-
-        {recordId && loading && (
-          <div className="d-flex justify-content-center py-5">
-            <CSpinner color="primary" />
+            <CButton
+              color="primary"
+              variant="outline"
+              onClick={handleRefresh}
+              disabled={loading || !recordId}
+            >
+              <CIcon icon={cilReload} className="me-2" /> Aggiorna
+            </CButton>
+            {isDisabled && recordId && (
+              <CButton color="success" variant="outline" onClick={handleReactivateStato} disabled={loading}>
+                Riattiva
+              </CButton>
+            )}
           </div>
-        )}
+        </CCardHeader>
+        <CCardBody className={`d-flex flex-column ${isCompact ? 'gap-3' : 'gap-4'}`}>
+          {isDisabled && (
+            <CAlert color="warning" className="mb-0">
+              Anagrafica disattivata: modifiche non consentite. Puoi solo riattivarla.
+            </CAlert>
+          )}
 
-        {recordId && !loading && errorMessage && <CAlert color="danger">{errorMessage}</CAlert>}
+          {mutationError && (
+            <CAlert color="danger" className="mb-0">
+              {mutationError}
+            </CAlert>
+          )}
 
-        {recordId && !loading && !errorMessage && detail && (
-          <>
-            <section className="d-flex flex-column gap-3">
-              <div className="d-flex justify-content-between align-items-start gap-3">
-                <h3 className="h6 mb-0">KPI cliente</h3>
-                <CFormSelect
-                  size="sm"
-                  value={kpiPeriod}
-                  onChange={(event) => setKpiPeriod(event.target.value)}
-                  aria-label="Selettore periodo KPI cliente"
-                  style={{ minWidth: 180 }}
-                >
-                  {KPI_PERIOD_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </CFormSelect>
-              </div>
-              <div className="text-body-secondary small">Periodo: {kpiPeriodLabel}</div>
-              <CRow className="g-3">
-                {kpiCards.map((card) => (
-                  <CCol key={card.key} sm={6} lg={3}>
-                    <CCard className="h-100 border-0 shadow-sm">
-                      <CCardBody>
-                        <div className="text-body-secondary text-uppercase small fw-semibold">{card.label}</div>
-                        <div className="fs-4 fw-semibold mt-2">{card.value}</div>
-                      </CCardBody>
-                    </CCard>
-                  </CCol>
-                ))}
-              </CRow>
-              <CRow className="g-2">
-                <CCol md={6}>
-                  <DetailField label="Conversione fatture/preventivi" value={formatPercent(conversioneFatture)} compact />
-                </CCol>
-                <CCol md={6}>
-                  <DetailField label="Ultimo documento" value={lastDocumentLabel} compact />
-                </CCol>
-              </CRow>
-            </section>
+          {!recordId && (
+            <CAlert color="warning" className="mb-0">
+              Nessun identificativo fornito. Scegli una anagrafica dalla lista per visualizzarne i
+              dettagli.
+            </CAlert>
+          )}
 
-            <section className="d-flex flex-column gap-3">
-              <div className="d-flex justify-content-between align-items-start gap-3">
-                <h3 className="h6 mb-0">Informazioni generali</h3>
-                {!isEditingGeneral && !isDisabled && (
-                  <CButton
-                    color="secondary"
-                    variant="outline"
+          {recordId && loading && (
+            <div className="d-flex justify-content-center py-5">
+              <CSpinner color="primary" />
+            </div>
+          )}
+
+          {recordId && !loading && errorMessage && <CAlert color="danger">{errorMessage}</CAlert>}
+
+          {recordId && !loading && !errorMessage && detail && (
+            <>
+              <section className="d-flex flex-column gap-3">
+                <div className="d-flex justify-content-between align-items-start gap-3">
+                  <h3 className="h6 mb-0">KPI cliente</h3>
+                  <CFormSelect
                     size="sm"
-                    onClick={startGeneralEditing}
+                    value={kpiPeriod}
+                    onChange={(event) => setKpiPeriod(event.target.value)}
+                    aria-label="Selettore periodo KPI cliente"
+                    style={{ minWidth: 180 }}
                   >
-                    Modifica
-                  </CButton>
-                )}
-              </div>
+                    {KPI_PERIOD_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </CFormSelect>
+                </div>
+                <div className="text-body-secondary small">Periodo: {kpiPeriodLabel}</div>
+                <CRow className="g-3">
+                  {kpiCards.map((card) => (
+                    <CCol key={card.key} sm={6} lg={3}>
+                      <CCard className="h-100 border-0 shadow-sm">
+                        <CCardBody>
+                          <div className="text-body-secondary text-uppercase small fw-semibold">{card.label}</div>
+                          <div className="fs-4 fw-semibold mt-2">{card.value}</div>
+                        </CCardBody>
+                      </CCard>
+                    </CCol>
+                  ))}
+                </CRow>
+                <CRow className="g-2">
+                  <CCol md={6}>
+                    <DetailField label="Conversione fatture/preventivi" value={formatPercent(conversioneFatture)} compact />
+                  </CCol>
+                  <CCol md={6}>
+                    <DetailField label="Ultimo documento" value={lastDocumentLabel} compact />
+                  </CCol>
+                </CRow>
+              </section>
 
-              {isEditingGeneral && generalForm ? (
-                <CForm
-                  onSubmit={handleGeneralSubmit}
-                  className="d-flex flex-column gap-3"
-                  ref={generalFormRef}
-                >
-                  <CRow className={gridGapClass}>
-                    <CCol md={6}>
-                      <CFormLabel htmlFor="ragioneSociale">Ragione sociale</CFormLabel>
-                      <CFormInput
-                        id="ragioneSociale"
-                        value={generalForm.ragione_sociale}
-                        onChange={handleGeneralFieldChange("ragione_sociale")}
-                        required
-                        disabled={savingGeneral}
-                      />
-                    </CCol>
-                    <CCol md={3}>
-                      <CFormLabel htmlFor="piva">Partita IVA</CFormLabel>
-                      <CFormInput
-                        id="piva"
-                        value={generalForm.piva}
-                        onChange={handleGeneralFieldChange("piva")}
-                        disabled={savingGeneral}
-                      />
-                    </CCol>
-                    <CCol md={3}>
-                      <CFormLabel htmlFor="codiceFiscale">Codice fiscale</CFormLabel>
-                      <CFormInput
-                        id="codiceFiscale"
-                        value={generalForm.codice_fiscale}
-                        onChange={handleGeneralFieldChange("codice_fiscale")}
-                        disabled={savingGeneral}
-                      />
-                    </CCol>
-                    <CCol md={3}>
-                      <CFormLabel htmlFor="tipologia">ID tipologia</CFormLabel>
-                      <CFormInput
-                        id="tipologia"
-                        type="number"
-                        value={generalForm.id_tipologia}
-                        onChange={handleGeneralFieldChange("id_tipologia")}
-                        disabled={savingGeneral}
-                      />
-                    </CCol>
-                    <CCol md={3}>
-                      <CFormLabel htmlFor="regimeFiscale">ID regime fiscale</CFormLabel>
-                      <CFormInput
-                        id="regimeFiscale"
-                        type="number"
-                        value={generalForm.id_sdi_regime_fiscale}
-                        onChange={handleGeneralFieldChange("id_sdi_regime_fiscale")}
-                        disabled={savingGeneral}
-                      />
-                    </CCol>
-                    <CCol md={3}>
-                      <CFormLabel htmlFor="stato">Stato</CFormLabel>
-                      <CFormSelect
-                        id="stato"
-                        value={generalForm.stato}
-                        onChange={handleGeneralFieldChange("stato")}
-                        disabled
-                      >
-                        {statoOptions.map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </CFormSelect>
-                    </CCol>
-                    <CCol md={3} className="d-flex flex-column justify-content-end gap-2">
-                      <CFormCheck
-                        type="checkbox"
-                        id="isPa"
-                        label="Pubblica amministrazione"
-                        checked={generalForm.is_pa}
-                        onChange={handleGeneralFieldChange("is_pa")}
-                        disabled={savingGeneral}
-                      />
-                      <CButton color="danger" variant="outline" type="button" onClick={handleArchiveClick} disabled={savingGeneral}>
-                        Archivia anagrafica
-                      </CButton>
-                    </CCol>
-                    <CCol xs={12}>
-                      <CFormLabel htmlFor="note">Note</CFormLabel>
-                      <CFormTextarea
-                        id="note"
-                        value={generalForm.note}
-                        onChange={handleGeneralFieldChange("note")}
-                        rows={4}
-                        disabled={savingGeneral}
-                      />
-                    </CCol>
-                  </CRow>
-                  <div className="d-flex gap-2 justify-content-end">
+              <section className="d-flex flex-column gap-3">
+                <div className="d-flex justify-content-between align-items-start gap-3">
+                  <h3 className="h6 mb-0">Informazioni generali</h3>
+                  {!isEditingGeneral && !isDisabled && (
                     <CButton
                       color="secondary"
                       variant="outline"
-                      type="button"
-                      onClick={cancelGeneralEditing}
-                      disabled={savingGeneral}
+                      size="sm"
+                      onClick={startGeneralEditing}
                     >
-                      Annulla
+                      Modifica
                     </CButton>
-                    <CButton color="primary" type="submit" disabled={savingGeneral}>
-                      {savingGeneral ? "Salvataggio..." : "Salva modifiche"}
-                    </CButton>
-                  </div>
-                </CForm>
-              ) : (
-                <>
-                  <CRow className={gridGapClass}>
-                    {generalFields.map((field) => (
-                      <CCol key={field.label} md={6} xl={4}>
-                        <DetailField label={field.label} value={field.value} compact={isCompact} />
-                      </CCol>
-                    ))}
-                  </CRow>
-                  {detail.anagrafica?.note && (
-                    <CAlert color="info" className="mt-3 mb-0">
-                      <div className="text-body-secondary text-uppercase small fw-semibold mb-2">
-                        Note
-                      </div>
-                      <div style={{ whiteSpace: "pre-wrap" }}>{detail.anagrafica.note}</div>
-                    </CAlert>
                   )}
-                </>
-              )}
-            </section>
+                </div>
 
-            {/* Contatti archiviati: ora visibili nel selettore della sezione Contatti */}
-
-            <section className="d-flex flex-column gap-3">
-              <div className="d-flex justify-content-between align-items-start gap-3">
-                <h3 className="h6 mb-0">Sedi</h3>
-                {!editingSedeId && !isDisabled && (
-                  <CButton color="primary" variant="outline" size="sm" onClick={handleSedeCreate}>
-                    Nuova sede
-                  </CButton>
+                {isEditingGeneral && generalForm ? (
+                  <CForm
+                    onSubmit={handleGeneralSubmit}
+                    className="d-flex flex-column gap-3"
+                    ref={generalFormRef}
+                  >
+                    <CRow className={gridGapClass}>
+                      <CCol md={6}>
+                        <CFormLabel htmlFor="ragioneSociale">Ragione sociale</CFormLabel>
+                        <CFormInput
+                          id="ragioneSociale"
+                          value={generalForm.ragione_sociale}
+                          onChange={handleGeneralFieldChange("ragione_sociale")}
+                          required
+                          disabled={savingGeneral}
+                        />
+                      </CCol>
+                      <CCol md={3}>
+                        <CFormLabel htmlFor="piva">Partita IVA</CFormLabel>
+                        <CFormInput
+                          id="piva"
+                          value={generalForm.piva}
+                          onChange={handleGeneralFieldChange("piva")}
+                          disabled={savingGeneral}
+                        />
+                      </CCol>
+                      <CCol md={3}>
+                        <CFormLabel htmlFor="codiceFiscale">Codice fiscale</CFormLabel>
+                        <CFormInput
+                          id="codiceFiscale"
+                          value={generalForm.codice_fiscale}
+                          onChange={handleGeneralFieldChange("codice_fiscale")}
+                          disabled={savingGeneral}
+                        />
+                      </CCol>
+                      <CCol md={3}>
+                        <CFormLabel htmlFor="tipologia">Tipologia</CFormLabel>
+                        <CFormSelect
+                          id="tipologia"
+                          value={
+                            generalForm.id_tipologia !== null && generalForm.id_tipologia !== undefined
+                              ? String(generalForm.id_tipologia)
+                              : ""
+                          }
+                          onChange={handleGeneralFieldChange("id_tipologia")}
+                          disabled={savingGeneral}
+                        >
+                          <option value="">Seleziona tipologia</option>
+                          {tipologiaSelectOptions.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </CFormSelect>
+                      </CCol>
+                      <CCol md={3}>
+                        <CFormLabel htmlFor="regimeFiscale">Regime fiscale</CFormLabel>
+                        <CFormSelect
+                          id="regimeFiscale"
+                          value={
+                            generalForm.id_sdi_regime_fiscale !== null && generalForm.id_sdi_regime_fiscale !== undefined
+                              ? String(generalForm.id_sdi_regime_fiscale)
+                              : ""
+                          }
+                          onChange={handleGeneralFieldChange("id_sdi_regime_fiscale")}
+                          disabled={savingGeneral}
+                        >
+                          <option value="">Seleziona regime fiscale</option>
+                          {regimiSelectOptions.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </CFormSelect>
+                      </CCol>
+                      <CCol md={3}>
+                        <CFormLabel htmlFor="stato">Stato</CFormLabel>
+                        <CFormSelect
+                          id="stato"
+                          value={generalForm.stato}
+                          onChange={handleGeneralFieldChange("stato")}
+                          disabled
+                        >
+                          {statoOptions.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </CFormSelect>
+                      </CCol>
+                      <CCol md={3} className="d-flex flex-column justify-content-end gap-2">
+                        <CFormCheck
+                          type="checkbox"
+                          id="isPa"
+                          label="Pubblica amministrazione"
+                          checked={generalForm.is_pa}
+                          onChange={handleGeneralFieldChange("is_pa")}
+                          disabled={savingGeneral}
+                        />
+                        <CButton color="danger" variant="outline" type="button" onClick={handleArchiveClick} disabled={savingGeneral}>
+                          Archivia anagrafica
+                        </CButton>
+                      </CCol>
+                      <CCol xs={12}>
+                        <CFormLabel htmlFor="note">Note</CFormLabel>
+                        <CFormTextarea
+                          id="note"
+                          value={generalForm.note}
+                          onChange={handleGeneralFieldChange("note")}
+                          rows={4}
+                          disabled={savingGeneral}
+                        />
+                      </CCol>
+                    </CRow>
+                    <div className="d-flex gap-2 justify-content-end">
+                      <CButton
+                        color="secondary"
+                        variant="outline"
+                        type="button"
+                        onClick={cancelGeneralEditing}
+                        disabled={savingGeneral}
+                      >
+                        Annulla
+                      </CButton>
+                      <CButton color="primary" type="submit" disabled={savingGeneral}>
+                        {savingGeneral ? "Salvataggio..." : "Salva modifiche"}
+                      </CButton>
+                    </div>
+                  </CForm>
+                ) : (
+                  <>
+                    <CRow className={gridGapClass}>
+                      {generalFields.map((field) => (
+                        <CCol key={field.label} md={6} xl={4}>
+                          <DetailField label={field.label} value={field.value} compact={isCompact} />
+                        </CCol>
+                      ))}
+                    </CRow>
+                    {detail.anagrafica?.note && (
+                      <CAlert color="info" className="mt-3 mb-0">
+                        <div className="text-body-secondary text-uppercase small fw-semibold mb-2">
+                          Note
+                        </div>
+                        <div style={{ whiteSpace: "pre-wrap" }}>{detail.anagrafica.note}</div>
+                      </CAlert>
+                    )}
+                  </>
                 )}
-              </div>
-              {sedi.length > 0 || editingSedeId === "new" ? (
-                <CTable hover responsive size="sm">
-                  <CTableHead color="light">
-                    <CTableRow>
-                      <CTableHeaderCell scope="col">Denominazione</CTableHeaderCell>
-                      <CTableHeaderCell scope="col">Indirizzo</CTableHeaderCell>
-                      <CTableHeaderCell scope="col">Contatti</CTableHeaderCell>
-                      <CTableHeaderCell scope="col" className="text-center">
-                        Legale
-                      </CTableHeaderCell>
-                      <CTableHeaderCell scope="col" className="text-center">
-                        Predefinita
-                      </CTableHeaderCell>
-                      <CTableHeaderCell scope="col">Aggiornata</CTableHeaderCell>
-                      <CTableHeaderCell scope="col" className="text-end">
-                        Azioni
-                      </CTableHeaderCell>
-                    </CTableRow>
-                  </CTableHead>
-                  <CTableBody>
-                    {(editingSedeId === "new" ? [...sedi, { id_sede: "new" }] : sedi).map((sede, index) => {
+              </section>
+
+              {/* Contatti archiviati: ora visibili nel selettore della sezione Contatti */}
+
+              <section className="d-flex flex-column gap-3">
+                <div className="d-flex justify-content-between align-items-start gap-3">
+                  <h3 className="h6 mb-0">Sedi</h3>
+                  {!editingSedeId && !isDisabled && (
+                    <CButton color="primary" variant="outline" size="sm" onClick={handleSedeCreate}>
+                      Nuova sede
+                    </CButton>
+                  )}
+                </div>
+                {sedi.length > 0 || editingSedeId === "new" ? (
+                  <CAccordion alwaysOpen flush>
+                    {sedeAccordionItems.map((sede, index) => {
                       const isNewRow = sede.id_sede === "new"
                       const rowKey = isNewRow ? "new-sede" : String(sede.id_sede ?? index)
                       const isEditing =
@@ -1731,118 +2311,122 @@ const AnagraficaDetail = () => {
                       const isSaving = isEditing && savingSedeId === editingSedeId
                       const sedeData = isNewRow ? null : sede
                       const fullAddress = sedeData ? formatSedeAddress(sedeData) : "-"
+                      const tipoRaw =
+                        (isEditing && sedeForm ? sedeForm.id_tipo : null) ??
+                        (sedeData ? sedeData.id_tipo : null)
+                      const tipoLabel = tipoRaw
+                        ? tipologieSediLookupMap.get(String(tipoRaw)) ?? `ID ${tipoRaw}`
+                        : isEditing
+                          ? "Tipo non selezionato"
+                          : "Tipo non definito"
 
-                      if (isEditing && sedeForm) {
-                        return (
-                          <CTableRow key={rowKey}>
-                            <CTableDataCell>
-                              <div className="d-flex flex-column gap-2">
-                                <CFormLabel className="small text-body-secondary mb-0">
-                                  Denominazione
-                                </CFormLabel>
-                                <CFormInput
-                                  value={sedeForm.denominazione}
-                                  onChange={handleSedeFieldChange("denominazione")}
-                                  disabled={isSaving || isDisabled}
-                                />
-                                <CFormLabel className="small text-body-secondary mb-0">
-                                  Tipo
-                                </CFormLabel>
-                                <CFormInput
-                                  type="number"
-                                  value={sedeForm.id_tipo}
-                                  onChange={handleSedeFieldChange("id_tipo")}
-                                  disabled={isSaving || isDisabled}
-                                />
+                      return (
+                        <CAccordionItem
+                          itemKey={rowKey}
+                          key={rowKey}
+                          className="border rounded-3 border-secondary mb-3"
+                        >
+                          <CAccordionHeader className="px-3 py-2">
+                            <div className="d-flex flex-column gap-1 w-100">
+                              <div className="d-flex justify-content-between align-items-start gap-3">
+                                <div>
+                                  <span className="fw-semibold">{sedeData?.denominazione || "Nuova sede"}</span>
+                                  <span className="text-body-secondary small ms-2">
+                                    {sedeData ? `ID ${sedeData.id_sede}` : "In creazione"}
+                                  </span>
+                                </div>
+                                <span className="text-body-secondary small">{tipoLabel}</span>
                               </div>
-                            </CTableDataCell>
-                            <CTableDataCell>
-                              <div className="d-flex flex-column gap-2">
-                                <CFormLabel className="small text-body-secondary mb-0">
-                                  Indirizzo
-                                </CFormLabel>
-                                <CFormInput
-                                  value={sedeForm.indirizzo}
-                                  onChange={handleSedeFieldChange("indirizzo")}
-                                  disabled={isSaving || isDisabled}
-                                />
-                                <div className="d-flex flex-column flex-lg-row gap-2">
-                                  <div className="flex-fill">
-                                    <CFormLabel className="small text-body-secondary mb-0">
-                                      Civico
-                                    </CFormLabel>
+                              <span className="text-body-secondary small">{fullAddress}</span>
+                            </div>
+                          </CAccordionHeader>
+                          <CAccordionBody className="px-3 py-3">
+                            {isEditing && sedeForm ? (
+                              <div className="d-flex flex-column gap-3">
+                                <CRow className="g-3">
+                                  <CCol md={6}>
+                                    <CFormLabel>Denominazione</CFormLabel>
+                                    <CFormInput
+                                      value={sedeForm.denominazione}
+                                      onChange={handleSedeFieldChange("denominazione")}
+                                      disabled={isSaving || isDisabled}
+                                    />
+                                  </CCol>
+                                  <CCol md={6}>
+                                    <CFormLabel>Tipo</CFormLabel>
+                                    <CFormSelect
+                                      value={
+                                        sedeForm.id_tipo !== null && sedeForm.id_tipo !== undefined
+                                          ? String(sedeForm.id_tipo)
+                                          : ""
+                                      }
+                                      onChange={handleSedeFieldChange("id_tipo")}
+                                      disabled={isSaving || isDisabled}
+                                    >
+                                      <option value="">Seleziona tipo</option>
+                                      {tipologieSediSelectOptions.map((option) => (
+                                        <option key={option.value} value={option.value}>
+                                          {option.label}
+                                        </option>
+                                      ))}
+                                    </CFormSelect>
+                                  </CCol>
+                                </CRow>
+                                <CRow className="g-3">
+                                  <CCol md={8}>
+                                    <CFormLabel>Indirizzo</CFormLabel>
+                                    <CFormInput
+                                      value={sedeForm.indirizzo}
+                                      onChange={handleSedeFieldChange("indirizzo")}
+                                      disabled={isSaving || isDisabled}
+                                    />
+                                  </CCol>
+                                  <CCol md={4}>
+                                    <CFormLabel>Civico</CFormLabel>
                                     <CFormInput
                                       value={sedeForm.civico}
                                       onChange={handleSedeFieldChange("civico")}
                                       disabled={isSaving || isDisabled}
                                     />
-                                  </div>
-                                  <div className="flex-fill">
-                                    <CFormLabel className="small text-body-secondary mb-0">
-                                      CAP
-                                    </CFormLabel>
+                                  </CCol>
+                                </CRow>
+                                <CRow className="g-3">
+                                  <CCol md={3}>
+                                    <CFormLabel>CAP</CFormLabel>
                                     <CFormInput
                                       value={sedeForm.cap}
                                       onChange={handleSedeFieldChange("cap")}
                                       disabled={isSaving || isDisabled}
                                     />
-                                  </div>
-                                </div>
-                                <div className="d-flex flex-column flex-lg-row gap-2">
-                                  // eslint-disable-next-line prettier/prettier
-                                  <div className="flex-fill">
-                                    <CFormLabel className="small text-body-secondary mb-0">
-                                      Comune
-                                    </CFormLabel>
+                                  </CCol>
+                                  <CCol md={3}>
+                                    <CFormLabel>Comune</CFormLabel>
                                     <CFormInput
                                       value={sedeForm.comune}
                                       onChange={handleSedeFieldChange("comune")}
                                       disabled={isSaving || isDisabled}
                                     />
-                                  </div>
-                                  <div>
-                                    <CFormLabel className="small text-body-secondary mb-0">
-                                      Provincia
-                                    </CFormLabel>
+                                  </CCol>
+                                  <CCol md={3}>
+                                    <CFormLabel>Provincia</CFormLabel>
                                     <CFormInput
                                       value={sedeForm.provincia}
                                       onChange={handleSedeFieldChange("provincia")}
                                       disabled={isSaving || isDisabled}
                                     />
-                                  </div>
-                                  <div style={{ maxWidth: 80 }}>
-                                    <CFormLabel className="small text-body-secondary mb-0">Nazione</CFormLabel>
+                                  </CCol>
+                                  <CCol md={3}>
+                                    <CFormLabel>Nazione</CFormLabel>
                                     <CFormInput
                                       value={sedeForm.nazione_iso2}
                                       onChange={handleSedeFieldChange("nazione_iso2")}
                                       disabled={isSaving || isDisabled}
                                       maxLength={2}
                                     />
-                                  </div>
-                                </div>
-                              </div>
-                            </CTableDataCell>
-                            <CTableDataCell>
-                              <div className="d-flex flex-column gap-2">
+                                  </CCol>
+                                </CRow>
                                 <div>
-                                  <CFormLabel className="small text-body-secondary mb-0">Telefono</CFormLabel>
-                                  <CFormInput
-                                    value={sedeForm.telefono}
-                                    onChange={handleSedeFieldChange("telefono")}
-                                    disabled={isSaving || isDisabled}
-                                  />
-                                </div>
-                                <div>
-                                  <CFormLabel className="small text-body-secondary mb-0">Email</CFormLabel>
-                                  <CFormInput
-                                    type="email"
-                                    value={sedeForm.email}
-                                    onChange={handleSedeFieldChange("email")}
-                                    disabled={isSaving || isDisabled}
-                                  />
-                                </div>
-                                <div>
-                                  <CFormLabel className="small text-body-secondary mb-0">Note</CFormLabel>
+                                  <CFormLabel>Note</CFormLabel>
                                   <CFormTextarea
                                     value={sedeForm.note}
                                     onChange={handleSedeFieldChange("note")}
@@ -1850,962 +2434,605 @@ const AnagraficaDetail = () => {
                                     disabled={isSaving || isDisabled}
                                   />
                                 </div>
-                              </div>
-                            </CTableDataCell>
-                            <CTableDataCell className="text-center align-middle">
-                              <CFormCheck
-                                type="checkbox"
-                                label="Legale"
-                                checked={sedeForm.is_legale}
-                                onChange={handleSedeFieldChange("is_legale")}
-                                disabled={isSaving || isDisabled}
-                              />
-                            </CTableDataCell>
-                            <CTableDataCell className="text-center align-middle">
-                              <CFormCheck
-                                type="checkbox"
-                                label="Predefinita"
-                                checked={sedeForm.is_predefinita}
-                                onChange={handleSedeFieldChange("is_predefinita")}
-                                disabled={isSaving || isDisabled}
-                              />
-                            </CTableDataCell>
-                            <CTableDataCell className="align-middle">
-                              {sedeData ? formatDateTime(sedeData.updated_at || sedeData.created_at) : "-"}
-                            </CTableDataCell>
-                            <CTableDataCell className="text-end align-middle">
-                              <div className="d-flex gap-2 justify-content-end">
-                                <CButton
-                                  color="secondary"
-                                  variant="outline"
-                                  size="sm"
-                                  type="button"
-                                  onClick={handleSedeCancel}
-                                  disabled={isSaving || isDisabled}
-                                >
-                                  Annulla
-                                </CButton>
-                                {!isNewRow && sedeData && (
-                                  <CButton
-                                    color="danger"
-                                    variant="outline"
-                                    size="sm"
-                                    type="button"
-                                    onClick={() => handleSedeDelete(sedeData.id_sede)}
-                                    disabled={isSaving || isDisabled || savingSedeId === sedeData.id_sede}
-                                  >
-                                    {savingSedeId === sedeData.id_sede ? "Eliminazione..." : "Elimina"}
-                                  </CButton>
-                                )}
-                                <CButton
-                                  color="primary"
-                                  size="sm"
-                                  type="button"
-                                  onClick={handleSedeSave}
-                                  disabled={isSaving || isDisabled}
-                                >
-                                  {isSaving ? "Salvataggio..." : "Salva"}
-                                </CButton>
-                              </div>
-                            </CTableDataCell>
-                          </CTableRow>
-                        )
-                      }
-
-                      if (!sedeData) {
-                        return null
-                      }
-
-                      const contactsSummary = [
-                        sedeData.telefono ? `Tel: ${sedeData.telefono}` : null,
-                        sedeData.email ? `Email: ${sedeData.email}` : null,
-                      ]
-                        .filter(Boolean)
-                        .join("\n")
-
-                      return (
-                        <CTableRow key={rowKey}>
-                          <CTableDataCell>
-                            <div className="d-flex flex-column">
-                              <span className="fw-semibold">{sedeData.denominazione || "-"}</span>
-                              <span className="text-body-secondary small">ID {sedeData.id_sede}</span>
-                              {sedeData.note && (
-                                <span className="text-body-secondary small mt-1">{sedeData.note}</span>
-                              )}
-                            </div>
-                          </CTableDataCell>
-                          <CTableDataCell>{fullAddress}</CTableDataCell>
-                          <CTableDataCell>
-                            {contactsSummary ? (
-                              <div style={{ whiteSpace: "pre-line" }}>{contactsSummary}</div>
-                            ) : (
-                              <span className="text-body-secondary">-</span>
-                            )}
-                          </CTableDataCell>
-                          <CTableDataCell className="text-center">
-                            {renderBooleanBadge(sedeData.is_legale)}
-                          </CTableDataCell>
-                          <CTableDataCell className="text-center">
-                            {renderBooleanBadge(sedeData.is_predefinita)}
-                          </CTableDataCell>
-                          <CTableDataCell>{formatDateTime(sedeData.updated_at || sedeData.created_at)}</CTableDataCell>
-                          <CTableDataCell className="text-end">
-                            <div className="d-flex gap-2 justify-content-end">
-                              <CButton
-                                color="secondary"
-                                variant="outline"
-                                size="sm"
-                                onClick={() => handleSedeEdit(sedeData)}
-                                disabled={isDisabled || Boolean(editingSedeId) || savingSedeId === sedeData.id_sede}
-                              >
-                                Modifica
-                              </CButton>
-                              <CButton
-                                color="danger"
-                                variant="outline"
-                                size="sm"
-                                onClick={() => handleSedeDelete(sedeData.id_sede)}
-                                disabled={isDisabled || Boolean(editingSedeId) || savingSedeId === sedeData.id_sede}
-                              >
-                                {savingSedeId === sedeData.id_sede ? "Eliminazione..." : "Elimina"}
-                              </CButton>
-                            </div>
-                          </CTableDataCell>
-                        </CTableRow>
-                      )
-                    })}
-                  </CTableBody>
-                </CTable>
-              ) : (
-                <CAlert color="info" className="mb-0">
-                  Nessuna sede registrata per questa anagrafica.
-                </CAlert>
-              )}
-            </section>
-            <section className="d-flex flex-column gap-3">
-              <div className="d-flex justify-content-between align-items-start gap-3">
-                <h3 className="h6 mb-0">Dati fiscali</h3>
-                {!isEditingFiscal && !isDisabled && (
-                  <CButton color="secondary" variant="outline" size="sm" onClick={startFiscalEditing}>
-                    Modifica
-                  </CButton>
-                )}
-              </div>
-
-              {isEditingFiscal && fiscaleForm ? (
-                <CForm
-                  onSubmit={handleFiscalSubmit}
-                  className="d-flex flex-column gap-3"
-                  ref={fiscalFormRef}
-                >
-                  <CRow className="g-3">
-                    <CCol md={4}>
-                      <CFormLabel htmlFor="pec">PEC</CFormLabel>
-                      <CFormInput
-                        id="pec"
-                        type="email"
-                        value={fiscaleForm.pec}
-                        onChange={handleFiscalFieldChange("pec")}
-                        disabled={savingFiscal || isDisabled}
-                      />
-                    </CCol>
-                    <CCol md={4}>
-                      <CFormLabel htmlFor="codiceSdi">Codice SDI</CFormLabel>
-                      <CFormInput
-                        id="codiceSdi"
-                        value={fiscaleForm.codice_sdi}
-                        onChange={handleFiscalFieldChange("codice_sdi")}
-                        disabled={savingFiscal || isDisabled}
-                      />
-                    </CCol>
-                    <CCol md={4}>
-                      <CFormLabel htmlFor="iban">IBAN</CFormLabel>
-                      <CFormInput
-                        id="iban"
-                        value={fiscaleForm.iban}
-                        onChange={handleFiscalFieldChange("iban")}
-                        disabled={savingFiscal || isDisabled}
-                      />
-                    </CCol>
-                    <CCol md={6}>
-                      <CFormLabel htmlFor="banca">Banca</CFormLabel>
-                      <CFormInput
-                        id="banca"
-                        value={fiscaleForm.banca}
-                        onChange={handleFiscalFieldChange("banca")}
-                        disabled={savingFiscal || isDisabled}
-                      />
-                    </CCol>
-                    <CCol md={6}>
-                      <CFormLabel htmlFor="modalitaPagamento">Modalita di pagamento</CFormLabel>
-                      <CFormInput
-                        id="modalitaPagamento"
-                        value={fiscaleForm.modalita_pagamento}
-                        onChange={handleFiscalFieldChange("modalita_pagamento")}
-                        disabled={savingFiscal || isDisabled}
-                      />
-                    </CCol>
-                    <CCol md={6}>
-                      <CFormLabel htmlFor="idCondPagamento">Condizioni di pagamento</CFormLabel>
-                      <CFormSelect
-                        id="idCondPagamento"
-                        value={fiscaleForm.id_cond_pagamento}
-                        onChange={handleFiscalFieldChange("id_cond_pagamento")}
-                        disabled={savingFiscal || isDisabled || paymentTermsLoading}
-                      >
-                        <option value="">Seleziona una condizione</option>
-                        {paymentTermOptions.map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </CFormSelect>
-                      {paymentTermsLoading && (
-                        <div className="form-text text-body-secondary">Caricamento condizioni…</div>
-                      )}
-                      {paymentTermsError && !paymentTermsLoading && (
-                        <div className="form-text text-danger">
-                          Impossibile caricare le condizioni: {paymentTermsError.message || "errore sconosciuto"}
-                        </div>
-                      )}
-                      {currentPaymentTermSelection?.description && (
-                        <div className="form-text">{currentPaymentTermSelection.description}</div>
-                      )}
-                    </CCol>
-                    <CCol xs={12}>
-                      <CFormLabel htmlFor="altriDati">Altri dati</CFormLabel>
-                      <CFormTextarea
-                        id="altriDati"
-                        rows={4}
-                        value={fiscaleForm.altri_dati}
-                        onChange={handleFiscalFieldChange("altri_dati")}
-                        disabled={savingFiscal || isDisabled}
-                      />
-                    </CCol>
-                  </CRow>
-                  <div className="d-flex gap-2 justify-content-end">
-                    <CButton color="secondary" variant="outline" type="button" onClick={cancelFiscalEditing} disabled={savingFiscal || isDisabled}>
-                      Annulla
-                    </CButton>
-                    <CButton color="primary" type="submit" disabled={savingFiscal || isDisabled}>
-                      {savingFiscal ? "Salvataggio..." : "Salva modifiche"}
-                    </CButton>
-                  </div>
-                </CForm>
-              ) : (
-                <>
-                  {fiscaleFields.length > 0 ? (
-                    <CRow className="g-3">
-                      {fiscaleFields.map((field) => (
-                        <CCol key={field.label} md={6} xl={4}>
-                          <DetailField label={field.label} value={field.value} compact={isCompact} />
-                        </CCol>
-                      ))}
-                    </CRow>
-                  ) : (
-                    <CAlert color="info" className="mb-0">
-                      Nessun dato fiscale registrato per questa anagrafica.
-                    </CAlert>
-                  )}
-                  {detail.fiscale?.altri_dati && (
-                    <CAlert color="secondary" className="mt-3 mb-0">
-                      <div className="text-body-secondary text-uppercase small fw-semibold mb-2">Altri dati</div>
-                      <div style={{ whiteSpace: "pre-wrap" }}>{detail.fiscale.altri_dati}</div>
-                    </CAlert>
-                  )}
-                </>
-              )}
-            </section>
-
-            <section className="d-flex flex-column gap-3">
-              <div className="d-flex justify-content-between align-items-start gap-3">
-                <h3 className="h6 mb-0">Contatti</h3>
-                <div className="d-flex gap-2 align-items-center">
-                  {contactsView === 'associati' && !editingContactId && (
-                    <CButton
-                      color="primary"
-                      variant="outline"
-                      size="sm"
-                      onClick={handleContactCreate}
-                      disabled={savingContactId !== null || isEditingGeneral || isEditingFiscal}
-                    >
-                      Nuovo contatto
-                    </CButton>
-                  )}
-                  <CFormSelect size="sm" value={contactsView} onChange={(e) => setContactsView(e.target.value)}>
-                    <option value="associati">Associati</option>
-                    <option value="archiviati">Archiviati</option>
-                  </CFormSelect>
-                </div>
-              </div>
-              {contactsView === 'associati' ? ((contatti.length > 0 || editingContactId === 'new') ? (
-                <CTable hover responsive size="sm">
-                  <CTableHead color="dark">
-                    <CTableRow>
-                      <CTableHeaderCell scope="col">Nome</CTableHeaderCell>
-                      <CTableHeaderCell scope="col">Ruolo</CTableHeaderCell>
-                      <CTableHeaderCell scope="col">Telefono</CTableHeaderCell>
-                      <CTableHeaderCell scope="col">Cellulare</CTableHeaderCell>
-                      <CTableHeaderCell scope="col">Email</CTableHeaderCell>
-                      <CTableHeaderCell scope="col" className="text-center">
-                        Predefinito
-                      </CTableHeaderCell>
-                      <CTableHeaderCell scope="col" className="text-end">
-                        Azioni
-                      </CTableHeaderCell>
-                    </CTableRow>
-                  </CTableHead>
-                  <CTableBody>
-                    {editingContactId === 'new' && contactForm && (
-                      <CTableRow>
-                        <CTableDataCell>
-                          <CFormInput
-                            value={contactForm.nome}
-                            onChange={handleContactFieldChange("nome")}
-                            disabled={savingContactId === 'new' || isDisabled}
-                          />
-                        </CTableDataCell>
-                        <CTableDataCell>
-                          <CFormInput
-                            value={contactForm.ruolo}
-                            onChange={handleContactFieldChange("ruolo")}
-                            disabled={savingContactId === 'new' || isDisabled}
-                          />
-                        </CTableDataCell>
-                        <CTableDataCell>
-                          <CFormInput
-                            value={contactForm.telefono}
-                            onChange={handleContactFieldChange("telefono")}
-                            disabled={savingContactId === 'new' || isDisabled}
-                          />
-                        </CTableDataCell>
-                        <CTableDataCell>
-                          <CFormInput
-                            value={contactForm.cellulare}
-                            onChange={handleContactFieldChange("cellulare")}
-                            disabled={savingContactId === 'new' || isDisabled}
-                          />
-                        </CTableDataCell>
-                        <CTableDataCell>
-                          <CFormInput
-                            value={contactForm.email}
-                            onChange={handleContactFieldChange("email")}
-                            disabled={savingContactId === 'new' || isDisabled}
-                          />
-                        </CTableDataCell>
-                        <CTableDataCell>
-                          <CFormSelect
-                            value={String(contactForm.id_sede ?? '')}
-                            onChange={handleContactFieldChange("id_sede")}
-                            disabled={savingContactId === 'new'}
-                          >
-                            {sedeOptions.map((opt) => (
-                              <option key={opt.value} value={opt.value}>
-                                {opt.label}
-                              </option>
-                            ))}
-                          </CFormSelect>
-                          <CFormTextarea
-                            value={contactForm.note}
-                            onChange={handleContactFieldChange("note")}
-                            rows={2}
-                            className="mt-2"
-                            disabled={savingContactId === 'new'}
-                          />
-                        </CTableDataCell>
-                        <CTableDataCell className="text-center">
-                          <div className="d-flex flex-column gap-1 align-items-center">
-                            <CFormCheck
-                              type="checkbox"
-                              label="Predefinito"
-                              checked={contactForm.is_predefinito}
-                              onChange={handleContactFieldChange("is_predefinito")}
-                              disabled={savingContactId === 'new' || isDisabled}
-                            />
-                          </div>
-                        </CTableDataCell>
-                        <CTableDataCell className="text-end">
-                          <div className="d-flex gap-2 justify-content-end">
-                            <CButton
-                              color="secondary"
-                              variant="outline"
-                              size="sm"
-                              type="button"
-                              onClick={handleContactCancel}
-                              disabled={savingContactId === 'new' || isDisabled}
-                            >
-                              Annulla
-                            </CButton>
-                            <CButton
-                              color="primary"
-                              size="sm"
-                              type="button"
-                              disabled={savingContactId === 'new' || isDisabled}
-                              onClick={() => handleContactSave('new')}
-                            >
-                              {savingContactId === 'new' ? "Salvataggio..." : "Salva"}
-                            </CButton>
-                          </div>
-                        </CTableDataCell>
-                      </CTableRow>
-                    )}
-                    {contattiGrouped.map((group) => (
-                      <React.Fragment key={`group-${group.key}`}>
-                        <CTableRow>
-                          <CTableDataCell colSpan={8} color="secondary">
-                            <strong>{group.label}</strong>
-                          </CTableDataCell>
-                        </CTableRow>
-                        {group.items.map((contatto) => {
-                          const isEditing = editingContactId === contatto.id_contatto
-                          const sede =
-                            contatto.sede_denominazione || contatto.sede_indirizzo
-                              ? [
-                                contatto.sede_denominazione,
-                                contatto.sede_indirizzo,
-                                [contatto.sede_cap, contatto.sede_comune].filter(Boolean).join(" "),
-                                contatto.sede_provincia ? `${contatto.sede_provincia}` : null,
-                              ]
-                                .filter(Boolean)
-                                .join(" ")
-                              : "-"
-
-                          if (isEditing && contactForm) {
-                            return (
-                              <CTableRow key={contatto.id_contatto}>
-                                <CTableDataCell>
-                                  <CFormInput
-                                    value={contactForm.nome}
-                                    onChange={handleContactFieldChange("nome")}
-                                    disabled={savingContactId === contatto.id_contatto || isDisabled}
-                                  />
-                                </CTableDataCell>
-                                <CTableDataCell>
-                                  <CFormInput
-                                    value={contactForm.ruolo}
-                                    onChange={handleContactFieldChange("ruolo")}
-                                    disabled={savingContactId === contatto.id_contatto || isDisabled}
-                                  />
-                                </CTableDataCell>
-                                <CTableDataCell>
-                                  <CFormInput
-                                    value={contactForm.telefono}
-                                    onChange={handleContactFieldChange("telefono")}
-                                    disabled={savingContactId === contatto.id_contatto || isDisabled}
-                                  />
-                                </CTableDataCell>
-                                <CTableDataCell>
-                                  <CFormInput
-                                    value={contactForm.cellulare}
-                                    onChange={handleContactFieldChange("cellulare")}
-                                    disabled={savingContactId === contatto.id_contatto || isDisabled}
-                                  />
-                                </CTableDataCell>
-                                <CTableDataCell>
-                                  <CFormInput
-                                    value={contactForm.email}
-                                    onChange={handleContactFieldChange("email")}
-                                    disabled={savingContactId === contatto.id_contatto}
-                                  />
-                                </CTableDataCell>
-                                <CTableDataCell>
-                                  <CFormSelect
-                                    value={String(contactForm.id_sede ?? '')}
-                                    onChange={handleContactFieldChange("id_sede")}
-                                    disabled={savingContactId === contatto.id_contatto}
-                                  >
-                                    {sedeOptions.map((opt) => (
-                                      <option key={opt.value} value={opt.value}>
-                                        {opt.label}
-                                      </option>
-                                    ))}
-                                  </CFormSelect>
-                                  <CFormTextarea
-                                    value={contactForm.note}
-                                    onChange={handleContactFieldChange("note")}
-                                    rows={2}
-                                    className="mt-2"
-                                    disabled={savingContactId === contatto.id_contatto}
-                                  />
-                                </CTableDataCell>
-                                <CTableDataCell className="text-center">
-                                  <div className="d-flex flex-column gap-1 align-items-center">
-
-                                    <CFormCheck
-                                      type="checkbox"
-                                      label="Predefinito"
-                                      checked={contactForm.is_predefinito}
-                                      onChange={handleContactFieldChange("is_predefinito")}
-                                      disabled={savingContactId === contatto.id_contatto || isDisabled}
-                                    />
-
-                                  </div>
-                                </CTableDataCell>
-                                <CTableDataCell className="text-end">
-                                  <div className="d-flex gap-2 justify-content-end">
-                                    <CButton
-                                      color="secondary"
-                                      variant="outline"
-                                      size="sm"
-                                      type="button"
-                                      onClick={handleContactCancel}
-                                      disabled={savingContactId === contatto.id_contatto || isDisabled}
-                                    >
-                                      Annulla
-                                    </CButton>
-                                    <CButton
-                                      color="primary"
-                                      size="sm"
-                                      type="button"
-                                      disabled={savingContactId === contatto.id_contatto}
-                                      onClick={() => handleContactSave(contatto.id_contatto)}
-                                    >
-                                      {savingContactId === contatto.id_contatto ? "Salvataggio..." : "Salva"}
-                                    </CButton>
-                                  </div>
-                                </CTableDataCell>
-                              </CTableRow>
-                            )
-                          }
-
-                          const fullName = String(contatto.nome || '').trim()
-                          const isDefault = Boolean(contatto.is_predefinito)
-
-                          return (
-                            <CTableRow key={contatto.id_contatto}>
-                              <CTableDataCell>{fullName || "-"}</CTableDataCell>
-                              <CTableDataCell>{contatto.ruolo || "-"}</CTableDataCell>
-                              <CTableDataCell>{contatto.telefono || "-"}</CTableDataCell>
-                              <CTableDataCell>{contatto.cellulare || "-"}</CTableDataCell>
-                              <CTableDataCell>{contatto.email || "-"}</CTableDataCell>
-                              <CTableDataCell className="text-center">
-                                {isDefault ? (
-                                  <CBadge color="primary">Si</CBadge>
-                                ) : (
-                                  <span className="text-body-secondary">No</span>
-                                )}
-                              </CTableDataCell>
-                              <CTableDataCell className="text-end">
                                 <div className="d-flex gap-2 justify-content-end">
                                   <CButton
                                     color="secondary"
                                     variant="outline"
                                     size="sm"
-                                    onClick={() => handleContactEdit(contatto)}
-                                    disabled={isDisabled || savingContactId !== null || isEditingGeneral || isEditingFiscal}
+                                    type="button"
+                                    onClick={handleSedeCancel}
+                                    disabled={isSaving || isDisabled}
                                   >
-                                    <CIcon icon={cilSettings} />
+                                    Annulla
                                   </CButton>
-                                  <CButton
-                                    color="secondary"
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => handleContactArchive(contatto.id_contatto)}
-                                    disabled={isDisabled || savingContactId !== null || isEditingGeneral || isEditingFiscal}
-                                  >
-                                    {savingContactId === contatto.id_contatto ? "Archiviazione..." : "Archivia"}
-                                  </CButton>
-                                </div>
-                              </CTableDataCell>
-                            </CTableRow>
-                          )
-                        })}
-                      </React.Fragment>
-                    ))}
-                  </CTableBody>
-                </CTable>
-              ) : (
-                <CAlert color="info" className="mb-0">Nessun contatto associato.</CAlert>
-              )) : (
-                contattiArchGrouped.length > 0 ? (
-                  <CTable hover responsive size="sm">
-                    <CTableHead color="dark">
-                      <CTableRow>
-                        <CTableHeaderCell scope="col">Nome</CTableHeaderCell>
-                        <CTableHeaderCell scope="col">Ruolo</CTableHeaderCell>
-                        <CTableHeaderCell scope="col">Telefono</CTableHeaderCell>
-                        <CTableHeaderCell scope="col">Cellulare</CTableHeaderCell>
-                        <CTableHeaderCell scope="col">Email</CTableHeaderCell>
-                        <CTableHeaderCell scope="col" className="text-center">Predefinito</CTableHeaderCell>
-                        <CTableHeaderCell scope="col" className="text-end">Azioni</CTableHeaderCell>
-                      </CTableRow>
-                    </CTableHead>
-                    <CTableBody>
-                      {contattiArchGrouped.map((group) => (
-                        <React.Fragment key={`arch-group-${group.key}`}>
-                          <CTableRow>
-                            <CTableDataCell colSpan={7} color="secondary"><strong>{group.label}</strong></CTableDataCell>
-                          </CTableRow>
-                          {group.items.map((c) => {
-                            const fullName = String(c.nome || "").trim()
-                            const sede =
-                              c.sede_denominazione || c.sede_indirizzo
-                                ? [
-                                    c.sede_denominazione,
-                                    c.sede_indirizzo,
-                                    [c.sede_cap, c.sede_comune].filter(Boolean).join(' '),
-                                    c.sede_provincia ? `${c.sede_provincia}` : null,
-                                  ]
-                                    .filter(Boolean)
-                                    .join(' ')
-                                : '-'
-                            const isDefault = Number(c.is_predefinito) === 1
-                            return (
-                              <CTableRow key={`arch-${c.id_contatto}`}>
-                                <CTableDataCell>{fullName || '-'}</CTableDataCell>
-                                <CTableDataCell>{c.ruolo || '-'}</CTableDataCell>
-                                <CTableDataCell>{c.telefono || '-'}</CTableDataCell>
-                                <CTableDataCell>{c.cellulare || '-'}</CTableDataCell>
-                                <CTableDataCell>{c.email || '-'}</CTableDataCell>
-                                <CTableDataCell className="text-center">
-                                  {isDefault ? <CBadge color="primary">Si</CBadge> : <span className="text-body-secondary">No</span>}
-                                  <div className="small text-body-secondary mt-1">{sede}</div>
-                                </CTableDataCell>
-                                <CTableDataCell className="text-end">
-                                  <div className="d-flex gap-2 justify-content-end align-items-center">
-                                    <small className="text-body-secondary me-2">{formatDateTime(c.archived_at)}</small>
-                                    <CButton
-                                      color="secondary"
-                                      variant="outline"
-                                      size="sm"
-                                      disabled={isDisabled || restoringArchivedId === c.id_contatto}
-                                      onClick={async () => {
-                                        if (!recordId) return
-                                        setMutationError(null)
-                                        setRestoringArchivedId(c.id_contatto)
-                                        try {
-                                          const response = await updateAnagraficaDetail({
-                                            token,
-                                            id: recordId,
-                                            kpiPeriod,
-                                            // Non forziamo id_sede: il backend ripristina sulla sede originale se esiste
-                                            contatti: [{ action: 'restore', id_contatto: c.id_contatto }],
-                                          })
-                                          handleMutationSuccess(response)
-                                        } catch (mutationErrorInstance) {
-                                          if (mutationErrorInstance.status === 401 && logout) {
-                                            logout();
-                                            return
-                                          }
-                                          setMutationError(mutationErrorInstance.payload?.message || mutationErrorInstance.message)
-                                        } finally {
-                                          setRestoringArchivedId(null)
-                                        }
-                                      }}
-                                    >
-                                      {restoringArchivedId === c.id_contatto ? 'Ripristino...' : 'Ripristina'}
-                                    </CButton>
+                                  {!isNewRow && sedeData && (
                                     <CButton
                                       color="danger"
                                       variant="outline"
                                       size="sm"
-                                      disabled={isDisabled || deletingArchivedId === c.id_contatto}
-                                      onClick={async () => {
-                                        const confirmed = window.confirm(`Confermi l'eliminazione definitiva del contatto archiviato ${c.id_contatto}?`)
-                                        if (!confirmed) return
-                                        setMutationError(null)
-                                        setDeletingArchivedId(c.id_contatto)
-                                        try {
-                                          const response = await updateAnagraficaDetail({
-                                            token,
-                                            id: recordId,
-                                            kpiPeriod,
-                                            contatti: [{ action: 'hard_delete', id_contatto: c.id_contatto }],
-                                          })
-                                          handleMutationSuccess(response)
-                                        } catch (mutationErrorInstance) {
-                                          if (mutationErrorInstance.status === 401 && logout) {
-                                            logout();
-                                            return
-                                          }
-                                          setMutationError(mutationErrorInstance.payload?.message || mutationErrorInstance.message)
-                                        } finally {
-                                          setDeletingArchivedId(null)
-                                        }
-                                      }}
+                                      type="button"
+                                      onClick={() => handleSedeDelete(sedeData.id_sede)}
+                                      disabled={isSaving || isDisabled || savingSedeId === sedeData.id_sede}
                                     >
-                                      {deletingArchivedId === c.id_contatto ? 'Eliminazione...' : (<><CIcon icon={cilTrash} /> Elimina</>)}
+                                      {savingSedeId === sedeData.id_sede ? "Eliminazione..." : "Elimina"}
                                     </CButton>
+                                  )}
+                                  <CButton
+                                    color="primary"
+                                    size="sm"
+                                    type="button"
+                                    onClick={handleSedeSave}
+                                    disabled={isSaving || isDisabled}
+                                  >
+                                    {isSaving ? "Salvataggio..." : "Salva"}
+                                  </CButton>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="d-flex flex-column gap-3">
+                                <CRow className="g-3">
+                                  <CCol md={12}>
+                                    <div className="text-body-secondary text-uppercase small mb-1">Indirizzo</div>
+                                    <div className="fw-semibold">
+                                      {[sedeData?.indirizzo, sedeData?.civico]
+                                        .filter(Boolean)
+                                        .join(" ")
+                                        .trim() || "-"}
+                                    </div>
+                                  </CCol>
+                                </CRow>
+                                <CRow className="g-3">
+                                  <CCol md={3}>
+                                    <div className="text-body-secondary text-uppercase small mb-1">CAP</div>
+                                    <div>{sedeData?.cap || "-"}</div>
+                                  </CCol>
+                                  <CCol md={3}>
+                                    <div className="text-body-secondary text-uppercase small mb-1">Comune</div>
+                                    <div>{sedeData?.comune || "-"}</div>
+                                  </CCol>
+                                  <CCol md={3}>
+                                    <div className="text-body-secondary text-uppercase small mb-1">Provincia</div>
+                                    <div>{sedeData?.provincia || "-"}</div>
+                                  </CCol>
+                                  <CCol md={3}>
+                                    <div className="text-body-secondary text-uppercase small mb-1">Nazione</div>
+                                    <div>{sedeData?.nazione_iso2 || "-"}</div>
+                                  </CCol>
+                                </CRow>
+                                <div>
+                                  <div className="text-body-secondary text-uppercase small mb-1">Note</div>
+                                  <div style={{ whiteSpace: "pre-wrap" }}>
+                                    {renderValue(sedeData?.note)}
                                   </div>
-                                </CTableDataCell>
-                              </CTableRow>
-                            )
-                          })}
-                        </React.Fragment>
+                                </div>
+                                <div className="d-flex gap-2 justify-content-end">
+                                  <CButton
+                                    color="secondary"
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => handleSedeEdit(sedeData)}
+                                    disabled={isDisabled || Boolean(editingSedeId) || savingSedeId === sedeData?.id_sede}
+                                  >
+                                    Modifica
+                                  </CButton>
+                                  <CButton
+                                    color="danger"
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => handleSedeDelete(sedeData?.id_sede)}
+                                    disabled={isDisabled || Boolean(editingSedeId) || savingSedeId === sedeData?.id_sede}
+                                  >
+                                    {savingSedeId === sedeData?.id_sede ? "Eliminazione..." : "Elimina"}
+                                  </CButton>
+                                </div>
+                              </div>
+                            )}
+                          </CAccordionBody>
+                        </CAccordionItem>
+                      )
+                    })}
+                  </CAccordion>
+                ) : (
+                  <CAlert color="info" className="mb-0">
+                    Nessuna sede registrata per questa anagrafica.
+                  </CAlert>
+                )}
+              </section>
+              <section className="d-flex flex-column gap-3">
+                <div className="d-flex justify-content-between align-items-start gap-3">
+                  <h3 className="h6 mb-0">Dati fiscali</h3>
+                  {!isEditingFiscal && !isDisabled && (
+                    <CButton color="secondary" variant="outline" size="sm" onClick={startFiscalEditing}>
+                      Modifica
+                    </CButton>
+                  )}
+                </div>
+
+                {isEditingFiscal && fiscaleForm ? (
+                  <CForm
+                    onSubmit={handleFiscalSubmit}
+                    className="d-flex flex-column gap-3"
+                    ref={fiscalFormRef}
+                  >
+                    <CRow className="g-3">
+                      <CCol md={4}>
+                        <CFormLabel htmlFor="pec">PEC</CFormLabel>
+                        <CFormInput
+                          id="pec"
+                          type="email"
+                          value={fiscaleForm.pec}
+                          onChange={handleFiscalFieldChange("pec")}
+                          disabled={savingFiscal || isDisabled}
+                        />
+                      </CCol>
+                      <CCol md={4}>
+                        <CFormLabel htmlFor="codiceSdi">Codice SDI</CFormLabel>
+                        <CFormInput
+                          id="codiceSdi"
+                          value={fiscaleForm.codice_sdi}
+                          onChange={handleFiscalFieldChange("codice_sdi")}
+                          disabled={savingFiscal || isDisabled}
+                        />
+                      </CCol>
+                      <CCol md={4}>
+                        <CFormLabel htmlFor="iban">IBAN</CFormLabel>
+                        <CFormInput
+                          id="iban"
+                          value={fiscaleForm.iban}
+                          onChange={handleFiscalFieldChange("iban")}
+                          disabled={savingFiscal || isDisabled}
+                        />
+                      </CCol>
+                      <CCol md={6}>
+                        <CFormLabel htmlFor="banca">Banca</CFormLabel>
+                        <CFormInput
+                          id="banca"
+                          value={fiscaleForm.banca}
+                          onChange={handleFiscalFieldChange("banca")}
+                          disabled={savingFiscal || isDisabled}
+                        />
+                      </CCol>
+                      <CCol md={6}>
+                        <CFormLabel htmlFor="modalitaPagamento">Modalita di pagamento</CFormLabel>
+                        <CFormSelect
+                          id="modalitaPagamento"
+                          value={fiscaleForm.modalita_pagamento ?? ""}
+                          onChange={handleFiscalFieldChange("modalita_pagamento")}
+                          disabled={savingFiscal || isDisabled || modalitaLoading}
+                        >
+                          <option value="">Seleziona una modalità</option>
+                          {modalitaSelectOptions.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                          {fiscaleForm.modalita_pagamento &&
+                            fiscaleForm.modalita_pagamento !== "" &&
+                            !modalitaSelectOptions.some((option) => option.value === fiscaleForm.modalita_pagamento) && (
+                              <option key="external-modalita" value={fiscaleForm.modalita_pagamento}>
+                                {fiscaleForm.modalita_pagamento}
+                              </option>
+                            )}
+                        </CFormSelect>
+                        {modalitaLoading && (
+                          <div className="form-text text-body-secondary">Caricamento modalità.</div>
+                        )}
+                        {modalitaError && !modalitaLoading && (
+                          <div className="form-text text-danger">
+                            Impossibile caricare le modalità: {modalitaError.message || "errore sconosciuto"}
+                          </div>
+                        )}
+                      </CCol>
+                      <CCol md={6}>
+                        <CFormLabel htmlFor="idCondPagamento">Condizioni di pagamento</CFormLabel>
+                        <CFormSelect
+                          id="idCondPagamento"
+                          value={fiscaleForm.id_cond_pagamento}
+                          onChange={handleFiscalFieldChange("id_cond_pagamento")}
+                          disabled={savingFiscal || isDisabled || paymentTermsLoading}
+                        >
+                          <option value="">Seleziona una condizione</option>
+                          {paymentTermOptions.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </CFormSelect>
+                        {paymentTermsLoading && (
+                          <div className="form-text text-body-secondary">Caricamento condizioni…</div>
+                        )}
+                        {paymentTermsError && !paymentTermsLoading && (
+                          <div className="form-text text-danger">
+                            Impossibile caricare le condizioni: {paymentTermsError.message || "errore sconosciuto"}
+                          </div>
+                        )}
+                        {currentPaymentTermSelection?.description && (
+                          <div className="form-text">{currentPaymentTermSelection.description}</div>
+                        )}
+                      </CCol>
+                      <CCol xs={12}>
+                        <CFormLabel htmlFor="altriDati">Altri dati</CFormLabel>
+                        <CFormTextarea
+                          id="altriDati"
+                          rows={4}
+                          value={fiscaleForm.altri_dati}
+                          onChange={handleFiscalFieldChange("altri_dati")}
+                          disabled={savingFiscal || isDisabled}
+                        />
+                      </CCol>
+                    </CRow>
+                    <div className="d-flex gap-2 justify-content-end">
+                      <CButton color="secondary" variant="outline" type="button" onClick={cancelFiscalEditing} disabled={savingFiscal || isDisabled}>
+                        Annulla
+                      </CButton>
+                      <CButton color="primary" type="submit" disabled={savingFiscal || isDisabled}>
+                        {savingFiscal ? "Salvataggio..." : "Salva modifiche"}
+                      </CButton>
+                    </div>
+                  </CForm>
+                ) : (
+                  <>
+                    {fiscaleFields.length > 0 ? (
+                    <CRow className="g-3">
+                      {fiscaleFields.map((field) => {
+                        const colProps = field.fullWidth
+                          ? { xs: 12, md: 12 }
+                          : { md: 6, xl: 4 }
+                        return (
+                          <CCol key={field.label} {...colProps}>
+                            <DetailField label={field.label} value={field.value} compact={isCompact} />
+                          </CCol>
+                        )
+                      })}
+                    </CRow>
+                    ) : (
+                      <CAlert color="info" className="mb-0">
+                        Nessun dato fiscale registrato per questa anagrafica.
+                      </CAlert>
+                    )}
+                    {detail.fiscale?.altri_dati && (
+                      <CAlert color="secondary" className="mt-3 mb-0">
+                        <div className="text-body-secondary text-uppercase small fw-semibold mb-2">Altri dati</div>
+                        <div style={{ whiteSpace: "pre-wrap" }}>{detail.fiscale.altri_dati}</div>
+                      </CAlert>
+                    )}
+                  </>
+                )}
+              </section>
+
+              <section className="d-flex flex-column gap-3">
+                <div className="d-flex justify-content-between align-items-start gap-3">
+                  <h3 className="h6 mb-0">Contatti</h3>
+                  <div className="d-flex gap-2 align-items-center">
+                    {contactsView === 'associati' && !editingContactId && (
+                      <CButton
+                        color="primary"
+                        variant="outline"
+                        size="sm"
+                        onClick={handleContactCreate}
+                        disabled={savingContactId !== null || isEditingGeneral || isEditingFiscal}
+                      >
+                        Nuovo contatto
+                      </CButton>
+                    )}
+                    <CFormSelect size="sm" value={contactsView} onChange={(e) => setContactsView(e.target.value)}>
+                      <option value="associati">Associati</option>
+                      <option value="archiviati">Archiviati</option>
+                    </CFormSelect>
+                  </div>
+                </div>
+                {contactsView === 'associati' ? (
+                  (contatti.length > 0 || editingContactId === 'new') ? (
+                    <div className="d-flex flex-column gap-3">
+                      {editingContactId === 'new' && contactForm && renderContactFormCard({ isNew: true })}
+                      {editingContactId && editingContact && editingContactId !== 'new' && contactForm && (
+                        renderContactFormCard({ isNew: false, contact: editingContact })
+                      )}
+                      {contattiGrouped.map((group) => {
+                        const visibleItems = group.items.filter((contact) => editingContactId !== contact.id_contatto)
+                        if (visibleItems.length === 0) {
+                          return null
+                        }
+                        return (
+                          <div key={`group-${group.key}`} className="border border-1 rounded-3 p-3 bg-body">
+                            <div className="text-body-secondary small text-uppercase fw-semibold mb-3">
+                              {group.label}
+                            </div>
+                            <CAccordion flush alwaysOpen>
+                              {visibleItems.map((contatto) => renderContactAccordionItem(contatto, group.label))}
+                            </CAccordion>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  ) : (
+                    <CAlert color="info" className="mb-0">Nessun contatto associato.</CAlert>
+                  )
+                ) : (
+                  contattiArchGrouped.length > 0 ? (
+                    <div className="d-flex flex-column gap-3">
+                      {contattiArchGrouped.map((group) => (
+                        <div key={`arch-group-${group.key}`} className="border border-1 rounded-3 p-3 bg-body">
+                          <div className="text-body-secondary small text-uppercase fw-semibold mb-3">
+                            {group.label}
+                          </div>
+                          <CAccordion flush alwaysOpen>
+                            {group.items.map((contatto) => renderArchivedContactAccordionItem(contatto, group.label))}
+                          </CAccordion>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <CAlert color="info" className="mb-0">Nessun contatto archiviato.</CAlert>
+                  )
+                )}
+              </section>
+
+              <section>
+                <div className="d-flex justify-content-between align-items-center mb-3">
+                  <h3 className="h6 mb-0">Contratti</h3>
+                  <CButton
+                    color="primary"
+                    variant="outline"
+                    size="sm"
+                    onClick={() =>
+                      navigate('/contratti/crea', {
+                        state: {
+                          prefill: {
+                            id_anagrafica: detail?.anagrafica?.id_anagrafica ?? recordId,
+                            ragione_sociale: detail?.anagrafica?.ragione_sociale ?? null,
+                          },
+                        },
+                      })
+                    }
+                    disabled={isDisabled}
+                  >
+                    <CIcon icon={cilPlus} className="me-2" /> Nuovo contratto
+                  </CButton>
+                </div>
+                {contratti.length > 0 ? (
+                  <CTable hover responsive size="sm">
+                    <CTableHead color="dark">
+                      <CTableRow>
+                        <CTableHeaderCell scope="col">Titolo</CTableHeaderCell>
+                        <CTableHeaderCell scope="col">Codice</CTableHeaderCell>
+                        <CTableHeaderCell scope="col">Inizio</CTableHeaderCell>
+                        <CTableHeaderCell scope="col">Fine</CTableHeaderCell>
+                        <CTableHeaderCell scope="col" className="text-center">Rinnovo</CTableHeaderCell>
+                        <CTableHeaderCell scope="col" className="text-center">Attivo</CTableHeaderCell>
+                        <CTableHeaderCell scope="col" className="text-end">Azioni</CTableHeaderCell>
+                      </CTableRow>
+                    </CTableHead>
+                    <CTableBody>
+                      {contratti.map((c) => (
+                        <CTableRow key={c.id_contratto}>
+                          <CTableDataCell>{c.titolo}</CTableDataCell>
+                          <CTableDataCell>{c.codice || '-'}</CTableDataCell>
+                          <CTableDataCell>{formatDate(c.data_inizio)}</CTableDataCell>
+                          <CTableDataCell>{formatDate(c.data_fine)}</CTableDataCell>
+                          <CTableDataCell className="text-center">
+                            {Number(c.rinnovo_automatico) === 1 ? <CBadge color="primary">Si</CBadge> : <span className="text-body-secondary">No</span>}
+                          </CTableDataCell>
+                          <CTableDataCell className="text-center">
+                            {Number(c.attivo) === 1 ? <CBadge color="success">Si</CBadge> : <span className="text-body-secondary">No</span>}
+                          </CTableDataCell>
+                          <CTableDataCell className="text-end">
+                            <CButton
+                              color="link"
+                              size="sm"
+                              className="p-0"
+                              onClick={() => navigate(`/contratti/dettagli?id=${c.id_contratto}`)}
+                            >
+                              <CIcon icon={cilDescription} />
+                            </CButton>
+                          </CTableDataCell>
+                        </CTableRow>
                       ))}
                     </CTableBody>
                   </CTable>
                 ) : (
-                  <CAlert color="info" className="mb-0">Nessun contatto archiviato.</CAlert>
-                )
-              )}
-            </section>
+                  <CAlert color="info" className="mb-0">Nessun contratto disponibile.</CAlert>
+                )}
+              </section>
 
-            <section>
-              <div className="d-flex justify-content-between align-items-center mb-3">
-                <h3 className="h6 mb-0">Contratti</h3>
-                <CButton
-                  color="primary"
-                  variant="outline"
-                  size="sm"
-                  onClick={() =>
-                    navigate('/contratti/crea', {
-                      state: {
-                        prefill: {
-                          id_anagrafica: detail?.anagrafica?.id_anagrafica ?? recordId,
-                          ragione_sociale: detail?.anagrafica?.ragione_sociale ?? null,
-                        },
-                      },
-                    })
-                  }
-                  disabled={isDisabled}
-                >
-                  <CIcon icon={cilPlus} className="me-2" /> Nuovo contratto
-                </CButton>
-              </div>
-              {contratti.length > 0 ? (
-                <CTable hover responsive size="sm">
-                  <CTableHead color="dark">
-                    <CTableRow>
-                      <CTableHeaderCell scope="col">Titolo</CTableHeaderCell>
-                      <CTableHeaderCell scope="col">Codice</CTableHeaderCell>
-                      <CTableHeaderCell scope="col">Inizio</CTableHeaderCell>
-                      <CTableHeaderCell scope="col">Fine</CTableHeaderCell>
-                      <CTableHeaderCell scope="col" className="text-center">Rinnovo</CTableHeaderCell>
-                      <CTableHeaderCell scope="col" className="text-center">Attivo</CTableHeaderCell>
-                      <CTableHeaderCell scope="col" className="text-end">Azioni</CTableHeaderCell>
-                    </CTableRow>
-                  </CTableHead>
-                  <CTableBody>
-                    {contratti.map((c) => (
-                      <CTableRow key={c.id_contratto}>
-                        <CTableDataCell>{c.titolo}</CTableDataCell>
-                        <CTableDataCell>{c.codice || '-'}</CTableDataCell>
-                        <CTableDataCell>{formatDate(c.data_inizio)}</CTableDataCell>
-                        <CTableDataCell>{formatDate(c.data_fine)}</CTableDataCell>
-                        <CTableDataCell className="text-center">
-                          {Number(c.rinnovo_automatico) === 1 ? <CBadge color="primary">Si</CBadge> : <span className="text-body-secondary">No</span>}
-                        </CTableDataCell>
-                        <CTableDataCell className="text-center">
-                          {Number(c.attivo) === 1 ? <CBadge color="success">Si</CBadge> : <span className="text-body-secondary">No</span>}
-                        </CTableDataCell>
-                        <CTableDataCell className="text-end">
-                          <CButton
-                            color="link"
-                            size="sm"
-                            className="p-0"
-                            onClick={() => navigate(`/contratti/dettagli?id=${c.id_contratto}`)}
-                          >
-                            <CIcon icon={cilDescription} />
-                          </CButton>
-                        </CTableDataCell>
-                      </CTableRow>
-                    ))}
-                  </CTableBody>
-                </CTable>
-              ) : (
-                <CAlert color="info" className="mb-0">Nessun contratto disponibile.</CAlert>
-              )}
-            </section>
+              <section>
+                <div className="d-flex justify-content-between align-items-center mb-3">
+                  <h3 className="h6 mb-0">Preventivi correlati</h3>
+                  <CButton
+                    color="primary"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => navigate('/preventivi/crea')}
+                    disabled={isDisabled}
+                  >
+                    <CIcon icon={cilPlus} className="me-2" /> Nuovo preventivo
+                  </CButton>
+                </div>
+                {totalPreventivi > 0 ? (
+                  <>
+                    <CTable hover responsive size="sm">
+                      <CTableHead color="dark">
+                        <CTableRow className="align-middle">
+                          <CTableHeaderCell scope="col">Numero</CTableHeaderCell>
+                          <CTableHeaderCell scope="col">Data</CTableHeaderCell>
+                          <CTableHeaderCell scope="col">Totale imponibile</CTableHeaderCell>
+                          <CTableHeaderCell scope="col">Totale IVA</CTableHeaderCell>
+                          <CTableHeaderCell scope="col">Totale</CTableHeaderCell>
+                          <CTableHeaderCell scope="col" className="text-center">Stato</CTableHeaderCell>
+                          <CTableHeaderCell scope="col" className="text-center">Azioni</CTableHeaderCell>
+                        </CTableRow>
+                      </CTableHead>
+                      <CTableBody>
+                        {paginatedPreventivi.map((preventivo, idx) => (
+                          <CTableRow key={preventivo.id_preventivo ?? idx}>
+                            <CTableDataCell>
+                              {preventivo.anno_preventivo}/{preventivo.numero_documento}
+                            </CTableDataCell>
+                            <CTableDataCell>{formatDate(preventivo.data_preventivo)}</CTableDataCell>
+                            <CTableDataCell>{formatCurrency(preventivo.totale_imponibile)}</CTableDataCell>
+                            <CTableDataCell>{formatCurrency(preventivo.totale_iva)}</CTableDataCell>
+                            <CTableDataCell>{formatCurrency(preventivo.totale)}</CTableDataCell>
+                            <CTableDataCell className="text-center">
+                              {preventivo.stato_label ? (
+                                <CBadge color="secondary">{preventivo.stato_label}</CBadge>
+                              ) : (
+                                <span className="text-body-secondary">-</span>
+                              )}
+                            </CTableDataCell>
+                            <CTableDataCell className="text-center">
+                              <div className="d-inline-flex gap-2">
+                                <CButton
+                                  color="link"
+                                  size="sm"
+                                  className="p-0"
+                                  onClick={() => handleViewPreventivo(preventivo.id_preventivo)}
+                                  disabled={isDisabled}
+                                >
+                                  <CIcon icon={cilDescription} />
+                                </CButton>
+                                <CButton
+                                  color="link"
+                                  size="sm"
+                                  className="p-0"
+                                  onClick={() => { /* email no-op */ }}
+                                  disabled={isDisabled}
+                                >
+                                  <CIcon icon={cilEnvelopeClosed} />
+                                </CButton>
+                                <CButton
+                                  color="link"
+                                  size="sm"
+                                  className="p-0"
+                                  onClick={() => { /* pdf no-op */ }}
+                                  disabled={isDisabled}
+                                >
+                                  <CIcon icon={cilPrint} />
+                                </CButton>
+                              </div>
+                            </CTableDataCell>
+                          </CTableRow>
+                        ))}
+                      </CTableBody>
+                    </CTable>
 
-            <section>
-              <div className="d-flex justify-content-between align-items-center mb-3">
-                <h3 className="h6 mb-0">Preventivi correlati</h3>
-                <CButton
-                  color="primary"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => navigate('/preventivi/crea')}
-                  disabled={isDisabled}
-                >
-                  <CIcon icon={cilPlus} className="me-2" /> Nuovo preventivo
-                </CButton>
-              </div>
-              {totalPreventivi > 0 ? (
-                <>
+                    <div className="d-flex justify-content-end mt-2">
+                      <CPagination size="sm" className="mb-0">
+                        <CPaginationItem
+                          aria-label="Pagina precedente"
+                          disabled={preventiviPage <= 0}
+                          onClick={() => preventiviPage > 0 && setPreventiviPage(preventiviPage - 1)}
+                        >
+                          &laquo;
+                        </CPaginationItem>
+                        {preventiviPaginationItems.map((p) => (
+                          <CPaginationItem key={p} active={p === preventiviPage + 1} onClick={() => setPreventiviPage(p - 1)}>
+                            {p}
+                          </CPaginationItem>
+                        ))}
+                        <CPaginationItem
+                          aria-label="Pagina successiva"
+                          disabled={preventiviPage >= totalPreventiviPages - 1}
+                          onClick={() => preventiviPage < totalPreventiviPages - 1 && setPreventiviPage(preventiviPage + 1)}
+                        >
+                          &raquo;
+                        </CPaginationItem>
+                      </CPagination>
+                    </div>
+                  </>
+                ) : (
+                  <CAlert color="info" className="mb-0">Nessun preventivo disponibile.</CAlert>
+                )}
+              </section>
+
+              <section>
+                <h3 className="h6 mb-3">DDT correlati</h3>
+                {ddt.length > 0 ? (
                   <CTable hover responsive size="sm">
-                    <CTableHead color="dark">
-                      <CTableRow className="align-middle">
+                    <CTableHead color="light">
+                      <CTableRow>
+                        <CTableHeaderCell scope="col">Numero</CTableHeaderCell>
+                        <CTableHeaderCell scope="col">Data</CTableHeaderCell>
+                        <CTableHeaderCell scope="col">Tot. pezzi</CTableHeaderCell>
+                        <CTableHeaderCell scope="col">Tot. peso (kg)</CTableHeaderCell>
+                      </CTableRow>
+                    </CTableHead>
+                    <CTableBody>
+                      {ddt.map((documento) => {
+                        const pezziValue = Number(documento.totale_pezzi)
+                        const pezziDisplay = Number.isFinite(pezziValue)
+                          ? pezziValue
+                          : documento.totale_pezzi ?? "-"
+                        const pesoValue = Number(documento.totale_peso_kg)
+                        const pesoDisplay = Number.isFinite(pesoValue) ? pesoValue.toFixed(3) : "-"
+
+                        return (
+                          <CTableRow key={documento.id_ddt}>
+                            <CTableDataCell>
+                              {documento.anno}/{documento.numero_documento}
+                            </CTableDataCell>
+                            <CTableDataCell>{formatDate(documento.data_ddt)}</CTableDataCell>
+                            <CTableDataCell>{pezziDisplay}</CTableDataCell>
+                            <CTableDataCell>{pesoDisplay}</CTableDataCell>
+                          </CTableRow>
+                        )
+                      })}
+                    </CTableBody>
+                  </CTable>
+                ) : (
+                  <CAlert color="info" className="mb-0">
+                    Nessun DDT disponibile.
+                  </CAlert>
+                )}
+              </section>
+
+              <section>
+                <h3 className="h6 mb-3">Fatture correlate</h3>
+                {fatture.length > 0 ? (
+                  <CTable hover responsive size="sm">
+                    <CTableHead color="light">
+                      <CTableRow>
                         <CTableHeaderCell scope="col">Numero</CTableHeaderCell>
                         <CTableHeaderCell scope="col">Data</CTableHeaderCell>
                         <CTableHeaderCell scope="col">Totale imponibile</CTableHeaderCell>
                         <CTableHeaderCell scope="col">Totale IVA</CTableHeaderCell>
                         <CTableHeaderCell scope="col">Totale</CTableHeaderCell>
-                        <CTableHeaderCell scope="col" className="text-center">Stato</CTableHeaderCell>
-                        <CTableHeaderCell scope="col" className="text-center">Azioni</CTableHeaderCell>
+                        <CTableHeaderCell scope="col">Saldo</CTableHeaderCell>
+                        <CTableHeaderCell scope="col">Stato</CTableHeaderCell>
                       </CTableRow>
                     </CTableHead>
                     <CTableBody>
-                      {paginatedPreventivi.map((preventivo, idx) => (
-                        <CTableRow key={preventivo.id_preventivo ?? idx}>
+                      {fatture.map((fattura) => (
+                        <CTableRow key={fattura.id_fattura}>
                           <CTableDataCell>
-                            {preventivo.anno_preventivo}/{preventivo.numero_documento}
+                            {fattura.anno}/{fattura.numero_documento}
                           </CTableDataCell>
-                          <CTableDataCell>{formatDate(preventivo.data_preventivo)}</CTableDataCell>
-                          <CTableDataCell>{formatCurrency(preventivo.totale_imponibile)}</CTableDataCell>
-                          <CTableDataCell>{formatCurrency(preventivo.totale_iva)}</CTableDataCell>
-                          <CTableDataCell>{formatCurrency(preventivo.totale)}</CTableDataCell>
-                          <CTableDataCell className="text-center">
-                            {preventivo.stato_label ? (
-                              <CBadge color="secondary">{preventivo.stato_label}</CBadge>
+                          <CTableDataCell>{formatDate(fattura.data_fattura)}</CTableDataCell>
+                          <CTableDataCell>{formatCurrency(fattura.totale_imponibile)}</CTableDataCell>
+                          <CTableDataCell>{formatCurrency(fattura.totale_iva)}</CTableDataCell>
+                          <CTableDataCell>{formatCurrency(fattura.totale)}</CTableDataCell>
+                          <CTableDataCell>{formatCurrency(fattura.saldo)}</CTableDataCell>
+                          <CTableDataCell>
+                            {fattura.stato_label ? (
+                              <CBadge color="secondary">{fattura.stato_label}</CBadge>
                             ) : (
                               <span className="text-body-secondary">-</span>
                             )}
-                          </CTableDataCell>
-                          <CTableDataCell className="text-center">
-                            <div className="d-inline-flex gap-2">
-                              <CButton
-                                color="link"
-                                size="sm"
-                                className="p-0"
-                                onClick={() => handleViewPreventivo(preventivo.id_preventivo)}
-                                disabled={isDisabled}
-                              >
-                                <CIcon icon={cilDescription} />
-                              </CButton>
-                              <CButton
-                                color="link"
-                                size="sm"
-                                className="p-0"
-                                onClick={() => { /* email no-op */ }}
-                                disabled={isDisabled}
-                              >
-                                <CIcon icon={cilEnvelopeClosed} />
-                              </CButton>
-                              <CButton
-                                color="link"
-                                size="sm"
-                                className="p-0"
-                                onClick={() => { /* pdf no-op */ }}
-                                disabled={isDisabled}
-                              >
-                                <CIcon icon={cilPrint} />
-                              </CButton>
-                            </div>
                           </CTableDataCell>
                         </CTableRow>
                       ))}
                     </CTableBody>
                   </CTable>
-
-                  <div className="d-flex justify-content-end mt-2">
-                    <CPagination size="sm" className="mb-0">
-                      <CPaginationItem
-                        aria-label="Pagina precedente"
-                        disabled={preventiviPage <= 0}
-                        onClick={() => preventiviPage > 0 && setPreventiviPage(preventiviPage - 1)}
-                      >
-                        &laquo;
-                      </CPaginationItem>
-                      {preventiviPaginationItems.map((p) => (
-                        <CPaginationItem key={p} active={p === preventiviPage + 1} onClick={() => setPreventiviPage(p - 1)}>
-                          {p}
-                        </CPaginationItem>
-                      ))}
-                      <CPaginationItem
-                        aria-label="Pagina successiva"
-                        disabled={preventiviPage >= totalPreventiviPages - 1}
-                        onClick={() => preventiviPage < totalPreventiviPages - 1 && setPreventiviPage(preventiviPage + 1)}
-                      >
-                        &raquo;
-                      </CPaginationItem>
-                    </CPagination>
-                  </div>
-                </>
-              ) : (
-                <CAlert color="info" className="mb-0">Nessun preventivo disponibile.</CAlert>
-              )}
-            </section>
-
-            <section>
-              <h3 className="h6 mb-3">DDT correlati</h3>
-              {ddt.length > 0 ? (
-                <CTable hover responsive size="sm">
-                  <CTableHead color="light">
-                    <CTableRow>
-                      <CTableHeaderCell scope="col">Numero</CTableHeaderCell>
-                      <CTableHeaderCell scope="col">Data</CTableHeaderCell>
-                      <CTableHeaderCell scope="col">Tot. pezzi</CTableHeaderCell>
-                      <CTableHeaderCell scope="col">Tot. peso (kg)</CTableHeaderCell>
-                    </CTableRow>
-                  </CTableHead>
-                  <CTableBody>
-                    {ddt.map((documento) => {
-                      const pezziValue = Number(documento.totale_pezzi)
-                      const pezziDisplay = Number.isFinite(pezziValue)
-                        ? pezziValue
-                        : documento.totale_pezzi ?? "-"
-                      const pesoValue = Number(documento.totale_peso_kg)
-                      const pesoDisplay = Number.isFinite(pesoValue) ? pesoValue.toFixed(3) : "-"
-
-                      return (
-                        <CTableRow key={documento.id_ddt}>
-                          <CTableDataCell>
-                            {documento.anno}/{documento.numero_documento}
-                          </CTableDataCell>
-                          <CTableDataCell>{formatDate(documento.data_ddt)}</CTableDataCell>
-                          <CTableDataCell>{pezziDisplay}</CTableDataCell>
-                          <CTableDataCell>{pesoDisplay}</CTableDataCell>
-                        </CTableRow>
-                      )
-                    })}
-                  </CTableBody>
-                </CTable>
-              ) : (
-                <CAlert color="info" className="mb-0">
-                  Nessun DDT disponibile.
-                </CAlert>
-              )}
-            </section>
-
-            <section>
-              <h3 className="h6 mb-3">Fatture correlate</h3>
-              {fatture.length > 0 ? (
-                <CTable hover responsive size="sm">
-                  <CTableHead color="light">
-                    <CTableRow>
-                      <CTableHeaderCell scope="col">Numero</CTableHeaderCell>
-                      <CTableHeaderCell scope="col">Data</CTableHeaderCell>
-                      <CTableHeaderCell scope="col">Totale imponibile</CTableHeaderCell>
-                      <CTableHeaderCell scope="col">Totale IVA</CTableHeaderCell>
-                      <CTableHeaderCell scope="col">Totale</CTableHeaderCell>
-                      <CTableHeaderCell scope="col">Saldo</CTableHeaderCell>
-                      <CTableHeaderCell scope="col">Stato</CTableHeaderCell>
-                    </CTableRow>
-                  </CTableHead>
-                  <CTableBody>
-                    {fatture.map((fattura) => (
-                      <CTableRow key={fattura.id_fattura}>
-                        <CTableDataCell>
-                          {fattura.anno}/{fattura.numero_documento}
-                        </CTableDataCell>
-                        <CTableDataCell>{formatDate(fattura.data_fattura)}</CTableDataCell>
-                        <CTableDataCell>{formatCurrency(fattura.totale_imponibile)}</CTableDataCell>
-                        <CTableDataCell>{formatCurrency(fattura.totale_iva)}</CTableDataCell>
-                        <CTableDataCell>{formatCurrency(fattura.totale)}</CTableDataCell>
-                        <CTableDataCell>{formatCurrency(fattura.saldo)}</CTableDataCell>
-                        <CTableDataCell>
-                          {fattura.stato_label ? (
-                            <CBadge color="secondary">{fattura.stato_label}</CBadge>
-                          ) : (
-                            <span className="text-body-secondary">-</span>
-                          )}
-                        </CTableDataCell>
-                      </CTableRow>
-                    ))}
-                  </CTableBody>
-                </CTable>
-              ) : (
-                <CAlert color="info" className="mb-0">
-                  Nessuna fattura disponibile.
-                </CAlert>
-              )}
-            </section>
-          </>
-        )}
-      </CCardBody>
-    </CCard>
-    <BottomToast open={toast.open} type={toast.type} message={toast.message} />
+                ) : (
+                  <CAlert color="info" className="mb-0">
+                    Nessuna fattura disponibile.
+                  </CAlert>
+                )}
+              </section>
+            </>
+          )}
+        </CCardBody>
+      </CCard>
+      <BottomToast open={toast.open} type={toast.type} message={toast.message} />
     </>
   )
 }

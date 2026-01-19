@@ -14,7 +14,7 @@ final class ConfigRepository
      */
     public function listNaturaIva(): array
     {
-        $stmt = $this->pdo->query('SELECT id_natura, code, label FROM cfg_sdi_natura_iva ORDER BY code ASC');
+        $stmt = $this->pdo->query('SELECT id_natura, code, label FROM cfg_sdi_natura_iva WHERE attivo = 1 ORDER BY code ASC');
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
         return array_map(
             fn ($r) => [
@@ -26,4 +26,3 @@ final class ConfigRepository
         );
     }
 }
-
