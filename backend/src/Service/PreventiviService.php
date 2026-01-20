@@ -434,14 +434,24 @@ HTML;
         if ($idPrev <= 0 && $idAnagrafica <= 0) {
             throw new \RuntimeException('Cliente (anagrafica) mancante o non valido.', 422);
         }
+        $mittenteId = isset($input['id_mittente']) ? (int) $input['id_mittente'] : 0;
+        if ($mittenteId <= 0 && $idAnagrafica > 0) {
+            $mittenteId = $idAnagrafica;
+        }
 
         // Vincolo: l'anagrafica deve essere attiva per creare/aggiornare/confirmare un preventivo
         if ($idAnagrafica > 0 && !$this->repository->existsAnagrafica($idAnagrafica)) {
             throw new \RuntimeException('Anagrafica disattivata o inesistente. Operazione non consentita.', 422);
         }
+        if ($mittenteId > 0 && !$this->repository->existsAnagrafica($mittenteId)) {
+            throw new \RuntimeException('Mittente spedizione disattivato o inesistente. Operazione non consentita.', 422);
+        }
 
         $dataPrev = isset($input['data_preventivo']) ? (string) $input['data_preventivo'] : null;
         $note = isset($input['note']) ? (string) $input['note'] : null;
+        $noteDirty = array_key_exists('note_dirty', $input)
+            ? (bool) $input['note_dirty']
+            : ($note !== null && trim($note) !== '');
         $oggetto = isset($input['oggetto']) ? (string) $input['oggetto'] : null; // kept for compatibility; will be overridden by computed text
         // Multi-select oggetti + testo custom
         $oggettiIds = [];
@@ -574,8 +584,10 @@ HTML;
 
             $updated = $this->repository->updateDraft($idPrev, [
                 'id_anagrafica' => $idAnagrafica ?: null,
+                'id_mittente' => $mittenteId > 0 ? $mittenteId : null,
                 'data_preventivo' => $dataPrev,
                 'note' => $note,
+                'note_dirty' => $noteDirty ? 1 : 0,
                 'oggetto' => $oggetto, // will be recomputed from selections below
                 'riferimento_cliente' => $rifCliente,
                 'totale_imponibile' => $totImpon,
@@ -606,17 +618,34 @@ HTML;
                 ];
             }
 
+            $updatedFields = [
+                'id_anagrafica' => $idAnagrafica ?: null,
+                'id_mittente' => $mittenteId > 0 ? $mittenteId : null,
+                'data_preventivo' => $dataPrev,
+                'oggetto' => $oggetto,
+                'riferimento_cliente' => $rifCliente,
+                'totale_imponibile' => $totImpon,
+                'totale_sconto' => $totSconto,
+                'totale_iva' => $totIva,
+                'totale' => $totale,
+            ];
+            if ($noteDirty) {
+                $updatedFields['note'] = $note;
+            }
+
             return [
                 'status' => 'draft',
                 'id_preventivo' => $updated['id_preventivo'],
                 'anno_preventivo' => $updated['anno_preventivo'] ?? null,
                 'numero_documento' => $updated['numero_documento'] ?? null,
+                'updated_fields' => $updatedFields,
             ];
         }
 
         // Nuova bozza con progressivo
         $draft = $this->repository->insertDraft([
             'id_anagrafica' => $idAnagrafica,
+            'id_mittente' => $mittenteId > 0 ? $mittenteId : null,
             'data_preventivo' => $dataPrev,
             'note' => $note,
             'oggetto' => $oggetto, // will be recomputed from selections

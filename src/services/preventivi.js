@@ -59,6 +59,7 @@ export const createPreventivo = async ({
   token,
   id_preventivo,
   id_anagrafica,
+  id_mittente,
   data_preventivo,
   note,
   oggetto,
@@ -75,6 +76,7 @@ export const createPreventivo = async ({
   const payload = {
     id_preventivo,
     id_anagrafica,
+    id_mittente,
     data_preventivo,
     note,
     oggetto,

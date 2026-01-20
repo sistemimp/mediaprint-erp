@@ -1352,12 +1352,12 @@ final class PreventiviRepository
         try {
             // Copia testata in archivio
             $this->pdo->prepare(
-                "INSERT INTO tb_preventivi_archive (
-                    id_preventivo, id_anagrafica, anno_preventivo, numero_documento, data_preventivo,
+            "INSERT INTO tb_preventivi_archive (
+                id_preventivo, id_anagrafica, id_mittente, anno_preventivo, numero_documento, data_preventivo,
                     stato, totale_imponibile, totale_sconto, totale_iva, totale, oggetto, riferimento_cliente, note,
                     created_at, updated_at
                 )
-                SELECT p.id_preventivo, p.id_anagrafica, p.anno_preventivo, p.numero_documento, p.data_preventivo,
+                SELECT p.id_preventivo, p.id_anagrafica, p.id_mittente, p.anno_preventivo, p.numero_documento, p.data_preventivo,
                        COALESCE(sp.code, 'bozza') AS stato,
                        p.totale_imponibile, p.totale_sconto, p.totale_iva, p.totale, p.oggetto, p.riferimento_cliente, p.note,
                        p.created_at, p.updated_at
@@ -1551,8 +1551,9 @@ final class PreventiviRepository
             $next = (int) $nextStmt->fetchColumn();
 
             $sql = <<<'SQL'
-                INSERT INTO tb_preventivi (
-                    id_anagrafica,
+            INSERT INTO tb_preventivi (
+                id_anagrafica,
+                id_mittente,
                     anno_preventivo,
                     numero_documento,
                     data_preventivo,
@@ -1567,8 +1568,9 @@ final class PreventiviRepository
                     created_at,
                     updated_at
                 ) VALUES (
-                    :id_anagrafica,
-                    :anno,
+                :id_anagrafica,
+                :id_mittente,
+                :anno,
                     :numero,
                     :data_preventivo,
                     :oggetto,
@@ -1586,6 +1588,7 @@ final class PreventiviRepository
 
             $stmt = $this->pdo->prepare($sql);
             $stmt->bindValue(':id_anagrafica', (int) $data['id_anagrafica'], PDO::PARAM_INT);
+            $stmt->bindValue(':id_mittente', isset($data['id_mittente']) && $data['id_mittente'] !== null ? (int) $data['id_mittente'] : null, PDO::PARAM_INT);
             $stmt->bindValue(':anno', $year, PDO::PARAM_INT);
             $stmt->bindValue(':numero', $next, PDO::PARAM_INT);
             $stmt->bindValue(':data_preventivo', $data['data_preventivo'] ?? null, PDO::PARAM_STR);
@@ -1622,6 +1625,7 @@ final class PreventiviRepository
             UPDATE tb_preventivi
             SET
                 id_anagrafica = COALESCE(:id_anagrafica, id_anagrafica),
+                id_mittente = :id_mittente,
                 data_preventivo = :data_preventivo,
                 oggetto = :oggetto,
                 riferimento_cliente = :riferimento_cliente,
@@ -1629,7 +1633,7 @@ final class PreventiviRepository
                 totale_sconto = :totale_sconto,
                 totale_iva = :totale_iva,
                 totale = :totale,
-                note = :note,
+                note = CASE WHEN :note_dirty = 1 THEN :note ELSE note END,
             updated_at = NOW()
             WHERE id_preventivo = :id
             LIMIT 1
@@ -1638,6 +1642,7 @@ final class PreventiviRepository
         $stmt = $this->pdo->prepare($sql);
         $stmt->bindValue(':id', $id, PDO::PARAM_INT);
         $stmt->bindValue(':id_anagrafica', isset($data['id_anagrafica']) ? (int) $data['id_anagrafica'] : null, PDO::PARAM_INT);
+        $stmt->bindValue(':id_mittente', array_key_exists('id_mittente', $data) ? ($data['id_mittente'] !== null ? (int) $data['id_mittente'] : null) : null, PDO::PARAM_INT);
         $stmt->bindValue(':data_preventivo', $data['data_preventivo'] ?? null, PDO::PARAM_STR);
         $stmt->bindValue(':oggetto', $data['oggetto'] ?? null, PDO::PARAM_STR);
         $stmt->bindValue(':riferimento_cliente', $data['riferimento_cliente'] ?? null, PDO::PARAM_STR);
@@ -1646,6 +1651,7 @@ final class PreventiviRepository
         $stmt->bindValue(':totale_iva', $data['totale_iva'] ?? 0, PDO::PARAM_STR);
         $stmt->bindValue(':totale', $data['totale'] ?? 0, PDO::PARAM_STR);
         $stmt->bindValue(':note', $data['note'] ?? null, PDO::PARAM_STR);
+        $stmt->bindValue(':note_dirty', array_key_exists('note_dirty', $data) ? ((bool) $data['note_dirty'] ? 1 : 0) : 0, PDO::PARAM_INT);
         $stmt->execute();
 
         $sel = $this->pdo->prepare('SELECT anno_preventivo, numero_documento FROM tb_preventivi WHERE id_preventivo = :id LIMIT 1');
@@ -1716,6 +1722,7 @@ final class PreventiviRepository
             SELECT
                 p.id_preventivo,
                 p.id_anagrafica,
+                p.id_mittente,
                 p.anno_preventivo,
                 p.numero_documento,
                 p.data_preventivo,
@@ -1735,11 +1742,17 @@ final class PreventiviRepository
                 COALESCE(a.piva, aa.piva) AS cliente_piva,
                 COALESCE(a.codice_fiscale, aa.codice_fiscale) AS cliente_codice_fiscale,
                 COALESCE(a.is_pa, aa.is_pa) AS cliente_is_pa,
+                COALESCE(m.ragione_sociale, ma.ragione_sociale) AS mittente_ragione_sociale,
+                COALESCE(m.piva, ma.piva) AS mittente_piva,
+                COALESCE(m.codice_fiscale, ma.codice_fiscale) AS mittente_codice_fiscale,
+                COALESCE(m.is_pa, ma.is_pa) AS mittente_is_pa,
                 p.created_at,
                 p.updated_at
             FROM tb_preventivi p
             LEFT JOIN tb_anagrafiche a ON a.id_anagrafica = p.id_anagrafica
             LEFT JOIN tb_anagrafiche_archive aa ON aa.id_anagrafica = p.id_anagrafica
+            LEFT JOIN tb_anagrafiche m ON m.id_anagrafica = p.id_mittente
+            LEFT JOIN tb_anagrafiche_archive ma ON ma.id_anagrafica = p.id_mittente
             LEFT JOIN cfg_stati_preventivo sp ON sp.id_stato = p.id_stato_prev
             LEFT JOIN tb_lavorazioni l ON l.id_lavorazione = p.id_lavorazione_corrente
             WHERE p.id_preventivo = :id
@@ -1756,6 +1769,7 @@ final class PreventiviRepository
         $detail = [
             'id_preventivo' => (int) $row['id_preventivo'],
             'id_anagrafica' => (int) $row['id_anagrafica'],
+            'id_mittente' => isset($row['id_mittente']) ? (int) $row['id_mittente'] : null,
             'anno_preventivo' => isset($row['anno_preventivo']) ? (int) $row['anno_preventivo'] : null,
             'numero_documento' => isset($row['numero_documento']) ? (int) $row['numero_documento'] : null,
             'data_preventivo' => $row['data_preventivo'] ?? null,
@@ -1772,6 +1786,10 @@ final class PreventiviRepository
             'cliente_piva' => $row['cliente_piva'] ?? null,
             'cliente_codice_fiscale' => $row['cliente_codice_fiscale'] ?? null,
             'cliente_is_pa' => isset($row['cliente_is_pa']) ? (int) $row['cliente_is_pa'] : 0,
+            'mittente_ragione_sociale' => $row['mittente_ragione_sociale'] ?? null,
+            'mittente_piva' => $row['mittente_piva'] ?? null,
+            'mittente_codice_fiscale' => $row['mittente_codice_fiscale'] ?? null,
+            'mittente_is_pa' => isset($row['mittente_is_pa']) ? (int) $row['mittente_is_pa'] : 0,
             'created_at' => $row['created_at'] ?? null,
             'updated_at' => $row['updated_at'] ?? null,
             'id_lavorazione_corrente' => isset($row['id_lavorazione_corrente']) ? (int) $row['id_lavorazione_corrente'] : null,

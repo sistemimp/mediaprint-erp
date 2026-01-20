@@ -3362,6 +3362,7 @@ CREATE TABLE `tb_preventivi` (
   PRIMARY KEY (`id_preventivo`),
   UNIQUE KEY `uq_prev_numero` (`anno_preventivo`,`numero_documento`),
   KEY `idx_prev_anag` (`id_anagrafica`),
+  KEY `idx_prev_mittente` (`id_mittente`),
   KEY `idx_prev_data` (`data_preventivo`),
   KEY `fk_prev_stato` (`id_stato_prev`),
   KEY `fk_prev_serie` (`id_serie`),
@@ -3369,6 +3370,7 @@ CREATE TABLE `tb_preventivi` (
   KEY `idx_prev_lavorazione_corrente` (`id_lavorazione_corrente`),
   KEY `fk_prev_confermato_da` (`confermato_da_account`),
   CONSTRAINT `fk_prev_anag` FOREIGN KEY (`id_anagrafica`) REFERENCES `tb_anagrafiche` (`id_anagrafica`),
+  CONSTRAINT `fk_prev_mittente` FOREIGN KEY (`id_mittente`) REFERENCES `tb_anagrafiche` (`id_anagrafica`) ON DELETE SET NULL,
   CONSTRAINT `fk_prev_confermato_da` FOREIGN KEY (`confermato_da_account`) REFERENCES `auth_accounts` (`id_account`) ON DELETE SET NULL,
   CONSTRAINT `fk_prev_lavorazione_corrente` FOREIGN KEY (`id_lavorazione_corrente`) REFERENCES `tb_lavorazioni` (`id_lavorazione`) ON DELETE SET NULL,
   CONSTRAINT `fk_prev_serie` FOREIGN KEY (`id_serie`) REFERENCES `cfg_serie_documenti` (`id_serie`) ON DELETE SET NULL,
@@ -3383,7 +3385,7 @@ CREATE TABLE `tb_preventivi` (
 LOCK TABLES `tb_preventivi` WRITE;
 /*!40000 ALTER TABLE `tb_preventivi` DISABLE KEYS */;
 INSERT INTO `tb_preventivi` VALUES
-(33,NULL,137,2025,1,'2025-11-27',NULL,'',3,150.60,0.00,44.00,183.73,'',NULL,NULL,NULL,NULL,'2025-11-27 10:10:25','2025-11-27 10:31:52');
+(33,NULL,137,NULL,2025,1,'2025-11-27',NULL,'',3,150.60,0.00,44.00,183.73,'',NULL,NULL,NULL,NULL,'2025-11-27 10:10:25','2025-11-27 10:31:52');
 /*!40000 ALTER TABLE `tb_preventivi` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -3420,6 +3422,7 @@ DROP TABLE IF EXISTS `tb_preventivi_archive`;
 CREATE TABLE `tb_preventivi_archive` (
   `id_preventivo` int(10) unsigned NOT NULL AUTO_INCREMENT,
   `id_anagrafica` int(10) unsigned NOT NULL,
+  `id_mittente` int(10) unsigned DEFAULT NULL,
   `anno_preventivo` smallint(5) unsigned NOT NULL,
   `numero_documento` int(10) unsigned NOT NULL,
   `data_preventivo` date DEFAULT NULL,
@@ -3440,6 +3443,7 @@ CREATE TABLE `tb_preventivi_archive` (
   PRIMARY KEY (`id_preventivo`),
   UNIQUE KEY `uq_prev_numero` (`anno_preventivo`,`numero_documento`),
   KEY `idx_prev_anag` (`id_anagrafica`),
+  KEY `idx_prev_mittente` (`id_mittente`),
   KEY `idx_prev_data` (`data_preventivo`),
   KEY `idx_prev_arch_confermato_il` (`confermato_il`),
   KEY `idx_prev_arch_lavorazione` (`id_lavorazione_corrente`),

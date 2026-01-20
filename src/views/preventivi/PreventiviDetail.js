@@ -46,6 +46,7 @@ import {
   cilCheckCircle,
   cilCog,
   cilEnvelopeClosed,
+  cilPlus,
   cilReload,
   cilSave,
   cilTrash,
@@ -312,8 +313,15 @@ const PreventiviDetail = () => {
   const [mittenteAnagraficaId, setMittenteAnagraficaId] = useState('')
   const [customMittente, setCustomMittente] = useState(null)
   const [mittenteSearch, setMittenteSearch] = useState('')
+  useEffect(() => {
+    if (mittenteMode === 'cliente') {
+      setMittenteAnagraficaId('')
+      setCustomMittente(null)
+    }
+  }, [mittenteMode])
   const [dataPreventivo, setDataPreventivo] = useState('')
   const [note, setNote] = useState('')
+  const [noteDirty, setNoteDirty] = useState(false)
   const [oggetto, setOggetto] = useState('')
   const [oggettiOptions, setOggettiOptions] = useState([])
   const [selectedOggetti, setSelectedOggetti] = useState([])
@@ -461,6 +469,7 @@ const PreventiviDetail = () => {
     }
     if (prefill.note != null) {
       setNote(prefill.note)
+      setNoteDirty(false)
     }
     if (prefill.oggetto != null) {
       setOggetto(prefill.oggetto)
@@ -805,6 +814,7 @@ const PreventiviDetail = () => {
         }
         if (data.note != null) {
           setNote(data.note)
+          setNoteDirty(false)
         }
         const fetchedOggetto = data.oggetto ?? data.oggetto_preventivo ?? data.subject ?? null
         if (fetchedOggetto != null) {
@@ -881,6 +891,28 @@ const PreventiviDetail = () => {
               ...list,
             ]
           })
+        }
+        const baseClienteId = Number(data.id_anagrafica ?? 0)
+        const rawMittenteId = Number(data.id_mittente ?? 0)
+        const resolvedMittenteId = rawMittenteId > 0 ? rawMittenteId : baseClienteId
+        if (resolvedMittenteId > 0 && resolvedMittenteId !== baseClienteId) {
+          setMittenteMode('altro')
+          setMittenteAnagraficaId(String(resolvedMittenteId))
+          setCustomMittente({
+            id_anagrafica: resolvedMittenteId,
+            ragione_sociale:
+              data.mittente_ragione_sociale ??
+              data.cliente_ragione_sociale ??
+              data.ragione_sociale ??
+              '',
+            piva: data.mittente_piva ?? null,
+            codice_fiscale: data.mittente_codice_fiscale ?? null,
+            email: null,
+          })
+        } else {
+          setMittenteMode('cliente')
+          setMittenteAnagraficaId('')
+          setCustomMittente(null)
         }
 
         // Righe dal server -> mappa a forma UI (nessun fallback sintetico)
@@ -1588,12 +1620,17 @@ const PreventiviDetail = () => {
       ...r,
       combo_key: r?.combo_key ?? null,
     }))
-    return {
+    const mittenteTarget = mittenteMode === 'altro' ? mittenteAnagraficaId : idAnagrafica
+    const numericMittente = Number(mittenteTarget)
+    const resolvedMittenteId =
+      Number.isFinite(numericMittente) && numericMittente > 0 ? numericMittente : null
+    const payload = {
       id_preventivo: id,
       id_anagrafica: Number(idAnagrafica) || 0,
+      id_mittente: resolvedMittenteId,
       data_preventivo: dataPreventivo,
-      note,
       oggetto: computedOggettoText,
+      note,
       oggetti: selectedOggetti.map((v) => Number(v)).filter((n) => Number.isFinite(n) && n > 0),
       riferimento_cliente: rifCliente,
       cig: cigList.map((c) => ({ cig: c.cig, data_cig: c.data_cig || null, motivazione: c.motivazione || null })),
@@ -1607,6 +1644,8 @@ const PreventiviDetail = () => {
         sconto: 0,
       },
     }
+    payload.note_dirty = noteDirty ? 1 : 0
+    return payload
   }
 
   const headerAnno = header?.anno ?? null
@@ -1946,6 +1985,7 @@ const PreventiviDetail = () => {
         const controller = new AbortController()
         const payload = buildPayload()
         const result = await createPreventivo({ token, ...payload, send: false, signal: controller.signal })
+        setNoteDirty(false)
         if (!silent) {
           setSubmitSuccess(
             result?.anno_preventivo && result?.numero_documento
@@ -2795,24 +2835,39 @@ const PreventiviDetail = () => {
                     />
                   </div>
                 </CCol>
-                {mittenteMode === 'altro' && (
-                  <CCol md={6}>
-                    <CFormLabel>Mittente alternativo</CFormLabel>
-                    <AnagraficaAutocomplete
-                      items={mittenteOptions}
-                      value={mittenteAnagraficaId}
-                      onChange={(id) => setMittenteAnagraficaId(id)}
-                      onChangeCliente={(cliente) => setCustomMittente(cliente)}
-                      onSearch={(q) => {
-                        const s = String(q || '')
-                        setMittenteSearch((prev) => (prev === s ? prev : s))
-                      }}
-                      loading={loadingClienti}
-                      disabled={uiDisabled}
-                      placeholder="Seleziona mittente spedizione"
-                    />
-                  </CCol>
-                )}
+                  {mittenteMode === 'altro' && (
+                    <CCol md={6}>
+                      <CFormLabel>Mittente alternativo</CFormLabel>
+                      <div className="d-flex flex-wrap gap-2">
+                        <div className="flex-grow-1 min-w-0">
+                          <AnagraficaAutocomplete
+                            items={mittenteOptions}
+                            value={mittenteAnagraficaId}
+                            onChange={(id) => setMittenteAnagraficaId(id)}
+                            onChangeCliente={(cliente) => setCustomMittente(cliente)}
+                            onSearch={(q) => {
+                              const s = String(q || '')
+                              setMittenteSearch((prev) => (prev === s ? prev : s))
+                            }}
+                            loading={loadingClienti}
+                            disabled={uiDisabled}
+                            placeholder="Seleziona mittente spedizione"
+                          />
+                        </div>
+                        <CButton
+                          color="primary"
+                          variant="outline"
+                          size="sm"
+                          type="button"
+                          onClick={() => navigate('/anagrafica/crea')}
+                          disabled={uiDisabled}
+                        >
+                          <CIcon icon={cilPlus} className="me-1" />
+                          Nuova anagrafica
+                        </CButton>
+                      </div>
+                    </CCol>
+                  )}
                 <CCol md={12}>
                   <div className="border rounded-3 p-3 bg-body">
                     <div className="text-body-secondary small mb-1">Mittente attivo</div>
@@ -2862,9 +2917,6 @@ const PreventiviDetail = () => {
               <div className="d-flex align-items-center justify-content-between">
                 <h6 className="mb-0 text-body-secondary">Righe preventivo</h6>
                 <div className="d-flex gap-2">
-                  <CButton color="secondary" variant="outline" size="sm" onClick={handleAddRiga} disabled={uiDisabled}>
-                    Aggiungi riga
-                  </CButton>
                   <CButton color="primary" variant="outline" size="sm" onClick={() => { resetProductModal(); setStepperOpen(true) }} disabled={uiDisabled}>
                     Selettore prodotti
                   </CButton>
@@ -3577,7 +3629,10 @@ const PreventiviDetail = () => {
                   <CFormTextarea
                     rows={5}
                     value={note}
-                    onChange={(e) => setNote(e.target.value)}
+                    onChange={(e) => {
+                      setNote(e.target.value)
+                      setNoteDirty(true)
+                    }}
                     disabled={uiDisabled}
                   />
                 </CCol>
