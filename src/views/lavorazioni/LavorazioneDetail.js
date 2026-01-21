@@ -1,8 +1,12 @@
 /* eslint-disable prettier/prettier */
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import {
   CAlert,
+  CAccordion,
+  CAccordionBody,
+  CAccordionHeader,
+  CAccordionItem,
   CBadge,
   CButton,
   CCard,
@@ -27,6 +31,7 @@ import {
   CFormLabel,
   CFormSelect,
   CFormInput,
+  CFormText,
   CFormTextarea,
   CTabContent,
   CTabPane,
@@ -50,6 +55,8 @@ import {
   cilSend,
   cilSettings,
   cilXCircle,
+  cilPlus,
+  cilSave,
 } from '@coreui/icons'
 import {
   fetchLavorazioneDetail,
@@ -67,6 +74,14 @@ import {
   deleteLavorazioneActivity,
   updateLavorazioneActivity,
   uploadLavorazioneFile,
+  createLavorazioneSpedizione,
+  updateLavorazioneSpedizione,
+  deleteLavorazioneSpedizione,
+  fetchLavorazioneSpedizioneReportValues,
+  saveLavorazioneSpedizioneReportValues,
+  fetchLavorazioneSpedizioneReportQuantities,
+  saveLavorazioneSpedizioneReportQuantities,
+  fetchLavorazioneReportFields,
 } from '../../services/lavorazioni'
 import { useAuth } from '../../context/AuthContext'
 import { buildApiUrl } from '../../services/apiClient'
@@ -205,6 +220,20 @@ const activityStatusLabels = {
   sospesa: 'Sospesa',
 }
 
+const shippingStateLabels = {
+  programmata: 'Programmata',
+  inviata: 'Inviata',
+  ricevuta: 'Ricevuta',
+  annullata: 'Annullata',
+}
+
+const shippingStateColors = {
+  programmata: 'info',
+  inviata: 'primary',
+  ricevuta: 'success',
+  annullata: 'danger',
+}
+
 const formatPercent = (value) => {
   if (value === undefined || value === null || Number.isNaN(Number(value))) {
     return '0%'
@@ -229,6 +258,16 @@ const buildInfoDraft = (detail) => ({
   data_fine_prevista: toDateInput(detail?.data_fine_prevista),
   note: detail?.note ?? '',
 })
+
+const WEIGHT_TIERS = [
+  'Fino a 20 gr',
+  'Oltre 20g fino a 50gr',
+  'Oltre 50g fino a 100gr',
+  'Oltre 100gr fino a 250gr',
+  'Oltre 250g fino a 350g',
+  'Oltre 350g fino a 1000g',
+  'Oltre 1000g fino a 2000g',
+]
 
 const LavorazioneDetail = () => {
   const location = useLocation()
@@ -335,6 +374,30 @@ const LavorazioneDetail = () => {
   const [activityReportSubmitting, setActivityReportSubmitting] = useState(false)
   const [activityReportError, setActivityReportError] = useState(null)
   const [activityReportSuccess, setActivityReportSuccess] = useState(null)
+  const [spedizioneModal, setSpedizioneModal] = useState({
+    visible: false,
+    mode: 'create',
+    idSpedizione: null,
+    operatoreId: '',
+    affrancaturaId: '',
+    tariffaId: '',
+    autorizzazioneId: '',
+    portoId: '',
+    note: '',
+    dataProgrammata: '',
+  })
+  const [spedizioneModalSubmitting, setSpedizioneModalSubmitting] = useState(false)
+  const [spedizioneModalError, setSpedizioneModalError] = useState(null)
+  const [spedizioneDeletingId, setSpedizioneDeletingId] = useState(null)
+  const [spedizioneDeleteError, setSpedizioneDeleteError] = useState(null)
+  const [reportFieldConfigs, setReportFieldConfigs] = useState({})
+  const [reportValues, setReportValues] = useState({})
+  const reportFieldsLoadingRef = useRef(new Set())
+  const reportValuesLoadedIdsRef = useRef(new Set())
+  const [reportQuantities, setReportQuantities] = useState({})
+  const reportQuantitiesLoadingRef = useRef(new Set())
+  const [reportSavingId, setReportSavingId] = useState(null)
+  const [reportSaveStatus, setReportSaveStatus] = useState({})
   const [activityDeleting, setActivityDeleting] = useState({})
   useEffect(() => {
     if (!activityStatusSuccess && !activityStatusError) {
@@ -480,7 +543,7 @@ const LavorazioneDetail = () => {
       })
       .catch((err) => {
         if (controller.signal.aborted) return
-        console.error('Impossibile caricare i template attività:', err)
+        console.error('Impossibile caricare i template attivitÃ :', err)
       })
       .finally(() => {
         if (!controller.signal.aborted) {
@@ -540,6 +603,328 @@ const LavorazioneDetail = () => {
 
   const currentDetail = detail ?? {}
   const hasDetail = Boolean(detail)
+  const shippingConfig = currentDetail?.spedizioni_config ?? {
+    operatori_postali: [],
+    affrancature: [],
+    affrancature_enabled: true,
+    tariffe: [],
+    autorizzazioni: [],
+    porti: [],
+  }
+  const shippingOperators = Array.isArray(shippingConfig.operatori_postali)
+    ? shippingConfig.operatori_postali
+    : []
+  const shippingOperatorLabels = useMemo(() => {
+    const map = {}
+    shippingOperators.forEach((operator) => {
+      const id = String(operator?.id_operatore_postale ?? '')
+      if (!id) {
+        return
+      }
+      map[id] = operator?.label || operator?.code || ''
+    })
+    return map
+  }, [shippingOperators])
+  const shippingAffrancature = Array.isArray(shippingConfig.affrancature) ? shippingConfig.affrancature : []
+  const shippingTariffe = Array.isArray(shippingConfig.tariffe) ? shippingConfig.tariffe : []
+  const shippingAutorizzazioni = Array.isArray(shippingConfig.autorizzazioni)
+    ? shippingConfig.autorizzazioni
+    : []
+  const shippingPorti = Array.isArray(shippingConfig.porti) ? shippingConfig.porti : []
+  const affrancatureEnabled = shippingConfig.affrancature_enabled !== false
+  const availableAffrancature = useMemo(() => {
+    if (!affrancatureEnabled) {
+      return []
+    }
+    const target = Number(spedizioneModal.operatoreId)
+    if (!target) return []
+    return shippingAffrancature.filter((item) => Number(item.id_operatore_postale) === target)
+  }, [shippingAffrancature, spedizioneModal.operatoreId, affrancatureEnabled])
+  const availableTariffe = useMemo(() => {
+    if (!affrancatureEnabled) {
+      return shippingTariffe
+    }
+    const target = Number(spedizioneModal.affrancaturaId)
+    if (!target) return []
+    return shippingTariffe.filter((item) => Number(item.id_affrancatura) === target)
+  }, [shippingTariffe, spedizioneModal.affrancaturaId, affrancatureEnabled])
+  const availableAutorizzazioni = useMemo(() => {
+    if (!affrancatureEnabled) {
+      return shippingAutorizzazioni
+    }
+    const target = Number(spedizioneModal.affrancaturaId)
+    if (!target) return []
+    return shippingAutorizzazioni.filter((item) => Number(item.id_affrancatura) === target)
+  }, [shippingAutorizzazioni, spedizioneModal.affrancaturaId, affrancatureEnabled])
+  const availablePorti = useMemo(() => {
+    const target = Number(spedizioneModal.autorizzazioneId)
+    if (!target) return []
+    return shippingPorti.filter((item) => Number(item.id_autorizzazione) === target)
+  }, [shippingPorti, spedizioneModal.autorizzazioneId])
+  const shippingList = Array.isArray(currentDetail?.spedizioni) ? currentDetail.spedizioni : []
+  const isEditingSpedizioneModal = spedizioneModal.mode === 'edit'
+  const loadReportFields = useCallback(async (affrancaturaId) => {
+    const key = affrancaturaId ? `aff_${affrancaturaId}` : 'general'
+    if (reportFieldsLoadingRef.current.has(key)) {
+      return
+    }
+    reportFieldsLoadingRef.current.add(key)
+    try {
+      const response = await fetchLavorazioneReportFields({
+        affrancaturaId: affrancaturaId || undefined,
+      })
+      const items = Array.isArray(response.fields) ? response.fields : []
+      const filtered = items.filter((field) => {
+        if (affrancaturaId) {
+          return Number(field?.id_affrancatura ?? 0) === Number(affrancaturaId)
+        }
+        return !field?.id_affrancatura
+      })
+      setReportFieldConfigs((prev) => ({
+        ...prev,
+        [key]: filtered,
+      }))
+    } catch (error) {
+      console.error('Impossibile caricare i campi report spedizioni', error)
+    } finally {
+      reportFieldsLoadingRef.current.delete(key)
+    }
+  }, [])
+  const loadReportValuesForShipping = useCallback(
+    async (shippingId) => {
+      if (!shippingId || reportValuesLoadedIdsRef.current.has(shippingId)) {
+        return
+      }
+      reportValuesLoadedIdsRef.current.add(shippingId)
+
+      try {
+        const values = await fetchLavorazioneSpedizioneReportValues({
+          token,
+          idSpedizione: shippingId,
+        })
+        setReportValues((prev) => ({
+          ...prev,
+          [shippingId]: values,
+        }))
+      } catch (error) {
+        console.error('Impossibile caricare le risposte del report', error)
+      }
+    },
+    [token],
+  )
+  const loadReportQuantitiesForShipping = useCallback(
+    async (shippingId) => {
+      if (!shippingId || reportQuantitiesLoadingRef.current.has(shippingId)) {
+        return
+      }
+      reportQuantitiesLoadingRef.current.add(shippingId)
+      try {
+        const quantities = await fetchLavorazioneSpedizioneReportQuantities({
+          token,
+          idSpedizione: shippingId,
+        })
+        setReportQuantities((prev) => ({
+          ...prev,
+          [shippingId]: quantities,
+        }))
+      } catch (error) {
+        console.error('Impossibile caricare i quantitativi del report', error)
+      } finally {
+        reportQuantitiesLoadingRef.current.delete(shippingId)
+      }
+    },
+    [token],
+  )
+  useEffect(() => {
+    if (!reportFieldConfigs.general) {
+      loadReportFields(null)
+    }
+  }, [loadReportFields, reportFieldConfigs.general])
+  useEffect(() => {
+    const ids = Array.from(
+      new Set(
+        shippingList
+          .map((item) => Number(item?.id_affrancatura ?? 0))
+          .filter((value) => value > 0),
+      ),
+    )
+    ids.forEach((affId) => {
+      const key = `aff_${affId}`
+      if (!reportFieldConfigs[key]) {
+        loadReportFields(affId)
+      }
+    })
+  }, [shippingList, reportFieldConfigs, loadReportFields])
+
+  useEffect(() => {
+    shippingList.forEach((shipping) => {
+      const shippingId = Number(shipping?.id_spedizione ?? 0)
+      if (shippingId) {
+        loadReportValuesForShipping(shippingId)
+      }
+    })
+  }, [shippingList, loadReportValuesForShipping])
+  useEffect(() => {
+    shippingList.forEach((shipping) => {
+      const shippingId = Number(shipping?.id_spedizione ?? 0)
+      if (shippingId) {
+        loadReportQuantitiesForShipping(shippingId)
+      }
+    })
+  }, [shippingList, loadReportQuantitiesForShipping])
+  const getReportFieldsForShipping = useCallback(
+    (affrancaturaId) => {
+      const general = reportFieldConfigs.general ?? []
+      const specific = affrancaturaId ? reportFieldConfigs[`aff_${affrancaturaId}`] ?? [] : []
+      const seen = new Set()
+      const result = []
+      ;[...general, ...specific].forEach((field) => {
+        const code = field?.field_code ?? `field_${field?.id_field ?? Math.random()}`
+        if (seen.has(code)) {
+          return
+        }
+        seen.add(code)
+        const visible =
+          field?.is_visible === undefined || field?.is_visible === null
+            ? true
+            : Number(field.is_visible) !== 0
+        if (!visible) {
+          return
+        }
+        result.push(field)
+      })
+      return result
+    },
+    [reportFieldConfigs],
+  )
+  const buildReportSummary = useCallback(
+    (shippingId, affrancaturaId) => {
+      const fields = getReportFieldsForShipping(affrancaturaId)
+      const values = reportValues[shippingId] ?? {}
+      const zoneRows = reportQuantities[shippingId] ?? []
+      if (fields.length === 0 && zoneRows.length === 0) {
+        return null
+      }
+      const entries = fields
+        .map((field) => {
+          const code = field?.field_code ?? `field_${field?.id_field ?? Math.random()}`
+          const val = values[code] ?? '-'
+          return `${field.label || code}: ${val}`
+        })
+        .filter(Boolean)
+      const zoneEntries = zoneRows
+        .map((row) => {
+          const zona = row?.zona ?? ''
+          if (!zona) {
+            return null
+          }
+          const peso = row?.peso ?? ''
+          const quantita = row?.quantita ?? 0
+          return `${zona} ${peso} g: ${quantita}`
+        })
+        .filter(Boolean)
+      const combined = [...entries, ...zoneEntries]
+      if (combined.length === 0) {
+        return null
+      }
+      return combined.slice(0, 3).join(' • ')
+    },
+    [getReportFieldsForShipping, reportValues, reportQuantities],
+  )
+  const onlyDigits = (value) => {
+    if (typeof value !== 'string') {
+      return value
+    }
+    return value.replace(/\D+/g, '')
+  }
+
+  const handleReportFieldChange = (shippingId, fieldCode) => (event) => {
+    const raw = event?.target ? event.target.value : event
+    const sanitized = onlyDigits(raw)
+    setReportValues((prev) => ({
+      ...prev,
+      [shippingId]: {
+        ...(prev[shippingId] ?? {}),
+        [fieldCode]: sanitized,
+      },
+    }))
+  }
+  const handleQuantityRowChange = (shippingId, index, field) => (event) => {
+    const value = event?.target ? event.target.value : event
+    setReportQuantities((prev) => {
+      const rows = prev[shippingId] ? [...prev[shippingId]] : []
+      const candidate = rows[index]
+        ? { ...rows[index], [field]: field === 'quantita' ? Number(value) : value }
+        : {
+            zona: '',
+            peso: '',
+            quantita: field === 'quantita' ? Number(value) : 0,
+          }
+      rows[index] = candidate
+      return {
+        ...prev,
+        [shippingId]: rows,
+      }
+    })
+  }
+  const handleAddQuantityRow = (shippingId) => {
+    setReportQuantities((prev) => {
+      const rows = prev[shippingId] ? [...prev[shippingId]] : []
+      rows.push({ zona: '', peso: '', quantita: 0 })
+      return {
+        ...prev,
+        [shippingId]: rows,
+      }
+    })
+  }
+  const handleRemoveQuantityRow = (shippingId, index) => {
+    setReportQuantities((prev) => {
+      const rows = prev[shippingId] ? [...prev[shippingId]] : []
+      rows.splice(index, 1)
+      return {
+        ...prev,
+        [shippingId]: rows,
+      }
+    })
+  }
+  const handleGenerateReport = useCallback(
+    async (shippingId) => {
+      setReportSavingId(shippingId)
+      setReportSaveStatus((prev) => ({
+        ...prev,
+        [shippingId]: { message: null, error: false },
+      }))
+      const data = reportValues[shippingId] ?? {}
+      const quantities = reportQuantities[shippingId] ?? []
+      try {
+        await saveLavorazioneSpedizioneReportValues({
+          token,
+          idSpedizione: shippingId,
+          values: data,
+        })
+        await saveLavorazioneSpedizioneReportQuantities({
+          token,
+          idSpedizione: shippingId,
+          quantities,
+        })
+        setReportSaveStatus((prev) => ({
+          ...prev,
+          [shippingId]: { message: 'Report salvato.', error: false },
+        }))
+      } catch (error) {
+        setReportSaveStatus((prev) => ({
+          ...prev,
+          [shippingId]: {
+            message: error?.message || 'Errore durante il salvataggio.',
+            error: true,
+          },
+        }))
+      } finally {
+        setReportSavingId(null)
+      }
+    },
+    [reportValues, reportQuantities, token],
+  )
   useEffect(() => {
     if (!hasDetail || infoEditing) {
       return
@@ -662,10 +1047,10 @@ const LavorazioneDetail = () => {
       })
       const label = activityStatusLabels[targetStatus] ?? targetStatus
       const suffix = typeof percentOverride === 'number' ? ` (${percentOverride}%)` : ''
-      setActivityStatusSuccess(`Stato attività aggiornato: ${label}${suffix}.`)
+      setActivityStatusSuccess(`Stato attivitÃ  aggiornato: ${label}${suffix}.`)
       setRefreshIndex((value) => value + 1)
     } catch (err) {
-      console.error('Impossibile aggiornare lo stato dell\'attività:', err)
+      console.error('Impossibile aggiornare lo stato dell\'attivitÃ :', err)
       setActivityStatusError(err)
     } finally {
       setActivityStatusLoadingFor(activityId, false)
@@ -797,7 +1182,7 @@ const LavorazioneDetail = () => {
 
   const handleDeleteActivity = async (activityId) => {
     if (!token || !activityId) return
-    if (!window.confirm('Sei sicuro di rimuovere questa attività?')) {
+    if (!window.confirm('Sei sicuro di rimuovere questa attivitÃ ?')) {
       return
     }
     setActivityStatusError(null)
@@ -808,10 +1193,10 @@ const LavorazioneDetail = () => {
         token,
         idAttivita: Number(activityId),
       })
-      setActivityStatusSuccess('Attività rimossa correttamente.')
+      setActivityStatusSuccess('AttivitÃ  rimossa correttamente.')
       setRefreshIndex((value) => value + 1)
     } catch (err) {
-      console.error('Impossibile rimuovere l\'attività:', err)
+      console.error('Impossibile rimuovere l\'attivitÃ :', err)
       setActivityStatusError(err)
     } finally {
       setActivityDeletingFor(activityId, false)
@@ -1072,7 +1457,7 @@ const LavorazioneDetail = () => {
       setRefreshIndex((value) => value + 1)
     } catch (err) {
       if (err?.name === 'AbortError') return
-      console.error('Impossibile creare attività:', err)
+      console.error('Impossibile creare attivitÃ :', err)
       setActivityError(err)
     } finally {
       setActivitySubmitting(false)
@@ -1217,7 +1602,7 @@ const LavorazioneDetail = () => {
       })
       setRefreshIndex((value) => value + 1)
     } catch (err) {
-      console.error('Impossibile aggiornare attivit�:', err)
+      console.error('Impossibile aggiornare attivitï¿½:', err)
       setActivityAssignmentError(err)
     } finally {
       setActivityAssignmentSubmitting(false)
@@ -1313,6 +1698,153 @@ const LavorazioneDetail = () => {
       setNotificationError(err)
     } finally {
       setNotificationSubmitting(false)
+    }
+  }
+
+  const handleOpenSpedizioneModal = (spedizione = null) => {
+    const defaultOperator = shippingOperators.length > 0 ? String(shippingOperators[0].id_operatore_postale) : ''
+    if (spedizione) {
+      setSpedizioneModal({
+        visible: true,
+        mode: 'edit',
+        idSpedizione: spedizione?.id_spedizione ?? null,
+        operatoreId: spedizione?.id_operatore_postale ? String(spedizione.id_operatore_postale) : '',
+        affrancaturaId: spedizione?.id_affrancatura ? String(spedizione.id_affrancatura) : '',
+        tariffaId: spedizione?.id_tariffa ? String(spedizione.id_tariffa) : '',
+        autorizzazioneId: spedizione?.id_autorizzazione ? String(spedizione.id_autorizzazione) : '',
+        portoId: spedizione?.id_porto_destinazione ? String(spedizione.id_porto_destinazione) : '',
+        note: spedizione?.note ?? '',
+        dataProgrammata: toDateTimeLocal(spedizione?.data_programmata),
+      })
+    } else {
+      setSpedizioneModal({
+        visible: true,
+        mode: 'create',
+        idSpedizione: null,
+        operatoreId: defaultOperator,
+        affrancaturaId: '',
+        tariffaId: '',
+        autorizzazioneId: '',
+        portoId: '',
+        note: '',
+        dataProgrammata: '',
+      })
+    }
+    setSpedizioneModalError(null)
+  }
+
+  const handleCloseSpedizioneModal = () => {
+    if (spedizioneModalSubmitting) return
+    setSpedizioneModal((prev) => ({
+      ...prev,
+      visible: false,
+    }))
+    setSpedizioneModalError(null)
+  }
+
+  const handleSpedizioneFieldChange = (field) => (event) => {
+    const value = event?.target ? event.target.value : event
+    setSpedizioneModal((prev) => {
+      const next = {
+        ...prev,
+        [field]: value,
+      }
+      if (field === 'operatoreId') {
+        next.affrancaturaId = ''
+        next.tariffaId = ''
+        next.autorizzazioneId = ''
+        next.portoId = ''
+      } else if (field === 'affrancaturaId') {
+        next.tariffaId = ''
+        next.autorizzazioneId = ''
+        next.portoId = ''
+      } else if (field === 'tariffaId') {
+        next.autorizzazioneId = ''
+        next.portoId = ''
+      } else if (field === 'autorizzazioneId') {
+        next.portoId = ''
+      }
+      return next
+    })
+  }
+
+  const handleSpedizioneSubmit = async (event) => {
+    event.preventDefault()
+    const isEditing = spedizioneModal.mode === 'edit'
+    if (!token || (!isEditing && !recordId)) return
+    try {
+      setSpedizioneModalSubmitting(true)
+      setSpedizioneModalError(null)
+      const payload = {
+        operatoreId: spedizioneModal.operatoreId ? Number(spedizioneModal.operatoreId) : undefined,
+        affrancaturaId: spedizioneModal.affrancaturaId ? Number(spedizioneModal.affrancaturaId) : undefined,
+        tariffaId: spedizioneModal.tariffaId ? Number(spedizioneModal.tariffaId) : undefined,
+        autorizzazioneId: spedizioneModal.autorizzazioneId ? Number(spedizioneModal.autorizzazioneId) : undefined,
+        portoId: spedizioneModal.portoId ? Number(spedizioneModal.portoId) : undefined,
+        note: spedizioneModal.note || undefined,
+        dataProgrammata: spedizioneModal.dataProgrammata || undefined,
+      }
+      if (isEditing) {
+        const idSpedizione = Number(spedizioneModal.idSpedizione)
+        if (!idSpedizione) {
+          throw new Error('ID spedizione mancante')
+        }
+        await updateLavorazioneSpedizione({
+          token,
+          idSpedizione,
+          ...payload,
+        })
+      } else {
+        await createLavorazioneSpedizione({
+          token,
+          idLavorazione: Number(recordId),
+          ...payload,
+        })
+      }
+      const nextOperatore = shippingOperators.length > 0 ? String(shippingOperators[0].id_operatore_postale) : ''
+      setSpedizioneModal({
+        visible: false,
+        mode: 'create',
+        idSpedizione: null,
+        operatoreId: nextOperatore,
+        affrancaturaId: '',
+        tariffaId: '',
+        autorizzazioneId: '',
+        portoId: '',
+        note: '',
+        dataProgrammata: '',
+      })
+      setRefreshIndex((value) => value + 1)
+    } catch (err) {
+      console.error(
+        isEditing ? 'Impossibile aggiornare la spedizione:' : 'Impossibile creare la spedizione:',
+        err,
+      )
+      setSpedizioneModalError(err)
+    } finally {
+      setSpedizioneModalSubmitting(false)
+    }
+  }
+
+  const handleDeleteSpedizione = async (spedizione) => {
+    const id = Number(spedizione?.id_spedizione ?? 0)
+    if (!token || id <= 0) return
+    if (!window.confirm('Confermi l\'eliminazione della spedizione selezionata?')) {
+      return
+    }
+    try {
+      setSpedizioneDeletingId(id)
+      setSpedizioneDeleteError(null)
+      await deleteLavorazioneSpedizione({
+        token,
+        idSpedizione: id,
+      })
+      setRefreshIndex((value) => value + 1)
+    } catch (err) {
+      console.error('Errore durante l\'eliminazione della spedizione:', err)
+      setSpedizioneDeleteError(err)
+    } finally {
+      setSpedizioneDeletingId(null)
     }
   }
 
@@ -1559,7 +2091,7 @@ const LavorazioneDetail = () => {
                     <CCol md={6}>
                       <InfoField
                         label="Periodo previsto"
-                        value={`${formatDate(currentDetail.data_inizio_prevista)} → ${formatDate(currentDetail.data_fine_prevista)}`}
+                        value={`${formatDate(currentDetail.data_inizio_prevista)} â†’ ${formatDate(currentDetail.data_fine_prevista)}`}
                       />
                       <InfoField
                         label="Avvio effettivo"
@@ -1584,7 +2116,7 @@ const LavorazioneDetail = () => {
                       className="mb-1"
                     />
                     <div className="text-body-secondary small">
-                      In corso — {formatPercent(currentDetail.percentuale_avanzamento)} completato
+                      In corso â€” {formatPercent(currentDetail.percentuale_avanzamento)} completato
                     </div>
                   </div>
                   <CBadge color={overallProgressColor} className="px-3 py-2">
@@ -1873,8 +2405,287 @@ const LavorazioneDetail = () => {
                   )}
                 </CTabPane>
               </CTabContent>
-            </CCardBody>
-          </CCard>
+          </CCardBody>
+        </CCard>
+
+        <CRow className="mb-4">
+          <CCol xs={12}>
+            <CCard className="mb-4">
+              <CCardHeader className="d-flex flex-wrap gap-3 align-items-center justify-content-between">
+                <div>
+                  <strong>Spedizioni postali</strong>
+                  <div className="text-body-secondary small">Gestisci le tipologie di spedizione e genera distinte postali.</div>
+                </div>
+                <CButton
+                  color="primary"
+                  size="sm"
+                  onClick={() => handleOpenSpedizioneModal()}
+                  disabled={!hasDetail}
+                >
+                  <CIcon icon={cilPlus} className="me-2" />
+                  Nuova spedizione
+                </CButton>
+              </CCardHeader>
+              <CCardBody>
+                {spedizioneDeleteError && (
+                  <CAlert color="danger" className="mb-3">
+                    {spedizioneDeleteError?.payload?.message ||
+                      spedizioneDeleteError?.message ||
+                      "Errore durante la cancellazione della spedizione."}
+                  </CAlert>
+                )}
+                {shippingList.length === 0 ? (
+                  <CAlert color="light" className="mb-0">
+                    Nessuna spedizione registrata per questa lavorazione.
+                  </CAlert>
+                ) : (
+                  <CAccordion flush alwaysOpen>
+                    {shippingList.map((spedizione, index) => {
+                      const shippingId = Number(spedizione?.id_spedizione ?? 0)
+                      const statusKey = String(spedizione?.stato ?? 'programmata').toLowerCase()
+                      const statusLabel = shippingStateLabels[statusKey] ?? statusKey
+                      const badgeColor = shippingStateColors[statusKey] ?? 'secondary'
+                      const headerTitle = `Operatore: ${spedizione.operatore_label || '-'} • Affrancatura: ${spedizione.affrancatura_label || '-'}`
+                      const reportSummary = buildReportSummary(
+                        shippingId,
+                        Number(spedizione?.id_affrancatura ?? 0),
+                      )
+                      const itemKey = `spedizione-${shippingId || index}`
+                      return (
+                        <CAccordionItem key={itemKey} itemKey={itemKey}>
+                          <CAccordionHeader className="py-3">
+                            <div className="d-flex flex-column flex-grow-1 gap-1">
+                              <span className="fw-semibold">{headerTitle}</span>
+                              {reportSummary ? (
+                                <small className="text-body-secondary small">{reportSummary}</small>
+                              ) : null}
+                              {spedizione.data_programmata ? (
+                                <span className="text-body-secondary small">
+                                  {formatDate(spedizione.data_programmata)}
+                                </span>
+                              ) : null}
+                            </div>
+                            <CBadge color={badgeColor} className="text-uppercase ms-3">
+                              {statusLabel}
+                            </CBadge>
+                          </CAccordionHeader>
+                          <CAccordionBody className="pt-2 pb-3">
+                            {spedizione.note ? (
+                              <div className="text-body-secondary small mb-2">{spedizione.note}</div>
+                            ) : null}
+                            <div className="text-body-secondary small mb-1">
+                              Tariffa: {spedizione.tariffa_label || '-'}
+                            </div>
+                            <div className="text-body-secondary small">
+                              Autorizzazione: {spedizione.autorizzazione_label || '-'} • Porto: {spedizione.porto_label || '-'}
+                            </div>
+                            {(() => {
+                              const reportFields = getReportFieldsForShipping(spedizione?.id_affrancatura)
+                              if (reportFields.length === 0) {
+                                return (
+                                  <div className="text-body-secondary small mt-3">
+                                    Nessun campo report configurato per questa spedizione.
+                                  </div>
+                                )
+                              }
+                              const zoneOptions = reportFields
+                                .map((field) => {
+                                  const code =
+                                    field?.field_code ??
+                                    `field_${field?.id_field ?? Math.random().toString(36).slice(2)}`
+                                  const label = field?.label ?? code
+                                  return { value: label, label }
+                                })
+                                .filter((option, index, array) => {
+                                  return option.value !== '' && array.findIndex((item) => item.value === option.value) === index
+                                })
+                              const buildZoneOptions = (current) => {
+                                const normalized = zoneOptions.map((option) => ({ ...option }))
+                                if (
+                                  current &&
+                                  !normalized.some((option) => option.value === current) &&
+                                  current !== ''
+                                ) {
+                                  normalized.unshift({ value: current, label: `${current} (personalizzata)` })
+                                }
+                                return normalized
+                              }
+                              return (
+                                <div className="mt-3 border-top pt-3">
+                                  <div className="d-flex justify-content-between align-items-center mb-2">
+                                    <span className="fw-semibold small">Report dinamico</span>
+                                    <CButton
+                                      size="sm"
+                                      color="warning"
+                                      variant="outline"
+                                      aria-label="Salva report dinamico"
+                                      onClick={() => handleGenerateReport(shippingId)}
+                                      disabled={reportSavingId === shippingId}
+                                    >
+                                      {reportSavingId === shippingId ? (
+                                        <CSpinner size="sm" />
+                                      ) : (
+                                        <CIcon icon={cilSave} />
+                                      )}
+                                    </CButton>
+                                  </div>
+                                  <div
+                                    style={{
+                                      display: 'grid',
+                                      gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))',
+                                      gap: '0.6rem',
+                                    }}
+                                  >
+                                    {reportFields.map((field) => {
+                                      const fieldCode =
+                                        field?.field_code ??
+                                        `field_${field?.id_field ?? Math.random().toString(36).slice(2)}`
+                                      return (
+                                        <div
+                                          key={`${shippingId}-${fieldCode}`}
+                                          className="d-flex flex-column"
+                                          style={{ gap: '0.25rem' }}
+                                        >
+                                          <CFormLabel className="small text-body-secondary mb-1">
+                                            {field.label}
+                                          </CFormLabel>
+                                          <CFormInput
+                                            value={reportValues[shippingId]?.[fieldCode] ?? ''}
+                                            onChange={handleReportFieldChange(shippingId, fieldCode)}
+                                            placeholder={field.description || '0'}
+                                            type="text"
+                                            inputMode="numeric"
+                                            pattern="\\d*"
+                                            autoComplete="off"
+                                            className="form-control-sm"
+                                            size="sm"
+                                          />
+                                        </div>
+                                      )
+                                    })}
+                                  </div>
+                                  <div className="mt-4">
+                                    <div className="d-flex justify-content-between align-items-center mb-2">
+                                      <span className="fw-semibold small">Approfondimento Dettaglio</span>
+                                      <CButton
+                                        size="sm"
+                                        color="secondary"
+                                        variant="outline"
+                                        onClick={() => handleAddQuantityRow(shippingId)}
+                                      >
+                                        <CIcon icon={cilPlus} className="me-1" />
+                                        Nuova riga
+                                      </CButton>
+                                    </div>
+                                    {(reportQuantities[shippingId] ?? []).map((row, index) => (
+                                      <CRow key={`${shippingId}-qty-${index}`} className="align-items-end gx-2 gy-2">
+                                        <CCol xs={12} sm={4}>
+                                          <CFormLabel className="small mb-1">Zona</CFormLabel>
+                                          <CFormSelect
+                                            value={row.zona ?? ''}
+                                            onChange={handleQuantityRowChange(shippingId, index, 'zona')}
+                                            className="form-control-sm"
+                                          >
+                                            <option value="">Seleziona zona</option>
+                                            {buildZoneOptions(row.zona ?? '').map((option) => (
+                                              <option key={option.value} value={option.value}>
+                                                {option.label}
+                                              </option>
+                                            ))}
+                                          </CFormSelect>
+                                        </CCol>
+                                        <CCol xs={12} sm={4}>
+                                          <CFormLabel className="small mb-1">Peso (g)</CFormLabel>
+                                          <CFormSelect
+                                            value={row.peso ?? ''}
+                                            onChange={handleQuantityRowChange(shippingId, index, 'peso')}
+                                            className="form-control-sm"
+                                          >
+                                            <option value="">Seleziona scaglione</option>
+                                            {WEIGHT_TIERS.map((tier) => (
+                                              <option key={tier} value={tier}>
+                                                {tier}
+                                              </option>
+                                            ))}
+                                          </CFormSelect>
+                                        </CCol>
+                                        <CCol xs={12} sm={3}>
+                                          <CFormLabel className="small mb-1">Quantità</CFormLabel>
+                                          <CFormInput
+                                            value={row.quantita ?? 0}
+                                            onChange={handleQuantityRowChange(shippingId, index, 'quantita')}
+                                            placeholder="Es: 5"
+                                            type="number"
+                                            className="form-control-sm"
+                                            min={0}
+                                          />
+                                        </CCol>
+                                        <CCol xs={12} sm={1}>
+                                          <CButton
+                                            color="danger"
+                                            size="sm"
+                                            variant="outline"
+                                            onClick={() => handleRemoveQuantityRow(shippingId, index)}
+                                          >
+                                            <CIcon icon={cilXCircle} />
+                                          </CButton>
+                                        </CCol>
+                                      </CRow>
+                                    ))}
+                                  </div>
+                                  {reportSaveStatus[shippingId]?.message ? (
+                                    <div
+                                      className={`small mt-2 ${
+                                        reportSaveStatus[shippingId].error ? 'text-danger' : 'text-success'
+                                      }`}
+                                    >
+                                      {reportSaveStatus[shippingId].message}
+                                    </div>
+                                  ) : null}
+                                </div>
+                              )
+                            })()}
+                            <div className="mt-3 d-flex flex-wrap gap-2 align-items-center">
+                              <CButton
+                                size="sm"
+                                color="secondary"
+                                variant="outline"
+                                onClick={() => handleOpenSpedizioneModal(spedizione)}
+                                disabled={spedizioneModalSubmitting}
+                              >
+                                <CIcon icon={cilPen} className="me-2" />
+                                Modifica spedizione
+                              </CButton>
+                              <CButton
+                                size="sm"
+                                color="danger"
+                                variant="outline"
+                                onClick={() => handleDeleteSpedizione(spedizione)}
+                                disabled={
+                                  spedizioneModalSubmitting ||
+                                  (shippingId > 0 && spedizioneDeletingId === shippingId)
+                                }
+                              >
+                                <CIcon icon={cilXCircle} className="me-2" />
+                                {shippingId > 0 && spedizioneDeletingId === shippingId
+                                  ? 'Eliminazione...'
+                                  : 'Elimina spedizione'}
+                              </CButton>
+                              <span className="text-body-secondary small">ID {spedizione.id_spedizione ?? '-'}</span>
+                            </div>
+                          </CAccordionBody>
+                        </CAccordionItem>
+                      )
+                    })}
+                  </CAccordion>
+                )}
+
+
+
+              </CCardBody>
+            </CCard>
+          </CCol>
+        </CRow>
 
           <CRow className="mb-4">
             <CCol xs={12}>
@@ -1939,7 +2750,7 @@ const LavorazioneDetail = () => {
                     <CAlert color="danger" className="mb-3">
                       {activityStatusError?.payload?.message ||
                         activityStatusError.message ||
-                        "Errore durante l'aggiornamento dello stato dell'attività."}
+                        "Errore durante l'aggiornamento dello stato dell'attivitÃ ."}
                     </CAlert>
                   )}
                   {activityStatusSuccess && (
@@ -2000,8 +2811,8 @@ const LavorazioneDetail = () => {
                               {task.data_avvio || task.data_fine || task.report_note ? (
                                 <>
                                   {task.data_avvio ? `Avvio ${formatDate(task.data_avvio, true)}` : 'Avvio n/d'}
-                                  {task.data_fine ? ` • Fine ${formatDate(task.data_fine, true)}` : ''}
-                                  {task.report_operatore_nome ? ` • Operatore ${task.report_operatore_nome}` : ''}
+                                  {task.data_fine ? ` â€¢ Fine ${formatDate(task.data_fine, true)}` : ''}
+                                  {task.report_operatore_nome ? ` â€¢ Operatore ${task.report_operatore_nome}` : ''}
                                 </>
                               ) : (
                                 'Report non compilato'
@@ -2073,8 +2884,8 @@ const LavorazioneDetail = () => {
                                 className="p-1"
                                 disabled={!task?.id_attivita || activityLoading || isActivityDeleting(task.id_attivita)}
                                 onClick={() => handleDeleteActivity(task.id_attivita)}
-                                title="Rimuovi attività"
-                                aria-label="Rimuovi attività"
+                                title="Rimuovi attivitÃ "
+                                aria-label="Rimuovi attivitÃ "
                               >
                                 <CIcon icon={cilXCircle} size="sm" />
                               </CButton>
@@ -2096,8 +2907,8 @@ const LavorazioneDetail = () => {
                                   className="p-1"
                                   disabled={disableStart}
                                   onClick={() => handleActivityStatusChange(task.id_attivita, 'in_progress', 10)}
-                                  title="Avvia attività"
-                                  aria-label="Avvia attività"
+                                  title="Avvia attivitÃ "
+                                  aria-label="Avvia attivitÃ "
                                 >
                                   <CIcon icon={cilMediaPlay} size="sm" />
                                 </CButton>
@@ -2108,8 +2919,8 @@ const LavorazioneDetail = () => {
                                   className="p-1"
                                   disabled={disableSuspend}
                                   onClick={() => handleActivityStatusChange(task.id_attivita, 'sospesa', 50)}
-                                  title="Sospendi attività"
-                                  aria-label="Sospendi attività"
+                                  title="Sospendi attivitÃ "
+                                  aria-label="Sospendi attivitÃ "
                                 >
                                   <CIcon icon={cilMediaPause} size="sm" />
                                 </CButton>
@@ -2120,8 +2931,8 @@ const LavorazioneDetail = () => {
                                   className="p-1"
                                   disabled={disableFinish}
                                   onClick={() => handleActivityStatusChange(task.id_attivita, 'done', 100)}
-                                  title="Termina attività"
-                                  aria-label="Termina attività"
+                                  title="Termina attivitÃ "
+                                  aria-label="Termina attivitÃ "
                                 >
                                   <CIcon icon={cilCheckCircle} size="sm" />
                                 </CButton>
@@ -2132,8 +2943,8 @@ const LavorazioneDetail = () => {
                                   className="p-1"
                                   disabled={disableReschedule}
                                   onClick={() => handleActivityStatusChange(task.id_attivita, 'todo', 0)}
-                                  title="Rischedula attività"
-                                  aria-label="Rischedula attività"
+                                  title="Rischedula attivitÃ "
+                                  aria-label="Rischedula attivitÃ "
                                 >
                                   <CIcon icon={cilReload} size="sm" />
                                 </CButton>
@@ -2177,6 +2988,140 @@ const LavorazioneDetail = () => {
           </CCard>
         </CCol>
       </CRow>
+
+      <CModal visible={spedizioneModal.visible} onClose={handleCloseSpedizioneModal} backdrop="static" size="lg">
+        <CModalHeader>
+          <CModalTitle>
+            {isEditingSpedizioneModal ? 'Modifica spedizione postale' : 'Nuova spedizione postale'}
+          </CModalTitle>
+        </CModalHeader>
+        <CForm onSubmit={handleSpedizioneSubmit}>
+          <CModalBody>
+            {spedizioneModalError ? (
+              <CAlert color="danger">{spedizioneModalError?.payload?.message || spedizioneModalError.message}</CAlert>
+            ) : null}
+            <CFormLabel className="mt-3">Operatore postale</CFormLabel>
+            <CFormSelect
+              value={spedizioneModal.operatoreId}
+              onChange={handleSpedizioneFieldChange('operatoreId')}
+              disabled={spedizioneModalSubmitting || shippingOperators.length === 0}
+            >
+              <option value="">Seleziona operatore</option>
+              {shippingOperators.map((operatore) => (
+                <option key={operatore.id_operatore_postale} value={operatore.id_operatore_postale}>
+                  {operatore.label}
+                </option>
+              ))}
+            </CFormSelect>
+            {affrancatureEnabled ? (
+              <>
+                <CFormLabel className="mt-3">Tipo affrancatura</CFormLabel>
+                <CFormSelect
+                  value={spedizioneModal.affrancaturaId}
+                  onChange={handleSpedizioneFieldChange('affrancaturaId')}
+                  disabled={spedizioneModalSubmitting || availableAffrancature.length === 0}
+                >
+                  <option value="">Seleziona un dettaglio di affrancatura</option>
+                  {availableAffrancature.map((item, index) => {
+                    const affKey = String(item.id_affrancatura ?? '')
+                    const operatorKey = String(item.id_operatore_postale ?? '')
+                    const operatorLabel = shippingOperatorLabels[operatorKey]
+                    const labelParts = []
+                    if (operatorLabel) {
+                      labelParts.push(operatorLabel)
+                    }
+                    if (item?.label) {
+                      labelParts.push(item.label)
+                    } else {
+                      labelParts.push(`Affrancatura ${affKey || '-'}`)
+                    }
+                    return (
+                      <option key={`${affKey}-${index}`} value={item.id_affrancatura}>
+                        {labelParts.join(' • ')}
+                      </option>
+                    )
+                  })}
+                </CFormSelect>
+              </>
+            ) : (
+              <>
+                <CFormLabel className="mt-3 text-body-secondary">Tipo affrancatura</CFormLabel>
+                <CFormText className="text-body-secondary">
+                  I dettagli di affrancatura non sono disponibili su questa istanza. Aggiorna il database per
+                  abilitarli.
+                </CFormText>
+              </>
+            )}
+            <CFormLabel className="mt-3">Dettaglio tariffa</CFormLabel>
+            <CFormSelect
+              value={spedizioneModal.tariffaId}
+              onChange={handleSpedizioneFieldChange('tariffaId')}
+              disabled={spedizioneModalSubmitting || availableTariffe.length === 0}
+            >
+              <option value="">Seleziona una tariffa</option>
+              {availableTariffe.map((item) => (
+                <option key={item.id_tariffa} value={item.id_tariffa}>
+                  {item.label}
+                </option>
+              ))}
+            </CFormSelect>
+            <CFormLabel className="mt-3">Autorizzazione postale</CFormLabel>
+            <CFormSelect
+              value={spedizioneModal.autorizzazioneId}
+              onChange={handleSpedizioneFieldChange('autorizzazioneId')}
+              disabled={spedizioneModalSubmitting || availableAutorizzazioni.length === 0}
+            >
+              <option value="">Seleziona autorizzazione</option>
+              {availableAutorizzazioni.map((item) => (
+                <option key={item.id_autorizzazione} value={item.id_autorizzazione}>
+                  {item.label}
+                </option>
+              ))}
+            </CFormSelect>
+            <CFormLabel className="mt-3">Porto di destinazione</CFormLabel>
+            <CFormSelect
+              value={spedizioneModal.portoId}
+              onChange={handleSpedizioneFieldChange('portoId')}
+              disabled={spedizioneModalSubmitting || availablePorti.length === 0}
+            >
+              <option value="">Seleziona porto</option>
+              {availablePorti.map((item) => (
+                <option key={item.id_porto_destinazione} value={item.id_porto_destinazione}>
+                  {item.label}
+                </option>
+              ))}
+            </CFormSelect>
+            <CFormLabel className="mt-3">Data prevista</CFormLabel>
+            <CFormInput
+              type="datetime-local"
+              value={spedizioneModal.dataProgrammata}
+              onChange={handleSpedizioneFieldChange('dataProgrammata')}
+              disabled={spedizioneModalSubmitting}
+            />
+            <CFormLabel className="mt-3">Note</CFormLabel>
+            <CFormTextarea
+              rows={3}
+              value={spedizioneModal.note}
+              onChange={handleSpedizioneFieldChange('note')}
+              disabled={spedizioneModalSubmitting}
+            />
+          </CModalBody>
+          <CModalFooter>
+            <CButton color="secondary" onClick={handleCloseSpedizioneModal} disabled={spedizioneModalSubmitting}>
+              Annulla
+            </CButton>
+            <CButton color="primary" type="submit" disabled={spedizioneModalSubmitting}>
+              {spedizioneModalSubmitting
+                ? isEditingSpedizioneModal
+                  ? 'Aggiornamento...'
+                  : 'Creazione...'
+                : isEditingSpedizioneModal
+                  ? 'Salva modifiche'
+                  : 'Salva spedizione'}
+            </CButton>
+          </CModalFooter>
+        </CForm>
+      </CModal>
 
       <CModal visible={notificationModal.visible} onClose={handleCloseNotificationModal} backdrop="static">
         <CForm onSubmit={handleNotificationSubmit}>
@@ -2674,7 +3619,7 @@ const LavorazioneDetail = () => {
                     ))
                   )}
                 </CFormSelect>
-                <small className="text-body-secondary">Seleziona uno o pi� operatori (opzionale).</small>
+                <small className="text-body-secondary">Seleziona uno o piï¿½ operatori (opzionale).</small>
               </CCol>
               <CCol md={4}>
                 <CFormLabel>Priorita</CFormLabel>

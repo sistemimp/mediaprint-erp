@@ -172,7 +172,459 @@ final class LavorazioniService
             }
         }
 
+        $detail['spedizioni'] = $this->repository->fetchSpedizioni($id);
+        $detail['spedizioni_config'] = [
+            'operatori_postali' => $this->repository->listSpedizioneOperatoriPostali(),
+            'affrancature' => $this->repository->listSpedizioneAffrancature(),
+            'affrancature_enabled' => $this->repository->hasSpedizioneColumn('id_affrancatura'),
+            'tariffe' => $this->repository->listSpedizioneTariffe(),
+            'autorizzazioni' => $this->repository->listSpedizioneAutorizzazioni(),
+            'porti' => $this->repository->listSpedizionePorti(),
+        ];
+
         return $detail;
+    }
+
+    /**
+     * @param array<string, mixed> $input
+     * @return array<string, mixed>
+     */
+    public function createSpedizione(array $input): array
+    {
+        $lavorazioneId = $this->sanitizeInt(
+            $input['id_lavorazione'] ?? ($input['lavorazione_id'] ?? ($input['id'] ?? 0)),
+            1,
+            PHP_INT_MAX,
+        );
+        if ($lavorazioneId <= 0) {
+            throw new \RuntimeException('ID lavorazione mancante o non valido.', 422);
+        }
+
+        $job = $this->repository->findLavorazioneById($lavorazioneId);
+        if ($job === null) {
+            throw new \RuntimeException('Lavorazione non trovata.', 404);
+        }
+
+        $note = trim((string) ($input['note'] ?? ''));
+        $note = $note !== '' ? $note : null;
+
+        $dataProgrammata = trim((string) ($input['data_programmata'] ?? $input['data_programmazione'] ?? ''));
+        $dataProgrammata = $dataProgrammata !== '' ? $dataProgrammata : null;
+
+        $chain = $this->resolveSpedizioneChain($input);
+
+        $tipoDescrizione = trim((string) ($input['tipo_descrizione'] ?? ''));
+        $tipoDescrizione = $tipoDescrizione !== '' ? $tipoDescrizione : null;
+
+        $newId = $this->repository->createSpedizione([
+            'id_lavorazione' => $lavorazioneId,
+            'tipo_descrizione' => $tipoDescrizione,
+            'id_operatore_postale' => $chain['operatore_id'],
+            'id_affrancatura' => $chain['affrancatura_id'],
+            'id_tariffa' => $chain['tariffa_id'],
+            'id_autorizzazione' => $chain['autorizzazione_id'],
+            'id_porto_destinazione' => $chain['porto_id'],
+            'note' => $note,
+            'data_programmata' => $dataProgrammata,
+        ]);
+
+        $spedizione = $this->repository->findSpedizione($newId);
+        if ($spedizione === null) {
+            throw new \RuntimeException('Impossibile recuperare la spedizione inserita.', 500);
+        }
+
+        return [
+            'ok' => true,
+            'spedizione' => $spedizione,
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $input
+     * @return array<string, mixed>
+     */
+    public function updateSpedizione(array $input): array
+    {
+        $spedizioneId = $this->sanitizeInt($input['id_spedizione'] ?? ($input['spedizione_id'] ?? 0), 1, PHP_INT_MAX);
+        if ($spedizioneId <= 0) {
+            throw new \RuntimeException('ID spedizione mancante o non valido.', 422);
+        }
+
+        $spedizione = $this->repository->findSpedizione($spedizioneId);
+        if ($spedizione === null) {
+            throw new \RuntimeException('Spedizione non trovata.', 404);
+        }
+
+        $note = trim((string) ($input['note'] ?? ''));
+        $note = $note !== '' ? $note : null;
+
+        $dataProgrammata = trim((string) ($input['data_programmata'] ?? $input['data_programmazione'] ?? ''));
+        $dataProgrammata = $dataProgrammata !== '' ? $dataProgrammata : null;
+
+        $chain = $this->resolveSpedizioneChain($input);
+
+        $tipoDescrizione = trim((string) ($input['tipo_descrizione'] ?? ($spedizione['tipo_descrizione'] ?? '')));
+        $tipoDescrizione = $tipoDescrizione !== '' ? $tipoDescrizione : null;
+
+        $this->repository->updateSpedizione($spedizioneId, [
+            'tipo_descrizione' => $tipoDescrizione,
+            'id_operatore_postale' => $chain['operatore_id'],
+            'id_affrancatura' => $chain['affrancatura_id'],
+            'id_tariffa' => $chain['tariffa_id'],
+            'id_autorizzazione' => $chain['autorizzazione_id'],
+            'id_porto_destinazione' => $chain['porto_id'],
+            'note' => $note,
+            'data_programmata' => $dataProgrammata,
+        ]);
+
+        $updated = $this->repository->findSpedizione($spedizioneId);
+        if ($updated === null) {
+            throw new \RuntimeException('Impossibile recuperare la spedizione aggiornata.', 500);
+        }
+
+        return [
+            'ok' => true,
+            'spedizione' => $updated,
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $input
+     * @return array<string, mixed>
+     */
+    public function deleteSpedizione(array $input): array
+    {
+        $spedizioneId = $this->sanitizeInt($input['id_spedizione'] ?? ($input['spedizione_id'] ?? 0), 1, PHP_INT_MAX);
+        if ($spedizioneId <= 0) {
+            throw new \RuntimeException('ID spedizione mancante o non valido.', 422);
+        }
+
+        $spedizione = $this->repository->findSpedizione($spedizioneId);
+        if ($spedizione === null) {
+            throw new \RuntimeException('Spedizione non trovata.', 404);
+        }
+
+        $this->repository->deleteSpedizione($spedizioneId);
+
+        return [
+            'ok' => true,
+            'id_spedizione' => $spedizioneId,
+            'id_lavorazione' => $spedizione['id_lavorazione'] ?? null,
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $query
+     * @return array<string, mixed>
+     */
+    public function listReportFields(array $query): array
+    {
+        $affrancaturaId = $this->sanitizeOptionalInt($query['id_affrancatura'] ?? ($query['affrancatura_id'] ?? null));
+        return [
+            'affrancature' => $this->repository->listSpedizioneAffrancature(),
+            'fields' => $this->repository->listSpedizioneReportFields($affrancaturaId),
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $query
+     * @return array<string, mixed>
+     */
+    public function getSpedizioneReportValues(array $query): array
+    {
+        $spedizioneId = $this->sanitizeInt($query['id_spedizione'] ?? ($query['spedizione_id'] ?? 0), 1, PHP_INT_MAX);
+        if ($spedizioneId <= 0) {
+            throw new \RuntimeException('ID spedizione mancante o non valido.', 422);
+        }
+
+        $spedizione = $this->repository->findSpedizione($spedizioneId);
+        if ($spedizione === null) {
+            throw new \RuntimeException('Spedizione non trovata.', 404);
+        }
+
+        return [
+            'values' => $this->repository->listSpedizioneReportValues($spedizioneId),
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $input
+     * @return array<string, mixed>
+     */
+    public function saveSpedizioneReportValues(array $input): array
+    {
+        $spedizioneId = $this->sanitizeInt($input['id_spedizione'] ?? ($input['spedizione_id'] ?? 0), 1, PHP_INT_MAX);
+        if ($spedizioneId <= 0) {
+            throw new \RuntimeException('ID spedizione mancante o non valido.', 422);
+        }
+
+        $spedizione = $this->repository->findSpedizione($spedizioneId);
+        if ($spedizione === null) {
+            throw new \RuntimeException('Spedizione non trovata.', 404);
+        }
+
+        $values = $input['values'] ?? [];
+        if (!is_array($values)) {
+            throw new \RuntimeException('Formato dei valori non valido.', 422);
+        }
+
+        $normalized = [];
+        foreach ($values as $fieldCode => $value) {
+            $code = trim((string) $fieldCode);
+            if ($code === '') {
+                continue;
+            }
+            $normalized[$code] = trim((string) $value);
+        }
+
+        $this->repository->replaceSpedizioneReportValues($spedizioneId, $normalized);
+
+        return [
+            'ok' => true,
+            'values' => $normalized,
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $query
+     * @return array<string, mixed>
+     */
+    public function getSpedizioneReportQuantities(array $query): array
+    {
+        $spedizioneId = $this->sanitizeInt($query['id_spedizione'] ?? ($query['spedizione_id'] ?? 0), 1, PHP_INT_MAX);
+        if ($spedizioneId <= 0) {
+            throw new \RuntimeException('ID spedizione mancante o non valido.', 422);
+        }
+
+        $spedizione = $this->repository->findSpedizione($spedizioneId);
+        if ($spedizione === null) {
+            throw new \RuntimeException('Spedizione non trovata.', 404);
+        }
+
+        return [
+            'quantities' => $this->repository->listSpedizioneReportQuantities($spedizioneId),
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $input
+     * @return array<string, mixed>
+     */
+    public function saveSpedizioneReportQuantities(array $input): array
+    {
+        $spedizioneId = $this->sanitizeInt($input['id_spedizione'] ?? ($input['spedizione_id'] ?? 0), 1, PHP_INT_MAX);
+        if ($spedizioneId <= 0) {
+            throw new \RuntimeException('ID spedizione mancante o non valido.', 422);
+        }
+
+        $spedizione = $this->repository->findSpedizione($spedizioneId);
+        if ($spedizione === null) {
+            throw new \RuntimeException('Spedizione non trovata.', 404);
+        }
+
+        $rows = $input['quantities'] ?? [];
+        if (!is_array($rows)) {
+            throw new \RuntimeException('Formato delle quantità non valido.', 422);
+        }
+
+        $normalized = [];
+        foreach ($rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $zona = trim((string) ($row['zona'] ?? ''));
+            $peso = trim((string) ($row['peso'] ?? '0'));
+            $quantita = (int) ($row['quantita'] ?? 0);
+            if ($zona === '') {
+                continue;
+            }
+        $normalized[] = [
+            'zona' => $zona,
+            'peso' => $peso,
+            'quantita' => $quantita,
+        ];
+        }
+
+        $this->repository->replaceSpedizioneReportQuantities($spedizioneId, $normalized);
+
+        return [
+            'ok' => true,
+            'quantities' => $normalized,
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $input
+     * @return array<string, mixed>
+     */
+    public function saveReportField(array $input): array
+    {
+        $fieldId = $this->sanitizeOptionalInt($input['id_field'] ?? ($input['field_id'] ?? 0));
+        $affrancaturaId = $this->sanitizeOptionalInt($input['id_affrancatura'] ?? ($input['affrancatura_id'] ?? null));
+        if ($affrancaturaId > 0) {
+            $affrancatura = $this->repository->findSpedizioneAffrancatura($affrancaturaId);
+            if ($affrancatura === null) {
+                throw new \RuntimeException('Affrancatura non valida.', 422);
+            }
+        } else {
+            $affrancaturaId = null;
+        }
+
+        $fieldCode = trim((string) ($input['field_code'] ?? ($input['code'] ?? '')));
+        if ($fieldCode === '') {
+            throw new \RuntimeException('Codice campo mancante.', 422);
+        }
+        $fieldCode = strtoupper($fieldCode);
+
+        $label = trim((string) ($input['label'] ?? ($input['name'] ?? '')));
+        if ($label === '') {
+            throw new \RuntimeException('Etichetta campo mancante.', 422);
+        }
+
+        $descriptionRaw = array_key_exists('description', $input) ? (string) $input['description'] : '';
+        $description = trim($descriptionRaw) !== '' ? trim($descriptionRaw) : null;
+
+        $ordering = $this->sanitizeInt($input['ordering'] ?? ($input['order'] ?? 100), 0, 1000);
+        $isVisibleInput = array_key_exists('is_visible', $input) ? $input['is_visible'] : ($input['visible'] ?? 1);
+        $isVisible = filter_var($isVisibleInput, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+        $isVisible = $isVisible ?? true;
+
+        $existing = $this->repository->findSpedizioneReportFieldByCode($affrancaturaId, $fieldCode);
+        if ($existing !== null && ($fieldId <= 0 || (int) ($existing['id_field'] ?? 0) !== $fieldId)) {
+            throw new \RuntimeException('Codice campo già configurato per questa affrancatura.', 422);
+        }
+
+        $data = [
+            'id_affrancatura' => $affrancaturaId,
+            'field_code' => $fieldCode,
+            'label' => $label,
+            'description' => $description,
+            'ordering' => $ordering,
+            'is_visible' => $isVisible ? 1 : 0,
+        ];
+
+        if ($fieldId > 0) {
+            $this->repository->updateSpedizioneReportField($fieldId, $data);
+        } else {
+            $fieldId = $this->repository->createSpedizioneReportField($data);
+        }
+
+        $field = $this->repository->findSpedizioneReportField($fieldId);
+        if ($field === null) {
+            throw new \RuntimeException('Impossibile recuperare il campo report salvato.', 500);
+        }
+
+        return [
+            'ok' => true,
+            'field' => $field,
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $input
+     * @return array<string, mixed>
+     */
+    public function deleteReportField(array $input): array
+    {
+        $fieldId = $this->sanitizeInt($input['id_field'] ?? ($input['field_id'] ?? 0), 1, PHP_INT_MAX);
+        $this->repository->deleteSpedizioneReportField($fieldId);
+        return [
+            'ok' => true,
+            'id_field' => $fieldId,
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $input
+     * @return array<string, int>
+     */
+    private function resolveSpedizioneChain(array $input): array
+    {
+        $operatoreId = $this->sanitizeOptionalInt(
+            $input['id_operatore_postale'] ?? ($input['operatore_id'] ?? null),
+        );
+        if ($operatoreId > 0) {
+            $operatore = $this->repository->findSpedizioneOperatorePostale($operatoreId);
+            if ($operatore === null || empty($operatore['attivo'])) {
+                throw new \RuntimeException('Operatore postale non disponibile.', 422);
+            }
+        } else {
+            $operatore = null;
+        }
+
+        $affrancaturaId = $this->sanitizeOptionalInt(
+            $input['id_affrancatura'] ?? ($input['affrancatura_id'] ?? null),
+        );
+        if ($affrancaturaId > 0) {
+            $affrancatura = $this->repository->findSpedizioneAffrancatura($affrancaturaId);
+            if ($affrancatura === null) {
+                throw new \RuntimeException('Dettaglio affrancatura non disponibile.', 422);
+            }
+            if ($operatoreId > 0 && (int) ($affrancatura['id_operatore_postale'] ?? 0) !== $operatoreId) {
+                throw new \RuntimeException('Affrancatura non disponibile per l\'operatore selezionato.', 422);
+            }
+        } else {
+            $affrancatura = null;
+        }
+
+        $tariffaId = $this->sanitizeOptionalInt(
+            $input['id_tariffa'] ?? ($input['tariffa_id'] ?? null),
+        );
+        if ($tariffaId > 0) {
+            $tariffa = $this->repository->findSpedizioneTariffa($tariffaId);
+            if ($tariffa === null) {
+                throw new \RuntimeException('Tariffa non disponibile.', 422);
+            }
+            if ($affrancaturaId > 0 && (int) ($tariffa['id_affrancatura'] ?? 0) !== $affrancaturaId) {
+                throw new \RuntimeException('Tariffa non disponibile per l\'affrancatura scelta.', 422);
+            }
+        } else {
+            $tariffa = null;
+        }
+
+        $autorizzazioneId = $this->sanitizeOptionalInt(
+            $input['id_autorizzazione'] ?? ($input['autorizzazione_id'] ?? null),
+        );
+        if ($autorizzazioneId > 0) {
+            $autorizzazione = $this->repository->findSpedizioneAutorizzazione($autorizzazioneId);
+            if ($autorizzazione === null) {
+                throw new \RuntimeException('Autorizzazione postale non disponibile.', 422);
+            }
+            if ($affrancaturaId > 0 && (int) ($autorizzazione['id_affrancatura'] ?? 0) !== $affrancaturaId) {
+                throw new \RuntimeException('Autorizzazione non compatibile con l\'affrancatura scelta.', 422);
+            }
+        } else {
+            $autorizzazione = null;
+        }
+
+        $portoId = $this->sanitizeOptionalInt(
+            $input['id_porto_destinazione'] ?? ($input['porto_id'] ?? null),
+        );
+        if ($portoId > 0) {
+            $porto = $this->repository->findSpedizionePorto($portoId);
+            if ($porto === null) {
+                throw new \RuntimeException('Porto non disponibile.', 422);
+            }
+            if ($autorizzazioneId > 0 && (int) ($porto['id_autorizzazione'] ?? 0) !== $autorizzazioneId) {
+                throw new \RuntimeException('Porto non valido per l\'autorizzazione selezionata.', 422);
+            }
+        } else {
+            $porto = null;
+        }
+
+        return [
+            'operatore_id' => $operatoreId,
+            'affrancatura_id' => $affrancaturaId,
+            'tariffa_id' => $tariffaId,
+            'autorizzazione_id' => $autorizzazioneId,
+            'porto_id' => $portoId,
+        ];
+    }
+
+    private function sanitizeOptionalInt($value): int
+    {
+        $candidate = isset($value) ? (int) $value : 0;
+        return $candidate > 0 ? $candidate : 0;
     }
 
     /**
@@ -1214,6 +1666,20 @@ final class LavorazioniService
             return 100;
         }
         return $number;
+    }
+
+    private function buildDistintaCode(int $spedizioneId, ?string $templateCode): string
+    {
+        $prefix = 'SPD';
+        if (is_string($templateCode) && trim($templateCode) !== '') {
+            $clean = preg_replace('/[^A-Z0-9]/', '', strtoupper($templateCode));
+            if ($clean !== '') {
+                $prefix = $clean;
+            }
+        }
+        $timestamp = (new \DateTimeImmutable())->format('YmdHis');
+        $random = strtoupper(substr(uniqid(), -6));
+        return sprintf('DIST-%s-%d-%s%s', $prefix, $spedizioneId, $timestamp, $random);
     }
 
     private function derivePercentByStatus(string $status, array $activityMeta): ?int

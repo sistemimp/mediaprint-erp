@@ -294,6 +294,12 @@ const _nav = [
         name: 'Template attivita',
         to: '/lavorazioni/templates',
       },
+      {
+        component: CNavItem,
+        name: 'Campi report spedizioni',
+        to: '/lavorazioni/report-fields',
+        permission: 'job.write',
+      },
     ],
   },
   {

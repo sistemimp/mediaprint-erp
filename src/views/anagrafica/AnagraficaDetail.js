@@ -27,8 +27,6 @@ import {
   CTableHead,
   CTableHeaderCell,
   CTableRow,
-  CPagination,
-  CPaginationItem,
 } from "@coreui/react"
 import CIcon from "@coreui/icons-react"
 import {
@@ -42,6 +40,8 @@ import {
   cilSettings,
   cilTrash,
 } from "@coreui/icons"
+
+import { CSmartPagination } from "@coreui/react-pro"
 
 import {
   fetchAnagraficaDetail,
@@ -134,6 +134,14 @@ const normalizeDocumentDate = (row, dateField, fallbackField) => {
   }
   return { ts, raw }
 }
+
+const getDocumentTimestamp = (row, dateField, fallbackField) => {
+  const info = normalizeDocumentDate(row, dateField, fallbackField)
+  return info ? info.ts : 0
+}
+
+const sortRowsByDocumentDateDesc = (rows, dateField, fallbackField) =>
+  [...rows].sort((a, b) => getDocumentTimestamp(b, dateField, fallbackField) - getDocumentTimestamp(a, dateField, fallbackField))
 
 const formatSedeAddress = (sede) => {
   if (!sede) {
@@ -1302,26 +1310,21 @@ const AnagraficaDetail = () => {
   )
   // Preventivi: ultimi 10 con pager 5/pg
   const [preventiviPage, setPreventiviPage] = useState(0)
+  const [ddtPage, setDdtPage] = useState(0)
+  const [fatturePage, setFatturePage] = useState(0)
   const PREVENTIVI_ROWS_PER_PAGE = 5
-  const latestPreventivi = useMemo(() => {
-    const sorted = [...preventivi].sort((a, b) => {
-      const ad = new Date(a?.data_preventivo || a?.created_at || 0).getTime()
-      const bd = new Date(b?.data_preventivo || b?.created_at || 0).getTime()
-      return bd - ad
-    })
-    return sorted.slice(0, 10)
-  }, [preventivi])
+  const RELATED_ROWS_PER_PAGE = 5
+  const RELATED_DOCUMENTS_LIMIT = 10
+  const latestPreventivi = useMemo(
+    () => sortRowsByDocumentDateDesc(preventivi, "data_preventivo", "created_at").slice(0, RELATED_DOCUMENTS_LIMIT),
+    [preventivi],
+  )
   const totalPreventivi = latestPreventivi.length
   const totalPreventiviPages = Math.max(Math.ceil(totalPreventivi / PREVENTIVI_ROWS_PER_PAGE), 1)
   const paginatedPreventivi = useMemo(() => {
     const start = preventiviPage * PREVENTIVI_ROWS_PER_PAGE
     return latestPreventivi.slice(start, start + PREVENTIVI_ROWS_PER_PAGE)
   }, [latestPreventivi, preventiviPage])
-  const preventiviPaginationItems = useMemo(() => {
-    const items = []
-    for (let p = 1; p <= totalPreventiviPages; p += 1) items.push(p)
-    return items
-  }, [totalPreventiviPages])
   const handleViewPreventivo = (id) => {
     if (!id) return
     navigate(`/preventivi/dettagli?id=${id}`)
@@ -1329,6 +1332,37 @@ const AnagraficaDetail = () => {
   const ddt = detail?.ddt ?? []
   const fatture = detail?.fatture ?? []
   const [contactsView, setContactsView] = useState('associati')
+
+  const latestDdt = useMemo(
+    () => sortRowsByDocumentDateDesc(ddt, "data_ddt", "created_at").slice(0, RELATED_DOCUMENTS_LIMIT),
+    [ddt],
+  )
+  const totalDdtPages = Math.max(Math.ceil(latestDdt.length / RELATED_ROWS_PER_PAGE), 1)
+  const paginatedDdt = useMemo(() => {
+    const start = ddtPage * RELATED_ROWS_PER_PAGE
+    return latestDdt.slice(start, start + RELATED_ROWS_PER_PAGE)
+  }, [latestDdt, ddtPage])
+  const latestFatture = useMemo(
+    () => sortRowsByDocumentDateDesc(fatture, "data_fattura", "created_at").slice(0, RELATED_DOCUMENTS_LIMIT),
+    [fatture],
+  )
+  const totalFatturePages = Math.max(Math.ceil(latestFatture.length / RELATED_ROWS_PER_PAGE), 1)
+  const paginatedFatture = useMemo(() => {
+    const start = fatturePage * RELATED_ROWS_PER_PAGE
+    return latestFatture.slice(start, start + RELATED_ROWS_PER_PAGE)
+  }, [latestFatture, fatturePage])
+
+  useEffect(() => {
+    setPreventiviPage((prev) => Math.min(prev, Math.max(totalPreventiviPages - 1, 0)))
+  }, [totalPreventiviPages])
+
+  useEffect(() => {
+    setDdtPage((prev) => Math.min(prev, Math.max(totalDdtPages - 1, 0)))
+  }, [totalDdtPages])
+
+  useEffect(() => {
+    setFatturePage((prev) => Math.min(prev, Math.max(totalFatturePages - 1, 0)))
+  }, [totalFatturePages])
 
   const kpiCutoffTimestamp = useMemo(() => {
     if (kpiPeriod === 'all') {
@@ -2915,29 +2949,17 @@ const AnagraficaDetail = () => {
                       </CTableBody>
                     </CTable>
 
-                    <div className="d-flex justify-content-end mt-2">
-                      <CPagination size="sm" className="mb-0">
-                        <CPaginationItem
-                          aria-label="Pagina precedente"
-                          disabled={preventiviPage <= 0}
-                          onClick={() => preventiviPage > 0 && setPreventiviPage(preventiviPage - 1)}
-                        >
-                          &laquo;
-                        </CPaginationItem>
-                        {preventiviPaginationItems.map((p) => (
-                          <CPaginationItem key={p} active={p === preventiviPage + 1} onClick={() => setPreventiviPage(p - 1)}>
-                            {p}
-                          </CPaginationItem>
-                        ))}
-                        <CPaginationItem
-                          aria-label="Pagina successiva"
-                          disabled={preventiviPage >= totalPreventiviPages - 1}
-                          onClick={() => preventiviPage < totalPreventiviPages - 1 && setPreventiviPage(preventiviPage + 1)}
-                        >
-                          &raquo;
-                        </CPaginationItem>
-                      </CPagination>
-                    </div>
+                    {totalPreventiviPages > 1 && (
+                      <div className="d-flex justify-content-end mt-2">
+                        <CSmartPagination
+                          size="sm"
+                          align="end"
+                          pages={totalPreventiviPages}
+                          activePage={preventiviPage + 1}
+                          onActivePageChange={(page) => setPreventiviPage(Math.max(page - 1, 0))}
+                        />
+                      </div>
+                    )}
                   </>
                 ) : (
                   <CAlert color="info" className="mb-0">Nessun preventivo disponibile.</CAlert>
@@ -2946,38 +2968,51 @@ const AnagraficaDetail = () => {
 
               <section>
                 <h3 className="h6 mb-3">DDT correlati</h3>
-                {ddt.length > 0 ? (
-                  <CTable hover responsive size="sm">
-                    <CTableHead color="light">
-                      <CTableRow>
-                        <CTableHeaderCell scope="col">Numero</CTableHeaderCell>
-                        <CTableHeaderCell scope="col">Data</CTableHeaderCell>
-                        <CTableHeaderCell scope="col">Tot. pezzi</CTableHeaderCell>
-                        <CTableHeaderCell scope="col">Tot. peso (kg)</CTableHeaderCell>
-                      </CTableRow>
-                    </CTableHead>
-                    <CTableBody>
-                      {ddt.map((documento) => {
-                        const pezziValue = Number(documento.totale_pezzi)
-                        const pezziDisplay = Number.isFinite(pezziValue)
-                          ? pezziValue
-                          : documento.totale_pezzi ?? "-"
-                        const pesoValue = Number(documento.totale_peso_kg)
-                        const pesoDisplay = Number.isFinite(pesoValue) ? pesoValue.toFixed(3) : "-"
+                {latestDdt.length > 0 ? (
+                  <>
+                    <CTable hover responsive size="sm">
+                      <CTableHead color="light">
+                        <CTableRow>
+                          <CTableHeaderCell scope="col">Numero</CTableHeaderCell>
+                          <CTableHeaderCell scope="col">Data</CTableHeaderCell>
+                          <CTableHeaderCell scope="col">Tot. pezzi</CTableHeaderCell>
+                          <CTableHeaderCell scope="col">Tot. peso (kg)</CTableHeaderCell>
+                        </CTableRow>
+                      </CTableHead>
+                      <CTableBody>
+                        {paginatedDdt.map((documento) => {
+                          const pezziValue = Number(documento.totale_pezzi)
+                          const pezziDisplay = Number.isFinite(pezziValue)
+                            ? pezziValue
+                            : documento.totale_pezzi ?? "-"
+                          const pesoValue = Number(documento.totale_peso_kg)
+                          const pesoDisplay = Number.isFinite(pesoValue) ? pesoValue.toFixed(3) : "-"
 
-                        return (
-                          <CTableRow key={documento.id_ddt}>
-                            <CTableDataCell>
-                              {documento.anno}/{documento.numero_documento}
-                            </CTableDataCell>
-                            <CTableDataCell>{formatDate(documento.data_ddt)}</CTableDataCell>
-                            <CTableDataCell>{pezziDisplay}</CTableDataCell>
-                            <CTableDataCell>{pesoDisplay}</CTableDataCell>
-                          </CTableRow>
-                        )
-                      })}
-                    </CTableBody>
-                  </CTable>
+                          return (
+                            <CTableRow key={documento.id_ddt}>
+                              <CTableDataCell>
+                                {documento.anno}/{documento.numero_documento}
+                              </CTableDataCell>
+                              <CTableDataCell>{formatDate(documento.data_ddt)}</CTableDataCell>
+                              <CTableDataCell>{pezziDisplay}</CTableDataCell>
+                              <CTableDataCell>{pesoDisplay}</CTableDataCell>
+                            </CTableRow>
+                          )
+                        })}
+                      </CTableBody>
+                    </CTable>
+                    {totalDdtPages > 1 && (
+                      <div className="d-flex justify-content-end mt-2">
+                        <CSmartPagination
+                          size="sm"
+                          align="end"
+                          pages={totalDdtPages}
+                          activePage={ddtPage + 1}
+                          onActivePageChange={(page) => setDdtPage(Math.max(page - 1, 0))}
+                        />
+                      </div>
+                    )}
+                  </>
                 ) : (
                   <CAlert color="info" className="mb-0">
                     Nessun DDT disponibile.
@@ -2985,44 +3020,57 @@ const AnagraficaDetail = () => {
                 )}
               </section>
 
-              <section>
-                <h3 className="h6 mb-3">Fatture correlate</h3>
-                {fatture.length > 0 ? (
-                  <CTable hover responsive size="sm">
-                    <CTableHead color="light">
-                      <CTableRow>
-                        <CTableHeaderCell scope="col">Numero</CTableHeaderCell>
-                        <CTableHeaderCell scope="col">Data</CTableHeaderCell>
-                        <CTableHeaderCell scope="col">Totale imponibile</CTableHeaderCell>
-                        <CTableHeaderCell scope="col">Totale IVA</CTableHeaderCell>
-                        <CTableHeaderCell scope="col">Totale</CTableHeaderCell>
-                        <CTableHeaderCell scope="col">Saldo</CTableHeaderCell>
-                        <CTableHeaderCell scope="col">Stato</CTableHeaderCell>
-                      </CTableRow>
-                    </CTableHead>
-                    <CTableBody>
-                      {fatture.map((fattura) => (
-                        <CTableRow key={fattura.id_fattura}>
-                          <CTableDataCell>
-                            {fattura.anno}/{fattura.numero_documento}
-                          </CTableDataCell>
-                          <CTableDataCell>{formatDate(fattura.data_fattura)}</CTableDataCell>
-                          <CTableDataCell>{formatCurrency(fattura.totale_imponibile)}</CTableDataCell>
-                          <CTableDataCell>{formatCurrency(fattura.totale_iva)}</CTableDataCell>
-                          <CTableDataCell>{formatCurrency(fattura.totale)}</CTableDataCell>
-                          <CTableDataCell>{formatCurrency(fattura.saldo)}</CTableDataCell>
-                          <CTableDataCell>
-                            {fattura.stato_label ? (
-                              <CBadge color="secondary">{fattura.stato_label}</CBadge>
-                            ) : (
-                              <span className="text-body-secondary">-</span>
-                            )}
-                          </CTableDataCell>
-                        </CTableRow>
-                      ))}
-                    </CTableBody>
-                  </CTable>
-                ) : (
+                <section>
+                  <h3 className="h6 mb-3">Fatture correlate</h3>
+                  {latestFatture.length > 0 ? (
+                    <>
+                      <CTable hover responsive size="sm">
+                        <CTableHead color="light">
+                          <CTableRow>
+                            <CTableHeaderCell scope="col">Numero</CTableHeaderCell>
+                            <CTableHeaderCell scope="col">Data</CTableHeaderCell>
+                            <CTableHeaderCell scope="col">Totale imponibile</CTableHeaderCell>
+                            <CTableHeaderCell scope="col">Totale IVA</CTableHeaderCell>
+                            <CTableHeaderCell scope="col">Totale</CTableHeaderCell>
+                            <CTableHeaderCell scope="col">Saldo</CTableHeaderCell>
+                            <CTableHeaderCell scope="col">Stato</CTableHeaderCell>
+                          </CTableRow>
+                        </CTableHead>
+                        <CTableBody>
+                          {paginatedFatture.map((fattura) => (
+                            <CTableRow key={fattura.id_fattura}>
+                              <CTableDataCell>
+                                {fattura.anno}/{fattura.numero_documento}
+                              </CTableDataCell>
+                              <CTableDataCell>{formatDate(fattura.data_fattura)}</CTableDataCell>
+                              <CTableDataCell>{formatCurrency(fattura.totale_imponibile)}</CTableDataCell>
+                              <CTableDataCell>{formatCurrency(fattura.totale_iva)}</CTableDataCell>
+                              <CTableDataCell>{formatCurrency(fattura.totale)}</CTableDataCell>
+                              <CTableDataCell>{formatCurrency(fattura.saldo)}</CTableDataCell>
+                              <CTableDataCell>
+                                {fattura.stato_label ? (
+                                  <CBadge color="secondary">{fattura.stato_label}</CBadge>
+                                ) : (
+                                  <span className="text-body-secondary">-</span>
+                                )}
+                              </CTableDataCell>
+                            </CTableRow>
+                          ))}
+                        </CTableBody>
+                      </CTable>
+                      {totalFatturePages > 1 && (
+                        <div className="d-flex justify-content-end mt-2">
+                          <CSmartPagination
+                            size="sm"
+                            align="end"
+                            pages={totalFatturePages}
+                            activePage={fatturePage + 1}
+                            onActivePageChange={(page) => setFatturePage(Math.max(page - 1, 0))}
+                          />
+                        </div>
+                      )}
+                    </>
+                  ) : (
                   <CAlert color="info" className="mb-0">
                     Nessuna fattura disponibile.
                   </CAlert>

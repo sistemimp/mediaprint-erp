@@ -14,7 +14,7 @@ try {
     AuthGuard::requirePermissions($auth, ['anag.read']);
 
     $pdo = Database::getConnection();
-    $stmt = $pdo->query('SELECT id_regime, code, label FROM cfg_sdi_regime_fiscale WHERE attivo = 1 ORDER BY label ASC');
+    $stmt = $pdo->query('SELECT id_regime, code, label FROM cfg_sdi_regime_fiscale WHERE attivo = 1 ORDER BY code ASC');
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
     $items = array_map(static fn ($row) => [

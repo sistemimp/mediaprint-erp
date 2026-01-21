@@ -145,7 +145,6 @@ export const saveLavorazioneActivityTemplate = async ({
 } = {}) => {
   const body = {
     id_template: idTemplate || undefined,
-    titolo: titolo || undefined,
     descrizione: descrizione ?? undefined,
     priorita: priorita || undefined,
     id_reparto: repartoId !== undefined ? repartoId : undefined,
@@ -184,7 +183,6 @@ export const createLavorazioneActivity = async ({
   const body = {
     id_lavorazione: idLavorazione,
     id_template: templateId || undefined,
-    titolo: titolo || undefined,
     descrizione: descrizione || undefined,
     priorita: priorita || undefined,
     data_scadenza: dataScadenza || undefined,
@@ -348,7 +346,6 @@ export const notifyLavorazioneOperators = async ({
   const body = {
     id_lavorazione: idLavorazione,
     created_by: createdBy ?? undefined,
-    titolo: titolo || undefined,
     messaggio,
   }
 
@@ -632,4 +629,248 @@ export const uploadLavorazioneFile = async ({
   }
 
   return payload ?? {}
+}
+
+export const createLavorazioneSpedizione = async ({
+  token,
+  idLavorazione,
+  operatoreId,
+  affrancaturaId,
+  tariffaId,
+  autorizzazioneId,
+  portoId,
+  note,
+  dataProgrammata,
+  signal,
+} = {}) => {
+  if (!idLavorazione) {
+    throw new Error('ID lavorazione mancante')
+  }
+  const body = {
+    id_lavorazione: idLavorazione,
+    id_operatore_postale: operatoreId || undefined,
+    id_affrancatura: affrancaturaId || undefined,
+    id_tariffa: tariffaId || undefined,
+    id_autorizzazione: autorizzazioneId || undefined,
+    id_porto_destinazione: portoId || undefined,
+    note: note || undefined,
+    data_programmata: dataProgrammata || undefined,
+  }
+
+  const payload = await apiFetch('/lavorazioniSpedizioniCreate.php', {
+    method: 'POST',
+    token,
+    body,
+    signal,
+  })
+
+  return payload ?? {}
+}
+
+export const updateLavorazioneSpedizione = async ({
+  token,
+  idSpedizione,
+  operatoreId,
+  affrancaturaId,
+  tariffaId,
+  autorizzazioneId,
+  portoId,
+  note,
+  dataProgrammata,
+  signal,
+} = {}) => {
+  if (!idSpedizione) {
+    throw new Error('ID spedizione mancante')
+  }
+  const body = {
+    id_spedizione: idSpedizione,
+    id_operatore_postale: operatoreId || undefined,
+    id_affrancatura: affrancaturaId || undefined,
+    id_tariffa: tariffaId || undefined,
+    id_autorizzazione: autorizzazioneId || undefined,
+    id_porto_destinazione: portoId || undefined,
+    note: note || undefined,
+    data_programmata: dataProgrammata || undefined,
+  }
+
+  const payload = await apiFetch('/lavorazioniSpedizioniUpdate.php', {
+    method: 'POST',
+    token,
+  body,
+  signal,
+})
+
+return payload ?? {}
+}
+
+export const deleteLavorazioneSpedizione = async ({ token, idSpedizione, signal } = {}) => {
+  if (!idSpedizione) {
+    throw new Error('ID spedizione mancante')
+  }
+
+  const payload = await apiFetch('/lavorazioniSpedizioniDelete.php', {
+    method: 'POST',
+    token,
+    body: {
+      id_spedizione: Number(idSpedizione),
+    },
+    signal,
+  })
+
+  return payload ?? { ok: true }
+}
+
+export const fetchLavorazioneSpedizioneReportQuantities = async ({
+  token,
+  idSpedizione,
+  signal,
+} = {}) => {
+  if (!idSpedizione) {
+    throw new Error('ID spedizione mancante')
+  }
+
+  const payload = await apiFetch('/lavorazioniSpedizioniReportQuantities.php', {
+    token,
+    params: { id_spedizione: idSpedizione },
+    signal,
+  })
+
+  return payload?.quantities ?? []
+}
+
+export const saveLavorazioneSpedizioneReportQuantities = async ({
+  token,
+  idSpedizione,
+  quantities,
+  signal,
+} = {}) => {
+  if (!idSpedizione) {
+    throw new Error('ID spedizione mancante')
+  }
+
+  const body = {
+    id_spedizione: idSpedizione,
+    quantities: Array.isArray(quantities) ? quantities : [],
+  }
+
+  const payload = await apiFetch('/lavorazioniSpedizioniReportQuantitiesSave.php', {
+    method: 'POST',
+    token,
+    body,
+    signal,
+  })
+
+  return payload ?? { ok: true }
+}
+
+export const fetchLavorazioneSpedizioneReportValues = async ({
+  token,
+  idSpedizione,
+  signal,
+} = {}) => {
+  if (!idSpedizione) {
+    throw new Error('ID spedizione mancante')
+  }
+
+  const payload = await apiFetch('/lavorazioniSpedizioniReportValues.php', {
+    token,
+    params: { id_spedizione: idSpedizione },
+    signal,
+  })
+
+  return payload?.values ?? {}
+}
+
+export const saveLavorazioneSpedizioneReportValues = async ({
+  token,
+  idSpedizione,
+  values,
+  signal,
+} = {}) => {
+  if (!idSpedizione) {
+    throw new Error('ID spedizione mancante')
+  }
+
+  const body = {
+    id_spedizione: idSpedizione,
+    values: values || {},
+  }
+
+  const payload = await apiFetch('/lavorazioniSpedizioniReportValuesSave.php', {
+    method: 'POST',
+    token,
+    body,
+    signal,
+  })
+
+  return payload ?? { ok: true }
+}
+
+export const fetchLavorazioneReportFields = async ({
+  token,
+  affrancaturaId,
+  signal,
+} = {}) => {
+  const params = sanitizeParams({
+    id_affrancatura: affrancaturaId,
+  })
+
+  const payload = await apiFetch('/lavorazioniReportFields.php', {
+    token,
+    params,
+    signal,
+  })
+
+  return {
+    affrancature: Array.isArray(payload?.affrancature) ? payload.affrancature : [],
+    fields: Array.isArray(payload?.fields) ? payload.fields : [],
+  }
+}
+
+export const saveLavorazioneReportField = async ({
+  token,
+  fieldId,
+  affrancaturaId,
+  fieldCode,
+  label,
+  description,
+  ordering,
+  isVisible,
+  signal,
+} = {}) => {
+  const body = {
+    id_field: fieldId || undefined,
+    id_affrancatura: affrancaturaId || undefined,
+    field_code: fieldCode || undefined,
+    label: label || undefined,
+    description: description || undefined,
+    ordering: ordering !== undefined ? Number(ordering) : undefined,
+    is_visible: isVisible !== undefined ? (isVisible ? 1 : 0) : undefined,
+  }
+
+  const payload = await apiFetch('/lavorazioniReportFieldsSave.php', {
+    method: 'POST',
+    token,
+    body,
+    signal,
+  })
+
+  return payload ?? {}
+}
+
+export const deleteLavorazioneReportField = async ({ token, fieldId, signal } = {}) => {
+  if (!fieldId) {
+    throw new Error('Campo report mancante')
+  }
+
+  const payload = await apiFetch('/lavorazioniReportFieldsDelete.php', {
+    method: 'POST',
+    token,
+    body: {
+      id_field: Number(fieldId),
+    },
+    signal,
+  })
+
+  return payload ?? { ok: true }
 }

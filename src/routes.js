@@ -48,6 +48,7 @@ const PagamentiImport = React.lazy(() => import('./views/pagamenti/PagamentiImpo
 const LavorazioniList = React.lazy(() => import('./views/lavorazioni/LavorazioniList'))
 const LavorazioneDetail = React.lazy(() => import('./views/lavorazioni/LavorazioneDetail'))
 const LavorazioniTemplates = React.lazy(() => import('./views/lavorazioni/LavorazioniTemplates'))
+const LavorazioniReportFields = React.lazy(() => import('./views/lavorazioni/LavorazioniReportFields'))
 const InstantMessagingPage = React.lazy(() => import('./views/im/InstantMessagingPage'))
 const NotificationsList = React.lazy(() => import('./views/notifiche/NotificationsList'))
 const AccountsList = React.lazy(() => import('./views/accounts/AccountsList'))
@@ -95,6 +96,11 @@ const routes = [
   { path: '/lavorazioni/lista', name: 'Lavorazioni - Lista', element: LavorazioniList },
   { path: '/lavorazioni/dettaglio', name: 'Lavorazioni - Dettaglio', element: LavorazioneDetail },
   { path: '/lavorazioni/templates', name: 'Lavorazioni - Template attivita', element: LavorazioniTemplates },
+  {
+    path: '/lavorazioni/report-fields',
+    name: 'Lavorazioni - Campi report spedizioni',
+    element: LavorazioniReportFields,
+  },
   { path: '/messaggi', name: 'Messaggi', element: InstantMessagingPage },
   { path: '/notifiche', name: 'Notifiche', element: NotificationsList },
   { path: '/accounts/lista', name: 'Account - Lista', element: AccountsList },
