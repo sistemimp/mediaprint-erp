@@ -8,6 +8,7 @@ use MediaPrint\Backend\Mailer\SmtpMailer;
 use MediaPrint\Repo\DdtRepository;
 use MediaPrint\Repo\FattureRepository;
 use MediaPrint\Repo\PreventiviRepository;
+use MediaPrint\Repo\ProdottiRepository;
 use MediaPrint\Repo\LavorazioniRepository;
 
 final class PreventiviService
@@ -253,8 +254,26 @@ HTML;
         $linkedFatture = isset($row['linked_fatture']) && is_array($row['linked_fatture']) ? $row['linked_fatture'] : [];
         unset($row['linked_ddt'], $row['linked_fatture']);
 
-        $editable = ($row['stato_code'] ?? 'bozza') === 'bozza';
+        $statusCode = strtolower((string) ($row['stato_code'] ?? 'bozza'));
+        $editable = in_array($statusCode, ['bozza', 'revisionato_ced'], true);
         $righe = $this->repository->getLines($id);
+        $cedMap = $this->repository->listCedQuantitiesForPreventivo($id);
+        foreach ($righe as &$riga) {
+            $idRiga = isset($riga['id_riga']) ? (int) $riga['id_riga'] : 0;
+            $cedQty = $idRiga > 0 && array_key_exists($idRiga, $cedMap) ? $cedMap[$idRiga] : null;
+            $riga['quantita_ced'] = $cedQty;
+            $warning = false;
+            if ($cedQty !== null) {
+                $diff = abs((float) $cedQty - (float) ($riga['quantita'] ?? 0));
+                if ($diff > 0.0001) {
+                    $warning = true;
+                }
+            } elseif (!empty($riga['created_by_ced'])) {
+                $warning = true;
+            }
+            $riga['ced_warning'] = $warning;
+        }
+        unset($riga);
         $cig = $this->repository->getCigList($id);
         $determine = $this->repository->getDetermineList($id);
         $contatti = $this->repository->getContatti($id);
@@ -314,6 +333,32 @@ HTML;
             : null;
         $excludeDraft = !empty($input['exclude_draft']);
         $rows = $this->repository->listLatest($limit, $allowed, $excludeDraft);
+        foreach ($rows as &$row) {
+            $statusCode = strtolower((string) ($row['stato_code'] ?? ''));
+            $warning = false;
+            if ($statusCode === 'revisionato_ced') {
+                $idPreventivo = isset($row['id_preventivo']) ? (int) $row['id_preventivo'] : 0;
+                if ($idPreventivo > 0) {
+                    $lines = $this->repository->getLines($idPreventivo);
+                    $cedMap = $this->repository->listCedQuantitiesForPreventivo($idPreventivo);
+                    foreach ($lines as $line) {
+                        $cedQty = isset($line['id_riga']) ? ($cedMap[(int)$line['id_riga']] ?? null) : null;
+                        if ($cedQty !== null) {
+                            $diff = abs((float) $cedQty - (float) ($line['quantita'] ?? 0));
+                            if ($diff > 0.0001) {
+                                $warning = true;
+                                break;
+                            }
+                        } elseif (!empty($line['created_by_ced'])) {
+                            $warning = true;
+                            break;
+                        }
+                    }
+                }
+            }
+            $row['ced_warning'] = $warning;
+        }
+        unset($row);
 
         return [
             'data' => $rows,
@@ -402,13 +447,15 @@ HTML;
         if ($code === 'inviato') {
             $notePayload = $revisionNote ?? 'Stato impostato come inviato dal timeline.';
             try {
-                $this->repository->createRevision($id, $notePayload, $operatorName, ['detail' => $detail]);
+                $snapshot = $this->detail(['id' => $id]);
+                $this->repository->createRevision($id, $notePayload, $operatorName, ['detail' => $snapshot]);
             } catch (\Throwable $ignored) {
                 // Non bloccare l'aggiornamento dello stato se il log fallisce
             }
         }
 
-        $editable = ($detail['stato_code'] ?? 'bozza') === 'bozza';
+        $statusCode = strtolower((string) ($detail['stato_code'] ?? 'bozza'));
+        $editable = in_array($statusCode, ['bozza', 'revisionato_ced'], true);
         $statuses = $this->repository->listStatuses();
 
         return [
@@ -481,18 +528,19 @@ HTML;
                 if ($comboKey === '') {
                     $comboKey = null;
                 }
-                $lines[] = [
-                    'descrizione' => (string) ($r['descrizione'] ?? ''),
-                    'quantita' => isset($r['quantita']) ? (float) $r['quantita'] : 1.0,
-                    'prezzo' => isset($r['prezzo']) ? (float) $r['prezzo'] : (isset($r['prezzo_unitario']) ? (float) $r['prezzo_unitario'] : 0.0),
-                    'sconto' => isset($r['sconto']) ? (float) $r['sconto'] : 0.0,
-                    'iva' => isset($r['iva']) ? (float) $r['iva'] : 22.0,
-                    'id_prodotto' => isset($r['id_prodotto']) ? (int) $r['id_prodotto'] : null,
-                    'combo_key' => $comboKey,
-                    'id_sdi_natura_iva' => isset($r['id_sdi_natura_iva']) ? (int) $r['id_sdi_natura_iva'] : null,
-                ];
-            }
+            $lines[] = [
+                'descrizione' => (string) ($r['descrizione'] ?? ''),
+                'quantita' => isset($r['quantita']) ? (float) $r['quantita'] : 1.0,
+                'prezzo' => isset($r['prezzo']) ? (float) $r['prezzo'] : (isset($r['prezzo_unitario']) ? (float) $r['prezzo_unitario'] : 0.0),
+                'sconto' => isset($r['sconto']) ? (float) $r['sconto'] : 0.0,
+                'iva' => isset($r['iva']) ? (float) $r['iva'] : 22.0,
+                'id_prodotto' => isset($r['id_prodotto']) ? (int) $r['id_prodotto'] : null,
+                'combo_key' => $comboKey,
+                'id_sdi_natura_iva' => isset($r['id_sdi_natura_iva']) ? (int) $r['id_sdi_natura_iva'] : null,
+                'id_riga' => isset($r['id_riga']) ? (int) $r['id_riga'] : (isset($r['id_riga_preventivo']) ? (int) $r['id_riga_preventivo'] : 0),
+            ];
         }
+    }
 
         // Normalizza CIG e Determine (opzionali)
         $cigItems = [];
@@ -570,8 +618,9 @@ HTML;
             if ($existing === null) {
                 throw new \RuntimeException('Preventivo non trovato.', 404);
             }
-            if ($existing['stato_code'] !== null && $existing['stato_code'] !== 'bozza' && !$send) {
-                throw new \RuntimeException('Il preventivo non è in stato bozza, impossibile aggiornare.', 422);
+            $existingStatus = strtolower((string) ($existing['stato_code'] ?? ''));
+            if ($existingStatus !== '' && !in_array($existingStatus, ['bozza', 'revisionato_ced'], true) && !$send) {
+                throw new \RuntimeException('Il preventivo non è in stato bozza o revisionato CED, impossibile aggiornare.', 422);
             }
 
             // Se non passato un id_anagrafica valido, verifica comunque che l'anagrafica legata sia attiva
@@ -579,6 +628,17 @@ HTML;
                 $curr = $this->repository->fetchDetail($idPrev);
                 if ($curr && isset($curr['id_anagrafica']) && !$this->repository->existsAnagrafica((int)$curr['id_anagrafica'])) {
                     throw new \RuntimeException('Anagrafica disattivata o inesistente. Operazione non consentita.', 422);
+                }
+            }
+
+            if ($existingStatus === 'revisionato_ced') {
+                try {
+                    $snapshot = $this->detail(['id' => $idPrev]);
+                    $this->repository->createRevision($idPrev, 'Revisione automatica prima della modifica CED.', null, [
+                        'detail' => $snapshot,
+                    ]);
+                } catch (\Throwable $ignored) {
+                    // Non bloccare l'aggiornamento se la revisione fallisce.
                 }
             }
 
@@ -602,6 +662,7 @@ HTML;
             if ($hasLinesPayload) {
                 // aggiorna righe bozza (consente anche svuotamento)
                 $this->repository->replaceLines($idPrev, $lines);
+                $this->syncPostaliRowsForPreventivo($idPrev);
             }
             // sostituisce CIG e Determine (consente anche svuotamento)
             $this->repository->replaceCig($idPrev, $cigItems);
@@ -661,6 +722,7 @@ HTML;
 
         if ($hasLinesPayload) {
             $this->repository->replaceLines($draft['id_preventivo'], $lines);
+            $this->syncPostaliRowsForPreventivo($draft['id_preventivo']);
         }
         // Inserisce CIG/Determine per la bozza
         $this->repository->replaceCig($draft['id_preventivo'], $cigItems);
@@ -810,6 +872,339 @@ HTML;
     }
 
     /**
+     * @param array<string, mixed> $input
+     * @return array<string, mixed>
+     */
+    public function addLineFromCed(array $input): array
+    {
+        $idPreventivo = $this->sanitizeInt($input['id_preventivo'] ?? ($input['id'] ?? 0), 1, PHP_INT_MAX);
+        if ($idPreventivo <= 0) {
+            throw new \RuntimeException('ID preventivo mancante o non valido.', 422);
+        }
+
+        $preventivo = $this->repository->getById($idPreventivo);
+        if ($preventivo === null) {
+            throw new \RuntimeException('Preventivo non trovato.', 404);
+        }
+
+        $idProdotto = $this->sanitizeInt($input['id_prodotto'] ?? 0, 1, PHP_INT_MAX);
+        if ($idProdotto <= 0) {
+            throw new \RuntimeException('Prodotto non valido.', 422);
+        }
+
+        $prodottiRepository = new ProdottiRepository($this->repository->getConnection());
+        $prodotto = $prodottiRepository->getProdottoById($idProdotto);
+        $categoriaId = $prodotto['id_categoria'] ?? null;
+        if ($categoriaId === null || $categoriaId <= 0) {
+            throw new \RuntimeException('Categoria prodotto non valida.', 422);
+        }
+
+        $categorie = $prodottiRepository->listCategorie();
+        $categoria = null;
+        foreach ($categorie as $cat) {
+            if ((int) $cat['id_categoria'] === (int) $categoriaId) {
+                $categoria = (string) $cat['nome'];
+                break;
+            }
+        }
+        if (!$this->isStampaCategory($categoria)) {
+            throw new \RuntimeException('Categoria prodotto non consentita per il CED.', 422);
+        }
+
+        $descrizione = trim((string) ($input['descrizione'] ?? ''));
+        if ($descrizione === '') {
+            $descrizione = (string) $prodotto['nome'];
+        }
+        $quantita = isset($input['quantita']) ? (float) $input['quantita'] : 1.0;
+        $prezzo = isset($input['prezzo_unitario']) ? (float) $input['prezzo_unitario'] : null;
+        if ($prezzo === null) {
+            $prezzo = isset($input['prezzo']) ? (float) $input['prezzo'] : null;
+        }
+        if ($prezzo === null) {
+            $prezzo = isset($prodotto['prezzo_listino']) ? (float) $prodotto['prezzo_listino'] : 0.0;
+        }
+        $iva = array_key_exists('iva', $input) ? (float) $input['iva'] : null;
+        if ($iva === null) {
+            $idIva = isset($prodotto['id_iva']) ? (int) $prodotto['id_iva'] : 0;
+            if ($idIva > 0) {
+                $stmt = $this->repository->getConnection()->prepare('SELECT percento FROM cfg_iva WHERE id_iva = :id LIMIT 1');
+                $stmt->bindValue(':id', $idIva, \PDO::PARAM_INT);
+                $stmt->execute();
+                $value = $stmt->fetchColumn();
+                if ($value !== false) {
+                    $iva = (float) $value;
+                }
+            }
+        }
+        $idNatura = isset($input['id_sdi_natura_iva']) ? (int) $input['id_sdi_natura_iva'] : null;
+        if ($idNatura === null) {
+            $idNatura = isset($prodotto['id_sdi_natura_iva']) ? (int) $prodotto['id_sdi_natura_iva'] : null;
+        }
+        $comboKey = isset($input['combo_key']) ? trim((string) $input['combo_key']) : null;
+        if ($comboKey === '') {
+            $comboKey = null;
+        }
+
+        $connection = $this->repository->getConnection();
+        $startedTransaction = false;
+        if (!$connection->inTransaction()) {
+            $startedTransaction = $connection->beginTransaction();
+        }
+        try {
+            $idRiga = $this->repository->addLine($idPreventivo, [
+                'descrizione' => $descrizione,
+                'quantita' => $quantita,
+                'prezzo_unitario' => $prezzo,
+                'iva' => $iva,
+                'id_prodotto' => $idProdotto,
+                'id_sdi_natura_iva' => $idNatura,
+                'combo_key' => $comboKey,
+                'created_by_ced' => 1,
+            ]);
+
+            $totals = $this->repository->calculateTotals($idPreventivo);
+            $this->repository->updateTotals($idPreventivo, $totals);
+
+            $cedStatus = $this->repository->findStatusByCode('revisionato_ced');
+            if ($cedStatus !== null) {
+                $this->repository->updateStatus($idPreventivo, (int) $cedStatus['id_stato']);
+            }
+            $this->syncPostaliRowsForPreventivo($idPreventivo);
+
+            if ($startedTransaction && $connection->inTransaction()) {
+                $connection->commit();
+            }
+        } catch (\Throwable $exception) {
+            if ($startedTransaction && $connection->inTransaction()) {
+                $connection->rollBack();
+            }
+            throw $exception;
+        }
+
+        return [
+            'ok' => true,
+            'id_riga' => $idRiga ?? 0,
+            'totals' => $totals ?? null,
+            'status' => $cedStatus ?? null,
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $input
+     * @return array<string, mixed>
+     */
+    public function deleteLineFromCed(array $input): array
+    {
+        $idPreventivo = $this->sanitizeInt($input['id_preventivo'] ?? ($input['id'] ?? 0), 1, PHP_INT_MAX);
+        if ($idPreventivo <= 0) {
+            throw new \RuntimeException('ID preventivo mancante o non valido.', 422);
+        }
+
+        $idRiga = $this->sanitizeInt($input['id_riga'] ?? ($input['id_riga_preventivo'] ?? 0), 1, PHP_INT_MAX);
+        if ($idRiga <= 0) {
+            throw new \RuntimeException('ID riga mancante o non valido.', 422);
+        }
+
+        $preventivo = $this->repository->getById($idPreventivo);
+        if ($preventivo === null) {
+            throw new \RuntimeException('Preventivo non trovato.', 404);
+        }
+
+        $connection = $this->repository->getConnection();
+        $startedTransaction = false;
+        if (!$connection->inTransaction()) {
+            $startedTransaction = $connection->beginTransaction();
+        }
+        try {
+            $deleted = $this->repository->deleteLineIfCed($idPreventivo, $idRiga);
+            if (!$deleted) {
+                throw new \RuntimeException('Riga non eliminabile.', 422);
+            }
+
+            try {
+                $cleanup = $connection->prepare('DELETE FROM tb_lavorazioni_attivita_ced_quantita WHERE id_riga_preventivo = :id');
+                $cleanup->bindValue(':id', $idRiga, \PDO::PARAM_INT);
+                $cleanup->execute();
+            } catch (\Throwable $ignored) {
+                // ignore cleanup failures
+            }
+
+            $totals = $this->repository->calculateTotals($idPreventivo);
+            $this->repository->updateTotals($idPreventivo, $totals);
+
+            $cedStatus = $this->repository->findStatusByCode('revisionato_ced');
+            if ($cedStatus !== null) {
+                $this->repository->updateStatus($idPreventivo, (int) $cedStatus['id_stato']);
+            }
+            $this->syncPostaliRowsForPreventivo($idPreventivo);
+
+            if ($startedTransaction && $connection->inTransaction()) {
+                $connection->commit();
+            }
+        } catch (\Throwable $exception) {
+            if ($startedTransaction && $connection->inTransaction()) {
+                $connection->rollBack();
+            }
+            throw $exception;
+        }
+
+        return [
+            'ok' => true,
+            'id_riga' => $idRiga,
+            'totals' => $totals ?? null,
+            'status' => $cedStatus ?? null,
+        ];
+    }
+
+    private function isStampaCategory(?string $label): bool
+    {
+        $value = trim((string) ($label ?? ''));
+        if ($value === '') {
+            return false;
+        }
+        $lower = function_exists('mb_strtolower') ? mb_strtolower($value) : strtolower($value);
+        $normalized = preg_replace('/[^a-z0-9]+/', '', $lower);
+        if ($normalized === 'stampa') {
+            return true;
+        }
+        return str_starts_with($normalized, 'stampa') && str_contains($normalized, 'imbustamento');
+    }
+
+    private function isTariffePostaliCategory(?string $label): bool
+    {
+        $value = trim((string) ($label ?? ''));
+        if ($value === '') {
+            return false;
+        }
+        $lower = function_exists('mb_strtolower') ? mb_strtolower($value) : strtolower($value);
+        $normalized = preg_replace('/[^a-z0-9]+/', '', $lower);
+        if ($normalized === 'tariffepostali') {
+            return true;
+        }
+        return str_starts_with($normalized, 'tariffepostali');
+    }
+
+    private function isTariffePostaliLine(array $line): bool
+    {
+        $idCategoria = isset($line['id_categoria']) ? (int) $line['id_categoria'] : 0;
+        if ($idCategoria === 2) {
+            return true;
+        }
+        $category = $line['categoria'] ?? $line['categoria_nome'] ?? null;
+        return $this->isTariffePostaliCategory(is_string($category) ? $category : null);
+    }
+
+    private function syncPostaliRowsForPreventivo(int $idPreventivo): void
+    {
+        if (!($this->lavorazioniRepository instanceof LavorazioniRepository)) {
+            return;
+        }
+        $lavorazioniRepository = $this->lavorazioniRepository;
+        $lavorazioniIds = $lavorazioniRepository->listLavorazioniIdsByPreventivo($idPreventivo);
+        if ($lavorazioniIds === []) {
+            return;
+        }
+        $lines = $this->repository->getLines($idPreventivo);
+        $postaliRows = array_values(array_filter($lines, function (array $line): bool {
+            return $this->isTariffePostaliLine($line);
+        }));
+        $keepIds = [];
+        foreach ($postaliRows as $row) {
+            $idRiga = isset($row['id_riga']) ? (int) $row['id_riga'] : 0;
+            if ($idRiga > 0) {
+                $keepIds[] = $idRiga;
+            }
+        }
+        foreach ($lavorazioniIds as $lavorazioneId) {
+            $existingPostaliRows = $lavorazioniRepository->listPostaliRowsForLavorazione($lavorazioneId);
+            $rowMapping = $this->buildPostalRowIdMapping($existingPostaliRows, $postaliRows);
+            $postaActivityIds = $lavorazioniRepository->listPostaActivityIdsByLavorazione($lavorazioneId);
+            foreach ($postaActivityIds as $activityId) {
+                if ($rowMapping !== []) {
+                    $lavorazioniRepository->renameActivityCedQuantities($activityId, $rowMapping);
+                }
+            }
+            $lavorazioniRepository->replacePostaliRowsForLavorazione($lavorazioneId, $postaliRows);
+        }
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $oldRows
+     * @param array<int, array<string, mixed>> $newRows
+     * @return array<int, int>
+     */
+    private function buildPostalRowIdMapping(array $oldRows, array $newRows): array
+    {
+        if ($oldRows === [] || $newRows === []) {
+            return [];
+        }
+        $groupingOld = $this->groupPostalRowsByKey($oldRows);
+        $groupingNew = $this->groupPostalRowsByKey($newRows);
+        if ($groupingOld === [] || $groupingNew === []) {
+            return [];
+        }
+
+        $mapping = [];
+        foreach ($groupingOld as $key => $oldIds) {
+            if (!isset($groupingNew[$key])) {
+                continue;
+            }
+            $newIds = $groupingNew[$key];
+            $count = min(count($oldIds), count($newIds));
+            for ($i = 0; $i < $count; $i++) {
+                $oldId = $oldIds[$i];
+                $newId = $newIds[$i];
+                if ($oldId > 0 && $newId > 0 && $oldId !== $newId) {
+                    $mapping[$oldId] = $newId;
+                }
+            }
+        }
+
+        return $mapping;
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $rows
+     * @return array<string, list<int>>
+     */
+    private function groupPostalRowsByKey(array $rows): array
+    {
+        $grouped = [];
+        foreach ($rows as $row) {
+            $idRiga = isset($row['id_riga_preventivo']) ? (int) $row['id_riga_preventivo'] : 0;
+            $key = $this->buildPostalRowKey($row);
+            if ($idRiga <= 0 || $key === '') {
+                continue;
+            }
+            $grouped[$key][] = $idRiga;
+        }
+        return $grouped;
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     */
+    private function buildPostalRowKey(array $row): string
+    {
+        $parts = [
+            trim((string) ($row['combo_key'] ?? '')),
+            trim((string) ($row['categoria'] ?? '')),
+            trim((string) ($row['prodotto_codice'] ?? '')),
+            trim((string) ($row['descrizione'] ?? '')),
+            trim((string) ($row['prodotto_nome'] ?? '')),
+        ];
+        $filtered = array_filter($parts, static fn (string $part) => $part !== '');
+        if ($filtered === []) {
+            return '';
+        }
+        $normalized = implode('|', $filtered);
+        $normalized = preg_replace('/\\s+/', ' ', $normalized);
+        $normalized = $normalized === null ? '' : $normalized;
+        $lower = function_exists('mb_strtolower') ? mb_strtolower($normalized) : strtolower($normalized);
+        return trim($lower);
+    }
+
+    /**
      * Ritorna i dati di una revisione salvata.
      *
      * @return array{revision:array<string,mixed>}
@@ -913,11 +1308,6 @@ HTML;
         $statusCode = strtolower((string) ($detail['stato_code'] ?? ''));
         if ($statusCode !== 'confermato') {
             throw new \RuntimeException('È possibile generare la lavorazione solo da preventivi confermati.', 422);
-        }
-
-        $link = $this->repository->getLavorazioneLink($id);
-        if (!empty($link['id_lavorazione_corrente'])) {
-            throw new \RuntimeException('Per questo preventivo esiste già una lavorazione collegata.', 409);
         }
 
         $idAnagrafica = isset($detail['id_anagrafica']) ? (int) $detail['id_anagrafica'] : 0;
@@ -1185,6 +1575,7 @@ HTML;
             }
             if (!empty($lines)) {
                 $this->repository->replaceLines($draft['id_preventivo'], $lines);
+                $this->syncPostaliRowsForPreventivo($draft['id_preventivo']);
             }
         }
 
@@ -1252,5 +1643,24 @@ HTML;
         } catch (\Throwable $exception) {
             return null;
         }
+    }
+
+    /**
+     * @param mixed $value
+     */
+    private function sanitizeInt($value, int $min, int $max): int
+    {
+        if (is_numeric($value)) {
+            $int = (int) $value;
+        } else {
+            $int = (int) filter_var($value, FILTER_SANITIZE_NUMBER_INT);
+        }
+        if ($int < $min) {
+            return $min;
+        }
+        if ($int > $max) {
+            return $max;
+        }
+        return $int;
     }
 }

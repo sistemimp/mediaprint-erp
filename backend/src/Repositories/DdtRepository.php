@@ -10,6 +10,7 @@ use RuntimeException;
 final class DdtRepository
 {
     private ?bool $comboKeySupported = null;
+    private ?bool $anagraficheCodiceClienteSupported = null;
 
     public function __construct(private PDO $pdo) {}
 
@@ -106,6 +107,24 @@ final class DdtRepository
 
         $this->comboKeySupported = $exists;
         return $this->comboKeySupported;
+    }
+
+    private function hasAnagraficheCodiceCliente(): bool
+    {
+        if ($this->anagraficheCodiceClienteSupported !== null) {
+            return $this->anagraficheCodiceClienteSupported;
+        }
+
+        $exists = false;
+        try {
+            $stmt = $this->pdo->query("SHOW COLUMNS FROM tb_anagrafiche LIKE 'codice_cliente'");
+            $exists = $stmt && $stmt->fetch(PDO::FETCH_ASSOC) !== false;
+        } catch (\Throwable $ignored) {
+            $exists = false;
+        }
+
+        $this->anagraficheCodiceClienteSupported = $exists;
+        return $this->anagraficheCodiceClienteSupported;
     }
 
     /**
@@ -244,6 +263,10 @@ final class DdtRepository
      */
     public function fetchById(int $id): ?array
     {
+        $codiceClienteSelect = $this->hasAnagraficheCodiceCliente()
+            ? 'a.codice_cliente AS cliente_codice_cliente,'
+            : 'NULL AS cliente_codice_cliente,';
+
         $stmt = $this->pdo->prepare(
             'SELECT
                 d.id_ddt,
@@ -268,7 +291,7 @@ final class DdtRepository
                 d.id_destinazione_predefinita,
                 d.stato_documento,
                 a.ragione_sociale AS cliente_ragione_sociale,
-                a.codice_cliente AS cliente_codice_cliente,
+                ' . $codiceClienteSelect . '
                 a.piva AS cliente_piva,
                 a.codice_fiscale AS cliente_codice_fiscale,
                 a.email AS cliente_email,

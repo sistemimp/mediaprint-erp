@@ -10,6 +10,8 @@ final class PreventiviRepository
 {
     private ?bool $comboKeySupported = null;
     private ?bool $comboKeyArchiveSupported = null;
+    private ?bool $cedFlagSupported = null;
+    private ?bool $cedFlagArchiveSupported = null;
 
     public function __construct(private PDO $pdo) {}
 
@@ -140,6 +142,61 @@ final class PreventiviRepository
 
         $this->comboKeyArchiveSupported = $exists;
         return $this->comboKeyArchiveSupported;
+    }
+
+    private function ensureCedFlagColumn(): bool
+    {
+        if ($this->cedFlagSupported !== null) {
+            return $this->cedFlagSupported;
+        }
+
+        $exists = false;
+        try {
+            $stmt = $this->pdo->query("SHOW COLUMNS FROM tb_preventivi_righe LIKE 'created_by_ced'");
+            $exists = $stmt && $stmt->fetch(PDO::FETCH_ASSOC) !== false;
+            if (!$exists) {
+                $this->pdo->exec("ALTER TABLE tb_preventivi_righe ADD COLUMN created_by_ced TINYINT(1) NOT NULL DEFAULT 0");
+                $stmt = $this->pdo->query("SHOW COLUMNS FROM tb_preventivi_righe LIKE 'created_by_ced'");
+                $exists = $stmt && $stmt->fetch(PDO::FETCH_ASSOC) !== false;
+            }
+        } catch (\Throwable $ignored) {
+            try {
+                $probe = $this->pdo->query('SELECT created_by_ced FROM tb_preventivi_righe LIMIT 1');
+                $exists = $probe !== false;
+            } catch (\Throwable $ignoredProbe) {
+                $exists = false;
+            }
+        }
+
+        $this->cedFlagSupported = $exists;
+        return $this->cedFlagSupported;
+    }
+
+    private function ensureCedFlagArchiveColumn(): bool
+    {
+        if ($this->cedFlagArchiveSupported !== null) {
+            return $this->cedFlagArchiveSupported;
+        }
+
+        $exists = false;
+        try {
+            $tableStmt = $this->pdo->query("SHOW TABLES LIKE 'tb_preventivi_righe_archive'");
+            $tableExists = $tableStmt && $tableStmt->fetch(PDO::FETCH_ASSOC) !== false;
+            if ($tableExists) {
+                $stmt = $this->pdo->query("SHOW COLUMNS FROM tb_preventivi_righe_archive LIKE 'created_by_ced'");
+                $exists = $stmt && $stmt->fetch(PDO::FETCH_ASSOC) !== false;
+                if (!$exists) {
+                    $this->pdo->exec("ALTER TABLE tb_preventivi_righe_archive ADD COLUMN created_by_ced TINYINT(1) NOT NULL DEFAULT 0");
+                    $stmt = $this->pdo->query("SHOW COLUMNS FROM tb_preventivi_righe_archive LIKE 'created_by_ced'");
+                    $exists = $stmt && $stmt->fetch(PDO::FETCH_ASSOC) !== false;
+                }
+            }
+        } catch (\Throwable $ignored) {
+            $exists = false;
+        }
+
+        $this->cedFlagArchiveSupported = $exists;
+        return $this->cedFlagArchiveSupported;
     }
 
     private function ensureContattiTables(): void
@@ -338,6 +395,19 @@ final class PreventiviRepository
         } catch (\Throwable $ignored) {
             return [];
         }
+    }
+
+    public function getOggettoText(int $idPreventivo): ?string
+    {
+        $stmt = $this->pdo->prepare('SELECT oggetto FROM tb_preventivi WHERE id_preventivo = :id LIMIT 1');
+        $stmt->bindValue(':id', $idPreventivo, PDO::PARAM_INT);
+        $stmt->execute();
+        $value = $stmt->fetchColumn();
+        if ($value === false) {
+            return null;
+        }
+        $text = trim((string) $value);
+        return $text !== '' ? $text : null;
     }
 
     /**
@@ -1348,6 +1418,8 @@ final class PreventiviRepository
         $this->ensureOggettoSchema();
         $hasComboKey = $this->ensureComboKeyColumn();
         $hasComboKeyArchive = $this->ensureComboKeyArchiveColumn();
+        $hasCedFlag = $this->ensureCedFlagColumn();
+        $hasCedFlagArchive = $this->ensureCedFlagArchiveColumn();
         $this->pdo->beginTransaction();
         try {
             // Copia testata in archivio
@@ -1373,12 +1445,14 @@ final class PreventiviRepository
             try {
                 $comboColumn = $hasComboKey && $hasComboKeyArchive ? ', combo_key' : '';
                 $comboSelect = $hasComboKey && $hasComboKeyArchive ? ', r.combo_key' : '';
+                $cedColumn = $hasCedFlag && $hasCedFlagArchive ? ', created_by_ced' : '';
+                $cedSelect = $hasCedFlag && $hasCedFlagArchive ? ', r.created_by_ced' : '';
                 $this->pdo->prepare(
                     "INSERT INTO tb_preventivi_righe_archive (
-                        id_riga, id_preventivo, id_prodotto{$comboColumn}, descrizione, quantita, prezzo_unitario,
+                        id_riga, id_preventivo, id_prodotto{$comboColumn}{$cedColumn}, descrizione, quantita, prezzo_unitario,
                         sconto, importo_scontato, iva, id_sdi_natura_iva, totale, posizione
                     )
-                    SELECT r.id_riga, r.id_preventivo, r.id_prodotto{$comboSelect}, r.descrizione, r.quantita, r.prezzo_unitario,
+                    SELECT r.id_riga, r.id_preventivo, r.id_prodotto{$comboSelect}{$cedSelect}, r.descrizione, r.quantita, r.prezzo_unitario,
                            r.sconto, r.importo_scontato, r.iva, r.id_sdi_natura_iva, r.totale, r.posizione
                     FROM tb_preventivi_righe r
                     WHERE r.id_preventivo = :id
@@ -1513,6 +1587,47 @@ final class PreventiviRepository
             'lavorazione_creata_il' => $row['lavorazione_creata_il'] ?? null,
             'lavorazione_codice' => $row['lavorazione_codice'] ?? null,
         ];
+    }
+
+    /**
+     * @return list<array{
+     *   id_lavorazione:int,
+     *   codice:?string,
+     *   titolo:?string,
+     *   stato:?string,
+     *   created_at:?string
+     * }>
+     */
+    public function listLavorazioniForPreventivo(int $idPreventivo): array
+    {
+        $sql = <<<'SQL'
+            SELECT
+                l.id_lavorazione,
+                l.codice,
+                l.titolo,
+                l.stato,
+                l.created_at
+            FROM tb_lavorazioni l
+            WHERE l.id_preventivo = :id
+            ORDER BY l.created_at DESC, l.id_lavorazione DESC
+        SQL;
+
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->bindValue(':id', $idPreventivo, PDO::PARAM_INT);
+        $stmt->execute();
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+        $out = [];
+        foreach ($rows as $row) {
+            $out[] = [
+                'id_lavorazione' => (int) $row['id_lavorazione'],
+                'codice' => $row['codice'] ?? null,
+                'titolo' => $row['titolo'] ?? null,
+                'stato' => $row['stato'] ?? null,
+                'created_at' => $row['created_at'] ?? null,
+            ];
+        }
+        return $out;
     }
 
     public function linkLavorazione(int $idPreventivo, int $idLavorazione): void
@@ -1712,6 +1827,7 @@ final class PreventiviRepository
      *   cliente_codice_fiscale:?string,
      *   created_at:?string,
      *   updated_at:?string,
+     *   lavorazioni:list<array<string,mixed>>,
      *   linked_ddt:list<array<string,mixed>>,
      *   linked_fatture:list<array<string,mixed>>
      * }|null
@@ -1796,6 +1912,7 @@ final class PreventiviRepository
             'lavorazione_creata_il' => $row['lavorazione_creata_il'] ?? null,
             'lavorazione_codice' => $row['lavorazione_codice'] ?? null,
         ];
+        $detail['lavorazioni'] = $this->listLavorazioniForPreventivo($id);
         $detail['linked_ddt'] = $this->getLinkedDdt($id);
         $detail['linked_fatture'] = $this->getLinkedFatture($id);
 
@@ -1820,12 +1937,18 @@ final class PreventiviRepository
     public function getLines(int $idPreventivo): array
     {
         $hasComboKey = $this->ensureComboKeyColumn();
+        $hasCedFlag = $this->ensureCedFlagColumn();
         $comboSelect = $hasComboKey ? ', combo_key' : '';
-        $sql = 'SELECT id_riga, id_prodotto' . $comboSelect . ', descrizione, quantita, prezzo_unitario, sconto, importo_scontato,
-                   iva, id_sdi_natura_iva, totale, posizione
-            FROM tb_preventivi_righe
-            WHERE id_preventivo = :id
-            ORDER BY COALESCE(posizione, id_riga) ASC';
+        $cedSelect = $hasCedFlag ? ', pr.created_by_ced' : '';
+        $sql = 'SELECT pr.id_riga, pr.id_prodotto' . $comboSelect . $cedSelect . ', pr.descrizione, pr.quantita, pr.prezzo_unitario, pr.sconto, pr.importo_scontato,
+                   pr.iva, pr.id_sdi_natura_iva, pr.totale, pr.posizione,
+                   p.id_categoria AS id_categoria, cat.nome AS categoria_nome,
+                   p.codice AS prodotto_codice, p.nome AS prodotto_nome
+            FROM tb_preventivi_righe pr
+            LEFT JOIN tb_prodotti p ON p.id_prodotto = pr.id_prodotto
+            LEFT JOIN tb_categorie cat ON cat.id_categoria = p.id_categoria
+            WHERE pr.id_preventivo = :id
+            ORDER BY COALESCE(pr.posizione, pr.id_riga) ASC';
 
         $stmt = $this->pdo->prepare($sql);
         $stmt->bindValue(':id', $idPreventivo, PDO::PARAM_INT);
@@ -1847,9 +1970,94 @@ final class PreventiviRepository
                 'totale' => isset($r['totale']) ? (float) $r['totale'] : null,
                 'posizione' => isset($r['posizione']) ? (int) $r['posizione'] : null,
                 'combo_key' => $hasComboKey ? ($r['combo_key'] ?? null) : null,
+                'created_by_ced' => $hasCedFlag ? (int) ($r['created_by_ced'] ?? 0) : 0,
+                'id_categoria' => isset($r['id_categoria']) ? (int) $r['id_categoria'] : null,
+                'categoria' => isset($r['categoria_nome']) ? $r['categoria_nome'] : null,
+                'prodotto_codice' => $r['prodotto_codice'] ?? null,
+                'prodotto_nome' => $r['prodotto_nome'] ?? null,
             ];
         }
         return $out;
+    }
+
+    /**
+     * @return array<int, float>
+     */
+    public function listCedQuantitiesForPreventivo(int $idPreventivo): array
+    {
+        try {
+            $stmt = $this->pdo->prepare(<<<'SQL'
+                SELECT cq.id_riga_preventivo, cq.quantita_ced, cq.updated_at
+                FROM tb_lavorazioni_attivita_ced_quantita cq
+                INNER JOIN tb_lavorazioni_attivita a ON a.id_attivita = cq.id_attivita
+                INNER JOIN tb_lavorazioni l ON l.id_lavorazione = a.id_lavorazione
+                WHERE l.id_preventivo = :id
+                ORDER BY cq.updated_at DESC
+            SQL);
+            $stmt->bindValue(':id', $idPreventivo, PDO::PARAM_INT);
+            $stmt->execute();
+            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        } catch (\Throwable $ignored) {
+            return [];
+        }
+
+        $map = [];
+        foreach ($rows as $row) {
+            $idRiga = isset($row['id_riga_preventivo']) ? (int) $row['id_riga_preventivo'] : 0;
+            if ($idRiga <= 0 || array_key_exists($idRiga, $map)) {
+                continue;
+            }
+            $map[$idRiga] = isset($row['quantita_ced']) ? (float) $row['quantita_ced'] : 0.0;
+        }
+        return $map;
+    }
+
+    public function findPreventivoLine(int $idRiga): ?array
+    {
+        $this->ensureComboKeyColumn();
+        $stmt = $this->pdo->prepare('SELECT id_riga, descrizione, quantita, combo_key FROM tb_preventivi_righe WHERE id_riga = :id LIMIT 1');
+        $stmt->bindValue(':id', $idRiga, PDO::PARAM_INT);
+        $stmt->execute();
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($row === false) {
+            return null;
+        }
+        return [
+            'id_riga' => (int) ($row['id_riga'] ?? 0),
+            'descrizione' => $row['descrizione'] ?? null,
+            'quantita' => isset($row['quantita']) ? (float) $row['quantita'] : null,
+            'combo_key' => isset($row['combo_key']) ? (string) $row['combo_key'] : null,
+        ];
+    }
+
+    public function deleteLineIfCed(int $idPreventivo, int $idRiga): bool
+    {
+        if (!$this->ensureCedFlagColumn()) {
+            return false;
+        }
+
+        $check = $this->pdo->prepare('
+            SELECT created_by_ced
+            FROM tb_preventivi_righe
+            WHERE id_preventivo = :id_preventivo AND id_riga = :id_riga
+            LIMIT 1
+        ');
+        $check->bindValue(':id_preventivo', $idPreventivo, PDO::PARAM_INT);
+        $check->bindValue(':id_riga', $idRiga, PDO::PARAM_INT);
+        $check->execute();
+        $row = $check->fetch(PDO::FETCH_ASSOC);
+        if ($row === false) {
+            return false;
+        }
+        if ((int) ($row['created_by_ced'] ?? 0) !== 1) {
+            return false;
+        }
+
+        $del = $this->pdo->prepare('DELETE FROM tb_preventivi_righe WHERE id_preventivo = :id_preventivo AND id_riga = :id_riga');
+        $del->bindValue(':id_preventivo', $idPreventivo, PDO::PARAM_INT);
+        $del->bindValue(':id_riga', $idRiga, PDO::PARAM_INT);
+        $del->execute();
+        return $del->rowCount() > 0;
     }
 
     /**
@@ -2108,7 +2316,8 @@ final class PreventiviRepository
 
     /**
      * Sostituisce le righe del preventivo con la lista fornita.
-     * Ogni riga accetta: descrizione, quantita, prezzo, iva, sconto, id_prodotto?, id_sdi_natura_iva?
+     * Ogni riga accetta: descrizione, quantita, prezzo, iva, sconto, id_prodotto?, id_sdi_natura_iva?,
+     * id_riga (per mantenere lo stesso id_riga_preventivo e quindi i dati CED collegati)
      * I campi importo_scontato e totale vengono calcolati lato server per coerenza.
      * @param list<array<string,mixed>> $lines
      */
@@ -2123,17 +2332,20 @@ final class PreventiviRepository
 
             if (!empty($lines)) {
                 $hasComboKey = $this->ensureComboKeyColumn();
+                $hasCedFlag = $this->ensureCedFlagColumn();
                 $comboColumn = $hasComboKey ? ', combo_key' : '';
                 $comboValue = $hasComboKey ? ', :combo_key' : '';
+                $cedColumn = $hasCedFlag ? ', created_by_ced' : '';
+                $cedValue = $hasCedFlag ? ', :created_by_ced' : '';
                 $ins = $this->pdo->prepare(
-                    'INSERT INTO tb_preventivi_righe (
-                        id_preventivo, id_prodotto' . $comboColumn . ', descrizione, quantita, prezzo_unitario,
-                        sconto, importo_scontato, iva, id_sdi_natura_iva, totale, posizione
-                    ) VALUES (
-                        :id_preventivo, :id_prodotto' . $comboValue . ', :descrizione, :quantita, :prezzo_unitario,
-                        :sconto, :importo_scontato, :iva, :id_sdi_natura_iva, :totale, :posizione
-                    )'
-                );
+                'INSERT INTO tb_preventivi_righe (
+                    id_riga, id_preventivo, id_prodotto' . $comboColumn . $cedColumn . ', descrizione, quantita, prezzo_unitario,
+                    sconto, importo_scontato, iva, id_sdi_natura_iva, totale, posizione
+                ) VALUES (
+                    :id_riga, :id_preventivo, :id_prodotto' . $comboValue . $cedValue . ', :descrizione, :quantita, :prezzo_unitario,
+                    :sconto, :importo_scontato, :iva, :id_sdi_natura_iva, :totale, :posizione
+                )'
+            );
 
                 $pos = 1;
                 foreach ($lines as $line) {
@@ -2151,6 +2363,7 @@ final class PreventiviRepository
                     if ($comboKey === '') {
                         $comboKey = null;
                     }
+                    $createdByCed = !empty($line['created_by_ced']) ? 1 : 0;
 
                     // Calcoli base
                     $imponibile = max(0.0, $q * $pu * (1 - $s / 100));
@@ -2158,9 +2371,18 @@ final class PreventiviRepository
                     $tot = $imponibile + $ivaVal;
 
                     $ins->bindValue(':id_preventivo', $idPreventivo, PDO::PARAM_INT);
+                    $idRiga = isset($line['id_riga']) ? (int) $line['id_riga'] : 0;
+                    if ($idRiga > 0) {
+                        $ins->bindValue(':id_riga', $idRiga, PDO::PARAM_INT);
+                    } else {
+                        $ins->bindValue(':id_riga', null, PDO::PARAM_NULL);
+                    }
                     $ins->bindValue(':id_prodotto', $idProd, $idProd === null ? PDO::PARAM_NULL : PDO::PARAM_INT);
                     if ($hasComboKey) {
                         $ins->bindValue(':combo_key', $comboKey, $comboKey === null ? PDO::PARAM_NULL : PDO::PARAM_STR);
+                    }
+                    if ($hasCedFlag) {
+                        $ins->bindValue(':created_by_ced', $createdByCed, PDO::PARAM_INT);
                     }
                     $ins->bindValue(':descrizione', $descr, PDO::PARAM_STR);
                     $ins->bindValue(':quantita', $q, PDO::PARAM_STR);
@@ -2181,6 +2403,137 @@ final class PreventiviRepository
             $this->pdo->rollBack();
             throw $e;
         }
+    }
+
+    /**
+     * @param array<string, mixed> $line
+     */
+    public function addLine(int $idPreventivo, array $line): int
+    {
+        $lines = $this->applyContractPricing($idPreventivo, [$line]);
+        $normalized = $lines[0] ?? $line;
+
+        $descr = trim((string) ($normalized['descrizione'] ?? ''));
+        if ($descr === '') {
+            throw new \RuntimeException('Descrizione riga mancante.', 422);
+        }
+
+        $q = (float) ($normalized['quantita'] ?? 1);
+        $pu = (float) ($normalized['prezzo'] ?? $normalized['prezzo_unitario'] ?? 0);
+        $s = isset($normalized['sconto']) ? (float) $normalized['sconto'] : 0.0;
+        $iva = array_key_exists('iva', $normalized) ? (float) $normalized['iva'] : null;
+        $idProd = isset($normalized['id_prodotto']) ? (int) $normalized['id_prodotto'] : null;
+        $idNatura = isset($normalized['id_sdi_natura_iva']) ? (int) $normalized['id_sdi_natura_iva'] : null;
+        $comboKey = isset($normalized['combo_key']) ? trim((string) $normalized['combo_key']) : null;
+        if ($comboKey === '') {
+            $comboKey = null;
+        }
+        $createdByCed = !empty($normalized['created_by_ced']) ? 1 : 0;
+
+        $posStmt = $this->pdo->prepare('SELECT COALESCE(MAX(posizione), 0) + 1 FROM tb_preventivi_righe WHERE id_preventivo = :id');
+        $posStmt->bindValue(':id', $idPreventivo, PDO::PARAM_INT);
+        $posStmt->execute();
+        $pos = (int) ($posStmt->fetchColumn() ?: 1);
+
+        $imponibile = max(0.0, $q * $pu * (1 - $s / 100));
+        $ivaVal = $iva !== null ? $imponibile * ($iva / 100) : 0.0;
+        $tot = $imponibile + $ivaVal;
+
+        $hasComboKey = $this->ensureComboKeyColumn();
+        $hasCedFlag = $this->ensureCedFlagColumn();
+        $comboColumn = $hasComboKey ? ', combo_key' : '';
+        $comboValue = $hasComboKey ? ', :combo_key' : '';
+        $cedColumn = $hasCedFlag ? ', created_by_ced' : '';
+        $cedValue = $hasCedFlag ? ', :created_by_ced' : '';
+        $ins = $this->pdo->prepare(
+            'INSERT INTO tb_preventivi_righe (
+                id_preventivo, id_prodotto' . $comboColumn . $cedColumn . ', descrizione, quantita, prezzo_unitario,
+                sconto, importo_scontato, iva, id_sdi_natura_iva, totale, posizione
+            ) VALUES (
+                :id_preventivo, :id_prodotto' . $comboValue . $cedValue . ', :descrizione, :quantita, :prezzo_unitario,
+                :sconto, :importo_scontato, :iva, :id_sdi_natura_iva, :totale, :posizione
+            )'
+        );
+
+        $ins->bindValue(':id_preventivo', $idPreventivo, PDO::PARAM_INT);
+        $ins->bindValue(':id_prodotto', $idProd, $idProd === null ? PDO::PARAM_NULL : PDO::PARAM_INT);
+        if ($hasComboKey) {
+            $ins->bindValue(':combo_key', $comboKey, $comboKey === null ? PDO::PARAM_NULL : PDO::PARAM_STR);
+        }
+        if ($hasCedFlag) {
+            $ins->bindValue(':created_by_ced', $createdByCed, PDO::PARAM_INT);
+        }
+        $ins->bindValue(':descrizione', $descr, PDO::PARAM_STR);
+        $ins->bindValue(':quantita', $q, PDO::PARAM_STR);
+        $ins->bindValue(':prezzo_unitario', $pu, PDO::PARAM_STR);
+        $ins->bindValue(':sconto', $s, PDO::PARAM_STR);
+        $ins->bindValue(':importo_scontato', $imponibile, PDO::PARAM_STR);
+        $ins->bindValue(':iva', $iva, $iva === null ? PDO::PARAM_NULL : PDO::PARAM_STR);
+        $ins->bindValue(':id_sdi_natura_iva', $idNatura, $idNatura === null ? PDO::PARAM_NULL : PDO::PARAM_INT);
+        $ins->bindValue(':totale', $tot, PDO::PARAM_STR);
+        $ins->bindValue(':posizione', $pos, PDO::PARAM_INT);
+        $ins->execute();
+
+        return (int) $this->pdo->lastInsertId();
+    }
+
+    /**
+     * @return array{totale_imponibile:float,totale_sconto:float,totale_iva:float,totale:float}
+     */
+    public function calculateTotals(int $idPreventivo): array
+    {
+        $stmt = $this->pdo->prepare(<<<'SQL'
+            SELECT
+                SUM(COALESCE(quantita, 0) * COALESCE(prezzo_unitario, 0)) AS base_totale,
+                SUM(COALESCE(importo_scontato, 0)) AS imponibile,
+                SUM(COALESCE(totale, 0)) AS totale
+            FROM tb_preventivi_righe
+            WHERE id_preventivo = :id
+        SQL);
+        $stmt->bindValue(':id', $idPreventivo, PDO::PARAM_INT);
+        $stmt->execute();
+        $row = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
+
+        $baseTotale = isset($row['base_totale']) ? (float) $row['base_totale'] : 0.0;
+        $imponibile = isset($row['imponibile']) ? (float) $row['imponibile'] : 0.0;
+        $totale = isset($row['totale']) ? (float) $row['totale'] : 0.0;
+        $sconto = max(0.0, $baseTotale - $imponibile);
+        $iva = max(0.0, $totale - $imponibile);
+
+        return [
+            'totale_imponibile' => $imponibile,
+            'totale_sconto' => $sconto,
+            'totale_iva' => $iva,
+            'totale' => $totale,
+        ];
+    }
+
+    /**
+     * @param array{totale_imponibile:float,totale_sconto:float,totale_iva:float,totale:float} $totals
+     */
+    public function updateTotals(int $idPreventivo, array $totals): void
+    {
+        $stmt = $this->pdo->prepare(<<<'SQL'
+            UPDATE tb_preventivi
+            SET totale_imponibile = :totale_imponibile,
+                totale_sconto = :totale_sconto,
+                totale_iva = :totale_iva,
+                totale = :totale,
+                updated_at = NOW()
+            WHERE id_preventivo = :id
+            LIMIT 1
+        SQL);
+        $stmt->bindValue(':id', $idPreventivo, PDO::PARAM_INT);
+        $stmt->bindValue(':totale_imponibile', $totals['totale_imponibile'] ?? 0, PDO::PARAM_STR);
+        $stmt->bindValue(':totale_sconto', $totals['totale_sconto'] ?? 0, PDO::PARAM_STR);
+        $stmt->bindValue(':totale_iva', $totals['totale_iva'] ?? 0, PDO::PARAM_STR);
+        $stmt->bindValue(':totale', $totals['totale'] ?? 0, PDO::PARAM_STR);
+        $stmt->execute();
+    }
+
+    public function getConnection(): PDO
+    {
+        return $this->pdo;
     }
 
     /**

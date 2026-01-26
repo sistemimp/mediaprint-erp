@@ -29,7 +29,6 @@ import {
   fetchProdottoVariazioni,
   linkProdottoVariazione,
   unlinkProdottoVariazione,
-  saveProdottoVariazioneDelta,
   updateProdotto,
   fetchProdottoPrezziCombinati,
   upsertProdottoPrezzoCombinato,
@@ -64,8 +63,6 @@ const ProdottiDetail = () => {
   const [variazioni, setVariazioni] = useState([])
   const [assegnate, setAssegnate] = useState([])
   const [selectedVar, setSelectedVar] = useState('')
-  const [selectedDelta, setSelectedDelta] = useState('0')
-  const [deltaEdits, setDeltaEdits] = useState({})
   // Prezzi combinati (multi-variazione)
   const [comboPrezzi, setComboPrezzi] = useState([])
   const [comboSelIds, setComboSelIds] = useState([])
@@ -120,9 +117,6 @@ const ProdottiDetail = () => {
         }
         setVariazioni(vars)
         setAssegnate(assigned)
-        const initial = {}
-        assigned.forEach((v) => { initial[v.id_variazione] = v.delta_prezzo ?? 0 })
-        setDeltaEdits(initial)
         setComboPrezzi(Array.isArray(combos) ? combos : [])
       } catch (e) {
         if (e.name === 'AbortError') return
@@ -165,15 +159,10 @@ const ProdottiDetail = () => {
   const handleLink = async () => {
     if (!selectedVar) return
     try {
-      const delta = Number(selectedDelta || 0)
-      await linkProdottoVariazione({ token, id_prodotto: id, id_variazione: Number(selectedVar), delta })
+      await linkProdottoVariazione({ token, id_prodotto: id, id_variazione: Number(selectedVar) })
       const { items } = await fetchProdottoVariazioni({ token, id_prodotto: id })
       setAssegnate(items)
-      const updated = {}
-      items.forEach((v) => { updated[v.id_variazione] = v.delta_prezzo ?? 0 })
-      setDeltaEdits(updated)
       setSelectedVar('')
-      setSelectedDelta('0')
       showToast('Variazione aggiunta', 'success')
     } catch (e) { setError(e); showToast(e.message || 'Errore aggiunta variazione', 'error') }
   }
@@ -183,26 +172,7 @@ const ProdottiDetail = () => {
       await unlinkProdottoVariazione({ token, id_prodotto: id, id_variazione })
       const { items } = await fetchProdottoVariazioni({ token, id_prodotto: id })
       setAssegnate(items)
-      const updated = {}
-      items.forEach((v) => { updated[v.id_variazione] = v.delta_prezzo ?? 0 })
-      setDeltaEdits(updated)
     } catch (e) { setError(e); showToast(e.message || 'Errore rimozione variazione', 'error') }
-  }
-
-  const handleDeltaChange = (idVar, value) => {
-    setDeltaEdits((prev) => ({ ...prev, [idVar]: value }))
-  }
-
-  const handleDeltaSave = async (idVar) => {
-    try {
-      const delta = Number(deltaEdits[idVar] || 0)
-      await saveProdottoVariazioneDelta({ token, id_prodotto: id, id_variazione: idVar, delta })
-      const { items } = await fetchProdottoVariazioni({ token, id_prodotto: id })
-      setAssegnate(items)
-      const updated = {}
-      items.forEach((v) => { updated[v.id_variazione] = v.delta_prezzo ?? 0 })
-      setDeltaEdits(updated)
-    } catch (e) { setError(e); showToast(e.message || 'Errore salvataggio delta', 'error') }
   }
 
   const handleComboAdd = async () => {
@@ -441,15 +411,6 @@ const ProdottiDetail = () => {
                   ))}
                 </CFormSelect>
               </CCol>
-              <CCol md={3}>
-                <CFormInput
-                  type="number"
-                  step="0.01"
-                  value={selectedDelta}
-                  onChange={(e) => setSelectedDelta(e.target.value)}
-                  placeholder="Delta prezzo (es. 10 o -5)"
-                />
-              </CCol>
               <CCol md="auto">
                 <CButton color="primary" onClick={handleLink} disabled={!selectedVar}>Aggiungi</CButton>
               </CCol>
@@ -461,7 +422,6 @@ const ProdottiDetail = () => {
                   <CTableHeaderCell role="button" onClick={(e) => toggleSort('categoria', e.shiftKey)} className="text-nowrap">Categoria{sortIndicator('categoria')}</CTableHeaderCell>
                   <CTableHeaderCell role="button" onClick={(e) => toggleSort('nome', e.shiftKey)} className="text-nowrap">Variazione{sortIndicator('nome')}</CTableHeaderCell>
                   <CTableHeaderCell role="button" onClick={(e) => toggleSort('codice', e.shiftKey)} className="text-nowrap">Codice{sortIndicator('codice')}</CTableHeaderCell>
-                  <CTableHeaderCell className="text-nowrap">Delta prezzo</CTableHeaderCell>
                   <CTableHeaderCell className="text-center">Azioni</CTableHeaderCell>
                 </CTableRow>
               </CTableHead>
@@ -471,18 +431,6 @@ const ProdottiDetail = () => {
                     <CTableDataCell>{v.categoria || '-'}</CTableDataCell>
                     <CTableDataCell>{v.nome}</CTableDataCell>
                     <CTableDataCell>{v.codice || '-'}</CTableDataCell>
-                    <CTableDataCell>
-                      <div className="d-flex gap-2">
-                        <CFormInput
-                          type="number"
-                          step="0.01"
-                          value={deltaEdits[v.id_variazione] ?? 0}
-                          onChange={(e) => handleDeltaChange(v.id_variazione, e.target.value)}
-                          style={{ maxWidth: 140 }}
-                        />
-                        <CButton size="sm" color="primary" variant="outline" onClick={() => handleDeltaSave(v.id_variazione)}>Salva</CButton>
-                      </div>
-                    </CTableDataCell>
                     <CTableDataCell className="text-center">
                       <CButton color="danger" size="sm" variant="outline" onClick={() => handleUnlink(v.id_variazione)}>Rimuovi</CButton>
                     </CTableDataCell>
@@ -621,4 +569,3 @@ const ProdottiDetail = () => {
 }
 
 export default ProdottiDetail
-

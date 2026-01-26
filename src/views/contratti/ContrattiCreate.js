@@ -183,10 +183,7 @@ const ContrattiCreate = () => {
         .sort((a, b) => a - b)
         .join('+'))
     const comboPrice = comboKey && prodComboMap[comboKey] != null ? Number(prodComboMap[comboKey]) : null
-    const delta = prodVarOptions
-      .filter((v) => selectedVarIds.includes(v.id_variazione))
-      .reduce((acc, v) => acc + (Number(v.delta_prezzo) || 0), 0)
-    const suggested = comboPrice != null ? comboPrice : base + delta
+    const suggested = comboPrice != null ? comboPrice : base
     setModalPrice(suggested)
   }, [selProd, stepperProdOptions, selectedComboKey, selectedVarIds, prodVarOptions, prodComboMap])
 

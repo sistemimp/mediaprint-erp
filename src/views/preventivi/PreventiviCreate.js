@@ -42,35 +42,12 @@ import { CAutocomplete, CStepper } from '@coreui/react-pro'
 import OggettoPreventivo from '../../components/OggettoPreventivo'
 import PreventivoContattiTable from '../../components/PreventivoContattiTable'
 import { serializePreventivoContacts } from '../../utils/preventiviContacts'
+import { getPreventivoIdFromResponse } from '../../utils/preventiviResponses'
 
 const currencyFormatter = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' })
 const formatCurrency = (value) => {
   const n = Number(value)
   return Number.isFinite(n) ? currencyFormatter.format(n) : '-'
-}
-
-const getPreventivoIdFromResponse = (result) => {
-  const candidates = [
-    result?.id_preventivo,
-    result?.id,
-    result?.preventivo?.id_preventivo,
-    result?.preventivo?.id,
-    result?.data?.id_preventivo,
-    result?.data?.id,
-    result?.payload?.id_preventivo,
-    result?.payload?.data?.id_preventivo,
-    result?.payload?.id,
-    result?.data?.preventivo?.id_preventivo,
-    result?.data?.preventivo?.id,
-  ]
-
-  for (const candidate of candidates) {
-    const numeric = Number(candidate)
-    if (Number.isFinite(numeric) && numeric > 0) {
-      return numeric
-    }
-  }
-  return null
 }
 
 const PreventiviCreate = () => {
@@ -446,10 +423,7 @@ const PreventiviCreate = () => {
           .join('+')
     const comboPrice =
       comboKey && prodComboMap[comboKey] != null ? Number(prodComboMap[comboKey]) : null
-    const delta = prodVarOptions
-      .filter((v) => selectedVarIds.includes(v.id_variazione))
-      .reduce((acc, v) => acc + (Number(v.delta_prezzo) || 0), 0)
-    const suggested = comboPrice != null ? comboPrice : base + delta
+    const suggested = comboPrice != null ? comboPrice : base
     setModalPrice(suggested)
   }, [selProd, prodOptions, selectedComboKey, selectedVarIds, prodVarOptions, prodComboMap])
 

@@ -113,20 +113,14 @@ export const fetchProdottoVariazioni = async ({ token, id_prodotto, signal } = {
   return { items }
 }
 
-export const linkProdottoVariazione = async ({ token, id_prodotto, id_variazione, delta, signal } = {}) => {
-  const body = { id_prodotto, id_variazione, action: 'link', delta }
+export const linkProdottoVariazione = async ({ token, id_prodotto, id_variazione, signal } = {}) => {
+  const body = { id_prodotto, id_variazione, action: 'link' }
   const response = await apiFetch('/prodotti/variazioni/prodotto.php', { method: 'POST', token, body, signal })
   return response
 }
 
 export const unlinkProdottoVariazione = async ({ token, id_prodotto, id_variazione, signal } = {}) => {
   const body = { id_prodotto, id_variazione, action: 'unlink' }
-  const response = await apiFetch('/prodotti/variazioni/prodotto.php', { method: 'POST', token, body, signal })
-  return response
-}
-
-export const saveProdottoVariazioneDelta = async ({ token, id_prodotto, id_variazione, delta, signal } = {}) => {
-  const body = { id_prodotto, id_variazione, action: 'set', delta }
   const response = await apiFetch('/prodotti/variazioni/prodotto.php', { method: 'POST', token, body, signal })
   return response
 }

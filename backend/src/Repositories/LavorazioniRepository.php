@@ -9,32 +9,7 @@ final class LavorazioniRepository
 {
     public function __construct(private PDO $pdo) {}
 
-    private array $spedizioniColumns = [];
-    private bool $spedizioniColumnsLoaded = false;
-
-    private function ensureSpedizioniColumns(): void
-    {
-        if ($this->spedizioniColumnsLoaded) {
-            return;
-        }
-        $stmt = $this->pdo->prepare('
-            SELECT COLUMN_NAME
-            FROM information_schema.columns
-            WHERE TABLE_SCHEMA = DATABASE()
-                AND TABLE_NAME = :table
-        ');
-        $stmt->bindValue(':table', 'tb_lavorazioni_spedizioni', PDO::PARAM_STR);
-        $stmt->execute();
-        $columns = $stmt->fetchAll(PDO::FETCH_COLUMN) ?: [];
-        $this->spedizioniColumns = array_map('strtolower', $columns);
-        $this->spedizioniColumnsLoaded = true;
-    }
-
-    public function hasSpedizioneColumn(string $column): bool
-    {
-        $this->ensureSpedizioniColumns();
-        return in_array(strtolower($column), $this->spedizioniColumns, true);
-    }
+    private ?bool $preventivoUniqueIndexDropped = null;
 
     public function existsLavorazione(int $id): bool
     {
@@ -388,6 +363,7 @@ final class LavorazioniRepository
      */
     public function createFromPreventivo(array $data, array $attivita): array
     {
+        $this->ensureMultiplePreventiviAllowed();
         $this->pdo->beginTransaction();
         try {
             $sql = <<<'SQL'
@@ -515,6 +491,30 @@ final class LavorazioniRepository
         } catch (\Throwable $exception) {
             $this->pdo->rollBack();
             throw $exception;
+        }
+    }
+
+    private function ensureMultiplePreventiviAllowed(): void
+    {
+        if ($this->preventivoUniqueIndexDropped !== null) {
+            return;
+        }
+        $this->preventivoUniqueIndexDropped = true;
+
+        try {
+            $uqStmt = $this->pdo->query("SHOW INDEX FROM tb_lavorazioni WHERE Key_name = 'uq_lavorazioni_prev'");
+            $uqExists = $uqStmt && $uqStmt->fetch(PDO::FETCH_ASSOC) !== false;
+            if (!$uqExists) {
+                return;
+            }
+            $idxStmt = $this->pdo->query("SHOW INDEX FROM tb_lavorazioni WHERE Key_name = 'idx_lavorazioni_preventivo'");
+            $idxExists = $idxStmt && $idxStmt->fetch(PDO::FETCH_ASSOC) !== false;
+            if (!$idxExists) {
+                $this->pdo->exec('ALTER TABLE tb_lavorazioni ADD INDEX idx_lavorazioni_preventivo (id_preventivo)');
+            }
+            $this->pdo->exec('ALTER TABLE tb_lavorazioni DROP INDEX uq_lavorazioni_prev');
+        } catch (\Throwable $ignored) {
+            // Ignore schema issues; insert will throw if constraint still exists.
         }
     }
 
@@ -1016,8 +1016,13 @@ final class LavorazioniRepository
     {
         $year = $anno ?? (int) date('Y');
         $sequence = $numeroDocumento ?? $idLavorazione;
+        $sequence = max(1, (int) $sequence);
 
-        return sprintf('JOB-%d-%04d', $year, max(1, (int) $sequence));
+        if ($numeroDocumento !== null && $numeroDocumento > 0) {
+            return sprintf('JOB-%d-%04d-%04d', $year, $sequence, max(1, (int) $idLavorazione));
+        }
+
+        return sprintf('JOB-%d-%04d', $year, $sequence);
     }
 
     /**
@@ -1478,6 +1483,376 @@ final class LavorazioniRepository
         ];
     }
 
+    private function ensureActivityCedTable(): void
+    {
+        try {
+            $this->pdo->exec(<<<'SQL'
+                CREATE TABLE IF NOT EXISTS tb_lavorazioni_attivita_ced_quantita (
+                    id_attivita INT NOT NULL,
+                    id_riga_preventivo INT NOT NULL,
+                    quantita_ced DECIMAL(12,2) NULL,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    PRIMARY KEY (id_attivita, id_riga_preventivo),
+                    INDEX idx_ced_attivita (id_attivita),
+                    INDEX idx_ced_riga (id_riga_preventivo)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            SQL);
+        } catch (\Throwable $ignored) {
+            // Ignore schema failures; operations will fail if table is missing.
+        }
+    }
+
+    private function ensurePostaliRowsTable(): void
+    {
+        try {
+            $this->pdo->exec(<<<'SQL'
+                CREATE TABLE IF NOT EXISTS tb_lavorazioni_spedizioni_postali_righe (
+                    id_lavorazione INT NOT NULL,
+                    id_riga_preventivo INT NOT NULL,
+                    id_prodotto INT NULL,
+                    categoria VARCHAR(255) NULL,
+                    prodotto_codice VARCHAR(255) NULL,
+                    prodotto_nome VARCHAR(255) NULL,
+                    descrizione TEXT NULL,
+                    quantita DECIMAL(12,2) NULL,
+                    prezzo_unitario DECIMAL(12,4) NULL,
+                    totale DECIMAL(12,4) NULL,
+                    combo_key VARCHAR(255) NULL,
+                    created_by_ced TINYINT(1) NOT NULL DEFAULT 0,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    PRIMARY KEY (id_lavorazione, id_riga_preventivo),
+                    INDEX idx_postali_lavorazione (id_lavorazione),
+                    INDEX idx_postali_riga (id_riga_preventivo)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            SQL);
+            $col = $this->pdo->query("SHOW COLUMNS FROM tb_lavorazioni_spedizioni_postali_righe LIKE 'created_by_ced'");
+            $exists = $col && $col->fetch(PDO::FETCH_ASSOC) !== false;
+            if (!$exists) {
+                $this->pdo->exec("ALTER TABLE tb_lavorazioni_spedizioni_postali_righe ADD COLUMN created_by_ced TINYINT(1) NOT NULL DEFAULT 0");
+            }
+        } catch (\Throwable $ignored) {
+            // Ignore schema failures; operations will fail if table is missing.
+        }
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function listPostaliRowsForLavorazione(int $lavorazioneId): array
+    {
+        $this->ensurePostaliRowsTable();
+        $stmt = $this->pdo->prepare(<<<'SQL'
+            SELECT
+                id_riga_preventivo,
+                id_prodotto,
+                categoria,
+                prodotto_codice,
+                prodotto_nome,
+                descrizione,
+                quantita,
+                prezzo_unitario,
+                totale,
+                combo_key,
+                created_by_ced
+            FROM tb_lavorazioni_spedizioni_postali_righe
+            WHERE id_lavorazione = :id
+            ORDER BY id_riga_preventivo ASC
+        SQL);
+        $stmt->bindValue(':id', $lavorazioneId, PDO::PARAM_INT);
+        $stmt->execute();
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        $out = [];
+        foreach ($rows as $row) {
+            $idRiga = isset($row['id_riga_preventivo']) ? (int) $row['id_riga_preventivo'] : 0;
+            if ($idRiga <= 0) {
+                continue;
+            }
+            $out[] = [
+                'id_riga' => $idRiga,
+                'id_riga_preventivo' => $idRiga,
+                'id_prodotto' => isset($row['id_prodotto']) ? (int) $row['id_prodotto'] : null,
+                'categoria' => $row['categoria'] ?? null,
+                'prodotto_codice' => $row['prodotto_codice'] ?? null,
+                'prodotto_nome' => $row['prodotto_nome'] ?? null,
+                'descrizione' => $row['descrizione'] ?? null,
+                'quantita' => $row['quantita'] ?? null,
+                'prezzo_unitario' => $row['prezzo_unitario'] ?? null,
+                'totale' => $row['totale'] ?? null,
+                'combo_key' => $row['combo_key'] ?? null,
+                'created_by_ced' => isset($row['created_by_ced']) ? (int) $row['created_by_ced'] : 0,
+            ];
+        }
+        return $out;
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $rows
+     */
+    public function replacePostaliRowsForLavorazione(int $lavorazioneId, array $rows): void
+    {
+        $this->ensurePostaliRowsTable();
+        $this->pdo->beginTransaction();
+        try {
+            $delete = $this->pdo->prepare('DELETE FROM tb_lavorazioni_spedizioni_postali_righe WHERE id_lavorazione = :id');
+            $delete->bindValue(':id', $lavorazioneId, PDO::PARAM_INT);
+            $delete->execute();
+
+            if ($rows !== []) {
+                $insert = $this->pdo->prepare(<<<'SQL'
+                    INSERT INTO tb_lavorazioni_spedizioni_postali_righe (
+                        id_lavorazione,
+                        id_riga_preventivo,
+                        id_prodotto,
+                        categoria,
+                        prodotto_codice,
+                        prodotto_nome,
+                        descrizione,
+                        quantita,
+                        prezzo_unitario,
+                        totale,
+                        combo_key,
+                        created_by_ced,
+                        created_at,
+                        updated_at
+                    ) VALUES (
+                        :id_lavorazione,
+                        :id_riga_preventivo,
+                        :id_prodotto,
+                        :categoria,
+                        :prodotto_codice,
+                        :prodotto_nome,
+                        :descrizione,
+                        :quantita,
+                        :prezzo_unitario,
+                        :totale,
+                        :combo_key,
+                        :created_by_ced,
+                        NOW(),
+                        NOW()
+                    )
+                SQL);
+                foreach ($rows as $row) {
+                    $idRiga = isset($row['id_riga_preventivo']) ? (int) $row['id_riga_preventivo'] : 0;
+                    if ($idRiga <= 0) {
+                        continue;
+                    }
+                    $insert->bindValue(':id_lavorazione', $lavorazioneId, PDO::PARAM_INT);
+                    $insert->bindValue(':id_riga_preventivo', $idRiga, PDO::PARAM_INT);
+                    $idProdotto = isset($row['id_prodotto']) ? (int) $row['id_prodotto'] : 0;
+                    if ($idProdotto > 0) {
+                        $insert->bindValue(':id_prodotto', $idProdotto, PDO::PARAM_INT);
+                    } else {
+                        $insert->bindValue(':id_prodotto', null, PDO::PARAM_NULL);
+                    }
+                    $insert->bindValue(':categoria', $row['categoria'] ?? null, PDO::PARAM_STR);
+                    $insert->bindValue(':prodotto_codice', $row['prodotto_codice'] ?? null, PDO::PARAM_STR);
+                    $insert->bindValue(':prodotto_nome', $row['prodotto_nome'] ?? null, PDO::PARAM_STR);
+                    $insert->bindValue(':descrizione', $row['descrizione'] ?? null, PDO::PARAM_STR);
+                    $insert->bindValue(':quantita', $row['quantita'] ?? null, PDO::PARAM_STR);
+                    $insert->bindValue(':prezzo_unitario', $row['prezzo_unitario'] ?? null, PDO::PARAM_STR);
+                    $insert->bindValue(':totale', $row['totale'] ?? null, PDO::PARAM_STR);
+                    $insert->bindValue(':combo_key', $row['combo_key'] ?? null, PDO::PARAM_STR);
+                    $insert->bindValue(':created_by_ced', !empty($row['created_by_ced']) ? 1 : 0, PDO::PARAM_INT);
+                    $insert->execute();
+                }
+            }
+
+            $this->pdo->commit();
+        } catch (\Throwable $exception) {
+            $this->pdo->rollBack();
+            throw $exception;
+        }
+    }
+
+    /**
+     * @return array<int, int>
+     */
+    public function listLavorazioniIdsByPreventivo(int $idPreventivo): array
+    {
+        if ($idPreventivo <= 0) {
+            return [];
+        }
+        $stmt = $this->pdo->prepare('SELECT id_lavorazione FROM tb_lavorazioni WHERE id_preventivo = :id');
+        $stmt->bindValue(':id', $idPreventivo, PDO::PARAM_INT);
+        $stmt->execute();
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        $ids = [];
+        foreach ($rows as $row) {
+            $id = isset($row['id_lavorazione']) ? (int) $row['id_lavorazione'] : 0;
+            if ($id > 0) {
+                $ids[] = $id;
+            }
+        }
+        return array_values(array_unique($ids));
+    }
+
+    /**
+     * @return array<int, string|null>
+     */
+    public function listActivityCedQuantities(int $activityId): array
+    {
+        $this->ensureActivityCedTable();
+        $stmt = $this->pdo->prepare('
+            SELECT id_riga_preventivo, quantita_ced
+            FROM tb_lavorazioni_attivita_ced_quantita
+            WHERE id_attivita = :id
+        ');
+        $stmt->bindValue(':id', $activityId, PDO::PARAM_INT);
+        $stmt->execute();
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        $map = [];
+        foreach ($rows as $row) {
+            $idRiga = isset($row['id_riga_preventivo']) ? (int) $row['id_riga_preventivo'] : 0;
+            if ($idRiga <= 0) {
+                continue;
+            }
+            $map[$idRiga] = $row['quantita_ced'] !== null ? (string) $row['quantita_ced'] : null;
+        }
+        return $map;
+    }
+
+    /**
+     * @param array<int, array{id_riga_preventivo:int, quantita_ced: string|null}> $rows
+     */
+    public function replaceActivityCedQuantities(int $activityId, array $rows): void
+    {
+        $this->ensureActivityCedTable();
+        $this->pdo->beginTransaction();
+        try {
+            $delete = $this->pdo->prepare('
+                DELETE FROM tb_lavorazioni_attivita_ced_quantita
+                WHERE id_attivita = :id
+            ');
+            $delete->bindValue(':id', $activityId, PDO::PARAM_INT);
+            $delete->execute();
+
+            if ($rows !== []) {
+                $insert = $this->pdo->prepare('
+                    INSERT INTO tb_lavorazioni_attivita_ced_quantita (
+                        id_attivita,
+                        id_riga_preventivo,
+                        quantita_ced,
+                        created_at,
+                        updated_at
+                    ) VALUES (
+                        :id_attivita,
+                        :id_riga,
+                        :quantita,
+                        NOW(),
+                        NOW()
+                    )
+                ');
+                foreach ($rows as $row) {
+                    $idRiga = isset($row['id_riga_preventivo']) ? (int) $row['id_riga_preventivo'] : 0;
+                    if ($idRiga <= 0) {
+                        continue;
+                    }
+                    $insert->bindValue(':id_attivita', $activityId, PDO::PARAM_INT);
+                    $insert->bindValue(':id_riga', $idRiga, PDO::PARAM_INT);
+                    if ($row['quantita_ced'] === null || $row['quantita_ced'] === '') {
+                        $insert->bindValue(':quantita', null, PDO::PARAM_NULL);
+                    } else {
+                        $insert->bindValue(':quantita', (string) $row['quantita_ced'], PDO::PARAM_STR);
+                    }
+                    $insert->execute();
+                }
+            }
+
+            $this->pdo->commit();
+        } catch (\Throwable $exception) {
+            $this->pdo->rollBack();
+            throw $exception;
+        }
+    }
+
+    /**
+     * @param array<int, int> $keepRowIds
+     */
+    public function deleteActivityCedQuantitiesNotIn(int $activityId, array $keepRowIds): void
+    {
+        $this->ensureActivityCedTable();
+        $ids = [];
+        foreach ($keepRowIds as $id) {
+            if (!is_numeric($id)) {
+                continue;
+            }
+            $value = (int) $id;
+            if ($value > 0) {
+                $ids[] = $value;
+            }
+        }
+        $ids = array_values(array_unique($ids));
+        if ($ids === []) {
+            $stmt = $this->pdo->prepare('DELETE FROM tb_lavorazioni_attivita_ced_quantita WHERE id_attivita = :id');
+            $stmt->bindValue(':id', $activityId, PDO::PARAM_INT);
+            $stmt->execute();
+            return;
+        }
+        $placeholders = implode(',', array_fill(0, count($ids), '?'));
+        $sql = 'DELETE FROM tb_lavorazioni_attivita_ced_quantita WHERE id_attivita = ? AND id_riga_preventivo NOT IN (' . $placeholders . ')';
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->bindValue(1, $activityId, PDO::PARAM_INT);
+        foreach ($ids as $index => $id) {
+            $stmt->bindValue($index + 2, $id, PDO::PARAM_INT);
+        }
+        $stmt->execute();
+    }
+
+    /**
+     * @param array<int, int> $mapping
+     */
+    public function renameActivityCedQuantities(int $activityId, array $mapping): void
+    {
+        $this->ensureActivityCedTable();
+        $cases = [];
+        $placeholders = [];
+        $binds = [':activity' => $activityId];
+        $index = 0;
+        foreach ($mapping as $oldId => $newId) {
+            if ($oldId <= 0 || $newId <= 0 || $oldId === $newId) {
+                continue;
+            }
+            $index++;
+            $oldKey = ':old_' . $index;
+            $newKey = ':new_' . $index;
+            $cases[] = "WHEN {$oldKey} THEN {$newKey}";
+            $placeholders[] = $oldKey;
+            $binds[$oldKey] = $oldId;
+            $binds[$newKey] = $newId;
+        }
+        if ($cases === []) {
+            return;
+        }
+        $sql = 'UPDATE tb_lavorazioni_attivita_ced_quantita SET id_riga_preventivo = CASE id_riga_preventivo ' . implode(' ', $cases) . ' END WHERE id_attivita = :activity AND id_riga_preventivo IN (' . implode(', ', $placeholders) . ')';
+        $stmt = $this->pdo->prepare($sql);
+        foreach ($binds as $key => $value) {
+            $stmt->bindValue($key, $value, PDO::PARAM_INT);
+        }
+        $stmt->execute();
+    }
+
+    /**
+     * @return array<int, int>
+     */
+    public function listPostaActivityIdsByLavorazione(int $lavorazioneId): array
+    {
+        $stmt = $this->pdo->prepare('SELECT id_attivita FROM tb_lavorazioni_attivita WHERE id_lavorazione = :id AND titolo LIKE :match');
+        $stmt->bindValue(':id', $lavorazioneId, PDO::PARAM_INT);
+        $stmt->bindValue(':match', '%posta%', PDO::PARAM_STR);
+        $stmt->execute();
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        $ids = [];
+        foreach ($rows as $row) {
+            $id = isset($row['id_attivita']) ? (int) $row['id_attivita'] : 0;
+            if ($id > 0) {
+                $ids[] = $id;
+            }
+        }
+        return array_values(array_unique($ids));
+    }
+
     /**
      * @param array<int, int> $operatorIds
      */
@@ -1684,6 +2059,7 @@ final class LavorazioniRepository
             'ordini' => [],
         ];
     }
+
 
     /**
      * @return array<int, array<string, mixed>>
@@ -1937,757 +2313,6 @@ final class LavorazioniRepository
      * @param int $lavorazioneId
      * @return array<int, array<string, mixed>>
      */
-    public function fetchSpedizioni(int $lavorazioneId): array
-    {
-        $supportsAffrancatura = $this->hasSpedizioneColumn('id_affrancatura');
-        $affrancaturaSelect = $supportsAffrancatura
-            ? "                s.id_affrancatura,\n                aff.code AS affrancatura_code,\n                aff.label AS affrancatura_label,\n"
-            : "                NULL AS id_affrancatura,\n                NULL AS affrancatura_code,\n                NULL AS affrancatura_label,\n";
-        $affrancaturaJoin = $supportsAffrancatura
-            ? "            LEFT JOIN cfg_lavorazioni_spedizioni_affrancature aff ON aff.id_affrancatura = s.id_affrancatura\n"
-            : '';
-        $sqlTemplate = <<<SQL
-            SELECT
-                s.id_spedizione,
-                s.id_lavorazione,
-                s.tipo_descrizione,
-                s.id_operatore_postale,
-                %s
-                s.id_tariffa,
-                s.id_autorizzazione,
-                s.id_porto_destinazione,
-                s.note,
-                s.data_programmata,
-                s.stato,
-                s.created_at,
-                s.updated_at,
-                op.code AS operatore_code,
-                op.label AS operatore_label,
-                tr.code AS tariffa_code,
-                tr.label AS tariffa_label,
-                au.code AS autorizzazione_code,
-                au.label AS autorizzazione_label,
-                po.code AS porto_code,
-                po.label AS porto_label
-            FROM tb_lavorazioni_spedizioni s
-            LEFT JOIN cfg_lavorazioni_spedizioni_operatori_postali op ON op.id_operatore_postale = s.id_operatore_postale
-            %s
-            LEFT JOIN cfg_lavorazioni_spedizioni_tariffe tr ON tr.id_tariffa = s.id_tariffa
-            LEFT JOIN cfg_lavorazioni_spedizioni_autorizzazioni au ON au.id_autorizzazione = s.id_autorizzazione
-            LEFT JOIN cfg_lavorazioni_spedizioni_porti po ON po.id_porto_destinazione = s.id_porto_destinazione
-            WHERE s.id_lavorazione = :id
-            ORDER BY s.created_at DESC, s.id_spedizione DESC
-        SQL;
-        $sql = sprintf($sqlTemplate, $affrancaturaSelect, $affrancaturaJoin);
-        $stmt = $this->pdo->prepare($sql);
-        $stmt->bindValue(':id', $lavorazioneId, PDO::PARAM_INT);
-        $stmt->execute();
-        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
-        foreach ($rows as &$row) {
-            $row['id_spedizione'] = isset($row['id_spedizione']) ? (int) $row['id_spedizione'] : null;
-            $row['id_lavorazione'] = isset($row['id_lavorazione']) ? (int) $row['id_lavorazione'] : null;
-        }
-        unset($row);
-        return $rows;
-        return "";
-    }
-
-    public function findSpedizione(int $spedizioneId): ?array
-    {
-        $stmt = $this->pdo->prepare('
-            SELECT *
-            FROM tb_lavorazioni_spedizioni
-            WHERE id_spedizione = :id
-            LIMIT 1
-        ');
-        $stmt->bindValue(':id', $spedizioneId, PDO::PARAM_INT);
-        $stmt->execute();
-        $row = $stmt->fetch(PDO::FETCH_ASSOC);
-        if ($row === false) {
-            return null;
-        }
-        $row['id_spedizione'] = isset($row['id_spedizione']) ? (int) $row['id_spedizione'] : null;
-        $row['id_lavorazione'] = isset($row['id_lavorazione']) ? (int) $row['id_lavorazione'] : null;
-        return $row;
-    }
-
-    /**
-     * @param int $spedizioneId
-     * @return array<string, string>
-     */
-    public function listSpedizioneReportValues(int $spedizioneId): array
-    {
-        $stmt = $this->pdo->prepare('
-            SELECT field_code, value
-            FROM tb_lavorazioni_spedizioni_report_values
-            WHERE id_spedizione = :id
-        ');
-        $stmt->bindValue(':id', $spedizioneId, PDO::PARAM_INT);
-        $stmt->execute();
-        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
-        $result = [];
-        foreach ($rows as $row) {
-            if (isset($row['field_code']) && isset($row['value'])) {
-                $result[(string) $row['field_code']] = (string) $row['value'];
-            }
-        }
-        return $result;
-    }
-
-    /**
-     * @param int $spedizioneId
-     * @param array<string, string> $values
-     */
-    public function replaceSpedizioneReportValues(int $spedizioneId, array $values): void
-    {
-        $this->pdo->beginTransaction();
-        try {
-            $delete = $this->pdo->prepare('
-                DELETE FROM tb_lavorazioni_spedizioni_report_values
-                WHERE id_spedizione = :id
-            ');
-            $delete->bindValue(':id', $spedizioneId, PDO::PARAM_INT);
-            $delete->execute();
-
-            if ($values !== []) {
-                $insert = $this->pdo->prepare('
-                    INSERT INTO tb_lavorazioni_spedizioni_report_values (
-                        id_spedizione,
-                        field_code,
-                        value,
-                        created_at,
-                        updated_at
-                    ) VALUES (
-                        :id,
-                        :field_code,
-                        :value,
-                        NOW(),
-                        NOW()
-                    )
-                ');
-                foreach ($values as $fieldCode => $value) {
-                    $insert->bindValue(':id', $spedizioneId, PDO::PARAM_INT);
-                    $insert->bindValue(':field_code', (string) $fieldCode, PDO::PARAM_STR);
-                    $insert->bindValue(':value', (string) $value, PDO::PARAM_STR);
-                    $insert->execute();
-                }
-            }
-            $this->pdo->commit();
-        } catch (\Throwable $exception) {
-            $this->pdo->rollBack();
-            throw $exception;
-        }
-    }
-
-    /**
-     * @param int $spedizioneId
-     * @return array<int, array{zona:string,peso:string,quantita:int}>
-     */
-    public function listSpedizioneReportQuantities(int $spedizioneId): array
-    {
-        $stmt = $this->pdo->prepare('
-            SELECT zona, peso, quantita
-            FROM tb_lavorazioni_spedizioni_report_quantities
-            WHERE id_spedizione = :id
-            ORDER BY zona ASC, peso ASC
-        ');
-        $stmt->bindValue(':id', $spedizioneId, PDO::PARAM_INT);
-        $stmt->execute();
-        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
-        $result = [];
-        foreach ($rows as $row) {
-            $result[] = [
-                'zona' => (string) ($row['zona'] ?? ''),
-                'peso' => isset($row['peso']) ? (string) $row['peso'] : '0',
-                'quantita' => isset($row['quantita']) ? (int) $row['quantita'] : 0,
-            ];
-        }
-        return $result;
-    }
-
-    /**
-     * @param int $spedizioneId
-     * @param array<int, array{zona:string,peso:string,quantita:int}> $rows
-     */
-    public function replaceSpedizioneReportQuantities(int $spedizioneId, array $rows): void
-    {
-        $this->pdo->beginTransaction();
-        try {
-            $delete = $this->pdo->prepare('
-                DELETE FROM tb_lavorazioni_spedizioni_report_quantities
-                WHERE id_spedizione = :id
-            ');
-            $delete->bindValue(':id', $spedizioneId, PDO::PARAM_INT);
-            $delete->execute();
-
-            if ($rows !== []) {
-                $insert = $this->pdo->prepare('
-                    INSERT INTO tb_lavorazioni_spedizioni_report_quantities (
-                        id_spedizione,
-                        zona,
-                        peso,
-                        quantita,
-                        created_at,
-                        updated_at
-                    ) VALUES (
-                        :id,
-                        :zona,
-                        :peso,
-                        :quantita,
-                        NOW(),
-                        NOW()
-                    )
-                ');
-                foreach ($rows as $row) {
-                    $insert->bindValue(':id', $spedizioneId, PDO::PARAM_INT);
-                    $insert->bindValue(':zona', (string) ($row['zona'] ?? ''), PDO::PARAM_STR);
-                    $insert->bindValue(':peso', (string) ($row['peso'] ?? '0'), PDO::PARAM_STR);
-                    $insert->bindValue(':quantita', (int) ($row['quantita'] ?? 0), PDO::PARAM_INT);
-                    $insert->execute();
-                }
-            }
-
-            $this->pdo->commit();
-        } catch (\Throwable $exception) {
-            $this->pdo->rollBack();
-            throw $exception;
-        }
-    }
-
-    public function findSpedizioneOperatorePostale(int $id): ?array
-    {
-        $stmt = $this->pdo->prepare('
-            SELECT id_operatore_postale, code, label, descrizione, attivo
-            FROM cfg_lavorazioni_spedizioni_operatori_postali
-            WHERE id_operatore_postale = :id
-            LIMIT 1
-        ');
-        $stmt->bindValue(':id', $id, PDO::PARAM_INT);
-        $stmt->execute();
-        $row = $stmt->fetch(PDO::FETCH_ASSOC);
-        return $row === false ? null : $row;
-    }
-
-    public function findSpedizioneAffrancatura(int $id): ?array
-    {
-        $stmt = $this->pdo->prepare('
-            SELECT id_affrancatura, id_operatore_postale, code, label, descrizione, attivo
-            FROM cfg_lavorazioni_spedizioni_affrancature
-            WHERE id_affrancatura = :id
-            LIMIT 1
-        ');
-        $stmt->bindValue(':id', $id, PDO::PARAM_INT);
-        $stmt->execute();
-        $row = $stmt->fetch(PDO::FETCH_ASSOC);
-        return $row === false ? null : $row;
-    }
-
-    public function findSpedizioneTariffa(int $id): ?array
-    {
-        $stmt = $this->pdo->prepare('
-            SELECT id_tariffa, id_affrancatura, code, label, descrizione, attivo
-            FROM cfg_lavorazioni_spedizioni_tariffe
-            WHERE id_tariffa = :id
-            LIMIT 1
-        ');
-        $stmt->bindValue(':id', $id, PDO::PARAM_INT);
-        $stmt->execute();
-        $row = $stmt->fetch(PDO::FETCH_ASSOC);
-        return $row === false ? null : $row;
-    }
-
-    public function findSpedizioneAutorizzazione(int $id): ?array
-    {
-        $stmt = $this->pdo->prepare('
-            SELECT id_autorizzazione, id_affrancatura, id_tariffa, code, label, descrizione, attivo
-            FROM cfg_lavorazioni_spedizioni_autorizzazioni
-            WHERE id_autorizzazione = :id
-            LIMIT 1
-        ');
-        $stmt->bindValue(':id', $id, PDO::PARAM_INT);
-        $stmt->execute();
-        $row = $stmt->fetch(PDO::FETCH_ASSOC);
-        return $row === false ? null : $row;
-    }
-
-    public function findSpedizionePorto(int $id): ?array
-    {
-        $stmt = $this->pdo->prepare('
-            SELECT id_porto_destinazione, id_autorizzazione, code, label, descrizione, attivo
-            FROM cfg_lavorazioni_spedizioni_porti
-            WHERE id_porto_destinazione = :id
-            LIMIT 1
-        ');
-        $stmt->bindValue(':id', $id, PDO::PARAM_INT);
-        $stmt->execute();
-        $row = $stmt->fetch(PDO::FETCH_ASSOC);
-        return $row === false ? null : $row;
-    }
-
-    public function createSpedizione(array $data): int
-    {
-        $supportsAffrancatura = $this->hasSpedizioneColumn('id_affrancatura');
-        $columns = [
-            'id_lavorazione',
-            'tipo_descrizione',
-            'id_operatore_postale',
-        ];
-        $placeholders = [
-            ':id_lavorazione',
-            ':tipo_descrizione',
-            ':id_operatore_postale',
-        ];
-        if ($supportsAffrancatura) {
-            $columns[] = 'id_affrancatura';
-            $placeholders[] = ':id_affrancatura';
-        }
-        $columns = array_merge($columns, [
-            'id_tariffa',
-            'id_autorizzazione',
-            'id_porto_destinazione',
-            'note',
-            'data_programmata',
-        ]);
-        $placeholders = array_merge($placeholders, [
-            ':id_tariffa',
-            ':id_autorizzazione',
-            ':id_porto_destinazione',
-            ':note',
-            ':data_programmata',
-        ]);
-        $sql = sprintf(
-            '
-            INSERT INTO tb_lavorazioni_spedizioni (
-                %s,
-                created_at,
-                updated_at
-            ) VALUES (
-                %s,
-                NOW(),
-                NOW()
-            )
-        ',
-            implode(",\n                ", $columns),
-            implode(",\n                ", $placeholders),
-        );
-        $stmt = $this->pdo->prepare($sql);
-        $stmt->bindValue(':id_lavorazione', (int) $data['id_lavorazione'], PDO::PARAM_INT);
-        if (!empty($data['tipo_descrizione'])) {
-            $stmt->bindValue(':tipo_descrizione', $data['tipo_descrizione'], PDO::PARAM_STR);
-        } else {
-            $stmt->bindValue(':tipo_descrizione', null, PDO::PARAM_NULL);
-        }
-        if (!empty($data['id_operatore_postale'])) {
-            $stmt->bindValue(':id_operatore_postale', (int) $data['id_operatore_postale'], PDO::PARAM_INT);
-        } else {
-            $stmt->bindValue(':id_operatore_postale', null, PDO::PARAM_NULL);
-        }
-        if ($supportsAffrancatura) {
-            if (!empty($data['id_affrancatura'])) {
-                $stmt->bindValue(':id_affrancatura', (int) $data['id_affrancatura'], PDO::PARAM_INT);
-            } else {
-                $stmt->bindValue(':id_affrancatura', null, PDO::PARAM_NULL);
-            }
-        }
-        if (!empty($data['id_tariffa'])) {
-            $stmt->bindValue(':id_tariffa', (int) $data['id_tariffa'], PDO::PARAM_INT);
-        } else {
-            $stmt->bindValue(':id_tariffa', null, PDO::PARAM_NULL);
-        }
-        if (!empty($data['id_autorizzazione'])) {
-            $stmt->bindValue(':id_autorizzazione', (int) $data['id_autorizzazione'], PDO::PARAM_INT);
-        } else {
-            $stmt->bindValue(':id_autorizzazione', null, PDO::PARAM_NULL);
-        }
-        if (!empty($data['id_porto_destinazione'])) {
-            $stmt->bindValue(':id_porto_destinazione', (int) $data['id_porto_destinazione'], PDO::PARAM_INT);
-        } else {
-            $stmt->bindValue(':id_porto_destinazione', null, PDO::PARAM_NULL);
-        }
-        if (!empty($data['note'])) {
-            $stmt->bindValue(':note', $data['note'], PDO::PARAM_STR);
-        } else {
-            $stmt->bindValue(':note', null, PDO::PARAM_NULL);
-        }
-        if (!empty($data['data_programmata'])) {
-            $stmt->bindValue(':data_programmata', $data['data_programmata'], PDO::PARAM_STR);
-        } else {
-            $stmt->bindValue(':data_programmata', null, PDO::PARAM_NULL);
-        }
-        $stmt->execute();
-        return (int) $this->pdo->lastInsertId();
-    }
-
-    public function updateSpedizione(int $spedizioneId, array $data): void
-    {
-        $supportsAffrancatura = $this->hasSpedizioneColumn('id_affrancatura');
-        $assignments = [
-            'tipo_descrizione = :tipo_descrizione',
-            'id_operatore_postale = :id_operatore_postale',
-        ];
-        if ($supportsAffrancatura) {
-            $assignments[] = 'id_affrancatura = :id_affrancatura';
-        }
-        $assignments = array_merge($assignments, [
-            'id_tariffa = :id_tariffa',
-            'id_autorizzazione = :id_autorizzazione',
-            'id_porto_destinazione = :id_porto_destinazione',
-            'note = :note',
-            'data_programmata = :data_programmata',
-        ]);
-        $setClause = implode(",\n                ", $assignments);
-        $sql = sprintf(
-            '
-            UPDATE tb_lavorazioni_spedizioni
-            SET
-                %s,
-                updated_at = NOW()
-            WHERE id_spedizione = :id
-        ',
-            $setClause,
-        );
-        $stmt = $this->pdo->prepare($sql);
-        if (!empty($data['tipo_descrizione'])) {
-            $stmt->bindValue(':tipo_descrizione', $data['tipo_descrizione'], PDO::PARAM_STR);
-        } else {
-            $stmt->bindValue(':tipo_descrizione', null, PDO::PARAM_NULL);
-        }
-        if (!empty($data['id_operatore_postale'])) {
-            $stmt->bindValue(':id_operatore_postale', (int) $data['id_operatore_postale'], PDO::PARAM_INT);
-        } else {
-            $stmt->bindValue(':id_operatore_postale', null, PDO::PARAM_NULL);
-        }
-        if ($supportsAffrancatura) {
-            if (!empty($data['id_affrancatura'])) {
-                $stmt->bindValue(':id_affrancatura', (int) $data['id_affrancatura'], PDO::PARAM_INT);
-            } else {
-                $stmt->bindValue(':id_affrancatura', null, PDO::PARAM_NULL);
-            }
-        }
-        if (!empty($data['id_tariffa'])) {
-            $stmt->bindValue(':id_tariffa', (int) $data['id_tariffa'], PDO::PARAM_INT);
-        } else {
-            $stmt->bindValue(':id_tariffa', null, PDO::PARAM_NULL);
-        }
-        if (!empty($data['id_autorizzazione'])) {
-            $stmt->bindValue(':id_autorizzazione', (int) $data['id_autorizzazione'], PDO::PARAM_INT);
-        } else {
-            $stmt->bindValue(':id_autorizzazione', null, PDO::PARAM_NULL);
-        }
-        if (!empty($data['id_porto_destinazione'])) {
-            $stmt->bindValue(':id_porto_destinazione', (int) $data['id_porto_destinazione'], PDO::PARAM_INT);
-        } else {
-            $stmt->bindValue(':id_porto_destinazione', null, PDO::PARAM_NULL);
-        }
-        if (!empty($data['note'])) {
-            $stmt->bindValue(':note', $data['note'], PDO::PARAM_STR);
-        } else {
-            $stmt->bindValue(':note', null, PDO::PARAM_NULL);
-        }
-        if (!empty($data['data_programmata'])) {
-            $stmt->bindValue(':data_programmata', $data['data_programmata'], PDO::PARAM_STR);
-        } else {
-            $stmt->bindValue(':data_programmata', null, PDO::PARAM_NULL);
-        }
-        $stmt->bindValue(':id', $spedizioneId, PDO::PARAM_INT);
-        $stmt->execute();
-    }
-
-    /**
-     * @param int $spedizioneId
-     */
-    public function deleteSpedizione(int $spedizioneId): void
-    {
-        $stmt = $this->pdo->prepare('
-            DELETE FROM tb_lavorazioni_spedizioni
-            WHERE id_spedizione = :id
-        ');
-        $stmt->bindValue(':id', $spedizioneId, PDO::PARAM_INT);
-        $stmt->execute();
-        if ($stmt->rowCount() === 0) {
-            throw new \RuntimeException('Spedizione non trovata.', 404);
-        }
-    }
-
-    /**
-     * @return array<int, array<string, mixed>>
-     */
-    public function listSpedizioneOperatoriPostali(): array
-    {
-        $stmt = $this->pdo->query('
-            SELECT id_operatore_postale, code, label, descrizione, attivo
-            FROM cfg_lavorazioni_spedizioni_operatori_postali
-            WHERE attivo = 1
-            ORDER BY ordering ASC, label ASC
-        ');
-        return $stmt ? ($stmt->fetchAll(PDO::FETCH_ASSOC) ?: []) : [];
-    }
-
-    /**
-     * @return array<int, array<string, mixed>>
-     */
-    public function listSpedizioneAffrancature(): array
-    {
-        $stmt = $this->pdo->query('
-            SELECT
-                aff.id_affrancatura,
-                aff.id_operatore_postale,
-                aff.code,
-                aff.label,
-                aff.descrizione,
-                aff.attivo,
-                op.label AS operatore_label
-            FROM cfg_lavorazioni_spedizioni_affrancature aff
-            LEFT JOIN cfg_lavorazioni_spedizioni_operatori_postali op ON op.id_operatore_postale = aff.id_operatore_postale
-            WHERE aff.attivo = 1
-            ORDER BY aff.id_operatore_postale ASC, aff.ordering ASC, aff.label ASC
-        ');
-        return $stmt ? ($stmt->fetchAll(PDO::FETCH_ASSOC) ?: []) : [];
-    }
-
-    /**
-     * @return array<int, array<string, mixed>>
-     */
-    public function listSpedizioneTariffe(): array
-    {
-        $stmt = $this->pdo->query('
-            SELECT id_tariffa, id_affrancatura, code, label, descrizione, attivo
-            FROM cfg_lavorazioni_spedizioni_tariffe
-            WHERE attivo = 1
-            ORDER BY id_affrancatura ASC, ordering ASC, label ASC
-        ');
-        return $stmt ? ($stmt->fetchAll(PDO::FETCH_ASSOC) ?: []) : [];
-    }
-
-    /**
-     * @return array<int, array<string, mixed>>
-     */
-    public function listSpedizioneAutorizzazioni(): array
-    {
-        $stmt = $this->pdo->query('
-            SELECT id_autorizzazione, id_affrancatura, id_tariffa, code, label, descrizione, attivo
-            FROM cfg_lavorazioni_spedizioni_autorizzazioni
-            WHERE attivo = 1
-            ORDER BY id_affrancatura ASC, ordering ASC, label ASC
-        ');
-        return $stmt ? ($stmt->fetchAll(PDO::FETCH_ASSOC) ?: []) : [];
-    }
-
-    /**
-     * @return array<int, array<string, mixed>>
-     */
-    public function listSpedizionePorti(): array
-    {
-        $stmt = $this->pdo->query('
-            SELECT id_porto_destinazione, id_autorizzazione, code, label, descrizione, attivo
-            FROM cfg_lavorazioni_spedizioni_porti
-            WHERE attivo = 1
-            ORDER BY id_autorizzazione ASC, ordering ASC, label ASC
-        ');
-        return $stmt ? ($stmt->fetchAll(PDO::FETCH_ASSOC) ?: []) : [];
-    }
-
-    /**
-     * @param int|null $affrancaturaId
-     * @return array<int, array<string, mixed>>
-     */
-    public function listSpedizioneReportFields(?int $affrancaturaId = null): array
-    {
-        if ($affrancaturaId !== null && $affrancaturaId > 0) {
-            $sql = '
-                SELECT
-                    id_field,
-                    id_affrancatura,
-                    field_code,
-                    label,
-                    description,
-                    ordering,
-                    is_visible,
-                    created_at,
-                    updated_at
-                FROM cfg_lavorazioni_spedizioni_report_fields
-                WHERE id_affrancatura IS NULL OR id_affrancatura = :affrancatura
-                ORDER BY ordering ASC, field_code ASC
-            ';
-            $stmt = $this->pdo->prepare($sql);
-            $stmt->bindValue(':affrancatura', $affrancaturaId, PDO::PARAM_INT);
-        } else {
-            $sql = '
-                SELECT
-                    id_field,
-                    id_affrancatura,
-                    field_code,
-                    label,
-                    description,
-                    ordering,
-                    is_visible,
-                    created_at,
-                    updated_at
-                FROM cfg_lavorazioni_spedizioni_report_fields
-                WHERE id_affrancatura IS NULL
-                ORDER BY ordering ASC, field_code ASC
-            ';
-            $stmt = $this->pdo->prepare($sql);
-        }
-        $stmt->execute();
-        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
-        foreach ($rows as &$row) {
-            $row['id_field'] = isset($row['id_field']) ? (int) $row['id_field'] : null;
-            $row['id_affrancatura'] = isset($row['id_affrancatura']) ? (int) $row['id_affrancatura'] : null;
-            $row['ordering'] = isset($row['ordering']) ? (int) $row['ordering'] : 0;
-            $row['is_visible'] = isset($row['is_visible']) ? (bool) $row['is_visible'] : false;
-        }
-        unset($row);
-        return $rows;
-    }
-
-    public function findSpedizioneReportField(int $fieldId): ?array
-    {
-        $stmt = $this->pdo->prepare('
-            SELECT
-                id_field,
-                id_affrancatura,
-                field_code,
-                label,
-                description,
-                ordering,
-                is_visible,
-                created_at,
-                updated_at
-            FROM cfg_lavorazioni_spedizioni_report_fields
-            WHERE id_field = :id
-            LIMIT 1
-        ');
-        $stmt->bindValue(':id', $fieldId, PDO::PARAM_INT);
-        $stmt->execute();
-        $row = $stmt->fetch(PDO::FETCH_ASSOC);
-        if ($row === false) {
-            return null;
-        }
-        $row['id_field'] = isset($row['id_field']) ? (int) $row['id_field'] : null;
-        $row['id_affrancatura'] = isset($row['id_affrancatura']) ? (int) $row['id_affrancatura'] : null;
-        $row['ordering'] = isset($row['ordering']) ? (int) $row['ordering'] : 0;
-        $row['is_visible'] = isset($row['is_visible']) ? (bool) $row['is_visible'] : false;
-        return $row;
-    }
-
-    /**
-     * @param int|null $affrancaturaId
-     * @param string $fieldCode
-     * @return array<string, mixed>|null
-     */
-    public function findSpedizioneReportFieldByCode(?int $affrancaturaId, string $fieldCode): ?array
-    {
-        $stmt = $this->pdo->prepare('
-            SELECT id_field
-            FROM cfg_lavorazioni_spedizioni_report_fields
-            WHERE id_affrancatura <=> :affrancatura
-              AND field_code = :field_code
-            LIMIT 1
-        ');
-        $stmt->bindValue(':affrancatura', $affrancaturaId, $affrancaturaId === null ? PDO::PARAM_NULL : PDO::PARAM_INT);
-        $stmt->bindValue(':field_code', $fieldCode, PDO::PARAM_STR);
-        $stmt->execute();
-        $value = $stmt->fetchColumn();
-        if ($value === false) {
-            return null;
-        }
-        return ['id_field' => (int) $value];
-    }
-
-    /**
-     * @param array<string, mixed> $data
-     */
-    public function createSpedizioneReportField(array $data): int
-    {
-        $stmt = $this->pdo->prepare('
-            INSERT INTO cfg_lavorazioni_spedizioni_report_fields (
-                id_affrancatura,
-                field_code,
-                label,
-                description,
-                ordering,
-                is_visible,
-                created_at,
-                updated_at
-            ) VALUES (
-                :id_affrancatura,
-                :field_code,
-                :label,
-                :description,
-                :ordering,
-                :is_visible,
-                NOW(),
-                NOW()
-            )
-        ');
-        if (!empty($data['id_affrancatura'])) {
-            $stmt->bindValue(':id_affrancatura', (int) $data['id_affrancatura'], PDO::PARAM_INT);
-        } else {
-            $stmt->bindValue(':id_affrancatura', null, PDO::PARAM_NULL);
-        }
-        $stmt->bindValue(':field_code', $data['field_code'], PDO::PARAM_STR);
-        $stmt->bindValue(':label', $data['label'], PDO::PARAM_STR);
-        if (!empty($data['description'])) {
-            $stmt->bindValue(':description', $data['description'], PDO::PARAM_STR);
-        } else {
-            $stmt->bindValue(':description', null, PDO::PARAM_NULL);
-        }
-        $stmt->bindValue(':ordering', isset($data['ordering']) ? (int) $data['ordering'] : 0, PDO::PARAM_INT);
-        $stmt->bindValue(':is_visible', isset($data['is_visible']) ? (int) $data['is_visible'] : 1, PDO::PARAM_INT);
-        $stmt->execute();
-        return (int) $this->pdo->lastInsertId();
-    }
-
-    /**
-     * @param int $fieldId
-     * @param array<string, mixed> $data
-     */
-    public function updateSpedizioneReportField(int $fieldId, array $data): void
-    {
-        $stmt = $this->pdo->prepare('
-            UPDATE cfg_lavorazioni_spedizioni_report_fields
-            SET
-                id_affrancatura = :id_affrancatura,
-                field_code = :field_code,
-                label = :label,
-                description = :description,
-                ordering = :ordering,
-                is_visible = :is_visible,
-                updated_at = NOW()
-            WHERE id_field = :id
-        ');
-        if (!empty($data['id_affrancatura'])) {
-            $stmt->bindValue(':id_affrancatura', (int) $data['id_affrancatura'], PDO::PARAM_INT);
-        } else {
-            $stmt->bindValue(':id_affrancatura', null, PDO::PARAM_NULL);
-        }
-        $stmt->bindValue(':field_code', $data['field_code'], PDO::PARAM_STR);
-        $stmt->bindValue(':label', $data['label'], PDO::PARAM_STR);
-        if (!empty($data['description'])) {
-            $stmt->bindValue(':description', $data['description'], PDO::PARAM_STR);
-        } else {
-            $stmt->bindValue(':description', null, PDO::PARAM_NULL);
-        }
-        $stmt->bindValue(':ordering', isset($data['ordering']) ? (int) $data['ordering'] : 0, PDO::PARAM_INT);
-        $stmt->bindValue(':is_visible', isset($data['is_visible']) ? (int) $data['is_visible'] : 1, PDO::PARAM_INT);
-        $stmt->bindValue(':id', $fieldId, PDO::PARAM_INT);
-        $stmt->execute();
-    }
-
-    public function deleteSpedizioneReportField(int $fieldId): void
-    {
-        $stmt = $this->pdo->prepare('
-            DELETE FROM cfg_lavorazioni_spedizioni_report_fields
-            WHERE id_field = :id
-        ');
-        $stmt->bindValue(':id', $fieldId, PDO::PARAM_INT);
-        $stmt->execute();
-        if ($stmt->rowCount() === 0) {
-            throw new \RuntimeException('Campo report non trovato.', 404);
-        }
-    }
-
     public function createGeneralNotifications(
         array $accountIds,
         string $title,
@@ -2761,5 +2386,10 @@ final class LavorazioniRepository
         }
 
         return $count;
+    }
+
+    public function getConnection(): PDO
+    {
+        return $this->pdo;
     }
 }

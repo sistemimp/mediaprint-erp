@@ -252,7 +252,7 @@ final class ProdottiRepository
      */
     public function listVariazioniByProdotto(int $idProdotto): array
     {
-        $sql = 'SELECT v.id_variazione, v.codice, v.nome, v.categoria, v.prezzo, pv.delta_prezzo
+        $sql = 'SELECT v.id_variazione, v.codice, v.nome, v.categoria, v.prezzo
                 FROM appoggio_prodotto_variazione pv
                 JOIN tb_variazioni v ON v.id_variazione = pv.id_variazione
                 WHERE pv.id_prodotto = :id
@@ -261,17 +261,15 @@ final class ProdottiRepository
         $stmt->bindValue(':id', $idProdotto, PDO::PARAM_INT);
         $stmt->execute();
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
-        return array_map(fn($r) => [ 'id_variazione' => (int) $r['id_variazione'], 'codice' => $r['codice'] ?? null, 'nome' => (string) $r['nome'], 'categoria' => $r['categoria'] ?? null, 'prezzo' => isset($r['prezzo']) ? (float) $r['prezzo'] : 0.0, 'delta_prezzo' => isset($r['delta_prezzo']) ? (float) $r['delta_prezzo'] : 0.0 ], $rows);
+        return array_map(fn($r) => [ 'id_variazione' => (int) $r['id_variazione'], 'codice' => $r['codice'] ?? null, 'nome' => (string) $r['nome'], 'categoria' => $r['categoria'] ?? null, 'prezzo' => isset($r['prezzo']) ? (float) $r['prezzo'] : 0.0 ], $rows);
     }
 
-    public function linkVariazioneToProdotto(int $idProdotto, int $idVariazione, float $deltaPrezzo = 0.0): void
+    public function linkVariazioneToProdotto(int $idProdotto, int $idVariazione): void
     {
-        // inserisce o aggiorna delta prezzo evitando duplicati
-        $stmt = $this->pdo->prepare('INSERT INTO appoggio_prodotto_variazione (id_prodotto, id_variazione, delta_prezzo) VALUES (:p, :v, :d)
-            ON DUPLICATE KEY UPDATE delta_prezzo = VALUES(delta_prezzo)');
+        $stmt = $this->pdo->prepare('INSERT INTO appoggio_prodotto_variazione (id_prodotto, id_variazione) VALUES (:p, :v)
+            ON DUPLICATE KEY UPDATE id_variazione = VALUES(id_variazione)');
         $stmt->bindValue(':p', $idProdotto, PDO::PARAM_INT);
         $stmt->bindValue(':v', $idVariazione, PDO::PARAM_INT);
-        $stmt->bindValue(':d', $deltaPrezzo);
         $stmt->execute();
     }
 
@@ -280,15 +278,6 @@ final class ProdottiRepository
         $stmt = $this->pdo->prepare('DELETE FROM appoggio_prodotto_variazione WHERE id_prodotto = :p AND id_variazione = :v');
         $stmt->bindValue(':p', $idProdotto, PDO::PARAM_INT);
         $stmt->bindValue(':v', $idVariazione, PDO::PARAM_INT);
-        $stmt->execute();
-    }
-
-    public function updateVariazioneDelta(int $idProdotto, int $idVariazione, float $deltaPrezzo): void
-    {
-        $stmt = $this->pdo->prepare('UPDATE appoggio_prodotto_variazione SET delta_prezzo = :d WHERE id_prodotto = :p AND id_variazione = :v');
-        $stmt->bindValue(':p', $idProdotto, PDO::PARAM_INT);
-        $stmt->bindValue(':v', $idVariazione, PDO::PARAM_INT);
-        $stmt->bindValue(':d', $deltaPrezzo);
         $stmt->execute();
     }
 

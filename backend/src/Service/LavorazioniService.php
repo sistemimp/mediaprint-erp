@@ -3,9 +3,10 @@ declare(strict_types=1);
 
 namespace MediaPrint\Service;
 
-use MediaPrint\Repo\LavorazioniRepository;
 use Firebase\JWT\JWT;
 use Firebase\JWT\Key;
+use MediaPrint\Repo\LavorazioniRepository;
+use MediaPrint\Repo\PreventiviRepository;
 
 final class LavorazioniService
 {
@@ -172,15 +173,88 @@ final class LavorazioniService
             }
         }
 
-        $detail['spedizioni'] = $this->repository->fetchSpedizioni($id);
-        $detail['spedizioni_config'] = [
-            'operatori_postali' => $this->repository->listSpedizioneOperatoriPostali(),
-            'affrancature' => $this->repository->listSpedizioneAffrancature(),
-            'affrancature_enabled' => $this->repository->hasSpedizioneColumn('id_affrancatura'),
-            'tariffe' => $this->repository->listSpedizioneTariffe(),
-            'autorizzazioni' => $this->repository->listSpedizioneAutorizzazioni(),
-            'porti' => $this->repository->listSpedizionePorti(),
-        ];
+        $stampaRows = [];
+        $postaliRows = [];
+        $preventivoId = isset($detail['id_preventivo']) ? (int) $detail['id_preventivo'] : 0;
+        $storedPostaliRows = method_exists($this->repository, 'listPostaliRowsForLavorazione')
+            ? $this->repository->listPostaliRowsForLavorazione($id)
+            : [];
+        if (!empty($storedPostaliRows)) {
+            $postaliRows = $storedPostaliRows;
+        }
+        if ($preventivoId > 0) {
+            $preventiviRepository = new PreventiviRepository($this->repository->getConnection());
+            $lines = $preventiviRepository->getLines($preventivoId);
+            $stampaRows = array_values(array_filter($lines, function (array $line): bool {
+                $category = $line['categoria'] ?? null;
+                return $this->isStampaCategory(is_string($category) ? $category : null);
+            }));
+            if (empty($postaliRows)) {
+                $postaliRows = array_values(array_filter($lines, function (array $line): bool {
+                    return $this->isTariffePostaliLine($line);
+                }));
+            }
+        }
+
+        $postaActivityId = 0;
+        if (isset($detail['attivita']) && is_array($detail['attivita'])) {
+            foreach ($detail['attivita'] as $task) {
+                $label = isset($task['titolo']) ? (string) $task['titolo'] : '';
+                if ($this->isPostaActivityLabel($label)) {
+                    $postaActivityId = isset($task['id_attivita']) ? (int) $task['id_attivita'] : 0;
+                    if ($postaActivityId > 0) {
+                        break;
+                    }
+                }
+            }
+        }
+        if ($postaActivityId > 0 && !empty($postaliRows)) {
+            $cedMap = $this->repository->listActivityCedQuantities($postaActivityId);
+            if (!empty($cedMap)) {
+                $postaliRows = array_map(function (array $row) use ($cedMap): array {
+                    $idRiga = isset($row['id_riga']) ? (int) $row['id_riga'] : 0;
+                    $row['quantita_ced'] = $idRiga > 0 && array_key_exists($idRiga, $cedMap)
+                        ? $cedMap[$idRiga]
+                        : null;
+                    return $row;
+                }, $postaliRows);
+            }
+        }
+        if (!empty($postaliRows)) {
+            foreach ($postaliRows as &$row) {
+                $warning = !empty($row['created_by_ced']);
+                if (array_key_exists('quantita_ced', $row) && $row['quantita_ced'] !== null) {
+                    $diff = abs((float) $row['quantita_ced'] - (float) ($row['quantita'] ?? 0));
+                    if ($diff > 0.0001) {
+                        $warning = true;
+                    }
+                }
+                $row['ced_warning'] = $warning;
+            }
+            unset($row);
+        }
+
+        if (isset($detail['attivita']) && is_array($detail['attivita'])) {
+            $detail['attivita'] = array_map(function (array $task) use ($stampaRows): array {
+                $label = isset($task['titolo']) ? (string) $task['titolo'] : '';
+                if ($this->isStampaActivityLabel($label)) {
+                    $activityId = isset($task['id_attivita']) ? (int) $task['id_attivita'] : 0;
+                    $cedMap = $activityId > 0 ? $this->repository->listActivityCedQuantities($activityId) : [];
+                    $task['stampa_righe_preventivo'] = array_map(function (array $row) use ($cedMap): array {
+                        $idRiga = isset($row['id_riga']) ? (int) $row['id_riga'] : 0;
+                        $row['quantita_ced'] = $idRiga > 0 && array_key_exists($idRiga, $cedMap)
+                            ? $cedMap[$idRiga]
+                            : null;
+                        return $row;
+                    }, $stampaRows);
+                } else {
+                    $task['stampa_righe_preventivo'] = [];
+                }
+                return $task;
+            }, $detail['attivita']);
+        }
+
+        $detail['tariffe_postali_righe_preventivo'] = $postaliRows;
 
         return $detail;
     }
@@ -189,242 +263,21 @@ final class LavorazioniService
      * @param array<string, mixed> $input
      * @return array<string, mixed>
      */
-    public function createSpedizione(array $input): array
+    public function saveActivityCedQuantities(array $input): array
     {
-        $lavorazioneId = $this->sanitizeInt(
-            $input['id_lavorazione'] ?? ($input['lavorazione_id'] ?? ($input['id'] ?? 0)),
-            1,
-            PHP_INT_MAX,
-        );
-        if ($lavorazioneId <= 0) {
-            throw new \RuntimeException('ID lavorazione mancante o non valido.', 422);
+        $activityId = $this->sanitizeInt($input['id_attivita'] ?? ($input['attivita_id'] ?? 0), 1, PHP_INT_MAX);
+        if ($activityId <= 0) {
+            throw new \RuntimeException('ID attivita mancante o non valido.', 422);
         }
 
-        $job = $this->repository->findLavorazioneById($lavorazioneId);
-        if ($job === null) {
-            throw new \RuntimeException('Lavorazione non trovata.', 404);
+        $activity = $this->repository->findActivity($activityId);
+        if ($activity === null) {
+            throw new \RuntimeException('Attivita non trovata.', 404);
         }
 
-        $note = trim((string) ($input['note'] ?? ''));
-        $note = $note !== '' ? $note : null;
-
-        $dataProgrammata = trim((string) ($input['data_programmata'] ?? $input['data_programmazione'] ?? ''));
-        $dataProgrammata = $dataProgrammata !== '' ? $dataProgrammata : null;
-
-        $chain = $this->resolveSpedizioneChain($input);
-
-        $tipoDescrizione = trim((string) ($input['tipo_descrizione'] ?? ''));
-        $tipoDescrizione = $tipoDescrizione !== '' ? $tipoDescrizione : null;
-
-        $newId = $this->repository->createSpedizione([
-            'id_lavorazione' => $lavorazioneId,
-            'tipo_descrizione' => $tipoDescrizione,
-            'id_operatore_postale' => $chain['operatore_id'],
-            'id_affrancatura' => $chain['affrancatura_id'],
-            'id_tariffa' => $chain['tariffa_id'],
-            'id_autorizzazione' => $chain['autorizzazione_id'],
-            'id_porto_destinazione' => $chain['porto_id'],
-            'note' => $note,
-            'data_programmata' => $dataProgrammata,
-        ]);
-
-        $spedizione = $this->repository->findSpedizione($newId);
-        if ($spedizione === null) {
-            throw new \RuntimeException('Impossibile recuperare la spedizione inserita.', 500);
-        }
-
-        return [
-            'ok' => true,
-            'spedizione' => $spedizione,
-        ];
-    }
-
-    /**
-     * @param array<string, mixed> $input
-     * @return array<string, mixed>
-     */
-    public function updateSpedizione(array $input): array
-    {
-        $spedizioneId = $this->sanitizeInt($input['id_spedizione'] ?? ($input['spedizione_id'] ?? 0), 1, PHP_INT_MAX);
-        if ($spedizioneId <= 0) {
-            throw new \RuntimeException('ID spedizione mancante o non valido.', 422);
-        }
-
-        $spedizione = $this->repository->findSpedizione($spedizioneId);
-        if ($spedizione === null) {
-            throw new \RuntimeException('Spedizione non trovata.', 404);
-        }
-
-        $note = trim((string) ($input['note'] ?? ''));
-        $note = $note !== '' ? $note : null;
-
-        $dataProgrammata = trim((string) ($input['data_programmata'] ?? $input['data_programmazione'] ?? ''));
-        $dataProgrammata = $dataProgrammata !== '' ? $dataProgrammata : null;
-
-        $chain = $this->resolveSpedizioneChain($input);
-
-        $tipoDescrizione = trim((string) ($input['tipo_descrizione'] ?? ($spedizione['tipo_descrizione'] ?? '')));
-        $tipoDescrizione = $tipoDescrizione !== '' ? $tipoDescrizione : null;
-
-        $this->repository->updateSpedizione($spedizioneId, [
-            'tipo_descrizione' => $tipoDescrizione,
-            'id_operatore_postale' => $chain['operatore_id'],
-            'id_affrancatura' => $chain['affrancatura_id'],
-            'id_tariffa' => $chain['tariffa_id'],
-            'id_autorizzazione' => $chain['autorizzazione_id'],
-            'id_porto_destinazione' => $chain['porto_id'],
-            'note' => $note,
-            'data_programmata' => $dataProgrammata,
-        ]);
-
-        $updated = $this->repository->findSpedizione($spedizioneId);
-        if ($updated === null) {
-            throw new \RuntimeException('Impossibile recuperare la spedizione aggiornata.', 500);
-        }
-
-        return [
-            'ok' => true,
-            'spedizione' => $updated,
-        ];
-    }
-
-    /**
-     * @param array<string, mixed> $input
-     * @return array<string, mixed>
-     */
-    public function deleteSpedizione(array $input): array
-    {
-        $spedizioneId = $this->sanitizeInt($input['id_spedizione'] ?? ($input['spedizione_id'] ?? 0), 1, PHP_INT_MAX);
-        if ($spedizioneId <= 0) {
-            throw new \RuntimeException('ID spedizione mancante o non valido.', 422);
-        }
-
-        $spedizione = $this->repository->findSpedizione($spedizioneId);
-        if ($spedizione === null) {
-            throw new \RuntimeException('Spedizione non trovata.', 404);
-        }
-
-        $this->repository->deleteSpedizione($spedizioneId);
-
-        return [
-            'ok' => true,
-            'id_spedizione' => $spedizioneId,
-            'id_lavorazione' => $spedizione['id_lavorazione'] ?? null,
-        ];
-    }
-
-    /**
-     * @param array<string, mixed> $query
-     * @return array<string, mixed>
-     */
-    public function listReportFields(array $query): array
-    {
-        $affrancaturaId = $this->sanitizeOptionalInt($query['id_affrancatura'] ?? ($query['affrancatura_id'] ?? null));
-        return [
-            'affrancature' => $this->repository->listSpedizioneAffrancature(),
-            'fields' => $this->repository->listSpedizioneReportFields($affrancaturaId),
-        ];
-    }
-
-    /**
-     * @param array<string, mixed> $query
-     * @return array<string, mixed>
-     */
-    public function getSpedizioneReportValues(array $query): array
-    {
-        $spedizioneId = $this->sanitizeInt($query['id_spedizione'] ?? ($query['spedizione_id'] ?? 0), 1, PHP_INT_MAX);
-        if ($spedizioneId <= 0) {
-            throw new \RuntimeException('ID spedizione mancante o non valido.', 422);
-        }
-
-        $spedizione = $this->repository->findSpedizione($spedizioneId);
-        if ($spedizione === null) {
-            throw new \RuntimeException('Spedizione non trovata.', 404);
-        }
-
-        return [
-            'values' => $this->repository->listSpedizioneReportValues($spedizioneId),
-        ];
-    }
-
-    /**
-     * @param array<string, mixed> $input
-     * @return array<string, mixed>
-     */
-    public function saveSpedizioneReportValues(array $input): array
-    {
-        $spedizioneId = $this->sanitizeInt($input['id_spedizione'] ?? ($input['spedizione_id'] ?? 0), 1, PHP_INT_MAX);
-        if ($spedizioneId <= 0) {
-            throw new \RuntimeException('ID spedizione mancante o non valido.', 422);
-        }
-
-        $spedizione = $this->repository->findSpedizione($spedizioneId);
-        if ($spedizione === null) {
-            throw new \RuntimeException('Spedizione non trovata.', 404);
-        }
-
-        $values = $input['values'] ?? [];
-        if (!is_array($values)) {
-            throw new \RuntimeException('Formato dei valori non valido.', 422);
-        }
-
-        $normalized = [];
-        foreach ($values as $fieldCode => $value) {
-            $code = trim((string) $fieldCode);
-            if ($code === '') {
-                continue;
-            }
-            $normalized[$code] = trim((string) $value);
-        }
-
-        $this->repository->replaceSpedizioneReportValues($spedizioneId, $normalized);
-
-        return [
-            'ok' => true,
-            'values' => $normalized,
-        ];
-    }
-
-    /**
-     * @param array<string, mixed> $query
-     * @return array<string, mixed>
-     */
-    public function getSpedizioneReportQuantities(array $query): array
-    {
-        $spedizioneId = $this->sanitizeInt($query['id_spedizione'] ?? ($query['spedizione_id'] ?? 0), 1, PHP_INT_MAX);
-        if ($spedizioneId <= 0) {
-            throw new \RuntimeException('ID spedizione mancante o non valido.', 422);
-        }
-
-        $spedizione = $this->repository->findSpedizione($spedizioneId);
-        if ($spedizione === null) {
-            throw new \RuntimeException('Spedizione non trovata.', 404);
-        }
-
-        return [
-            'quantities' => $this->repository->listSpedizioneReportQuantities($spedizioneId),
-        ];
-    }
-
-    /**
-     * @param array<string, mixed> $input
-     * @return array<string, mixed>
-     */
-    public function saveSpedizioneReportQuantities(array $input): array
-    {
-        $spedizioneId = $this->sanitizeInt($input['id_spedizione'] ?? ($input['spedizione_id'] ?? 0), 1, PHP_INT_MAX);
-        if ($spedizioneId <= 0) {
-            throw new \RuntimeException('ID spedizione mancante o non valido.', 422);
-        }
-
-        $spedizione = $this->repository->findSpedizione($spedizioneId);
-        if ($spedizione === null) {
-            throw new \RuntimeException('Spedizione non trovata.', 404);
-        }
-
-        $rows = $input['quantities'] ?? [];
+        $rows = $input['rows'] ?? [];
         if (!is_array($rows)) {
-            throw new \RuntimeException('Formato delle quantità non valido.', 422);
+            throw new \RuntimeException('Formato righe non valido.', 422);
         }
 
         $normalized = [];
@@ -432,195 +285,109 @@ final class LavorazioniService
             if (!is_array($row)) {
                 continue;
             }
-            $zona = trim((string) ($row['zona'] ?? ''));
-            $peso = trim((string) ($row['peso'] ?? '0'));
-            $quantita = (int) ($row['quantita'] ?? 0);
-            if ($zona === '') {
+            $idRiga = isset($row['id_riga_preventivo']) ? (int) $row['id_riga_preventivo'] : 0;
+            if ($idRiga <= 0) {
                 continue;
             }
-        $normalized[] = [
-            'zona' => $zona,
-            'peso' => $peso,
-            'quantita' => $quantita,
-        ];
+            $raw = $row['quantita_ced'] ?? null;
+            $value = null;
+            if ($raw !== null && $raw !== '') {
+                $candidate = is_string($raw) ? str_replace(',', '.', $raw) : $raw;
+                if (!is_numeric($candidate)) {
+                    continue;
+                }
+                $value = (string) $candidate;
+            }
+            $normalized[] = [
+                'id_riga_preventivo' => $idRiga,
+                'quantita_ced' => $value,
+            ];
         }
 
-        $this->repository->replaceSpedizioneReportQuantities($spedizioneId, $normalized);
+        $this->repository->replaceActivityCedQuantities($activityId, $normalized);
+
+        $lavorazioneId = isset($activity['id_lavorazione']) ? (int) $activity['id_lavorazione'] : 0;
+        if ($lavorazioneId > 0) {
+            $stmt = $this->repository->getConnection()->prepare('SELECT id_preventivo FROM tb_lavorazioni WHERE id_lavorazione = :id LIMIT 1');
+            $stmt->bindValue(':id', $lavorazioneId, \PDO::PARAM_INT);
+            $stmt->execute();
+            $preventivoId = (int) ($stmt->fetchColumn() ?: 0);
+            if ($preventivoId > 0) {
+                $prevRepo = new PreventiviRepository($this->repository->getConnection());
+                $cedStatus = $prevRepo->findStatusByCode('revisionato_ced');
+                if ($cedStatus !== null) {
+                    $prevRepo->updateStatus($preventivoId, (int) $cedStatus['id_stato']);
+                }
+            }
+        }
 
         return [
             'ok' => true,
-            'quantities' => $normalized,
         ];
+    }
+
+    private function isStampaCategory(?string $category): bool
+    {
+        $value = trim((string) ($category ?? ''));
+        if ($value === '') {
+            return false;
+        }
+        $lower = function_exists('mb_strtolower') ? mb_strtolower($value) : strtolower($value);
+        $normalized = preg_replace('/[^a-z0-9]+/', '', $lower);
+        if ($normalized === 'stampa') {
+            return true;
+        }
+        return str_starts_with($normalized, 'stampa') && str_contains($normalized, 'imbustamento');
+    }
+
+    private function isStampaActivityLabel(string $label): bool
+    {
+        $value = trim($label);
+        if ($value === '') {
+            return false;
+        }
+        $lower = function_exists('mb_strtolower') ? mb_strtolower($value) : strtolower($value);
+        return str_contains($lower, 'stampa');
+    }
+
+    private function isPostaActivityLabel(string $label): bool
+    {
+        $value = trim($label);
+        if ($value === '') {
+            return false;
+        }
+        $lower = function_exists('mb_strtolower') ? mb_strtolower($value) : strtolower($value);
+        return str_contains($lower, 'posta');
+    }
+
+    private function isTariffePostaliCategory(?string $category): bool
+    {
+        $value = trim((string) ($category ?? ''));
+        if ($value === '') {
+            return false;
+        }
+        $lower = function_exists('mb_strtolower') ? mb_strtolower($value) : strtolower($value);
+        $normalized = preg_replace('/[^a-z0-9]+/', '', $lower);
+        if ($normalized === 'tariffepostali') {
+            return true;
+        }
+        return str_starts_with($normalized, 'tariffepostali');
+    }
+
+    private function isTariffePostaliLine(array $line): bool
+    {
+        $idCategoria = isset($line['id_categoria']) ? (int) $line['id_categoria'] : 0;
+        if ($idCategoria === 2) {
+            return true;
+        }
+        $category = $line['categoria'] ?? $line['categoria_nome'] ?? null;
+        return $this->isTariffePostaliCategory(is_string($category) ? $category : null);
     }
 
     /**
      * @param array<string, mixed> $input
      * @return array<string, mixed>
      */
-    public function saveReportField(array $input): array
-    {
-        $fieldId = $this->sanitizeOptionalInt($input['id_field'] ?? ($input['field_id'] ?? 0));
-        $affrancaturaId = $this->sanitizeOptionalInt($input['id_affrancatura'] ?? ($input['affrancatura_id'] ?? null));
-        if ($affrancaturaId > 0) {
-            $affrancatura = $this->repository->findSpedizioneAffrancatura($affrancaturaId);
-            if ($affrancatura === null) {
-                throw new \RuntimeException('Affrancatura non valida.', 422);
-            }
-        } else {
-            $affrancaturaId = null;
-        }
-
-        $fieldCode = trim((string) ($input['field_code'] ?? ($input['code'] ?? '')));
-        if ($fieldCode === '') {
-            throw new \RuntimeException('Codice campo mancante.', 422);
-        }
-        $fieldCode = strtoupper($fieldCode);
-
-        $label = trim((string) ($input['label'] ?? ($input['name'] ?? '')));
-        if ($label === '') {
-            throw new \RuntimeException('Etichetta campo mancante.', 422);
-        }
-
-        $descriptionRaw = array_key_exists('description', $input) ? (string) $input['description'] : '';
-        $description = trim($descriptionRaw) !== '' ? trim($descriptionRaw) : null;
-
-        $ordering = $this->sanitizeInt($input['ordering'] ?? ($input['order'] ?? 100), 0, 1000);
-        $isVisibleInput = array_key_exists('is_visible', $input) ? $input['is_visible'] : ($input['visible'] ?? 1);
-        $isVisible = filter_var($isVisibleInput, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
-        $isVisible = $isVisible ?? true;
-
-        $existing = $this->repository->findSpedizioneReportFieldByCode($affrancaturaId, $fieldCode);
-        if ($existing !== null && ($fieldId <= 0 || (int) ($existing['id_field'] ?? 0) !== $fieldId)) {
-            throw new \RuntimeException('Codice campo già configurato per questa affrancatura.', 422);
-        }
-
-        $data = [
-            'id_affrancatura' => $affrancaturaId,
-            'field_code' => $fieldCode,
-            'label' => $label,
-            'description' => $description,
-            'ordering' => $ordering,
-            'is_visible' => $isVisible ? 1 : 0,
-        ];
-
-        if ($fieldId > 0) {
-            $this->repository->updateSpedizioneReportField($fieldId, $data);
-        } else {
-            $fieldId = $this->repository->createSpedizioneReportField($data);
-        }
-
-        $field = $this->repository->findSpedizioneReportField($fieldId);
-        if ($field === null) {
-            throw new \RuntimeException('Impossibile recuperare il campo report salvato.', 500);
-        }
-
-        return [
-            'ok' => true,
-            'field' => $field,
-        ];
-    }
-
-    /**
-     * @param array<string, mixed> $input
-     * @return array<string, mixed>
-     */
-    public function deleteReportField(array $input): array
-    {
-        $fieldId = $this->sanitizeInt($input['id_field'] ?? ($input['field_id'] ?? 0), 1, PHP_INT_MAX);
-        $this->repository->deleteSpedizioneReportField($fieldId);
-        return [
-            'ok' => true,
-            'id_field' => $fieldId,
-        ];
-    }
-
-    /**
-     * @param array<string, mixed> $input
-     * @return array<string, int>
-     */
-    private function resolveSpedizioneChain(array $input): array
-    {
-        $operatoreId = $this->sanitizeOptionalInt(
-            $input['id_operatore_postale'] ?? ($input['operatore_id'] ?? null),
-        );
-        if ($operatoreId > 0) {
-            $operatore = $this->repository->findSpedizioneOperatorePostale($operatoreId);
-            if ($operatore === null || empty($operatore['attivo'])) {
-                throw new \RuntimeException('Operatore postale non disponibile.', 422);
-            }
-        } else {
-            $operatore = null;
-        }
-
-        $affrancaturaId = $this->sanitizeOptionalInt(
-            $input['id_affrancatura'] ?? ($input['affrancatura_id'] ?? null),
-        );
-        if ($affrancaturaId > 0) {
-            $affrancatura = $this->repository->findSpedizioneAffrancatura($affrancaturaId);
-            if ($affrancatura === null) {
-                throw new \RuntimeException('Dettaglio affrancatura non disponibile.', 422);
-            }
-            if ($operatoreId > 0 && (int) ($affrancatura['id_operatore_postale'] ?? 0) !== $operatoreId) {
-                throw new \RuntimeException('Affrancatura non disponibile per l\'operatore selezionato.', 422);
-            }
-        } else {
-            $affrancatura = null;
-        }
-
-        $tariffaId = $this->sanitizeOptionalInt(
-            $input['id_tariffa'] ?? ($input['tariffa_id'] ?? null),
-        );
-        if ($tariffaId > 0) {
-            $tariffa = $this->repository->findSpedizioneTariffa($tariffaId);
-            if ($tariffa === null) {
-                throw new \RuntimeException('Tariffa non disponibile.', 422);
-            }
-            if ($affrancaturaId > 0 && (int) ($tariffa['id_affrancatura'] ?? 0) !== $affrancaturaId) {
-                throw new \RuntimeException('Tariffa non disponibile per l\'affrancatura scelta.', 422);
-            }
-        } else {
-            $tariffa = null;
-        }
-
-        $autorizzazioneId = $this->sanitizeOptionalInt(
-            $input['id_autorizzazione'] ?? ($input['autorizzazione_id'] ?? null),
-        );
-        if ($autorizzazioneId > 0) {
-            $autorizzazione = $this->repository->findSpedizioneAutorizzazione($autorizzazioneId);
-            if ($autorizzazione === null) {
-                throw new \RuntimeException('Autorizzazione postale non disponibile.', 422);
-            }
-            if ($affrancaturaId > 0 && (int) ($autorizzazione['id_affrancatura'] ?? 0) !== $affrancaturaId) {
-                throw new \RuntimeException('Autorizzazione non compatibile con l\'affrancatura scelta.', 422);
-            }
-        } else {
-            $autorizzazione = null;
-        }
-
-        $portoId = $this->sanitizeOptionalInt(
-            $input['id_porto_destinazione'] ?? ($input['porto_id'] ?? null),
-        );
-        if ($portoId > 0) {
-            $porto = $this->repository->findSpedizionePorto($portoId);
-            if ($porto === null) {
-                throw new \RuntimeException('Porto non disponibile.', 422);
-            }
-            if ($autorizzazioneId > 0 && (int) ($porto['id_autorizzazione'] ?? 0) !== $autorizzazioneId) {
-                throw new \RuntimeException('Porto non valido per l\'autorizzazione selezionata.', 422);
-            }
-        } else {
-            $porto = null;
-        }
-
-        return [
-            'operatore_id' => $operatoreId,
-            'affrancatura_id' => $affrancaturaId,
-            'tariffa_id' => $tariffaId,
-            'autorizzazione_id' => $autorizzazioneId,
-            'porto_id' => $portoId,
-        ];
-    }
-
     private function sanitizeOptionalInt($value): int
     {
         $candidate = isset($value) ? (int) $value : 0;
@@ -1666,20 +1433,6 @@ final class LavorazioniService
             return 100;
         }
         return $number;
-    }
-
-    private function buildDistintaCode(int $spedizioneId, ?string $templateCode): string
-    {
-        $prefix = 'SPD';
-        if (is_string($templateCode) && trim($templateCode) !== '') {
-            $clean = preg_replace('/[^A-Z0-9]/', '', strtoupper($templateCode));
-            if ($clean !== '') {
-                $prefix = $clean;
-            }
-        }
-        $timestamp = (new \DateTimeImmutable())->format('YmdHis');
-        $random = strtoupper(substr(uniqid(), -6));
-        return sprintf('DIST-%s-%d-%s%s', $prefix, $spedizioneId, $timestamp, $random);
     }
 
     private function derivePercentByStatus(string $status, array $activityMeta): ?int

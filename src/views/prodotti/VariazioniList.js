@@ -8,6 +8,7 @@ import {
   CCol,
   CForm,
   CFormInput,
+  CFormSelect,
   CRow,
   CSpinner,
   CTable,
@@ -41,6 +42,13 @@ const VariazioniList = () => {
     { field: 'categoria', dir: 'asc' },
     { field: 'nome', dir: 'asc' },
   ])
+
+  const categoryOptions = React.useMemo(() => {
+    const list = items
+      .map((i) => String(i.categoria || '').trim())
+      .filter(Boolean)
+    return Array.from(new Set(list)).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+  }, [items])
 
   const showToast = (message, type = 'success') => {
     setToast({ open: true, type, message })
@@ -171,19 +179,29 @@ const VariazioniList = () => {
         {formVisible && (
           <CForm onSubmit={save} className="mb-4">
             <CRow className="g-2 align-items-end">
-              <CCol md={6}>
+              <CCol md={3}>
+                <CFormSelect
+                  value={categoryOptions.includes(String(category)) ? String(category) : ''}
+                  onChange={(e) => setCategory(e.target.value)}
+                >
+                  <option value="">Seleziona categoria esistente</option>
+                  {categoryOptions.map((c) => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </CFormSelect>
+              </CCol>
+              <CCol md={3}>
+                <CFormInput
+                  placeholder="Categoria (nuova o esistente)"
+                  value={category}
+                  onChange={(e) => setCategory(e.target.value)}
+                />
+              </CCol>
+              <CCol md={4}>
                 <CFormInput placeholder="Nome variazione" value={name} onChange={(e) => setName(e.target.value)} required />
               </CCol>
-              <CCol md={4}>
+              <CCol md={2}>
                 <CFormInput placeholder="Codice variazione (unico)" value={code} onChange={(e) => setCode(e.target.value)} />
-              </CCol>
-              <CCol md={4}>
-                <CFormInput placeholder="Categoria (es. colore, peso)" value={category} onChange={(e) => setCategory(e.target.value)} list="var-cat-suggestions" />
-                <datalist id="var-cat-suggestions">
-                  {Array.from(new Set(items.map((i) => i.categoria).filter(Boolean))).map((c) => (
-                    <option key={c} value={c} />
-                  ))}
-                </datalist>
               </CCol>
               <CCol md="auto">
                 <PermissionButton

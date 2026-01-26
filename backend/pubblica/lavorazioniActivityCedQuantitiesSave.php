@@ -12,26 +12,27 @@ use MediaPrint\Backend\AuthGuard;
 header('Content-Type: application/json');
 
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
-
 if ($method === 'OPTIONS') {
     HttpResponse::json(['message' => 'OK']);
 }
 
-if ($method !== 'GET') {
-    header('Allow: GET, OPTIONS');
+if ($method !== 'POST') {
+    header('Allow: POST, OPTIONS');
     HttpResponse::error('Metodo non consentito.', 405);
 }
 
 try {
     $auth = AuthGuard::requireAuth();
-    AuthGuard::requirePermissions($auth, ['job.read']);
-    if (AuthGuard::getAccountType($auth) === 'cliente') {
-        throw new RuntimeException('Accesso non consentito.', 403);
+    AuthGuard::requirePermissions($auth, ['job.write']);
+
+    $payload = json_decode(file_get_contents('php://input') ?: 'null', true);
+    if (!is_array($payload)) {
+        $payload = [];
     }
 
     $service = new LavorazioniService(new LavorazioniRepository(Database::getConnection()));
-    $result = $service->listReportFields($_GET ?? []);
-    HttpResponse::json($result);
+    $result = $service->saveActivityCedQuantities($payload);
+    HttpResponse::json($result, 200);
 } catch (RuntimeException $exception) {
     $code = (int) $exception->getCode();
     if ($code < 400 || $code >= 600) {

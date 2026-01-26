@@ -33,7 +33,12 @@ $auth = AuthGuard::requireAuth();
     }
 
     $connection = Database::getConnection();
-    $service = new PreventiviService(new PreventiviRepository($connection));
+    $service = new PreventiviService(
+        new PreventiviRepository($connection),
+        null,
+        null,
+        new LavorazioniRepository($connection)
+    );
     $result = $service->create($payload);
 
     $isNew = empty($payload['id_preventivo']) && !empty($result['id_preventivo']);

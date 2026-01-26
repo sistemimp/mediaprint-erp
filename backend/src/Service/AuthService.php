@@ -91,11 +91,9 @@ final class AuthService
 
         $issuer = getenv('JWT_ISSUER') ?: 'mediaprint-erp';
         $audience = getenv('JWT_AUDIENCE') ?: 'mediaprint-client';
-        $ttl = (int) (getenv('JWT_TTL') ?: 3600);
-        $seconds = max($ttl, 60);
-
         $now = new DateTimeImmutable('now');
-        $expires = $now->modify("+{$seconds} seconds");
+        // Expire at the end of the login day (server timezone).
+        $expires = $now->setTime(23, 59, 59);
         if ($expires === false) {
             throw new RuntimeException('Impossibile calcolare la scadenza del token.');
         }

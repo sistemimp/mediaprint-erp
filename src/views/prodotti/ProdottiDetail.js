@@ -70,6 +70,7 @@ const ProdottiDetail = () => {
   const [comboPrezzoVal, setComboPrezzoVal] = useState('')
   const [comboEditing, setComboEditing] = useState(false)
   const [comboSelByCat, setComboSelByCat] = useState({})
+  const [comboGenerating, setComboGenerating] = useState(false)
   // Raggruppamento combinazioni
   const [groupCat1, setGroupCat1] = useState('')
   const [groupCat2, setGroupCat2] = useState('')
@@ -162,8 +163,7 @@ const ProdottiDetail = () => {
   const handleLink = async () => {
     if (!selectedVar) return
     try {
-      const delta = 0
-      await linkProdottoVariazione({ token, id_prodotto: id, id_variazione: Number(selectedVar), delta })
+      await linkProdottoVariazione({ token, id_prodotto: id, id_variazione: Number(selectedVar) })
       const { items } = await fetchProdottoVariazioni({ token, id_prodotto: id })
       setAssegnate(items)
       setSelectedVar('')
@@ -288,6 +288,72 @@ const ProdottiDetail = () => {
     }
     return Array.from(set).sort((a, b) => String(a).localeCompare(String(b)))
   }, [comboPrezzi, varById])
+
+  const comboExistingKeys = useMemo(() => {
+    const set = new Set()
+    for (const r of comboPrezzi || []) {
+      const ids = Array.isArray(r.var_ids) ? r.var_ids.map(Number).filter((n) => n > 0) : []
+      if (ids.length === 0) continue
+      ids.sort((a, b) => a - b)
+      set.add(ids.join('+'))
+    }
+    return set
+  }, [comboPrezzi])
+
+  const buildComboKey = (ids) => {
+    const clean = (Array.isArray(ids) ? ids : []).map(Number).filter((n) => n > 0)
+    if (clean.length === 0) return ''
+    clean.sort((a, b) => a - b)
+    return clean.join('+')
+  }
+
+  const handleGenerateAllCombos = async () => {
+    if (comboGenerating) return
+    const cats = Object.keys(comboOptionsByCategory).sort((a, b) => String(a).localeCompare(String(b)))
+    if (cats.length === 0) {
+      showToast('Nessuna variazione assegnata al prodotto', 'error')
+      return
+    }
+    const lists = cats.map((cat) => comboOptionsByCategory[cat].map((v) => Number(v.id_variazione)).filter((n) => n > 0))
+    if (lists.some((l) => l.length === 0)) {
+      showToast('Verifica le variazioni: almeno una categoria è vuota', 'error')
+      return
+    }
+    let combos = [[]]
+    for (const list of lists) {
+      const next = []
+      for (const base of combos) {
+        for (const idv of list) next.push([...base, idv])
+      }
+      combos = next
+    }
+    const toCreate = []
+    const seen = new Set()
+    for (const combo of combos) {
+      const key = buildComboKey(combo)
+      if (!key || comboExistingKeys.has(key) || seen.has(key)) continue
+      seen.add(key)
+      toCreate.push(key.split('+').map((n) => Number(n)))
+    }
+    if (toCreate.length === 0) {
+      showToast('Nessuna combinazione nuova da creare', 'success')
+      return
+    }
+    setComboGenerating(true)
+    try {
+      for (const ids of toCreate) {
+        await upsertProdottoPrezzoCombinato({ token, id_prodotto: id, var_ids: ids, prezzo: null })
+      }
+      const { items } = await fetchProdottoPrezziCombinati({ token, id_prodotto: id })
+      setComboPrezzi(items)
+      showToast(`Generate ${toCreate.length} combinazioni`, 'success')
+    } catch (e) {
+      setError(e)
+      showToast(e.message || 'Errore generazione combinazioni', 'error')
+    } finally {
+      setComboGenerating(false)
+    }
+  }
 
   // Struttura raggruppata fino a 2 livelli, ordinabile per codice variazione
   const groupedData = useMemo(() => {
@@ -590,6 +656,15 @@ const ProdottiDetail = () => {
                   permission="prod.write"
                 >
                   {comboEditing ? 'Salva' : 'Aggiungi'}
+                </PermissionButton>
+                <PermissionButton
+                  color="secondary"
+                  variant="outline"
+                  onClick={handleGenerateAllCombos}
+                  disabled={comboGenerating || Object.keys(comboOptionsByCategory).length === 0}
+                  permission="prod.write"
+                >
+                  {comboGenerating ? 'Generazione...' : 'Genera combinazioni'}
                 </PermissionButton>
                 {comboEditing && (
                   <CButton color="secondary" variant="outline" onClick={handleComboCancel}>Annulla</CButton>

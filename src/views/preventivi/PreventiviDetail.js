@@ -35,21 +35,25 @@ import {
   CModalTitle,
   CModalBody,
   CModalFooter,
+  CPopover,
 } from '@coreui/react'
 import { CStepper } from '@coreui/react-pro'
 import AnagraficaAutocomplete from '../../components/AnagraficaAutocomplete'
 import PreventivoContattiTable from '../../components/PreventivoContattiTable'
 import { normalizePreventivoContact, serializePreventivoContacts } from '../../utils/preventiviContacts'
+import { getPreventivoIdFromResponse } from '../../utils/preventiviResponses'
 import CIcon from '@coreui/icons-react'
 import {
   cilArrowRight,
   cilCheckCircle,
   cilCog,
+  cilCopy,
   cilEnvelopeClosed,
   cilPlus,
   cilReload,
   cilSave,
   cilTrash,
+  cilWarning,
   cilX,
   cilZoom,
   cibAdobeAcrobatReader,
@@ -105,6 +109,7 @@ const formatDate = (value) => {
   if (Number.isNaN(date.getTime())) return '-'
   return date.toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' })
 }
+const CED_QTY_DIFF_THRESHOLD = 0.0001
 
 const normalizeOggettoOption = (option) => {
   if (!option) return null
@@ -167,6 +172,27 @@ const mergeOggettoOptionLists = (base = [], extra = []) => {
   base.forEach(pushOption)
   extra.forEach(pushOption)
   return merged
+}
+
+const normalizeLavorazioneItem = (item) => {
+  if (!item) return null
+  const rawId =
+    item.id_lavorazione ??
+    item.id ??
+    item.idLavorazione ??
+    null
+  const id = Number(rawId)
+  if (!Number.isFinite(id) || id <= 0) {
+    return null
+  }
+  return {
+    id,
+    id_lavorazione: id,
+    codice: item.codice ?? item.code ?? null,
+    titolo: item.titolo ?? item.title ?? null,
+    stato: item.stato ?? item.status ?? null,
+    created_at: item.created_at ?? item.createdAt ?? item.lavorazione_creata_il ?? null,
+  }
 }
 
 const buildAnagraficaOptions = ({
@@ -291,6 +317,8 @@ const PreventiviDetail = () => {
   const [statusTab, setStatusTab] = useState('timeline')
   const [archiveLoading, setArchiveLoading] = useState(false)
   const [archiveError, setArchiveError] = useState(null)
+  const [duplicateLoading, setDuplicateLoading] = useState(false)
+  const [duplicateError, setDuplicateError] = useState(null)
   const [revisionModalVisible, setRevisionModalVisible] = useState(false)
   const [revisionModalLoading, setRevisionModalLoading] = useState(false)
   const [revisionModalError, setRevisionModalError] = useState(null)
@@ -374,7 +402,7 @@ const PreventiviDetail = () => {
   const [fatturaResult, setFatturaResult] = useState(null)
   const [linkedDdt, setLinkedDdt] = useState([])
   const [linkedFatture, setLinkedFatture] = useState([])
-  const [lavorazioneInfo, setLavorazioneInfo] = useState({ id: null, codice: null, createdAt: null })
+  const [linkedLavorazioni, setLinkedLavorazioni] = useState([])
   const [lavorazioneGenerating, setLavorazioneGenerating] = useState(false)
   const [lavorazioneError, setLavorazioneError] = useState(null)
   const [lavorazioneSuccess, setLavorazioneSuccess] = useState(null)
@@ -390,6 +418,23 @@ const PreventiviDetail = () => {
   const [righe, setRighe] = useState([])
   // Mappa id_prodotto -> nome categoria per raggruppamento righe
   const [prodCategoryMap, setProdCategoryMap] = useState({})
+  const computeCedWarning = useCallback((row) => {
+    if (!row) {
+      return false
+    }
+    const cedRaw = row.quantita_ced
+    const hasCedQty = cedRaw !== null && cedRaw !== undefined && cedRaw !== ''
+    const currentQty = Number(row.quantita ?? 0) || 0
+    if (hasCedQty) {
+      const cedQty = Number(cedRaw)
+      if (Number.isFinite(cedQty)) {
+        const diff = Math.abs(cedQty - currentQty)
+        return diff > CED_QTY_DIFF_THRESHOLD
+      }
+      return true
+    }
+    return Boolean(row.created_by_ced)
+  }, [])
 
   // Stepper prodotti
   const [stepperOpen, setStepperOpen] = useState(false)
@@ -778,6 +823,7 @@ const PreventiviDetail = () => {
           contatti: contattiSrv,
           linkedDdt: linkedDdtSrv,
           linkedFatture: linkedFattureSrv,
+          linkedLavorazioni: linkedLavorazioniSrv,
           revisions: revisionsSrv,
           statuses,
           currentStatus: current,
@@ -924,6 +970,7 @@ const PreventiviDetail = () => {
               const categoriaNome =
                 r.categoria_nome ?? r.categoria ?? r.nome_categoria ?? r.nome_categoria_prodotto ?? null
               return {
+                id_riga: r.id_riga ?? null,
                 descrizione: r.descrizione ?? '',
                 quantita: r.quantita ?? 1,
                 prezzo: r.prezzo_unitario ?? 0,
@@ -934,6 +981,9 @@ const PreventiviDetail = () => {
                 id_sdi_natura_iva: r.id_sdi_natura_iva ?? null,
                 id_categoria: idCategoria != null ? Number(idCategoria) : null,
                 categoria_nome: categoriaNome != null ? String(categoriaNome) : undefined,
+                created_by_ced: Boolean(r.created_by_ced),
+                quantita_ced: r.quantita_ced ?? null,
+                ced_warning: Boolean(r.ced_warning),
               }
             }),
           )
@@ -962,11 +1012,19 @@ const PreventiviDetail = () => {
         )
         setLinkedDdt(Array.isArray(linkedDdtSrv) ? linkedDdtSrv : [])
         setLinkedFatture(Array.isArray(linkedFattureSrv) ? linkedFattureSrv : [])
-        setLavorazioneInfo({
-          id: data.id_lavorazione_corrente ?? null,
-          codice: data.lavorazione_codice ?? null,
-          createdAt: data.lavorazione_creata_il ?? null,
-        })
+        const normalizedLavorazioni = Array.isArray(linkedLavorazioniSrv)
+          ? linkedLavorazioniSrv.map(normalizeLavorazioneItem).filter(Boolean)
+          : []
+        if (normalizedLavorazioni.length === 0) {
+          const fallback = normalizeLavorazioneItem({
+            id_lavorazione: data.id_lavorazione_corrente ?? null,
+            codice: data.lavorazione_codice ?? null,
+            created_at: data.lavorazione_creata_il ?? null,
+          })
+          setLinkedLavorazioni(fallback ? [fallback] : [])
+        } else {
+          setLinkedLavorazioni(normalizedLavorazioni)
+        }
       } catch (e) {
         if (e.name === 'AbortError') return
         if (e.status === 401 && logout) {
@@ -1337,20 +1395,31 @@ const PreventiviDetail = () => {
         .sort((a, b) => a - b)
         .join('+'))
     const comboPrice = comboKey && prodComboMap[comboKey] != null ? Number(prodComboMap[comboKey]) : null
-    const delta = prodVarOptions
-      .filter((v) => selectedVarIds.includes(v.id_variazione))
-      .reduce((acc, v) => acc + (Number(v.delta_prezzo) || 0), 0)
-    const suggested = comboPrice != null ? comboPrice : base + delta
+    const suggested = comboPrice != null ? comboPrice : base
     setModalPrice(suggested)
   }, [selProd, prodOptions, selectedComboKey, selectedVarIds, prodVarOptions, prodComboMap])
 
   const updateRiga = (index, patch) => {
-    setRighe((rows) => rows.map((r, i) => (i === index ? { ...r, ...patch } : r)))
+    setRighe((rows) =>
+      rows.map((r, i) => {
+        if (i !== index) {
+          return r
+        }
+        const updated = { ...r, ...patch }
+        return { ...updated, ced_warning: computeCedWarning(updated) }
+      }),
+    )
   }
   const handleAddRiga = () => {
-    setRighe((rows) =>
-      rows.concat({ descrizione: '', quantita: 1, prezzo: 0, iva: 22, sconto: 0, combo_key: null }),
-    )
+    const newRow = {
+      descrizione: '',
+      quantita: 1,
+      prezzo: 0,
+      iva: 22,
+      sconto: 0,
+      combo_key: null,
+    }
+    setRighe((rows) => rows.concat({ ...newRow, ced_warning: computeCedWarning(newRow) }))
   }
 
   const resetProductModal = () => {
@@ -1615,7 +1684,7 @@ const PreventiviDetail = () => {
   // Stepper usa gestione inline (3 step). Le transizioni 1->bozza, 2->inviato
   // sono gestite direttamente, mentre il passo 3 (Finale) usa la select.
 
-  const buildPayload = () => {
+  const buildPayload = ({ includeId = true } = {}) => {
     const normalizedRighe = (Array.isArray(righe) ? righe : []).map((r) => ({
       ...r,
       combo_key: r?.combo_key ?? null,
@@ -1625,7 +1694,7 @@ const PreventiviDetail = () => {
     const resolvedMittenteId =
       Number.isFinite(numericMittente) && numericMittente > 0 ? numericMittente : null
     const payload = {
-      id_preventivo: id,
+      id_preventivo: includeId ? id : undefined,
       id_anagrafica: Number(idAnagrafica) || 0,
       id_mittente: resolvedMittenteId,
       data_preventivo: dataPreventivo,
@@ -1643,6 +1712,9 @@ const PreventiviDetail = () => {
         totale: totals.totale,
         sconto: 0,
       },
+    }
+    if (!includeId) {
+      delete payload.id_preventivo
     }
     payload.note_dirty = noteDirty ? 1 : 0
     return payload
@@ -1674,16 +1746,24 @@ const PreventiviDetail = () => {
     return `Fattura generata dal preventivo ID ${id}.`
   }, [headerNumero, headerAnno, id])
   const preventivoHasRighe = useMemo(() => Array.isArray(righe) && righe.length > 0, [righe])
-  const hasLinkedLavorazione = Boolean(lavorazioneInfo?.id)
-  const linkedLavorazioneId = lavorazioneInfo?.id ?? null
-  const canGenerateLavorazione = isConfirmed && !hasLinkedLavorazione && preventivoHasRighe
+  const latestLinkedLavorazione = useMemo(
+    () => (linkedLavorazioni.length > 0 ? linkedLavorazioni[0] : null),
+    [linkedLavorazioni],
+  )
+  const hasLinkedLavorazione = linkedLavorazioni.length > 0
+  const linkedLavorazioneId = latestLinkedLavorazione?.id ?? null
+  const canGenerateLavorazione = isConfirmed && preventivoHasRighe
   const currentUserId = user?.id_user ?? user?.id ?? null
   const currentUserName = user?.full_name ?? user?.name ?? user?.username ?? user?.nickname ?? null
 
-  const handleOpenLavorazioneDetail = useCallback(() => {
-    if (!linkedLavorazioneId) return
-    navigate(`/lavorazioni/dettaglio?id=${linkedLavorazioneId}`)
-  }, [navigate, linkedLavorazioneId])
+  const handleOpenLavorazioneDetail = useCallback(
+    (targetId) => {
+      const resolvedId = Number(targetId ?? linkedLavorazioneId)
+      if (!Number.isFinite(resolvedId) || resolvedId <= 0) return
+      navigate(`/lavorazioni/dettaglio?id=${resolvedId}`)
+    },
+    [navigate, linkedLavorazioneId],
+  )
 
   const handleGenerateLavorazione = useCallback(async () => {
     if (!token || !id) return
@@ -1692,29 +1772,42 @@ const PreventiviDetail = () => {
     setLavorazioneSuccess(null)
     const normalizedNote = typeof note === 'string' ? note.trim() : ''
     try {
-      const titoloLavorazione =
-        (computedOggettoText && computedOggettoText.trim() !== '' ? computedOggettoText : null) ||
-        (oggetto && oggetto.trim() !== '' ? oggetto : null) ||
-        (headerNumero ? `Preventivo ${headerNumero}` : null)
+        const titoloLavorazione =
+          (computedOggettoText && computedOggettoText.trim() !== '' ? computedOggettoText : null) ||
+          (oggetto && oggetto.trim() !== '' ? oggetto : null) ||
+          (headerNumero ? `Preventivo ${headerNumero}` : null)
 
-      const payload = await generateLavorazioneFromPreventivo({
-        token,
-        id,
-        titolo: titoloLavorazione ?? undefined,
-        descrizione: normalizedNote || titoloLavorazione || undefined,
-        note: normalizedNote || undefined,
-      })
+        const payload = await generateLavorazioneFromPreventivo({
+          token,
+          id,
+          titolo: titoloLavorazione ?? undefined,
+          descrizione: normalizedNote || titoloLavorazione || undefined,
+          note: normalizedNote || undefined,
+        })
 
-      const newId = payload?.id_lavorazione ?? payload?.lavorazione?.id_lavorazione ?? null
-      const newCode = payload?.codice ?? payload?.lavorazione?.codice ?? null
-      setLavorazioneInfo({
-        id: newId,
-        codice: newCode,
-        createdAt: new Date().toISOString(),
-      })
-      setLavorazioneSuccess(
-        newCode ? `Lavorazione ${newCode} generata correttamente.` : 'Lavorazione generata correttamente.',
-      )
+        const newId = payload?.id_lavorazione ?? payload?.lavorazione?.id_lavorazione ?? null
+        const newCode = payload?.codice ?? payload?.lavorazione?.codice ?? null
+        const activitiesCreated =
+          Number(payload?.attivita_create ?? payload?.lavorazione?.attivita_create ?? 0) || 0
+        const newEntry = normalizeLavorazioneItem({
+          id_lavorazione: newId,
+          codice: newCode,
+          titolo: titoloLavorazione ?? null,
+          stato: 'aperta',
+          created_at: new Date().toISOString(),
+        })
+        if (newEntry) {
+          setLinkedLavorazioni((prev) => {
+            const list = Array.isArray(prev) ? prev : []
+            const filtered = list.filter((item) => item.id !== newEntry.id)
+            return [newEntry, ...filtered]
+          })
+        }
+        const successMessage = newCode
+          ? `Lavorazione ${newCode} generata correttamente.`
+          : 'Lavorazione generata correttamente.'
+        const activitySuffix = activitiesCreated > 0 ? ` Generate ${activitiesCreated} attivita.` : ''
+        setLavorazioneSuccess(successMessage + activitySuffix)
     } catch (err) {
       if (err?.name === 'AbortError') {
         return
@@ -2045,6 +2138,35 @@ const PreventiviDetail = () => {
     }
   }, [token, id, navigate, logout])
 
+  const handleDuplicatePreventivo = useCallback(async () => {
+    if (!token) return
+    setDuplicateError(null)
+    setDuplicateLoading(true)
+    try {
+      const controller = new AbortController()
+      const payload = buildPayload({ includeId: false })
+      const result = await createPreventivo({
+        token,
+        ...payload,
+        send: false,
+        signal: controller.signal,
+      })
+      const newId = getPreventivoIdFromResponse(result)
+      if (!newId) {
+        throw new Error('Non è stato possibile recuperare l\'ID del preventivo duplicato.')
+      }
+      navigate(`/preventivi/dettagli?id=${newId}`)
+    } catch (err) {
+      if (err?.status === 401 && logout) {
+        logout()
+        return
+      }
+      setDuplicateError(err)
+    } finally {
+      setDuplicateLoading(false)
+    }
+  }, [buildPayload, createPreventivo, token, navigate, logout])
+
   // Allow the component to run all Hooks on every render; effects and logic below already guard on `id`.
   // Visualizzazione stato: 3 step (Bozza -> Inviato -> Finale),
   // con select per scegliere lo stato finale (Confermato/Rifiutato/Annullato)
@@ -2138,7 +2260,10 @@ const PreventiviDetail = () => {
             </small>
             {hasLinkedLavorazione && (
               <div className="text-body-secondary small">
-                Lavorazione collegata: {lavorazioneInfo.codice || `ID ${lavorazioneInfo.id}`}
+                Lavorazioni collegate: {linkedLavorazioni.length}
+                {latestLinkedLavorazione
+                  ? ` - Ultima: ${latestLinkedLavorazione.codice || `ID ${latestLinkedLavorazione.id}`}`
+                  : ''}
               </div>
             )}
           </div>
@@ -2186,17 +2311,19 @@ const PreventiviDetail = () => {
               <CIcon icon={cilTrash} className="me-2" />
               Archivia
             </CButton>
+            <CButton
+              color="secondary"
+              variant="outline"
+              size="sm"
+              type="button"
+              onClick={handleDuplicatePreventivo}
+              disabled={loading || archiveLoading || duplicateLoading || !token}
+            >
+              <CIcon icon={cilCopy} className="me-2" />
+              {duplicateLoading ? 'Duplicazione...' : 'Duplica per nuove attività'}
+            </CButton>
             {hasLinkedLavorazione && (
-              <CButton
-                color="primary"
-                variant="outline"
-                size="sm"
-                type="button"
-                onClick={handleOpenLavorazioneDetail}
-              >
-                <CIcon icon={cilArrowRight} className="me-2" />
-                Apri lavorazione
-              </CButton>
+              null
             )}
             {isConfirmed && (
               <>
@@ -2265,12 +2392,6 @@ const PreventiviDetail = () => {
             {lavorazioneSuccess && (
               <CAlert color="success" className="mb-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
                 <span>{lavorazioneSuccess}</span>
-                {hasLinkedLavorazione && (
-                  <CButton color="success" variant="outline" size="sm" onClick={handleOpenLavorazioneDetail}>
-                    <CIcon icon={cilArrowRight} className="me-2" />
-                    Apri lavorazione
-                  </CButton>
-                )}
               </CAlert>
             )}
             {anagraficaDisabled && (
@@ -2283,6 +2404,11 @@ const PreventiviDetail = () => {
             )}
             {submitSuccess && (
               <CAlert color="success" className="mb-3">{submitSuccess}</CAlert>
+            )}
+            {duplicateError && (
+              <CAlert color="danger" className="mb-3">
+                {duplicateError?.payload?.message || duplicateError.message || 'Impossibile duplicare il preventivo.'}
+              </CAlert>
             )}
 
             {!editable && (
@@ -2468,6 +2594,42 @@ const PreventiviDetail = () => {
                   )}
                 </CTabPane>
                 <CTabPane visible={statusTab === 'documenti'} role="tabpanel">
+                  <h6 className="text-body-secondary mb-3">Lavorazioni collegate</h6>
+                  {linkedLavorazioni.length === 0 ? (
+                    <CAlert color="info" className="mb-4">Nessuna lavorazione collegata al preventivo.</CAlert>
+                  ) : (
+                    <CTable small responsive className="mb-4">
+                      <CTableHead color="light">
+                        <CTableRow>
+                          <CTableHeaderCell>Codice</CTableHeaderCell>
+                          <CTableHeaderCell>Titolo</CTableHeaderCell>
+                          <CTableHeaderCell>Stato</CTableHeaderCell>
+                          <CTableHeaderCell>Creata il</CTableHeaderCell>
+                          <CTableHeaderCell className="text-center">Azioni</CTableHeaderCell>
+                        </CTableRow>
+                      </CTableHead>
+                      <CTableBody>
+                        {linkedLavorazioni.map((lavorazione) => (
+                          <CTableRow key={lavorazione.id}>
+                            <CTableDataCell>{lavorazione.codice || `ID ${lavorazione.id}`}</CTableDataCell>
+                            <CTableDataCell>{lavorazione.titolo || '-'}</CTableDataCell>
+                            <CTableDataCell>{lavorazione.stato || '-'}</CTableDataCell>
+                            <CTableDataCell>{formatDateTime(lavorazione.created_at)}</CTableDataCell>
+                            <CTableDataCell className="text-center">
+                              <CButton
+                                color="link"
+                                size="sm"
+                                className="p-0"
+                                onClick={() => handleOpenLavorazioneDetail(lavorazione.id)}
+                              >
+                                Dettagli
+                              </CButton>
+                            </CTableDataCell>
+                          </CTableRow>
+                        ))}
+                      </CTableBody>
+                    </CTable>
+                  )}
                   <CRow className="g-4">
                     <CCol md={6}>
                       <h6 className="text-body-secondary mb-3">DDT collegati</h6>
@@ -2970,7 +3132,11 @@ const PreventiviDetail = () => {
                         <CTableBody>
                           {pkgPreview.map((r, idx) => (
                             <CTableRow key={idx}>
-                              <CTableDataCell>{r.descrizione}</CTableDataCell>
+                              <CTableDataCell>
+                                <span className="d-inline-flex align-items-center">
+                                  {r.descrizione}
+                                </span>
+                              </CTableDataCell>
                               <CTableDataCell className="text-end">{Number(r.quantita) || 1}</CTableDataCell>
                               <CTableDataCell className="text-end">{(Number(r.prezzo_unitario) || 0).toFixed(2)}</CTableDataCell>
                               <CTableDataCell className="text-end">{r.iva ?? '-'}</CTableDataCell>
@@ -3142,18 +3308,17 @@ const PreventiviDetail = () => {
                           const q = Number(document.getElementById('step-qta')?.value || 1)
                           const prezzoBase = Number(document.getElementById('step-prezzo')?.value || prod.prezzo_listino || 0)
                           const ivaPerc = Number(selIva || prod.iva_percento || 22)
-                          const selectedVars = prodVarOptions.filter((v) => selectedVarIds.includes(v.id_variazione))
-                          const delta = selectedVars.reduce((acc, v) => acc + (Number(v.delta_prezzo) || 0), 0)
-                          const comboKey = selectedVars
-                            .map((v) => Number(v.id_variazione) || 0)
-                            .filter((n) => n > 0)
-                            .sort((a, b) => a - b)
-                            .join('+')
-                          const comboPrice = comboKey && prodComboMap[comboKey] != null ? Number(prodComboMap[comboKey]) : null
+                            const selectedVars = prodVarOptions.filter((v) => selectedVarIds.includes(v.id_variazione))
+                            const comboKey = selectedVars
+                              .map((v) => Number(v.id_variazione) || 0)
+                              .filter((n) => n > 0)
+                              .sort((a, b) => a - b)
+                              .join('+')
+                            const comboPrice = comboKey && prodComboMap[comboKey] != null ? Number(prodComboMap[comboKey]) : null
                           const descr = selectedVars.length > 0
                             ? `${prod.nome} - ${selectedVars.map((v) => `${v.nome}${v.codice ? ' [' + v.codice + ']' : ''}`).join(', ')}`
                             : prod.nome
-                          const prezzoFinale = comboPrice != null ? comboPrice : (prezzoBase + delta)
+                            const prezzoFinale = comboPrice != null ? comboPrice : prezzoBase
                           const riga = { descrizione: descr, quantita: q, prezzo: prezzoFinale, iva: ivaPerc, sconto: 0, id_prodotto: prod.id_prodotto, combo_key: comboKey || null }
                           // Aggiungi categoria del prodotto alla riga per raggruppamento immediato
                           if (prod.id_categoria != null) {
@@ -3506,16 +3671,38 @@ const PreventiviDetail = () => {
                         const impon = Math.max(0, q * p * (1 - s / 100))
                         const ivaVal = impon * (iva / 100)
                         const tot = impon + ivaVal
+                        const showCedWarning = Boolean(riga.ced_warning)
+                        const cedQtyLabel =
+                          riga.quantita_ced != null && riga.quantita_ced !== ''
+                            ? `Quantita CED: ${riga.quantita_ced}`
+                            : 'Quantita CED non disponibile.'
                         out.push(
                           <CTableRow key={idx} className="align-middle">
                             <CTableDataCell>
-                              <CFormTextarea
-                                placeholder="Descrizione articolo/servizio"
-                                value={riga.descrizione}
-                                onChange={(e) => updateRiga(idx, { descrizione: e.target.value })}
-                                disabled={uiDisabled}
-                                style={{ fontSize: "10pt", width: "400px" }}
-                              />
+                              <div className="d-flex align-items-start gap-2">
+                                {showCedWarning ? (
+                                  <CPopover
+                                    content={<span className="text-warning">{cedQtyLabel}</span>}
+                                    placement="top"
+                                    trigger="focus"
+                                  >
+                                    <CButton
+                                      color="link"
+                                      className="p-0 text-warning"
+                                      aria-label="Dettagli quantita CED"
+                                    >
+                                      <CIcon icon={cilWarning} className="mt-1" />
+                                    </CButton>
+                                  </CPopover>
+                                ) : null}
+                                <CFormTextarea
+                                  placeholder="Descrizione articolo/servizio"
+                                  value={riga.descrizione}
+                                  onChange={(e) => updateRiga(idx, { descrizione: e.target.value })}
+                                  disabled={uiDisabled}
+                                  style={{ fontSize: "10pt", width: "400px" }}
+                                />
+                              </div>
                             </CTableDataCell>
                             <CTableDataCell className="text-end">
                               <CFormInput
@@ -3724,7 +3911,11 @@ const PreventiviDetail = () => {
                   <CTableBody>
                     {righe.map((row, idx) => (
                       <CTableRow key={row.id_riga ?? idx}>
-                        <CTableDataCell>{row.descrizione}</CTableDataCell>
+                        <CTableDataCell>
+                          <span className="d-inline-flex align-items-center">
+                            {row.descrizione}
+                          </span>
+                        </CTableDataCell>
                         <CTableDataCell className="text-end">{Number(row.quantita) || 0}</CTableDataCell>
                       </CTableRow>
                     ))}
@@ -3909,7 +4100,11 @@ const PreventiviDetail = () => {
                       const lineTotal = imponibile + ivaAmount
                       return (
                         <CTableRow key={row.id_riga ?? idx}>
-                          <CTableDataCell>{row.descrizione}</CTableDataCell>
+                          <CTableDataCell>
+                            <span className="d-inline-flex align-items-center">
+                              {row.descrizione}
+                            </span>
+                          </CTableDataCell>
                           <CTableDataCell className="text-end">{qty}</CTableDataCell>
                           <CTableDataCell className="text-end">{formatCurrency(price)}</CTableDataCell>
                           <CTableDataCell className="text-end">

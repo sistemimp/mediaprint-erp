@@ -3,13 +3,12 @@ declare(strict_types=1);
 
 require __DIR__ . '/../bootstrap.php';
 
+use MediaPrint\Backend\AuthGuard;
 use MediaPrint\Backend\Database;
 use MediaPrint\Backend\HttpResponse;
+use MediaPrint\Repo\PreventiviRepository;
 use MediaPrint\Repo\LavorazioniRepository;
-use MediaPrint\Service\LavorazioniService;
-use MediaPrint\Backend\AuthGuard;
-
-header('Content-Type: application/json');
+use MediaPrint\Service\PreventiviService;
 
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
@@ -25,18 +24,22 @@ if ($method !== 'POST') {
 
 try {
     $auth = AuthGuard::requireAuth();
-    AuthGuard::requirePermissions($auth, ['job.write']);
-    if (AuthGuard::getAccountType($auth) === 'cliente') {
-        throw new RuntimeException('Accesso non consentito.', 403);
-    }
+    AuthGuard::requirePermissions($auth, ['prev.write']);
 
     $payload = json_decode(file_get_contents('php://input') ?: 'null', true);
     if (!is_array($payload)) {
         $payload = [];
     }
 
-    $service = new LavorazioniService(new LavorazioniRepository(Database::getConnection()));
-    $result = $service->saveReportField($payload);
+    $connection = Database::getConnection();
+    $service = new PreventiviService(
+        new PreventiviRepository($connection),
+        null,
+        null,
+        new LavorazioniRepository($connection)
+    );
+    $result = $service->addLineFromCed($payload);
+
     HttpResponse::json($result, 200);
 } catch (RuntimeException $exception) {
     $code = (int) $exception->getCode();

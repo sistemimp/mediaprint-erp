@@ -38,15 +38,10 @@ try {
         if ($idProdotto <= 0 || $idVariazione <= 0) { throw new RuntimeException('Parametri non validi', 422); }
 
         if ($action === 'link') {
-            $delta = isset($input['delta']) ? (float) $input['delta'] : 0.0;
-            $repo->linkVariazioneToProdotto($idProdotto, $idVariazione, $delta);
+            $repo->linkVariazioneToProdotto($idProdotto, $idVariazione);
             HttpResponse::json(['ok' => true], 200);
         } elseif ($action === 'unlink') {
             $repo->unlinkVariazioneFromProdotto($idProdotto, $idVariazione);
-            HttpResponse::json(['ok' => true], 200);
-        } elseif ($action === 'set') {
-            $delta = isset($input['delta']) ? (float) $input['delta'] : 0.0;
-            $repo->updateVariazioneDelta($idProdotto, $idVariazione, $delta);
             HttpResponse::json(['ok' => true], 200);
         } else {
             throw new RuntimeException('Azione non valida', 422);

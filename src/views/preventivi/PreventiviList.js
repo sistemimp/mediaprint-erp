@@ -28,7 +28,7 @@ import {
   CModalFooter,
 } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
-import { cilDescription, cilEnvelopeClosed, cilPlus, cilPrint, cilZoom } from '@coreui/icons'
+import { cilDescription, cilEnvelopeClosed, cilPlus, cilPrint, cilWarning, cilZoom } from '@coreui/icons'
 
 import { useAuth } from '../../context/AuthContext'
 import PermissionButton from '../../components/PermissionButton'
@@ -866,6 +866,7 @@ const PreventiviList = () => {
                     const latestRevisionLabel = latestRevision
                       ? (latestRevision.label || `Rev.${latestRevision.numero_revision}`)
                       : null
+                    const showCedWarning = Boolean(r.ced_warning)
                     const isExpanded = Boolean(expandedRevisions[r.id_preventivo])
                     return (
                       <React.Fragment key={r.id_preventivo ?? idx}>
@@ -894,9 +895,27 @@ const PreventiviList = () => {
                           <CTableDataCell>{formatCurrency(r.totale)}</CTableDataCell>
                           <CTableDataCell className="text-center">
                             {r.stato_label ? (
-                              <CBadge color="secondary">{r.stato_label}</CBadge>
+                              <div className="d-inline-flex align-items-center gap-1">
+                                {showCedWarning && (
+                                  <CIcon
+                                    icon={cilWarning}
+                                    className="text-warning"
+                                    title="Righe revisionate dal CED"
+                                  />
+                                )}
+                                <CBadge color="secondary">{r.stato_label}</CBadge>
+                              </div>
                             ) : (
-                              <span className="text-body-secondary">-</span>
+                              <span className="text-body-secondary">
+                                {showCedWarning && (
+                                  <CIcon
+                                    icon={cilWarning}
+                                    className="text-warning me-1"
+                                    title="Righe revisionate dal CED"
+                                  />
+                                )}
+                                -
+                              </span>
                             )}
                           </CTableDataCell>
                           <CTableDataCell className="text-center">
