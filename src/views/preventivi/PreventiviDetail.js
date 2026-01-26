@@ -109,6 +109,7 @@ const formatDate = (value) => {
   if (Number.isNaN(date.getTime())) return '-'
   return date.toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' })
 }
+const SELECT_OPTION_WRAP_STYLE = { whiteSpace: 'normal', wordBreak: 'break-word' }
 const CED_QTY_DIFF_THRESHOLD = 0.0001
 
 const normalizeOggettoOption = (option) => {
@@ -3758,10 +3759,14 @@ const PreventiviDetail = () => {
                               <CFormSelect
                                 value={riga.id_sdi_natura_iva ?? ''}
                                 onChange={(e) => updateRiga(idx, { id_sdi_natura_iva: e.target.value ? Number(e.target.value) : null })}
-                                disabled={uiDisabled || Number(riga.iva) !== 0}>
-                                <option value="">--</option>
+                                disabled={uiDisabled || Number(riga.iva) !== 0}
+                                style={SELECT_OPTION_WRAP_STYLE}
+                              >
+                                <option value="" style={SELECT_OPTION_WRAP_STYLE}>
+                                  --
+                                </option>
                                 {naturaOptions.map((n) => (
-                                  <option key={n.id_natura} value={n.id_natura}>
+                                  <option key={n.id_natura} value={n.id_natura} style={SELECT_OPTION_WRAP_STYLE}>
                                     {n.code} - {n.label}
                                   </option>
                                 ))}

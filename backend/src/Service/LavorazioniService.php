@@ -141,6 +141,10 @@ final class LavorazioniService
         }
 
         $this->repository->updateStato($id, $stato);
+        if ($stato === 'completata') {
+            $completionDate = (new \DateTimeImmutable('now'))->format('Y-m-d');
+            $this->repository->updateInfo($id, ['data_fine_prevista' => $completionDate]);
+        }
         $updated = $this->repository->findDetail($id);
 
         return [

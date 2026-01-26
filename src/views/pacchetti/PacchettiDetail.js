@@ -56,6 +56,18 @@ const PacchettiDetail = () => {
   const { token, logout } = useAuth()
 
   const id = Number(query.get('id') || 0)
+  const getActiveTheme = () => {
+    if (typeof document === 'undefined') return 'light'
+    return document.documentElement.dataset.coreuiTheme || 'light'
+  }
+  const [activeTheme, setActiveTheme] = useState(getActiveTheme)
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined
+    const handler = () => setActiveTheme(getActiveTheme())
+    window.addEventListener('ColorSchemeChange', handler)
+    return () => window.removeEventListener('ColorSchemeChange', handler)
+  }, [])
+  const tableHeadColor = activeTheme === 'dark' ? 'dark' : 'light'
 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -243,6 +255,48 @@ const PacchettiDetail = () => {
     return { imponibile, totaleIva, totale }
   }, [righe])
 
+  const groupedRows = useMemo(() => {
+    if (!righe || righe.length === 0) return []
+    const normalized = righe.map((riga, idx) => {
+      const category = String(riga.categoria_nome || '').trim() || 'Altro'
+      const rawDescr = String(riga.descrizione || '').trim()
+      const mainName = (() => {
+        if (!rawDescr) return 'Prodotto'
+        const marker = rawDescr.indexOf(' - ')
+        if (marker > 0) return rawDescr.slice(0, marker)
+        return rawDescr
+      })()
+      const product = mainName
+      return { row: riga, index: idx, category, product }
+    })
+    normalized.sort((a, b) => {
+      const catCompare = a.category.localeCompare(b.category, undefined, { sensitivity: 'base' })
+      if (catCompare !== 0) return catCompare
+      return a.product.localeCompare(b.product, undefined, { sensitivity: 'base' })
+    })
+    const grouped = []
+    let lastCategory = null
+    let lastProduct = null
+    normalized.forEach(({ row, index, category, product }) => {
+      if (category !== lastCategory) {
+        grouped.push({ type: 'category', label: category, key: `cat-${category}-${index}` })
+        lastCategory = category
+        lastProduct = null
+      }
+      if (product !== lastProduct) {
+        grouped.push({ type: 'product', label: product, key: `prod-${product}-${index}` })
+        lastProduct = product
+      }
+      grouped.push({ type: 'row', row, index })
+    })
+    return grouped
+  }, [righe])
+  const categoryRowStyle = {
+    backgroundColor: 'var(--cui-secondary-bg)',
+    borderColor: 'var(--cui-border-color)',
+  }
+  const productRowStyle = { backgroundColor: 'var(--cui-body-bg)' }
+
   const handleSave = async (e) => {
     e.preventDefault()
     setSubmitting(true)
@@ -327,7 +381,7 @@ const PacchettiDetail = () => {
                 <CCol md={12}>
                   <CFormLabel>Descrizione</CFormLabel>
                   <CFormTextarea
-                    rows={12}
+                    rows={4}
                     ref={descrRef}
                     style={{ overflow: 'hidden', resize: 'vertical' }}
                     value={descrizione}
@@ -479,10 +533,19 @@ const PacchettiDetail = () => {
                     </CCol>
                     <CCol md={6}>
                       <CFormLabel>Natura IVA</CFormLabel>
-                      <CFormSelect className="w-auto d-inline-block" size="sm" value={selNatura} onChange={(e) => setSelNatura(e.target.value)} disabled={Number(selIva) !== 0}>
+                      <CFormSelect
+                        className="w-auto d-inline-block"
+                        size="sm"
+                        style={{ whiteSpace: 'normal' }}
+                        value={selNatura}
+                        onChange={(e) => setSelNatura(e.target.value)}
+                        disabled={Number(selIva) !== 0}
+                      >
                         <option value="">--</option>
                         {naturaOptions.map((n) => (
-                          <option key={n.id_natura} value={n.id_natura}>{n.code}</option>
+                          <option key={n.id_natura} value={n.id_natura}>
+                            {n.code}{n.label ? ` - ${n.label}` : ''}
+                          </option>
                         ))}
                       </CFormSelect>
                     </CCol>
@@ -597,7 +660,7 @@ const PacchettiDetail = () => {
                 </div>
               </div>
               <CTable hover responsive small>
-                <CTableHead color="light">
+                <CTableHead color={tableHeadColor}>
                   <CTableRow>
                     <CTableHeaderCell >Descrizione</CTableHeaderCell>
                     <CTableHeaderCell className="text-end">Q.tà</CTableHeaderCell>
@@ -612,69 +675,118 @@ const PacchettiDetail = () => {
                   </CTableRow>
                 </CTableHead>
                 <CTableBody>
-                  {righe.map((riga, idx) => {
-                    const q = Number(riga.quantita) || 0
-                    const p = Number(riga.prezzo) || 0
-                    const s = Number(riga.sconto) || 0
-                    const aliquota = Number(riga.iva) || 0
-                    const impon = Math.max(0, q * p * (1 - s / 100))
-                    const ivaVal = impon * (aliquota / 100)
-                    const tot = impon + ivaVal
-                    return (
-                      <CTableRow key={idx}>
-                        <CTableDataCell>
-                          <CFormInput size="sm" style={{ width: "550px" }} value={riga.descrizione} onChange={(e) => updateRiga(idx, { descrizione: e.target.value })} />
-                        </CTableDataCell>
-                        <CTableDataCell className="text-end">
-                          <CFormInput size="sm" type="number" min="1" step="1" value={riga.quantita} onChange={(e) => updateRiga(idx, { quantita: e.target.value })} />
-                        </CTableDataCell>
-                        <CTableDataCell className="text-end">
-                          <CFormInput size="sm" type="number" min="0" step="0.01" value={riga.prezzo} onChange={(e) => updateRiga(idx, { prezzo: e.target.value })} />
-                        </CTableDataCell>
-                        <CTableDataCell className="text-end">
-                          <CFormInput size="sm" type="number" min="0" max="100" step="0.1" value={riga.sconto} onChange={(e) => updateRiga(idx, { sconto: e.target.value })} />
-                        </CTableDataCell>
-                        <CTableDataCell className="text-end">
-                          <CFormInput size="sm" type="number" min="0" max="100" step="1" value={riga.iva} onChange={(e) => {
-                            const newIva = e.target.value
-                            const patch = { iva: newIva }
-                            if (Number(newIva) !== 0) { patch.id_sdi_natura_iva = null }
-                            updateRiga(idx, patch)
-                          }} />
-                        </CTableDataCell>
-                        <CTableDataCell className="text-center">
-                          <CFormSelect
-                            className="d-inline-block"
-                            size="sm"
-                            value={riga.id_sdi_natura_iva ?? ''}
-                            onChange={(e) => updateRiga(idx, { id_sdi_natura_iva: e.target.value ? Number(e.target.value) : null })}
-                            disabled={Number(riga.iva) !== 0}
+                  {groupedRows.length === 0 ? (
+                    <CTableRow>
+                      <CTableDataCell colSpan={10} className="text-center text-body-secondary py-4">
+                        Nessuna riga definita.
+                      </CTableDataCell>
+                    </CTableRow>
+                  ) : (
+                    groupedRows.map((item, idx) => {
+                      if (item.type === 'category') {
+                      return (
+                        <CTableRow key={item.key ?? `cat-${idx}`}>
+                          <CTableDataCell
+                            colSpan={10}
+                            className="text-body-secondary fw-semibold py-2 border-top border-bottom"
+                            style={categoryRowStyle}
                           >
-                            <option value="">--</option>
-                            {naturaOptions.map((n) => (
-                              <option key={n.id_natura} value={n.id_natura}>
-                                {n.code}
-                              </option>
-                            ))}
-                          </CFormSelect>
-                        </CTableDataCell>
-                        <CTableDataCell className="text-end">{formatCurrency(impon)}</CTableDataCell>
-                        <CTableDataCell className="text-end">{formatCurrency(ivaVal)}</CTableDataCell>
-                        <CTableDataCell className="text-end">{formatCurrency(tot)}</CTableDataCell>
-                        <CTableDataCell className="text-center">
-                          <PermissionButton
-                            color="link"
-                            size="sm"
-                            className="p-0"
-                            onClick={() => handleRemoveRiga(idx)}
-                            permission="pack.write"
+                            Categoria: {item.label}
+                          </CTableDataCell>
+                        </CTableRow>
+                      )
+                    }
+                    if (item.type === 'product') {
+                      return (
+                        <CTableRow key={item.key ?? `prod-${idx}`}>
+                          <CTableDataCell
+                            colSpan={10}
+                            className="text-body-secondary small py-1"
+                            style={productRowStyle}
                           >
-                            <CIcon icon={cilTrash} />
-                          </PermissionButton>
-                        </CTableDataCell>
-                      </CTableRow>
-                    )
-                  })}
+                            Prodotto: {item.label}
+                          </CTableDataCell>
+                        </CTableRow>
+                        )
+                      }
+                      const { row, index: rowIndex } = item
+                      const q = Number(row.quantita) || 0
+                      const p = Number(row.prezzo) || 0
+                      const s = Number(row.sconto) || 0
+                      const aliquota = Number(row.iva) || 0
+                      const impon = Math.max(0, q * p * (1 - s / 100))
+                      const ivaVal = impon * (aliquota / 100)
+                      const tot = impon + ivaVal
+                      return (
+                        <CTableRow key={`row-${rowIndex}`}>
+                          <CTableDataCell>
+                            <CFormTextarea
+                              size="sm"
+                              rows={2}
+                              value={row.descrizione}
+                              onChange={(e) => updateRiga(rowIndex, { descrizione: e.target.value })}
+                              style={{
+                                resize: 'horizontal',
+                                minHeight: '84px',
+                                minWidth: '320px',
+                                maxWidth: '640px',
+                                whiteSpace: 'pre-wrap',
+                                overflowY: 'hidden',
+                              }}
+                            />
+                          </CTableDataCell>
+                          <CTableDataCell className="text-end">
+                            <CFormInput size="sm" type="number" min="1" step="1" value={row.quantita} onChange={(e) => updateRiga(rowIndex, { quantita: e.target.value })} />
+                          </CTableDataCell>
+                          <CTableDataCell className="text-end">
+                            <CFormInput size="sm" type="number" min="0" step="0.01" value={row.prezzo} onChange={(e) => updateRiga(rowIndex, { prezzo: e.target.value })} />
+                          </CTableDataCell>
+                          <CTableDataCell className="text-end">
+                            <CFormInput size="sm" type="number" min="0" max="100" step="0.1" value={row.sconto} onChange={(e) => updateRiga(rowIndex, { sconto: e.target.value })} />
+                          </CTableDataCell>
+                          <CTableDataCell className="text-end">
+                            <CFormInput size="sm" type="number" min="0" max="100" step="1" value={row.iva} onChange={(e) => {
+                              const newIva = e.target.value
+                              const patch = { iva: newIva }
+                              if (Number(newIva) !== 0) { patch.id_sdi_natura_iva = null }
+                              updateRiga(rowIndex, patch)
+                            }} />
+                          </CTableDataCell>
+                          <CTableDataCell className="text-center">
+                            <CFormSelect
+                              className="d-inline-block"
+                              size="sm"
+                              style={{ whiteSpace: 'normal' }}
+                              value={row.id_sdi_natura_iva ?? ''}
+                              onChange={(e) => updateRiga(rowIndex, { id_sdi_natura_iva: e.target.value ? Number(e.target.value) : null })}
+                              disabled={Number(row.iva) !== 0}
+                            >
+                              <option value="">--</option>
+                              {naturaOptions.map((n) => (
+                                <option key={n.id_natura} value={n.id_natura}>
+                                  {n.code}{n.label ? ` - ${n.label}` : ''}
+                                </option>
+                              ))}
+                            </CFormSelect>
+                          </CTableDataCell>
+                          <CTableDataCell className="text-end">{formatCurrency(impon)}</CTableDataCell>
+                          <CTableDataCell className="text-end">{formatCurrency(ivaVal)}</CTableDataCell>
+                          <CTableDataCell className="text-end">{formatCurrency(tot)}</CTableDataCell>
+                          <CTableDataCell className="text-center">
+                            <PermissionButton
+                              color="link"
+                              size="sm"
+                              className="p-0"
+                              onClick={() => handleRemoveRiga(rowIndex)}
+                              permission="pack.write"
+                            >
+                              <CIcon icon={cilTrash} />
+                            </PermissionButton>
+                          </CTableDataCell>
+                        </CTableRow>
+                      )
+                    })
+                  )}
                 </CTableBody>
               </CTable>
             </section>

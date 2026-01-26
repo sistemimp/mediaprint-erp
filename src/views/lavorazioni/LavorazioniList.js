@@ -1,5 +1,5 @@
 /* eslint-disable prettier/prettier */
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { Fragment, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   CAlert,
@@ -19,6 +19,7 @@ import {
   CProgress,
   CRow,
   CSpinner,
+  CCollapse,
   CTable,
   CTableBody,
   CTableDataCell,
@@ -27,9 +28,9 @@ import {
   CTableRow,
 } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
-import { cilCalendar, cilChevronLeft, cilChevronRight, cilFilter, cilList, cilReload, cilViewColumn } from '@coreui/icons'
+import { cilArrowRight, cilCalendar, cilChevronBottom, cilChevronLeft, cilChevronRight, cilChevronTop, cilFilter, cilList, cilReload, cilViewColumn } from '@coreui/icons'
 import classNames from 'classnames'
-import { fetchLavorazioniDashboard, fetchLavorazioniList, updateLavorazioneStatus } from '../../services/lavorazioni'
+import { fetchLavorazioniDashboard, fetchLavorazioniList, fetchLavorazioneDetail, updateLavorazioneStatus } from '../../services/lavorazioni'
 import { useAuth } from '../../context/AuthContext'
 
 const statoOptions = [
@@ -138,6 +139,26 @@ const formatPercent = (value) => {
   return `${numeric.toFixed(0)}%`
 }
 
+const MS_PER_DAY = 1000 * 60 * 60 * 24
+const HIDE_ANNULLED_DAYS = 15
+
+const shouldShowKanbanJob = (job) => {
+  const state = (job?.stato || '').toLowerCase()
+  if (!['annullata', 'completata'].includes(state)) {
+    return true
+  }
+  const raw = job?.updated_at
+  if (!raw) {
+    return true
+  }
+  const timestamp = Date.parse(raw)
+  if (Number.isNaN(timestamp)) {
+    return true
+  }
+  const diffDays = (Date.now() - timestamp) / MS_PER_DAY
+  return diffDays <= HIDE_ANNULLED_DAYS
+}
+
 const renderStatoBadge = (job) => {
   const code = job?.stato || 'aperta'
   const color = statoBadgeMap[code] || 'secondary'
@@ -163,6 +184,57 @@ const renderPrioritaBadge = (priority) => {
   return <CBadge color={color}>{label}</CBadge>
 }
 
+const activityStatoBadgeMap = {
+  todo: 'secondary',
+  in_progress: 'primary',
+  done: 'success',
+  sospesa: 'warning',
+  cancelled: 'danger',
+  annullata: 'danger',
+  default: 'secondary',
+}
+
+const renderActivityStatoBadge = (status) => {
+  const code = (status || '').toString().toLowerCase()
+  const color = activityStatoBadgeMap[code] || activityStatoBadgeMap.default
+  const label = code ? code.replace('_', ' ') : 'n/d'
+  return (
+    <CBadge color={color} className="text-capitalize">
+      {label}
+    </CBadge>
+  )
+}
+
+const activityCardBaseStyle = {
+  backgroundColor: 'var(--cui-card-bg, var(--cui-body-bg, #fff))',
+  color: 'var(--cui-body-color, #000)',
+  borderColor: 'var(--cui-border-color, rgba(0, 0, 0, 0.125))',
+}
+
+const buildJobLabelInfo = (job) => {
+  const jobId = job?.id_lavorazione
+  const fallbackCode = jobId ? `JOB-${jobId}` : job?.codice || 'N/A'
+  return {
+    referenceTitle: job.preventivo_riferimento || job.codice || job.titolo || fallbackCode,
+    objectDescription: job.preventivo_oggetto || job.titolo || job.codice || '',
+    codeLabel: job.codice || fallbackCode,
+  }
+}
+
+const formatJobReferenceLabel = (job) => {
+  const jobId = job?.id_lavorazione
+  const code = job?.codice || (jobId ? `JOB-${jobId}` : 'JOB-0000')
+  const reference = (job?.preventivo_riferimento || '').trim()
+  return reference ? `${code} - ${reference}` : code
+}
+
+const kanbanCardStyle = {
+  backgroundColor: 'var(--cui-card-bg, var(--cui-body-bg, #fff))',
+  color: 'var(--cui-body-color, #000)',
+  borderColor: 'var(--cui-border-color, rgba(0, 0, 0, 0.125))',
+  boxShadow: 'var(--cui-card-box-shadow, 0 0.35rem 0.75rem rgba(0, 0, 0, 0.15))',
+}
+
 const LavorazioniList = () => {
   const navigate = useNavigate()
   const { token } = useAuth()
@@ -181,7 +253,18 @@ const LavorazioniList = () => {
   const [draggedJobId, setDraggedJobId] = useState(null)
   const [activeDropColumn, setActiveDropColumn] = useState(null)
   const [kanbanStatusError, setKanbanStatusError] = useState(null)
+  const [expandedJobs, setExpandedJobs] = useState([])
+  const [activitiesByJob, setActivitiesByJob] = useState({})
+  const [activitiesLoading, setActivitiesLoading] = useState({})
+  const [activitiesError, setActivitiesError] = useState({})
+  const [expandedKanbanJobs, setExpandedKanbanJobs] = useState([])
   const todayIso = useMemo(() => formatISODate(new Date()), [])
+  const toggleKanbanJob = (jobId) => {
+    setExpandedKanbanJobs((prev) =>
+      prev.includes(jobId) ? prev.filter((id) => id !== jobId) : [...prev, jobId],
+    )
+  }
+  const isKanbanJobExpanded = (jobId) => expandedKanbanJobs.includes(jobId)
 
   const repartoOptions = useMemo(() => {
     const unique = new Map()
@@ -266,6 +349,13 @@ const LavorazioniList = () => {
     return () => controller.abort()
   }, [token, filters.periodo, filters.reparto, filters.search, filters.stato, page, pageSize, refreshIndex])
 
+  useEffect(() => {
+    setExpandedJobs([])
+    setActivitiesByJob({})
+    setActivitiesLoading({})
+    setActivitiesError({})
+  }, [refreshIndex])
+
   const summaryCards = useMemo(() => {
     const totals = stats?.totali || emptyTotals
     return [
@@ -292,6 +382,10 @@ const LavorazioniList = () => {
     ]
   }, [stats?.totali])
 
+  const kanbanItems = useMemo(() => {
+    return items.filter((job) => shouldShowKanbanJob(job))
+  }, [items])
+
   const kanbanConfig = useMemo(() => {
     const base = statoOptions
       .filter((option) => option.value)
@@ -299,16 +393,16 @@ const LavorazioniList = () => {
         key: option.value,
         label: option.label,
       }))
-    const hasOtherStates = items.some((job) => job?.stato && !knownStati.includes(job.stato))
+    const hasOtherStates = kanbanItems.some((job) => job?.stato && !knownStati.includes(job.stato))
     return hasOtherStates ? [...base, { key: 'altre', label: 'Altre lavorazioni' }] : base
-  }, [items])
+  }, [kanbanItems])
 
   const kanbanGroups = useMemo(() => {
     const groups = {}
     kanbanConfig.forEach((column) => {
       groups[column.key] = []
     })
-    items.forEach((job) => {
+    kanbanItems.forEach((job) => {
       const fallbackState = job?.stato || 'aperta'
       const targetKey = groups[fallbackState]
         ? fallbackState
@@ -319,7 +413,7 @@ const LavorazioniList = () => {
       groups[targetKey].push(job)
     })
     return groups
-  }, [items, kanbanConfig])
+  }, [kanbanItems, kanbanConfig])
 
   const unscheduledJobs = useMemo(
     () => items.filter((job) => !job.data_inizio_prevista && !job.data_fine_prevista),
@@ -525,6 +619,38 @@ const LavorazioniList = () => {
     }
   }
 
+  const loadJobActivities = async (jobId) => {
+    if (!token) {
+      return
+    }
+    setActivitiesLoading((prev) => ({ ...prev, [jobId]: true }))
+    setActivitiesError((prev) => ({ ...prev, [jobId]: null }))
+    try {
+      const detail = await fetchLavorazioneDetail({ token, id: jobId })
+      const activities = Array.isArray(detail?.attivita) ? detail.attivita : []
+      setActivitiesByJob((prev) => ({ ...prev, [jobId]: activities }))
+    } catch (err) {
+      console.error('Impossibile caricare le attività della lavorazione:', err)
+      setActivitiesError((prev) => ({ ...prev, [jobId]: err }))
+    } finally {
+      setActivitiesLoading((prev) => ({ ...prev, [jobId]: false }))
+    }
+  }
+
+  const handleToggleJobActivities = (jobId) => {
+    const resolvedId = Number(jobId)
+    if (!Number.isFinite(resolvedId) || resolvedId <= 0) {
+      return
+    }
+    const isCurrentlyExpanded = expandedJobs.includes(resolvedId)
+    setExpandedJobs((current) =>
+      isCurrentlyExpanded ? current.filter((id) => id !== resolvedId) : [...current, resolvedId],
+    )
+    if (!isCurrentlyExpanded && !activitiesByJob[resolvedId] && !activitiesLoading[resolvedId]) {
+      loadJobActivities(resolvedId)
+    }
+  }
+
   const currentItems = items
 
   const pageInfo = `Pagina ${serverPagination.page || page} di ${serverPagination.total_pages || 1}`
@@ -639,7 +765,7 @@ const LavorazioniList = () => {
               <strong>Board Kanban</strong>
               <div className="small text-body-secondary">Visualizza le lavorazioni nei diversi stati operativi.</div>
             </div>
-            <div className="small text-body-secondary">Totale lavorazioni: {items.length}</div>
+            <div className="small text-body-secondary">Totale lavorazioni: {kanbanItems.length}</div>
           </CCardHeader>
           <CCardBody>
             {error ? (
@@ -679,54 +805,70 @@ const LavorazioniList = () => {
                       </div>
                       <div className="p-3 d-flex flex-column gap-3" style={{ minHeight: '160px' }}>
                         {columnItems.length > 0 ? (
-                          columnItems.map((job) => (
-                            <div
-                              key={job.id_lavorazione || job.codice}
-                              role="button"
-                              tabIndex={0}
-                              className="bg-white border rounded-3 shadow-sm p-3 position-relative"
-                              onClick={() => job.id_lavorazione && navigate(`/lavorazioni/dettaglio?id=${job.id_lavorazione}`)}
-                              onKeyDown={(event) => {
-                                if (event.key === 'Enter' || event.key === ' ') {
-                                  job.id_lavorazione && navigate(`/lavorazioni/dettaglio?id=${job.id_lavorazione}`)
-                                }
-                              }}
-                              draggable={Boolean(job.id_lavorazione) && statusUpdatingJobId === null}
-                              onDragStart={handleKanbanCardDragStart(job)}
-                              onDragEnd={handleKanbanCardDragEnd}
-                              aria-grabbed={draggedJobId === Number(job.id_lavorazione)}
-                              style={{
-                                cursor:
-                                  Boolean(job.id_lavorazione) && statusUpdatingJobId === null ? 'grab' : 'pointer',
-                              }}
-                            >
-                              {statusUpdatingJobId === Number(job.id_lavorazione) ? (
-                                <div className="position-absolute top-0 start-0 w-100 h-100 d-flex align-items-center justify-content-center bg-white bg-opacity-75 rounded-3">
-                                  <CSpinner size="sm" color="primary" />
+                          columnItems.map((job) => {
+                            const { referenceTitle, objectDescription } = buildJobLabelInfo(job)
+                            return (
+                              <div
+                                key={job.id_lavorazione || job.codice}
+                                role="button"
+                                tabIndex={0}
+                                className="border rounded-3 shadow-sm p-3 position-relative"
+                                onClick={() => job.id_lavorazione && navigate(`/lavorazioni/dettaglio?id=${job.id_lavorazione}`)}
+                                onKeyDown={(event) => {
+                                  if (event.key === 'Enter' || event.key === ' ') {
+                                    job.id_lavorazione && navigate(`/lavorazioni/dettaglio?id=${job.id_lavorazione}`)
+                                  }
+                                }}
+                                draggable={Boolean(job.id_lavorazione) && statusUpdatingJobId === null}
+                                onDragStart={handleKanbanCardDragStart(job)}
+                                onDragEnd={handleKanbanCardDragEnd}
+                                aria-grabbed={draggedJobId === Number(job.id_lavorazione)}
+                                style={{
+                                  ...kanbanCardStyle,
+                                  cursor:
+                                    Boolean(job.id_lavorazione) && statusUpdatingJobId === null ? 'grab' : 'pointer',
+                                }}
+                              >
+                                {statusUpdatingJobId === Number(job.id_lavorazione) ? (
+                                  <div
+                                    className="position-absolute top-0 start-0 w-100 h-100 d-flex align-items-center justify-content-center rounded-3"
+                                    style={{
+                                      backgroundColor: 'var(--cui-card-bg, var(--cui-body-bg, #fff))',
+                                      opacity: 0.75,
+                                    }}
+                                  >
+                                    <CSpinner size="sm" color="primary" />
+                                  </div>
+                                ) : null}
+                                <div className="d-flex justify-content-between align-items-start gap-2 mb-2 kanban-card-body">
+                                  <div>
+                                  <div className="kanban-card-title">{referenceTitle}</div>
+                                  <div className="kanban-card-reference text-body-secondary small mb-1">
+                                    {formatJobReferenceLabel(job)}
+                                  </div>
+                                  {objectDescription ? (
+                                    <div className="text-body-secondary small mb-1">{objectDescription}</div>
+                                  ) : null}
+                                  <div className="text-body-secondary small kanban-card-meta">
+                                    {job.cliente || '-'}
+                                  </div>
                                 </div>
-                              ) : null}
-                              <div className="d-flex justify-content-between align-items-start gap-2 mb-2">
-                                <div>
-                                  <div className="fw-semibold text-truncate">{job.titolo || job.codice}</div>
-                                  <div className="text-body-secondary small text-truncate">{job.cliente || '-'}</div>
+                                  {renderPrioritaBadge(job.priorita)}
                                 </div>
-                                {renderPrioritaBadge(job.priorita)}
+                                <div className="d-flex flex-wrap gap-2 align-items-center mb-2">
+                                  {renderStatoBadge(job)}
+                                  <CBadge color="light" textColor="dark">
+                                    {formatPercent(job.percentuale_avanzamento)}
+                                  </CBadge>
+                                </div>
+                                <div className="small text-body-secondary d-flex flex-column gap-1 kanban-card-meta">
+                                  <span>
+                                    Inizio: {formatDate(job.data_inizio_prevista)} - Fine: {formatDate(job.data_fine_prevista)}
+                                  </span>
+                                </div>
                               </div>
-                              <div className="d-flex flex-wrap gap-2 align-items-center mb-2">
-                                {renderStatoBadge(job)}
-                                <CBadge color="light" textColor="dark">
-                                  {formatPercent(job.percentuale_avanzamento)}
-                                </CBadge>
-                              </div>
-                              <div className="small text-body-secondary d-flex flex-column gap-1">
-                                <span>
-                                  Inizio: {formatDate(job.data_inizio_prevista)} - Fine: {formatDate(job.data_fine_prevista)}
-                                </span>
-                                <span>Reparto: {job.reparto_label || job.reparto || 'n/d'}</span>
-                                <span>Attivita: {job.attivita_totali ?? '-'} totali</span>
-                              </div>
-                            </div>
-                          ))
+                            )
+                          })
                         ) : (
                           <div className="text-center text-body-secondary small py-4">Nessuna lavorazione in questa colonna.</div>
                         )}
@@ -813,21 +955,26 @@ const LavorazioniList = () => {
                             {day.date.getDate()}
                           </div>
                           <div className="d-flex flex-column gap-2">
-                            {day.jobs.slice(0, 3).map((job) => (
-                              <div
-                                key={`${day.isoKey}-${job.id_lavorazione || job.codice}`}
-                                className={classNames(
-                                  'border rounded-2 px-2 py-1 small cursor-pointer',
-                                  `border-${statoBadgeMap[job.stato] || 'secondary'}`,
-                                )}
-                                onClick={() =>
-                                  job.id_lavorazione && navigate(`/lavorazioni/dettaglio?id=${job.id_lavorazione}`)
-                                }
-                              >
-                                <div className="fw-semibold text-truncate">{job.titolo || job.codice}</div>
-                                <div className="text-body-secondary text-truncate">{job.cliente || '-'}</div>
-                              </div>
-                            ))}
+                            {day.jobs.slice(0, 3).map((job) => {
+                              const jobLabel = formatJobReferenceLabel(job)
+                              return (
+                                <div
+                                  key={`${day.isoKey}-${job.id_lavorazione || job.codice}`}
+                                  className={classNames(
+                                    'border rounded-2 px-2 py-1 small cursor-pointer',
+                                    `border-${statoBadgeMap[job.stato] || 'secondary'}`,
+                                  )}
+                                  onClick={() =>
+                                    job.id_lavorazione && navigate(`/lavorazioni/dettaglio?id=${job.id_lavorazione}`)
+                                  }
+                                >
+                                  <div className="fw-semibold text-truncate">{jobLabel}</div>
+                                  <div className="text-body-secondary small text-truncate">
+                                    {job.cliente || '-'}
+                                  </div>
+                                </div>
+                              )
+                            })}
                             {day.jobs.length > 3 ? (
                               <div className="text-body-secondary small">
                                 +{day.jobs.length - 3} altre lavorazioni
@@ -846,7 +993,7 @@ const LavorazioniList = () => {
       ) : null}
 
       {viewMode === 'lista' ? (
-        <CCard>
+        <CCard className="w-100">
           <CCardHeader className="d-flex flex-column flex-md-row gap-3 align-items-md-center justify-content-between">
             <div>
               <strong>Elenco lavorazioni</strong>
@@ -886,86 +1033,208 @@ const LavorazioniList = () => {
               {error?.message || 'Errore durante il caricamento delle lavorazioni.'}
             </CAlert>
           ) : null}
-          <div className="position-relative">
-            {loading ? (
-              <div className="position-absolute top-0 start-0 w-100 h-100 d-flex align-items-center justify-content-center bg-white bg-opacity-75">
-                <CSpinner color="primary" />
-              </div>
-            ) : null}
-            <CTable hover responsive className="mb-0">
-              <CTableHead color="light">
-                <CTableRow>
-                  <CTableHeaderCell>Lavorazione</CTableHeaderCell>
-                  <CTableHeaderCell>Cliente</CTableHeaderCell>
-                  <CTableHeaderCell>Stato</CTableHeaderCell>
-                  <CTableHeaderCell>Priorita</CTableHeaderCell>
-                  <CTableHeaderCell>Avanzamento</CTableHeaderCell>
-                  <CTableHeaderCell>Reparto</CTableHeaderCell>
-                  <CTableHeaderCell>Periodo</CTableHeaderCell>
-                  <CTableHeaderCell>Attivita</CTableHeaderCell>
-                  <CTableHeaderCell>Operatore</CTableHeaderCell>
-                </CTableRow>
-              </CTableHead>
-              <CTableBody>
-                {currentItems.length > 0 ? (
-                  currentItems.map((job) => {
+            <div className="position-relative w-100" style={{ minWidth: 0 }}>
+              {loading ? (
+                <div className="position-absolute top-0 start-0 w-100 h-100 d-flex align-items-center justify-content-center bg-white bg-opacity-75">
+                  <CSpinner color="primary" />
+                </div>
+              ) : null}
+              <div className="d-none d-md-block">
+                <CTable hover responsive className="mb-0 w-100">
+                  <CTableHead color="light">
+                    <CTableRow>
+                      <CTableHeaderCell>Lavorazione</CTableHeaderCell>
+                      <CTableHeaderCell>Cliente</CTableHeaderCell>
+                      <CTableHeaderCell>Stato</CTableHeaderCell>
+                      <CTableHeaderCell>Priorita</CTableHeaderCell>
+                      <CTableHeaderCell>Avanzamento</CTableHeaderCell>
+                      <CTableHeaderCell>Reparto</CTableHeaderCell>
+                      <CTableHeaderCell>Periodo</CTableHeaderCell>
+                      <CTableHeaderCell>Attivita</CTableHeaderCell>
+                      <CTableHeaderCell>Operatore</CTableHeaderCell>
+                      <CTableHeaderCell className="text-end">Azioni</CTableHeaderCell>
+                    </CTableRow>
+                  </CTableHead>
+                  <CTableBody>
+                    {currentItems.length > 0 ? (
+                      currentItems.map((job, index) => {
                     const progressValue = Number(job.percentuale_avanzamento) || 0
+                    const jobId = Number(job.id_lavorazione)
+                    const hasValidId = Number.isFinite(jobId) && jobId > 0
+                    const isExpanded = hasValidId && expandedJobs.includes(jobId)
+                    const jobActivities = hasValidId ? activitiesByJob[jobId] ?? [] : []
+                    const activityLoadError = hasValidId ? activitiesError[jobId] : null
+                    const isActivitiesLoading = hasValidId ? Boolean(activitiesLoading[jobId]) : false
+                    const fragmentKey = job.id_lavorazione || job.codice || `row-${index}`
+                    const { referenceTitle, objectDescription, codeLabel } = buildJobLabelInfo(job)
                     return (
-                      <CTableRow
-                        key={job.id_lavorazione || job.codice}
-                        className={classNames('align-middle', 'cursor-pointer')}
-                        style={{ cursor: 'pointer' }}
-                        onClick={() => job.id_lavorazione && navigate(`/lavorazioni/dettaglio?id=${job.id_lavorazione}`)}
-                      >
-                        <CTableDataCell>
-                          <div className="fw-semibold">{job.titolo || job.codice}</div>
-                          <div className="text-body-secondary small">{job.codice || `JOB-${job.id_lavorazione}`}</div>
-                          {job.ritardo_giorni > 0 ? (
-                            <CBadge color="danger" className="mt-1">
-                              Ritardo {job.ritardo_giorni}g
-                            </CBadge>
-                          ) : null}
-                        </CTableDataCell>
-                        <CTableDataCell>
-                          <div className="fw-semibold">{job.cliente || '-'}</div>
-                          <div className="text-body-secondary small">
-                            {job.numero_preventivo ? `Preventivo ${job.numero_preventivo}` : '-'}
-                          </div>
-                        </CTableDataCell>
-                        <CTableDataCell>{renderStatoBadge(job)}</CTableDataCell>
-                        <CTableDataCell>{renderPrioritaBadge(job.priorita)}</CTableDataCell>
-                        <CTableDataCell style={{ minWidth: '180px' }}>
-                          <div className="d-flex align-items-center gap-2">
-                            <CProgress
-                              thin
-                              color={progressValue >= 100 ? 'success' : 'primary'}
-                              value={Math.min(100, Math.max(0, progressValue))}
-                              className="flex-grow-1"
-                            />
-                            <span className="text-nowrap small">{formatPercent(progressValue)}</span>
-                          </div>
-                        </CTableDataCell>
-                        <CTableDataCell>{job.reparto_label || job.reparto || '-'}</CTableDataCell>
-                        <CTableDataCell>
-                          <div>{formatDate(job.data_inizio_prevista)}</div>
-                          <div className="text-body-secondary small">{formatDate(job.data_fine_prevista)}</div>
-                        </CTableDataCell>
-                        <CTableDataCell>
-                          <div className="fw-semibold">
-                            {job.attivita_aperte ?? job.attivita_in_corso ?? '-'} / {job.attivita_totali ?? '-'}
-                          </div>
-                          <div className="text-body-secondary small">aperte / totali</div>
-                        </CTableDataCell>
-                        <CTableDataCell>
-                          <div className="fw-semibold">{job.operatore_principale || '-'}</div>
-                          <div className="text-body-secondary small">+ altri</div>
-                        </CTableDataCell>
-                      </CTableRow>
+                      <Fragment key={fragmentKey}>
+                        <CTableRow className="align-middle">
+                          <CTableDataCell>
+                            <div className="d-flex align-items-start gap-3">
+                              <CButton
+                                color="light"
+                                size="sm"
+                                variant="ghost"
+                                className="border border-1 rounded-circle p-1"
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  if (hasValidId) {
+                                    handleToggleJobActivities(jobId)
+                                  }
+                                }}
+                                aria-label={isExpanded ? 'Chiudi attività' : 'Apri attività'}
+                              >
+                                <CIcon icon={isExpanded ? cilChevronTop : cilChevronBottom} />
+                              </CButton>
+                              <div className="flex-grow-1">
+                                <div className="fw-semibold text-truncate">{referenceTitle}</div>
+                                {objectDescription ? (
+                                  <p className="text-body-secondary small mb-1 text-truncate">
+                                    {objectDescription}
+                                  </p>
+                                ) : null}
+                                <div className="text-body-secondary small text-truncate">{codeLabel}</div>
+                                {job.ritardo_giorni > 0 ? (
+                                  <CBadge color="danger" className="mt-1">
+                                    Ritardo {job.ritardo_giorni}g
+                                  </CBadge>
+                                ) : null}
+                              </div>
+                            </div>
+                          </CTableDataCell>
+                          <CTableDataCell>
+                            <div className="fw-semibold">{job.cliente || '-'}</div>
+                            <div className="text-body-secondary small">
+                              {job.numero_preventivo ? `Preventivo ${job.numero_preventivo}` : '-'}
+                            </div>
+                          </CTableDataCell>
+                          <CTableDataCell>{renderStatoBadge(job)}</CTableDataCell>
+                          <CTableDataCell>{renderPrioritaBadge(job.priorita)}</CTableDataCell>
+                          <CTableDataCell style={{ minWidth: '180px' }}>
+                            <div className="d-flex align-items-center gap-2">
+                              <CProgress
+                                thin
+                                color={progressValue >= 100 ? 'success' : 'primary'}
+                                value={Math.min(100, Math.max(0, progressValue))}
+                                className="flex-grow-1"
+                              />
+                              <span className="text-nowrap small">{formatPercent(progressValue)}</span>
+                            </div>
+                          </CTableDataCell>
+                          <CTableDataCell>{job.reparto_label || job.reparto || '-'}</CTableDataCell>
+                          <CTableDataCell>
+                            <div>{formatDate(job.data_inizio_prevista)}</div>
+                            <div className="text-body-secondary small">{formatDate(job.data_fine_prevista)}</div>
+                          </CTableDataCell>
+                          <CTableDataCell>
+                            <div className="fw-semibold">
+                              {job.attivita_aperte ?? job.attivita_in_corso ?? '-'} / {job.attivita_totali ?? '-'}
+                            </div>
+                            <div className="text-body-secondary small">aperte / totali</div>
+                          </CTableDataCell>
+                          <CTableDataCell>
+                            <div className="fw-semibold">{job.operatore_principale || '-'}</div>
+                            <div className="text-body-secondary small">+ altri</div>
+                          </CTableDataCell>
+                          <CTableDataCell className="text-end">
+                            <CButton
+                              color="primary"
+                              variant="ghost"
+                              size="sm"
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                if (hasValidId) {
+                                  navigate(`/lavorazioni/dettaglio?id=${jobId}`)
+                                }
+                              }}
+                              aria-label="Apri lavorazione"
+                            >
+                              <CIcon icon={cilArrowRight} />
+                            </CButton>
+                          </CTableDataCell>
+                        </CTableRow>
+                        {isExpanded ? (
+                          <CTableRow>
+                            <CTableDataCell colSpan={10} className="py-0 border-0">
+                              <CCollapse visible>
+                                <div
+                                  className="border rounded-3 p-3 mt-1"
+                                  style={activityCardBaseStyle}
+                                >
+                                  {activityLoadError ? (
+                                    <CAlert color="danger" className="mb-0">
+                                      {activityLoadError?.message || 'Errore durante il caricamento delle attività.'}
+                                    </CAlert>
+                                  ) : isActivitiesLoading ? (
+                                    <div className="d-flex align-items-center gap-2 text-body-secondary">
+                                      <CSpinner size="sm" />
+                                      <span>Caricamento attività...</span>
+                                    </div>
+                                  ) : jobActivities.length === 0 ? (
+                                    <div className="text-body-secondary small">
+                                      Nessuna attività registrata per questa lavorazione.
+                                    </div>
+                                  ) : (
+                                    <div className="d-flex flex-column gap-3">
+                                      {jobActivities.map((task, taskIndex) => {
+                                        const activityKey = task?.id_attivita
+                                          ? `activity-${task.id_attivita}`
+                                          : `activity-${jobId}-${taskIndex}`
+                                        return (
+                                        <div
+                                          key={activityKey}
+                                          className="border rounded-3 p-3"
+                                          style={activityCardBaseStyle}
+                                        >
+                                            <div className="d-flex justify-content-between align-items-start gap-3">
+                                              <div>
+                                                <div className="d-flex gap-2 align-items-center flex-wrap">
+                                                  {renderPrioritaBadge(task.priorita)}
+                                                  <span className="fw-semibold">{task.titolo || 'Attivita'}</span>
+                                                </div>
+                                                <div className="text-body-secondary small">
+                                                  ID {task.id_attivita || '-'} • {task.reparto_label || '-'}
+                                                </div>
+                                              </div>
+                                              <div className="text-end">
+                                                {renderActivityStatoBadge(task.stato)}
+                                                {task.report_operatore_nome ? (
+                                                  <div className="text-body-secondary small mt-1">
+                                                    Report: {task.report_operatore_nome}
+                                                  </div>
+                                                ) : null}
+                                              </div>
+                                            </div>
+                                            <div className="d-flex flex-wrap gap-3 mt-2 small text-body-secondary">
+                                              <span>Scadenza: {formatDate(task.data_scadenza)}</span>
+                                              <span>Avanzamento: {formatPercent(task.percentuale)}</span>
+                                              <span>
+                                                Assegnatari:{' '}
+                                                {Array.isArray(task.assegnatari) && task.assegnatari.length > 0
+                                                  ? task.assegnatari.join(', ')
+                                                  : 'n/d'}
+                                              </span>
+                                            </div>
+                                            {task.descrizione ? (
+                                              <div className="mt-2 text-body-secondary small">{task.descrizione}</div>
+                                            ) : null}
+                                          </div>
+                                        )
+                                      })}
+                                    </div>
+                                  )}
+                                </div>
+                              </CCollapse>
+                            </CTableDataCell>
+                          </CTableRow>
+                        ) : null}
+                      </Fragment>
                     )
                   })
                 ) : (
                   <CTableRow>
-                    <CTableDataCell colSpan={9} className="text-center py-5 text-body-secondary">
+                    <CTableDataCell colSpan={10} className="text-center py-5 text-body-secondary">
                       Nessuna lavorazione disponibile per i filtri selezionati.
                     </CTableDataCell>
                   </CTableRow>
@@ -973,6 +1242,66 @@ const LavorazioniList = () => {
               </CTableBody>
             </CTable>
           </div>
+            <div className="d-md-none mt-3 w-100">
+                {currentItems.length > 0 ? (
+                  currentItems.map((job, index) => {
+                    const progressValue = Number(job.percentuale_avanzamento) || 0
+                    const jobId = Number(job.id_lavorazione)
+                    const hasValidId = Number.isFinite(jobId) && jobId > 0
+                    const { referenceTitle, objectDescription, codeLabel } = buildJobLabelInfo(job)
+                    return (
+                      <CCard key={job.id_lavorazione || job.codice || `mobile-${index}`} className="mb-3 shadow-sm">
+                        <CCardBody>
+                          <div className="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-2">
+                            <div>
+                              <div className="fw-semibold text-truncate">{referenceTitle}</div>
+                              {objectDescription ? (
+                                <p className="text-body-secondary small mb-1 text-truncate">{objectDescription}</p>
+                              ) : null}
+                              <div className="text-body-secondary small text-truncate">{codeLabel}</div>
+                            </div>
+                            <CButton
+                              color="primary"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                if (!hasValidId) return
+                                navigate(`/lavorazioni/dettaglio?id=${jobId}`)
+                              }}
+                              aria-label="Apri lavorazione"
+                            >
+                              <CIcon icon={cilArrowRight} />
+                            </CButton>
+                          </div>
+                          <div className="d-flex flex-wrap gap-3 mb-2 small text-body-secondary">
+                            <span>{job.cliente || '-'}</span>
+                            <span>{job.operatore_principale || '-'}</span>
+                            <span>Reparto: {job.reparto_label || job.reparto || 'n/d'}</span>
+                          </div>
+                          <div className="d-flex align-items-center gap-2 mb-2">
+                            <CProgress
+                              thin
+                              value={Math.min(100, Math.max(0, progressValue))}
+                              color={progressValue >= 100 ? 'success' : 'primary'}
+                              className="flex-grow-1"
+                            />
+                            <span className="small">{formatPercent(progressValue)}</span>
+                          </div>
+                          <div className="d-flex flex-wrap gap-2">
+                            {renderStatoBadge(job)}
+                            {renderPrioritaBadge(job.priorita)}
+                          </div>
+                        </CCardBody>
+                      </CCard>
+                    )
+                  })
+                ) : (
+                  <div className="text-center text-body-secondary">
+                    Nessuna lavorazione disponibile per i filtri selezionati.
+                  </div>
+                )}
+              </div>
+            </div>
         </CCardBody>
       </CCard>
       ) : null}

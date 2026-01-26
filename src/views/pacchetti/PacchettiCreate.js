@@ -14,6 +14,7 @@ import {
   CFormSelect,
   CInputGroup,
   CInputGroupText,
+  CFormTextarea,
   CRow,
   CSpinner,
   CTable,
@@ -32,12 +33,24 @@ import CIcon from '@coreui/icons-react'
 import { cilPlus, cilTrash, cilSave } from '@coreui/icons'
 import { useAuth } from '../../context/AuthContext'
 import { savePacchetto } from '../../services/pacchetti'
-import { fetchNatureIva, fetchCategorieProdotti, fetchProdotti, fetchProdottoVariazioni, fetchProdottoPrezziCombinati } from '../../services/prodotti'
+import {
+  fetchNatureIva,
+  fetchCategorieProdotti,
+  fetchProdotti,
+  fetchProdottoVariazioni,
+  fetchProdottoPrezziCombinati,
+} from '../../services/prodotti'
 import { useNavigate } from 'react-router-dom'
 import { CStepper } from '@coreui/react-pro'
 import PermissionButton from '../../components/PermissionButton'
 
-const currencyFormatter = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' })
+const currencyFormatter = new Intl.NumberFormat('it-IT', {
+  style: 'currency',
+  currency: 'EUR',
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 3,
+ })
+
 const formatCurrency = (value) => {
   const n = Number(value)
   return Number.isFinite(n) ? currencyFormatter.format(n) : '-'
@@ -495,22 +508,16 @@ const PacchettiCreate = () => {
             <div className="d-flex justify-content-between align-items-center mb-3">
               <h6 className="mb-0 text-body-secondary">Righe pacchetto</h6>
               <div className="d-flex gap-2">
-                <PermissionButton
-                  color="secondary"
-                  variant="outline"
-                  size="sm"
-                  onClick={handleAddRiga}
-                  type="button"
-                  permission="pack.create"
-                >
-                  <CIcon icon={cilPlus} className="me-2" /> Riga manuale
-                </PermissionButton>
+
                 <PermissionButton
                   color="primary"
                   variant="outline"
                   size="sm"
                   type="button"
-                  onClick={() => { resetProductModal(); setStepperOpen(true) }}
+                  onClick={() => {
+                    resetProductModal()
+                    setStepperOpen(true)
+                  }}
                   permission="pack.create"
                 >
                   Selettore prodotti
@@ -544,13 +551,25 @@ const PacchettiCreate = () => {
                   return (
                     <CTableRow key={idx}>
                       <CTableDataCell>
-                        <CFormInput value={riga.descrizione} onChange={(e) => updateRiga(idx, { descrizione: e.target.value })} />
+                        <CFormTextarea
+                          value={riga.descrizione}
+                          rows={2}
+                          style={{
+                            resize: 'horizontal',
+                            minHeight: '84px',
+                            minWidth: '320px',
+                            maxWidth: '640px',
+                            whiteSpace: 'pre-wrap',
+                            overflowY: 'hidden',
+                          }}
+                          onChange={(e) => updateRiga(idx, { descrizione: e.target.value })}
+                        />
                       </CTableDataCell>
                       <CTableDataCell className="text-end">
                         <CFormInput type="number" min="1" step="1" value={riga.quantita} onChange={(e) => updateRiga(idx, { quantita: e.target.value })} />
                       </CTableDataCell>
                       <CTableDataCell className="text-end">
-                        <CFormInput type="number" min="0" step="0.01" value={riga.prezzo} onChange={(e) => updateRiga(idx, { prezzo: e.target.value })} />
+                        <CFormInput type="number" min="0" step="0.001" value={riga.prezzo} onChange={(e) => updateRiga(idx, { prezzo: e.target.value })} />
                       </CTableDataCell>
                       <CTableDataCell className="text-end">
                         <CFormInput type="number" min="0" max="100" step="0.1" value={riga.sconto} onChange={(e) => updateRiga(idx, { sconto: e.target.value })} />
@@ -568,6 +587,7 @@ const PacchettiCreate = () => {
                           value={riga.id_sdi_natura_iva ?? ''}
                           onChange={(e) => updateRiga(idx, { id_sdi_natura_iva: e.target.value ? Number(e.target.value) : null })}
                           disabled={Number(riga.iva) !== 0}
+                          style={{ whiteSpace: 'normal' }}
                         >
                           <option value="">--</option>
                           {naturaOptions.map((n) => (

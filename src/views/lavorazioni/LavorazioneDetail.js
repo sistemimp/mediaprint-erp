@@ -271,6 +271,38 @@ const isStampaCategoryName = (value) => {
   return normalized.startsWith('stampa') && normalized.includes('imbustamento')
 }
 
+const productionActivityKeywords = ['stampa', 'imbustamento', 'cellophan']
+const normalizedProductionActivityKeywords = productionActivityKeywords
+  .map((keyword) => normalizeCategoryName(keyword))
+  .filter(Boolean)
+
+const matchesProductionActivityKeyword = (value) => {
+  if (!value) return false
+  const normalized = normalizeCategoryName(value)
+  if (!normalized) return false
+  return normalizedProductionActivityKeywords.some((keyword) => normalized.includes(keyword))
+}
+
+const isProductionActivity = (activity) => {
+  if (!activity) return false
+  const candidates = [
+    activity.titolo,
+    activity.descrizione,
+    activity.categoria,
+    activity.categoria_nome,
+    activity.categoria_label,
+  ]
+  return candidates.some(matchesProductionActivityKeyword)
+}
+
+const shouldPromoteJobToInProduzione = (activity, currentState) => {
+  if (!isProductionActivity(activity)) {
+    return false
+  }
+  const normalizedState = String(currentState || '').trim().toLowerCase()
+  return normalizedState !== 'in_produzione'
+}
+
 const isPostaActivityLabel = (label) => {
   const value = String(label || '').trim().toLowerCase()
   return value !== '' && value.includes('posta')
@@ -1169,7 +1201,7 @@ const LavorazioneDetail = () => {
     })
   }
 
-  const handleActivityStatusChange = async (activityId, targetStatus, percentOverride) => {
+  const handleActivityStatusChange = async (activityId, targetStatus, percentOverride, activity = null) => {
     if (!token || !activityId) return
     setActivityStatusError(null)
     setActivityStatusSuccess(null)
@@ -1182,6 +1214,25 @@ const LavorazioneDetail = () => {
         percentuale: typeof percentOverride === 'number' ? percentOverride : undefined,
         createdBy: user?.id,
       })
+      if (
+        targetStatus === 'in_progress' &&
+        activity &&
+        shouldPromoteJobToInProduzione(activity, detail?.stato) &&
+        recordId
+      ) {
+        try {
+          await updateLavorazioneInfo({
+            token,
+            idLavorazione: Number(recordId),
+            stato: 'in_produzione',
+          })
+        } catch (statusError) {
+          console.error(
+            'Impossibile impostare la lavorazione in stato "In lavorazione":',
+            statusError,
+          )
+        }
+      }
       const label = activityStatusLabels[targetStatus] ?? targetStatus
       const suffix = typeof percentOverride === 'number' ? ` (${percentOverride}%)` : ''
       setActivityStatusSuccess(`Stato attivitÃ  aggiornato: ${label}${suffix}.`)
@@ -2780,7 +2831,7 @@ const LavorazioneDetail = () => {
                                   variant="outline"
                                   className="p-1"
                                   disabled={disableStart}
-                                  onClick={() => handleActivityStatusChange(activityId, 'in_progress', 10)}
+                                  onClick={() => handleActivityStatusChange(activityId, 'in_progress', 10, task)}
                                   title="Avvia attivita"
                                   aria-label="Avvia attivita"
                                 >
