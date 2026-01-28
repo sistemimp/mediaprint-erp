@@ -541,6 +541,10 @@ const PreventiviList = () => {
     navigate(`/preventivi/dettagli?id=${id}`)
   }
 
+  const handleCreateNewPreventivo = useCallback(() => {
+    navigate('/preventivi/dettagli?mode=create', { state: { createMode: true } })
+  }, [navigate])
+
   const handleRestore = async (id) => {
     if (!id || !token) return
     const confirmed = window.confirm(`Confermi il ripristino del preventivo archiviato ${id}?\nVerrà assegnata una nuova numerazione.`)
@@ -792,15 +796,15 @@ const PreventiviList = () => {
                   ))}
                 </select>
               </div>
-                <PermissionButton
-                  color="primary"
-                  variant="outline"
-                  onClick={() => navigate('/preventivi/crea')}
-                  permission="prev.create"
-                >
-                  <CIcon icon={cilPlus} className="me-2" />
-                  Nuovo preventivo
-                </PermissionButton>
+              <PermissionButton
+                color="primary"
+                variant="outline"
+                onClick={handleCreateNewPreventivo}
+                permission="prev.create"
+              >
+                <CIcon icon={cilPlus} className="me-2" />
+                Nuovo preventivo
+              </PermissionButton>
             </div>
           </div>
         </CCardHeader>

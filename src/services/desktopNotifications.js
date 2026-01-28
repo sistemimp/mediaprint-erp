@@ -51,6 +51,8 @@ export const requestDesktopNotificationPermission = async () => {
   }
 }
 
+const alwaysShowDesktopNotifications = (import.meta.env.VITE_DESKTOP_NOTIFICATIONS_ALWAYS_SHOW || '').toLowerCase() === 'true'
+
 const shouldShowDesktopNotification = () => {
   if (!isDesktopNotificationSupported()) {
     return false
@@ -66,10 +68,17 @@ const shouldShowDesktopNotification = () => {
       return true
     }
     if (typeof document.hasFocus === 'function') {
-      return !document.hasFocus()
+      if (!alwaysShowDesktopNotifications) {
+        return !document.hasFocus()
+      }
+      return true
     }
   }
   return true
+}
+
+if (typeof window !== 'undefined') {
+  window.shouldShowDesktopNotification = shouldShowDesktopNotification
 }
 
 export const showDesktopNotification = ({ title, body, tag, icon } = {}) => {

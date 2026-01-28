@@ -1,0 +1,53 @@
+:root,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  background-color: #f8f9fa;
+}
+
+.chat-shell {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  background-color: #f8f9fa;
+}
+
+.chat-shell__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 1.5rem;
+  background-color: #ffffff;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow: 0 3px 14px rgba(0, 0, 0, 0.08);
+  gap: 1rem;
+}
+
+.chat-shell__title {
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.chat-shell__user {
+  font-size: 0.9rem;
+  color: rgba(0, 0, 0, 0.65);
+}
+
+.chat-shell__body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  padding: 1rem;
+}
+
+.chat-shell__body > * {
+  flex: 1;
+  min-height: 0;
+}

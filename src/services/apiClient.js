@@ -66,7 +66,10 @@ export const apiFetch = async (path, { method = 'GET', token, body, params, sign
   }
 
   const response = await fetch(url.toString(), options)
+  return handleApiResponse(response)
+}
 
+const handleApiResponse = async (response) => {
   if (response.status === 204) {
     return null
   }
@@ -108,4 +111,30 @@ export const apiFetch = async (path, { method = 'GET', token, body, params, sign
   }
 
   return payload
+}
+
+export const uploadToApi = async (path, { token, formData, params, signal } = {}) => {
+  if (!formData) {
+    throw new Error('Nessun FormData fornito per l\'upload.')
+  }
+  const url = buildUrl(path, params)
+  const headers = {
+    Accept: 'application/json',
+  }
+
+  const resolvedToken = token || getStoredToken()
+  if (resolvedToken) {
+    headers.Authorization = `Bearer ${resolvedToken}`
+    headers['X-Authorization'] = `Bearer ${resolvedToken}`
+    headers['X-Access-Token'] = resolvedToken
+  }
+
+  const response = await fetch(url.toString(), {
+    method: 'POST',
+    headers,
+    body: formData,
+    signal,
+  })
+
+  return handleApiResponse(response)
 }

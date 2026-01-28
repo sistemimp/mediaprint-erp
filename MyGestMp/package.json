@@ -1,0 +1,63 @@
+{
+  "name": "my_gest_mp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Electron wrapper that reuses the Mediaprint ERP instant messaging UI and APIs.",
+  "main": "main.cjs",
+
+  "scripts": {
+    "dev:renderer": "vite",
+    "dev:electron": "wait-on http://localhost:3000 && cross-env ELECTRON_RENDERER_URL=http://localhost:3000 NODE_ENV=development npm exec electron .",
+    "dev": "concurrently \"npm:dev:renderer\" \"npm:dev:electron\"",
+    "build:renderer": "vite build",
+    "build": "npm run build:renderer",
+    "release": "cross-env NODE_ENV=production  npm run package",
+    "package": "npm run build && npm exec electron-builder --win --x64",
+    "start": "npm exec electron ."
+  },
+  "dependencies": {
+    "@coreui/coreui": "^5.4.1",
+    "@coreui/icons": "^3.0.1",
+    "@coreui/icons-react": "^2.3.0",
+    "@coreui/react": "^5.7.1",
+    "@coreui/utils": "^2.0.2",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "react-router-dom": "^7.7.1",
+    "socket.io-client": "^4.8.1"
+  },
+
+  "devDependencies": {
+    "@vitejs/plugin-react": "^5.0.0",
+    "autoprefixer": "^10.4.21",
+    "concurrently": "^8.2.0",
+    "cross-env": "^10.1.0",
+    "electron": "^26.5.0",
+    "electron-builder": "^24.3.0",
+    "sass": "^1.90.0",
+    "vite": "^7.1.0",
+    "wait-on": "^7.0.1"
+  },
+  "author": "Alex Olivieri",
+  "build": {
+    "appId": "it.mediaprint.mygest",
+    "productName": "MyGest Electron",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "main.cjs",
+      "preload.cjs",
+      "package.json",
+      "node_modules/**/*"
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    }
+  }
+
+}

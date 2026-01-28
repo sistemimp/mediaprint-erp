@@ -47,7 +47,8 @@ final class FattureRepository
             }
         }
 
-        $sql = <<<'SQL'
+        $expression = $this->getNetRevenueExpression();
+        $sql = <<<SQL
             WITH RECURSIVE mesi(ms) AS (
               SELECT DATE_SUB(DATE_FORMAT(CURDATE(), '%Y-%m-01'), INTERVAL 11 MONTH)
               UNION ALL
@@ -57,13 +58,14 @@ final class FattureRepository
             )
             SELECT
               DATE_FORMAT(m.ms, '%Y-%m') AS mese,
-              COALESCE(SUM(f.totale), 0) AS totale,
-              COALESCE(SUM(CASE WHEN sf.code = 'pagata' THEN f.totale ELSE 0 END), 0) AS pagate
+              COALESCE(SUM({$expression}), 0) AS totale,
+              COALESCE(SUM(CASE WHEN sf.code = 'pagata' THEN {$expression} ELSE 0 END), 0) AS pagate
             FROM mesi m
             LEFT JOIN tb_fatture f
               ON f.data_fattura >= m.ms
              AND f.data_fattura <  DATE_ADD(m.ms, INTERVAL 1 MONTH)
             LEFT JOIN cfg_stati_fattura sf ON sf.id_stato = f.id_stato_fatt
+            LEFT JOIN cfg_tipi_fattura tf ON tf.id_tipo = f.id_tipo_fatt
             GROUP BY m.ms
             ORDER BY m.ms
         SQL;
@@ -115,19 +117,21 @@ final class FattureRepository
             }
         }
 
-        $sql = <<<'SQL'
+        $expression = $this->getNetRevenueExpression();
+        $sql = <<<SQL
             WITH params AS (
               SELECT
                 DATE_FORMAT(CURDATE(), '%Y-%m-01') AS start_month,
                 DATE_ADD(DATE_FORMAT(CURDATE(), '%Y-%m-01'), INTERVAL 1 MONTH) AS next_month
             )
             SELECT
-              COALESCE(SUM(f.totale), 0) AS fatturato
+              COALESCE(SUM({$expression}), 0) AS fatturato
             FROM params p
             LEFT JOIN tb_fatture f
               ON COALESCE(f.data_fattura, f.created_at) >= p.start_month
              AND COALESCE(f.data_fattura, f.created_at) < p.next_month
             LEFT JOIN cfg_stati_fattura sf ON sf.id_stato = f.id_stato_fatt
+            LEFT JOIN cfg_tipi_fattura tf ON tf.id_tipo = f.id_tipo_fatt
             WHERE sf.code IS NULL OR sf.code <> 'bozza'
         SQL;
         $params = [];
@@ -176,14 +180,16 @@ final class FattureRepository
                 return [];
             }
         }
-        $sql = <<<'SQL'
+        $expression = $this->getNetRevenueExpression();
+        $sql = <<<SQL
             SELECT
               a.id_anagrafica,
               a.ragione_sociale,
-              COALESCE(SUM(f.totale), 0) AS fatturato
+              COALESCE(SUM({$expression}), 0) AS fatturato
             FROM tb_fatture f
             LEFT JOIN tb_anagrafiche a ON a.id_anagrafica = f.id_anagrafica
             LEFT JOIN cfg_stati_fattura sf ON sf.id_stato = f.id_stato_fatt
+            LEFT JOIN cfg_tipi_fattura tf ON tf.id_tipo = f.id_tipo_fatt
             WHERE COALESCE(f.data_fattura, f.created_at) >= :start
               AND COALESCE(f.data_fattura, f.created_at) < :end
               AND (sf.code IS NULL OR sf.code <> 'bozza')
@@ -227,12 +233,16 @@ final class FattureRepository
         return $out;
     }
 
+    private function getNetRevenueExpression(): string
+    {
+        return "CASE WHEN tf.code = 'nota_credito' THEN -f.totale ELSE f.totale END";
+    }
+
     /**
      * @return list<array<string,mixed>>
      */
     public function listLatest(int $limit = 200, ?array $allowedAnagrafiche = null, bool $excludeDraft = false): array
     {
-        $limit = max(1, min($limit, 500));
         $sql = <<<'SQL'
             SELECT
                 f.id_fattura,
@@ -247,10 +257,14 @@ final class FattureRepository
                 f.saldo,
                 f.note,
                 f.id_stato_fatt,
+                fil.numero_documento AS numero_documento_originale,
+                fil.progressivo_invio,
                 sf.code AS stato_code,
                 sf.label AS stato_label,
                 sz.code AS sezionale_code,
                 sz.descrizione AS sezionale_label,
+                tf.code AS tipo_code,
+                tf.label AS tipo_label,
                 a.ragione_sociale AS cliente_ragione_sociale,
                 f.created_at,
                 f.updated_at
@@ -258,6 +272,8 @@ final class FattureRepository
             LEFT JOIN tb_anagrafiche a ON a.id_anagrafica = f.id_anagrafica
             LEFT JOIN cfg_stati_fattura sf ON sf.id_stato = f.id_stato_fatt
             LEFT JOIN cfg_sezionali sz ON sz.id_sezionale = f.id_sezionale
+            LEFT JOIN cfg_tipi_fattura tf ON tf.id_tipo = f.id_tipo_fatt
+            LEFT JOIN tb_fatture_import_log fil ON fil.id_fattura = f.id_fattura
             /*FILTERS*/
             ORDER BY COALESCE(f.data_fattura, f.created_at) DESC, f.id_fattura DESC
             LIMIT :limit
@@ -281,7 +297,12 @@ final class FattureRepository
         $where = $whereParts ? ('WHERE ' . implode(' AND ', $whereParts)) : '';
 
         $sql = str_replace('/*FILTERS*/', $where, $sql);
-        $sql = str_replace(':limit', (string) $limit, $sql);
+        if ($limit > 0) {
+            $effectiveLimit = max(1, min($limit, 500));
+            $sql = str_replace('LIMIT :limit', 'LIMIT ' . $effectiveLimit, $sql);
+        } else {
+            $sql = str_replace('LIMIT :limit', '', $sql);
+        }
         $stmt = $this->pdo->prepare($sql);
         if ($allowed !== null) {
             foreach ($allowed as $index => $id) {
@@ -309,7 +330,11 @@ final class FattureRepository
                 'stato_label' => $row['stato_label'] ?? null,
                 'sezionale_code' => $row['sezionale_code'] ?? null,
                 'sezionale_label' => $row['sezionale_label'] ?? null,
+                'tipo_code' => $row['tipo_code'] ?? null,
+                'tipo_label' => $row['tipo_label'] ?? null,
                 'cliente_ragione_sociale' => $row['cliente_ragione_sociale'] ?? null,
+                'numero_documento_originale' => $row['numero_documento_originale'] ?? null,
+                'progressivo_invio' => $row['progressivo_invio'] ?? null,
                 'created_at' => $row['created_at'] ?? null,
                 'updated_at' => $row['updated_at'] ?? null,
             ];
@@ -546,6 +571,8 @@ final class FattureRepository
                 sf.label AS stato_label,
                 sz.code AS sezionale_code,
                 sz.descrizione AS sezionale_label,
+                tf.code AS tipo_code,
+                tf.label AS tipo_label,
                 td.code AS sdi_td_code,
                 es.code AS sdi_esig_code,
                 mp.code AS sdi_mp_code,
@@ -570,6 +597,7 @@ final class FattureRepository
             LEFT JOIN tb_anagrafiche a ON a.id_anagrafica = f.id_anagrafica
             LEFT JOIN cfg_stati_fattura sf ON sf.id_stato = f.id_stato_fatt
             LEFT JOIN cfg_sezionali sz ON sz.id_sezionale = f.id_sezionale
+            LEFT JOIN cfg_tipi_fattura tf ON tf.id_tipo = f.id_tipo_fatt
             LEFT JOIN cfg_sdi_tipo_documento td ON td.id_tipo = f.id_sdi_tipo_documento
             LEFT JOIN cfg_sdi_esigibilita_iva es ON es.id_esig = f.id_sdi_esigibilita
             LEFT JOIN cfg_sdi_modalita_pagamento mp ON mp.id_modalita = f.id_sdi_modalita
@@ -622,6 +650,8 @@ final class FattureRepository
             'id_sdi_modalita' => isset($row['id_sdi_modalita']) ? (int) $row['id_sdi_modalita'] : null,
             'sezionale_code' => $row['sezionale_code'] ?? null,
             'sezionale_label' => $row['sezionale_label'] ?? null,
+            'tipo_code' => $row['tipo_code'] ?? null,
+            'tipo_label' => $row['tipo_label'] ?? null,
             'sdi_td_code' => $row['sdi_td_code'] ?? null,
             'sdi_esig_code' => $row['sdi_esig_code'] ?? null,
             'sdi_mp_code' => $row['sdi_mp_code'] ?? null,
@@ -1096,6 +1126,37 @@ final class FattureRepository
         $totale = isset($data['totale']) ? (float) $data['totale'] : 0.0;
         $saldo = isset($data['saldo']) ? (float) $data['saldo'] : $totale;
         $idPreventivo = isset($data['id_preventivo']) ? (int) $data['id_preventivo'] : 0;
+        $idSdiTipoDocumento = isset($data['id_sdi_tipo_documento']) ? (int) $data['id_sdi_tipo_documento'] : null;
+        $idSdiEsigibilita = isset($data['id_sdi_esigibilita']) ? (int) $data['id_sdi_esigibilita'] : null;
+        $idSdiModalita = isset($data['id_sdi_modalita']) ? (int) $data['id_sdi_modalita'] : null;
+        $clientePec = isset($data['cliente_pec']) ? trim((string) $data['cliente_pec']) : null;
+        if ($clientePec === '') {
+            $clientePec = null;
+        }
+        $clienteCodiceSdi = isset($data['cliente_codice_sdi']) ? trim((string) $data['cliente_codice_sdi']) : null;
+        if ($clienteCodiceSdi === '') {
+            $clienteCodiceSdi = null;
+        }
+        $clienteIban = isset($data['cliente_iban']) ? trim((string) $data['cliente_iban']) : null;
+        if ($clienteIban === '') {
+            $clienteIban = null;
+        }
+        $clienteBanca = isset($data['cliente_banca']) ? trim((string) $data['cliente_banca']) : null;
+        if ($clienteBanca === '') {
+            $clienteBanca = null;
+        }
+        $clienteModalitaPagamento = isset($data['cliente_modalita_pagamento']) ? trim((string) $data['cliente_modalita_pagamento']) : null;
+        if ($clienteModalitaPagamento === '') {
+            $clienteModalitaPagamento = null;
+        }
+        $clienteIdCondPagamento = isset($data['cliente_id_cond_pagamento']) ? (int) $data['cliente_id_cond_pagamento'] : null;
+        if ($clienteIdCondPagamento !== null && $clienteIdCondPagamento <= 0) {
+            $clienteIdCondPagamento = null;
+        }
+        $clienteGiorniPagamento = isset($data['cliente_giorni_pagamento']) ? (int) $data['cliente_giorni_pagamento'] : null;
+        if ($clienteGiorniPagamento !== null && $clienteGiorniPagamento < 0) {
+            $clienteGiorniPagamento = null;
+        }
 
         $this->ensureRecalcProcedureExists();
         $manageTransaction = !$this->pdo->inTransaction();
@@ -1106,8 +1167,11 @@ final class FattureRepository
             $numbering = $this->reserveNumeroDocumenti($idSezionale, $date);
             $annoFattura = $numbering['anno'];
             $numeroDocumento = $numbering['numero'];
-            $stmt = $this->pdo->prepare(
-                'INSERT INTO tb_fatture (
+        $createdAt = isset($data['created_at']) ? trim((string) $data['created_at']) : null;
+        $updatedAt = isset($data['updated_at']) ? trim((string) $data['updated_at']) : null;
+
+        $stmt = $this->pdo->prepare(
+            'INSERT INTO tb_fatture (
                     id_sezionale,
                     id_serie,
                     id_anagrafica,
@@ -1124,6 +1188,13 @@ final class FattureRepository
                     id_sdi_tipo_documento,
                     id_sdi_esigibilita,
                     id_sdi_modalita,
+                    cliente_pec,
+                    cliente_codice_sdi,
+                    cliente_iban,
+                    cliente_banca,
+                    cliente_id_cond_pagamento,
+                    cliente_modalita_pagamento,
+                    cliente_giorni_pagamento,
                     note,
                     created_at,
                     updated_at
@@ -1141,12 +1212,19 @@ final class FattureRepository
                     :totale,
                     :saldo,
                     :id_stato_fatt,
-                    NULL,
-                    NULL,
-                    NULL,
+                    :id_sdi_tipo_documento,
+                    :id_sdi_esigibilita,
+                    :id_sdi_modalita,
+                    :cliente_pec,
+                    :cliente_codice_sdi,
+                    :cliente_iban,
+                    :cliente_banca,
+                    :cliente_id_cond_pagamento,
+                    :cliente_modalita_pagamento,
+                    :cliente_giorni_pagamento,
                     :note,
-                    NOW(),
-                    NOW()
+                    COALESCE(NULLIF(:created_at, \'\'), NOW()),
+                    COALESCE(NULLIF(:updated_at, \'\'), NOW())
                 )'
             );
             $stmt->bindValue(':id_sezionale', $idSezionale, PDO::PARAM_INT);
@@ -1161,7 +1239,43 @@ final class FattureRepository
             $stmt->bindValue(':totale', $totale, PDO::PARAM_STR);
             $stmt->bindValue(':saldo', $saldo, PDO::PARAM_STR);
             $stmt->bindValue(':id_stato_fatt', $idStatoFatt, PDO::PARAM_INT);
-            $stmt->bindValue(':note', $note !== null && $note !== '' ? $note : null, $note !== null && $note !== '' ? PDO::PARAM_STR : PDO::PARAM_NULL);
+            if ($idSdiTipoDocumento !== null) {
+                $stmt->bindValue(':id_sdi_tipo_documento', $idSdiTipoDocumento, PDO::PARAM_INT);
+            } else {
+                $stmt->bindValue(':id_sdi_tipo_documento', null, PDO::PARAM_NULL);
+            }
+            if ($idSdiEsigibilita !== null) {
+                $stmt->bindValue(':id_sdi_esigibilita', $idSdiEsigibilita, PDO::PARAM_INT);
+            } else {
+                $stmt->bindValue(':id_sdi_esigibilita', null, PDO::PARAM_NULL);
+            }
+            if ($idSdiModalita !== null) {
+                $stmt->bindValue(':id_sdi_modalita', $idSdiModalita, PDO::PARAM_INT);
+            } else {
+                $stmt->bindValue(':id_sdi_modalita', null, PDO::PARAM_NULL);
+            }
+            $stmt->bindValue(':cliente_pec', $clientePec, $clientePec !== null ? PDO::PARAM_STR : PDO::PARAM_NULL);
+            $stmt->bindValue(':cliente_codice_sdi', $clienteCodiceSdi, $clienteCodiceSdi !== null ? PDO::PARAM_STR : PDO::PARAM_NULL);
+            $stmt->bindValue(':cliente_iban', $clienteIban, $clienteIban !== null ? PDO::PARAM_STR : PDO::PARAM_NULL);
+            $stmt->bindValue(':cliente_banca', $clienteBanca, $clienteBanca !== null ? PDO::PARAM_STR : PDO::PARAM_NULL);
+            $stmt->bindValue(':cliente_id_cond_pagamento', $clienteIdCondPagamento, $clienteIdCondPagamento !== null ? PDO::PARAM_INT : PDO::PARAM_NULL);
+            $stmt->bindValue(':cliente_modalita_pagamento', $clienteModalitaPagamento, $clienteModalitaPagamento !== null ? PDO::PARAM_STR : PDO::PARAM_NULL);
+            $stmt->bindValue(':cliente_giorni_pagamento', $clienteGiorniPagamento, $clienteGiorniPagamento !== null ? PDO::PARAM_INT : PDO::PARAM_NULL);
+            if ($note !== null && $note !== '') {
+                $stmt->bindValue(':note', $note, PDO::PARAM_STR);
+            } else {
+                $stmt->bindValue(':note', null, PDO::PARAM_NULL);
+            }
+            $stmt->bindValue(
+                ':created_at',
+                $createdAt !== null && $createdAt !== '' ? $createdAt : null,
+                $createdAt !== null && $createdAt !== '' ? PDO::PARAM_STR : PDO::PARAM_NULL
+            );
+            $stmt->bindValue(
+                ':updated_at',
+                $updatedAt !== null && $updatedAt !== '' ? $updatedAt : null,
+                $updatedAt !== null && $updatedAt !== '' ? PDO::PARAM_STR : PDO::PARAM_NULL
+            );
             $stmt->execute();
 
             $idFattura = (int) $this->pdo->lastInsertId();
@@ -1198,6 +1312,7 @@ final class FattureRepository
                     :posizione
                 )'
             );
+
             $posizione = 1;
             foreach ($righe as $line) {
                 $descrizione = trim((string) ($line['descrizione'] ?? ''));
@@ -1210,7 +1325,7 @@ final class FattureRepository
                 }
                 $prezzo = isset($line['prezzo']) ? (float) $line['prezzo'] : (isset($line['prezzo_unitario']) ? (float) $line['prezzo_unitario'] : 0.0);
                 $sconto = isset($line['sconto']) ? (float) $line['sconto'] : 0.0;
-                $aliquota = isset($line['iva']) ? (float) $line['iva'] : 22.0;
+                $aliquota = isset($line['aliquota_iva']) ? (float) $line['aliquota_iva'] : 22.0;
                 $idProdotto = isset($line['id_prodotto']) ? (int) $line['id_prodotto'] : null;
                 $idNatura = isset($line['id_sdi_natura_iva']) ? (int) $line['id_sdi_natura_iva'] : null;
                 $comboKey = isset($line['combo_key']) ? trim((string) $line['combo_key']) : null;

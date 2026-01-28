@@ -56,6 +56,11 @@ const PacchettiDetail = () => {
   const { token, logout } = useAuth()
 
   const id = Number(query.get('id') || 0)
+  useEffect(() => {
+    if (!id) {
+      navigate('/pacchetti/lista', { replace: true })
+    }
+  }, [id, navigate])
   const getActiveTheme = () => {
     if (typeof document === 'undefined') return 'light'
     return document.documentElement.dataset.coreuiTheme || 'light'
@@ -331,12 +336,6 @@ const PacchettiDetail = () => {
       if (err.status === 401 && logout) { logout(); return }
       setSubmitError(err)
     }
-  }
-
-  if (!id) {
-    return (
-      <CAlert color="warning">Parametro id mancante.</CAlert>
-    )
   }
 
   return (

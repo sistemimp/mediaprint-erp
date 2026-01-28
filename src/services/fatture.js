@@ -1,8 +1,8 @@
-import { apiFetch, buildApiUrl, getStoredToken } from './apiClient'
+import { apiFetch, buildApiUrl, getStoredToken, uploadToApi } from './apiClient'
 
 export const fetchFattureList = async ({ token, limit, signal } = {}) => {
   const params = {}
-  if (limit) {
+  if (limit !== undefined && limit !== null) {
     params.limit = limit
   }
 
@@ -363,6 +363,29 @@ export const exportFatturaXml = async ({ token, id, signal } = {}) => {
   }
 
   return { blob, filename }
+}
+
+export const importFatturaXml = async ({ token, files, signal } = {}) => {
+  const normalized = files
+    ? Array.isArray(files)
+      ? files.filter(Boolean)
+      : [files]
+    : []
+  if (normalized.length === 0) {
+    throw new Error('Selezionare almeno un file XML SdI da importare.')
+  }
+  const formData = new FormData()
+  normalized.forEach((file) => {
+    formData.append('file[]', file, file.name)
+  })
+
+  const payload = await uploadToApi('/fattureImportXml.php', {
+    token,
+    formData,
+    signal,
+  })
+
+  return payload ?? {}
 }
 
 export const buildFatturaPdfUrl = (id) => {

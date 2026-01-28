@@ -1410,6 +1410,65 @@ final class AnagraficheRepository
     }
 
     /**
+     * @return array{id_anagrafica:int, ragione_sociale:string, piva:?string, codice_fiscale:?string}|null
+     */
+    public function findByTaxIdentifier(?string $piva, ?string $codiceFiscale): ?array
+    {
+        $normalizedPiva = $this->normalizeTaxIdentifier($piva);
+        $normalizedCf = $this->normalizeTaxIdentifier($codiceFiscale);
+
+        $clauses = [];
+        $params = [];
+
+        if ($normalizedPiva !== null) {
+            $clauses[] = 'REPLACE(REPLACE(REPLACE(UPPER(piva), " ", ""), ".", ""), "-", "") = :piva';
+            $params[':piva'] = $normalizedPiva;
+        }
+        if ($normalizedCf !== null) {
+            $clauses[] = 'REPLACE(REPLACE(REPLACE(UPPER(codice_fiscale), " ", ""), ".", ""), "-", "") = :codice_fiscale';
+            $params[':codice_fiscale'] = $normalizedCf;
+        }
+
+        if (empty($clauses)) {
+            return null;
+        }
+
+        $sql = 'SELECT id_anagrafica, ragione_sociale, piva, codice_fiscale
+                FROM tb_anagrafiche
+                WHERE is_active = 1 AND (' . implode(' OR ', $clauses) . ')
+                ORDER BY id_anagrafica DESC
+                LIMIT 1';
+
+        $stmt = $this->pdo->prepare($sql);
+        foreach ($params as $placeholder => $value) {
+            $stmt->bindValue($placeholder, $value, PDO::PARAM_STR);
+        }
+        $stmt->execute();
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$row) {
+            return null;
+        }
+
+        return [
+            'id_anagrafica' => (int) $row['id_anagrafica'],
+            'ragione_sociale' => (string) ($row['ragione_sociale'] ?? ''),
+            'piva' => $row['piva'] !== null ? (string) $row['piva'] : null,
+            'codice_fiscale' => $row['codice_fiscale'] !== null ? (string) $row['codice_fiscale'] : null,
+        ];
+    }
+
+    private function normalizeTaxIdentifier(?string $value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+        $cleaned = preg_replace('/[^A-Z0-9]/i', '', (string) $value);
+        $cleaned = strtoupper($cleaned);
+        return $cleaned === '' ? null : $cleaned;
+    }
+
+    /**
      * Elimina definitivamente l'anagrafica (dopo archiviazione via trigger).
      */
     public function hardDeleteAnagrafica(int $id): void

@@ -31,17 +31,12 @@ const _nav = [
     items: [
       {
         component: CNavItem,
-        name: 'Dashboard',
+        name: 'Dashboard e fatturazione',
         to: '/prodotti/dashboard',
       },
       {
         component: CNavItem,
-        name: 'Statistiche di Fatturazione',
-        to: '/prodotti/fatturazione',
-      },
-      {
-        component: CNavItem,
-        name: 'Crea nuovo',
+        name: 'Crea nuovo Prodotto',
         to: '/prodotti/crea',
         permission: 'prod.create',
       },
@@ -170,12 +165,6 @@ const _nav = [
       },
       {
         component: CNavItem,
-        name: 'Crea nuovo',
-        to: '/preventivi/crea',
-        permission: 'prev.create',
-      },
-      {
-        component: CNavItem,
         name: 'Lista',
         to: '/preventivi/lista',
       },
@@ -288,11 +277,6 @@ const _nav = [
         component: CNavItem,
         name: 'Dettaglio',
         to: '/lavorazioni/dettaglio',
-      },
-      {
-        component: CNavItem,
-        name: 'Template attivita',
-        to: '/lavorazioni/templates',
       },
     ],
   },

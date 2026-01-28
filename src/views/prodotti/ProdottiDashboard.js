@@ -19,6 +19,7 @@ import {
 
 import { fetchProdottiDashboard } from '../../services/prodotti'
 import { useAuth } from '../../context/AuthContext'
+import ProdottiFatturazione from './ProdottiFatturazione'
 
 const formatInteger = (value) => {
   if (value === null || value === undefined || Number.isNaN(Number(value))) {
@@ -204,6 +205,9 @@ const ProdottiDashboard = () => {
           </CCard>
         </CCol>
       </CRow>
+      <div className="mt-5">
+        <ProdottiFatturazione />
+      </div>
     </>
   )
 }

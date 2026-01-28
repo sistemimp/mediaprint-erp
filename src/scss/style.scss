@@ -4,7 +4,15 @@
 @use "@coreui/chartjs/scss/coreui-chartjs";
 @use "vendors/simplebar";
 
+:root,
+html,
+body,
+#root {
+  height: 100%;
+}
+
 body {
+  margin: 0;
   background-color: var(--cui-tertiary-bg);
 }
 
@@ -25,10 +33,32 @@ body {
 }
 
 .wrapper {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  height: 100vh;
+  max-height: 100vh;
+  overflow: hidden;
   width: 100%;
   padding-inline: var(--cui-sidebar-occupy-start, 0) var(--cui-sidebar-occupy-end, 0);
   will-change: auto;
   @include transition(padding .15s);
+}
+
+.wrapper > .body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding-bottom: 1.5rem;
+  -webkit-overflow-scrolling: touch;
+}
+
+.wrapper > header,
+.wrapper > .header {
+  flex-shrink: 0;
+}
+
+.wrapper > .footer {
+  flex-shrink: 0;
 }
 
 .header > .container-fluid,

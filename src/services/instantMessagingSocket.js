@@ -6,7 +6,8 @@ const DEFAULT_IM_WS_URL = 'wss://wss.mediaprint.it/ws/im'
 const DEFAULT_IM_WS_PATH = ''
 
 const resolveSocketConfig = () => {
-  const configuredUrl = import.meta.env.VITE_IM_WS_URL
+  const proxyUrl = import.meta.env.VITE_IM_WS_PROXY_URL
+  const configuredUrl = (proxyUrl && proxyUrl.trim()) || import.meta.env.VITE_IM_WS_URL
   const configuredPath = import.meta.env.VITE_IM_WS_PATH
   const configuredTransports = import.meta.env.VITE_IM_WS_TRANSPORTS
   return {

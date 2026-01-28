@@ -1,0 +1,4 @@
+npm run dev -> esecuzione in fase di sviluppo
+npm run build -> compilazione del progetto per la distribuzione
+npm start build -> testa la compilazione
+npm run release -> pacchettizzazione dell'applicazione per la distribuzione finale

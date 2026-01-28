@@ -288,6 +288,13 @@ const PreventiviDetail = () => {
   const navigate = useNavigate()
   const location = useLocation()
   const query = useQuery()
+  const modeParam = String(query.get('mode') || '').toLowerCase()
+  const createMode = Boolean(
+    modeParam === 'create' ||
+    modeParam === 'nuovo' ||
+    modeParam === 'new' ||
+    location.state?.createMode,
+  )
   const id = Number(query.get('id') || 0)
   const { token, logout, user } = useAuth()
   const { setBreadcrumbActions, clearBreadcrumbActions } = useBreadcrumbActions()
@@ -297,14 +304,14 @@ const PreventiviDetail = () => {
 
   // Se non viene passato un ID valido, reindirizza alla lista
   useEffect(() => {
-    if (!id || Number.isNaN(id)) {
+    if ((!id || Number.isNaN(id)) && !createMode) {
       navigate('/preventivi/lista', { replace: true })
     }
-  }, [id, navigate])
+  }, [createMode, id, navigate])
 
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(createMode ? false : true)
   const [loadError, setLoadError] = useState(null)
-  const [editable, setEditable] = useState(false)
+  const [editable, setEditable] = useState(createMode)
   const [header, setHeader] = useState({ anno: null, numero: null, stato: null })
   const [statusOptions, setStatusOptions] = useState([])
   const [currentStatus, setCurrentStatus] = useState({ code: null, label: null })
@@ -615,6 +622,13 @@ const PreventiviDetail = () => {
     prefillAppliedRef.current = true
     navigate(`${location.pathname}${location.search}`, { replace: true, state: null })
   }, [prefill, navigate, location.pathname, location.search])
+
+  useEffect(() => {
+    if (!createMode) return
+    setLoadError(null)
+    setEditable(true)
+    setLoading(false)
+  }, [createMode])
 
   useEffect(() => {
     if (!ddtModalVisible || !token) return
@@ -2080,6 +2094,10 @@ const PreventiviDetail = () => {
         const payload = buildPayload()
         const result = await createPreventivo({ token, ...payload, send: false, signal: controller.signal })
         setNoteDirty(false)
+        const newId = getPreventivoIdFromResponse(result)
+        if (!silent && (!id || createMode) && newId) {
+          navigate(`/preventivi/dettagli?id=${newId}`, { replace: true })
+        }
         if (!silent) {
           setSubmitSuccess(
             result?.anno_preventivo && result?.numero_documento
@@ -2101,7 +2119,7 @@ const PreventiviDetail = () => {
         setSubmitting(false)
       }
     },
-    [buildPayload, createPreventivo, editable, id, logout, pendingOggettoCreate, token],
+    [buildPayload, createPreventivo, createMode, editable, id, logout, navigate, pendingOggettoCreate, token],
   )
 
   const handleSalvaBozza = async (e) => {
@@ -2209,19 +2227,20 @@ const PreventiviDetail = () => {
   }, [pendingOggettoCreate, submitting, uiDisabled])
 
   useEffect(() => {
-    if (!id) {
+    if (!id && !createMode) {
       clearBreadcrumbActions()
       return
     }
-    const actions = [
-      {
+    const actions = []
+    if (id) {
+      actions.push({
         id: 'preventivo-refresh',
         icon: cilReload,
         label: loading ? 'Aggiornamento dati...' : 'Aggiorna dati',
         onClick: handleRefreshData,
         disabled: loading,
-      },
-    ]
+      })
+    }
     if (!loading && !loadError) {
       actions.push({
         id: 'preventivo-save',
@@ -2234,6 +2253,7 @@ const PreventiviDetail = () => {
     return () => clearBreadcrumbActions()
   }, [
     clearBreadcrumbActions,
+    createMode,
     handleBreadcrumbSave,
     handleRefreshData,
     id,
@@ -2902,7 +2922,7 @@ const PreventiviDetail = () => {
                   </CTable>
                 </CCol>
                 <CCol md={6}>
-                  <CFormLabel>Oggetto preventivo</CFormLabel>
+                  <CFormLabel>Attività lavorative</CFormLabel>
                   <CMultiSelect
                     options={oggettiOptions}
                     selectionType="tags"
@@ -2961,9 +2981,6 @@ const PreventiviDetail = () => {
                       return null
                     }}
                   />
-                </CCol>
-                <CCol md={12}>
-                  <CFormLabel>Oggetto:{selectedOggetti}</CFormLabel>
                 </CCol>
               </CRow>
             </section>

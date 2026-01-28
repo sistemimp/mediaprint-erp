@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   CAlert,
@@ -20,10 +20,11 @@ import {
   CTableRow,
 } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
-import { cilArrowRight, cilPrint, cilReload } from '@coreui/icons'
+import { cilArrowRight, cilCloudUpload, cilPrint, cilReload } from '@coreui/icons'
+import { CSmartPagination } from '@coreui/react-pro'
 
 import { useAuth } from '../../context/AuthContext'
-import { buildFatturaPdfUrl, fetchFattureList } from '../../services/fatture'
+import { buildFatturaPdfUrl, fetchFattureList, importFatturaXml } from '../../services/fatture'
 import PermissionButton from '../../components/PermissionButton'
 
 const currencyFormatter = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' })
@@ -42,6 +43,9 @@ const formatCurrency = (value) => {
   return currencyFormatter.format(numeric)
 }
 
+const ROWS_PER_PAGE = 10
+const FETCH_LIMIT = 0
+
 const FattureList = () => {
   const navigate = useNavigate()
   const { token, logout } = useAuth()
@@ -54,6 +58,14 @@ const FattureList = () => {
   const [statusFilter, setStatusFilter] = useState('all')
   const [sezionaleFilter, setSezionaleFilter] = useState('all')
   const [refreshIndex, setRefreshIndex] = useState(0)
+  const [currentPage, setCurrentPage] = useState(0)
+  const [sortKey, setSortKey] = useState('data_fattura')
+  const [sortOrder, setSortOrder] = useState('desc')
+  const importInputRef = useRef(null)
+  const [importLoading, setImportLoading] = useState(false)
+  const [importError, setImportError] = useState(null)
+  const [importMessage, setImportMessage] = useState(null)
+  const [importResults, setImportResults] = useState([])
 
   useEffect(() => {
     if (!token) return
@@ -65,9 +77,11 @@ const FattureList = () => {
         const { items: data = [] } = await fetchFattureList({
           token,
           signal: controller.signal,
-          limit: 300,
+          limit: FETCH_LIMIT,
         })
-        setItems(Array.isArray(data) ? data : [])
+        const normalized = Array.isArray(data) ? data : []
+        setItems(normalized)
+        setCurrentPage(0)
       } catch (err) {
         if (err?.name === 'AbortError') return
         if (err?.status === 401 && logout) {
@@ -83,6 +97,10 @@ const FattureList = () => {
     load()
     return () => controller.abort()
   }, [token, logout, refreshIndex])
+
+  useEffect(() => {
+    setCurrentPage(0)
+  }, [search, yearFilter, statusFilter, sezionaleFilter])
 
   const years = useMemo(() => {
     const values = new Set()
@@ -125,6 +143,33 @@ const FattureList = () => {
     return Array.from(map.values()).sort((a, b) => a.label.localeCompare(b.label))
   }, [items])
 
+  const sortRow = (a, b) => {
+    const key = sortKey
+    const valueA = (a[key] ?? '') ?? ''
+    const valueB = (b[key] ?? '') ?? ''
+    if (
+      key === 'cliente_ragione_sociale' ||
+      key === 'numero_documento' ||
+      key === 'sezionale_label' ||
+      key === 'stato_label' ||
+      key === 'tipo_label'
+    ) {
+      const cmp = String(valueA).localeCompare(String(valueB))
+      return cmp
+    }
+    if (['totale_imponibile', 'totale_iva', 'totale', 'saldo'].includes(key)) {
+      const numA = Number(valueA) || 0
+      const numB = Number(valueB) || 0
+      return numA - numB
+    }
+    if (key === 'data_fattura') {
+      const dateA = valueA ? new Date(valueA).getTime() : 0
+      const dateB = valueB ? new Date(valueB).getTime() : 0
+      return dateA - dateB
+    }
+    return 0
+  }
+
   const filteredItems = useMemo(() => {
     const term = search.trim().toLowerCase()
     return items.filter((row) => {
@@ -145,6 +190,7 @@ const FattureList = () => {
         const haystack = [
           row.cliente_ragione_sociale,
           row.numero_documento,
+          row.tipo_label,
           row.anno,
           row.stato_label,
           row.note,
@@ -162,6 +208,52 @@ const FattureList = () => {
     })
   }, [items, search, yearFilter, statusFilter, sezionaleFilter])
 
+  const sortedItems = useMemo(() => {
+    const copy = [...filteredItems]
+    copy.sort((a, b) => {
+      const delta = sortRow(a, b)
+      return sortOrder === 'asc' ? delta : -delta
+    })
+    return copy
+  }, [filteredItems, sortKey, sortOrder])
+
+  const totalPages = Math.max(Math.ceil(sortedItems.length / ROWS_PER_PAGE), 1)
+  const totalItems = sortedItems.length
+  const paginatedItems = useMemo(() => {
+    const start = currentPage * ROWS_PER_PAGE
+    return sortedItems.slice(start, start + ROWS_PER_PAGE)
+  }, [sortedItems, currentPage])
+  const startIndex = totalItems === 0 ? 0 : currentPage * ROWS_PER_PAGE + 1
+  const endIndex = Math.min(totalItems, (currentPage + 1) * ROWS_PER_PAGE)
+
+  useEffect(() => {
+    setCurrentPage(0)
+  }, [search, yearFilter, statusFilter, sezionaleFilter])
+
+  useEffect(() => {
+    if (currentPage >= totalPages) {
+      setCurrentPage(Math.max(totalPages - 1, 0))
+    }
+  }, [currentPage, totalPages])
+
+  const handleSort = (key) => {
+    if (sortKey === key) {
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')
+      setCurrentPage(0)
+      return
+    }
+    setSortKey(key)
+    setSortOrder('desc')
+    setCurrentPage(0)
+  }
+
+  const renderSortIndicator = (key) => {
+    if (sortKey !== key) {
+      return ''
+    }
+    return sortOrder === 'asc' ? ' ▲' : ' ▼'
+  }
+
   const handleView = (id) => {
     if (!id) return
     navigate(`/fatture/dettagli?id=${id}`)
@@ -172,6 +264,37 @@ const FattureList = () => {
     const url = buildFatturaPdfUrl(id)
     if (!url) return
     window.open(url, '_blank', 'noopener')
+  }
+
+  const handleImportClick = () => {
+    importInputRef.current?.click()
+  }
+
+  const handleImportChange = async (event) => {
+    const fileList = event.target?.files
+    if (!fileList || fileList.length === 0) {
+      return
+    }
+    setImportMessage(null)
+    setImportError(null)
+    setImportResults([])
+    setImportLoading(true)
+    try {
+      const result = await importFatturaXml({
+        token,
+        files: Array.from(fileList),
+      })
+      setImportResults(result?.results ?? [])
+      setImportMessage('Importazione completata.')
+      setRefreshIndex((v) => v + 1)
+    } catch (err) {
+      setImportError(err)
+    } finally {
+      setImportLoading(false)
+      if (event.target) {
+        event.target.value = ''
+      }
+    }
   }
 
   return (
@@ -201,10 +324,54 @@ const FattureList = () => {
             >
               Nuova fattura
             </PermissionButton>
+            <PermissionButton
+              color="outline-primary"
+              permission="fatt.create"
+              onClick={handleImportClick}
+              disabled={importLoading}
+            >
+              <CIcon icon={cilCloudUpload} className="me-2" />
+              {importLoading ? 'Importazione...' : 'Importa XML SdI'}
+            </PermissionButton>
+            <input
+              type="file"
+              accept=".xml,.zip,.p7m"
+              multiple
+              ref={importInputRef}
+              style={{ display: 'none' }}
+              onChange={handleImportChange}
+            />
           </div>
         </div>
       </CCardHeader>
       <CCardBody>
+        {importMessage && (
+          <CAlert color="success" className="mb-3">
+            {importMessage}
+          </CAlert>
+        )}
+        {importError && (
+          <CAlert color="danger" className="mb-3">
+            {importError.message || 'Errore durante l\'importazione.'}
+          </CAlert>
+        )}
+        {importResults.length > 0 && (
+          <ul className="mb-3">
+            {importResults.map((item, index) => (
+              <li key={`${item.file ?? index}`} className="mb-2">
+                <strong>{item.file || `File ${index + 1}`}</strong> —{' '}
+                {item.ok
+                  ? 'importata'
+                  : 'errore: ' + (item.message || 'n/d')}
+                {item.ok && (
+                  <div className="text-body-secondary small">
+                    Documento originale salvato nel log: {item.numero_documento ?? 'sconosciuto'}
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
         <CRow className="g-3 mb-4">
           <CCol xs={12} md={4}>
             <CFormInput
@@ -264,82 +431,165 @@ const FattureList = () => {
         )}
 
         {!loading && !error && filteredItems.length > 0 && (
-          <CTable hover responsive>
-            <CTableHead color="light">
-              <CTableRow className="align-middle">
-                <CTableHeaderCell>Numero</CTableHeaderCell>
-                <CTableHeaderCell>Sezionale</CTableHeaderCell>
-                <CTableHeaderCell>Data</CTableHeaderCell>
-                <CTableHeaderCell>Cliente</CTableHeaderCell>
-                <CTableHeaderCell className="text-end">Imponibile</CTableHeaderCell>
-                <CTableHeaderCell className="text-end">IVA</CTableHeaderCell>
-                <CTableHeaderCell className="text-end">Totale</CTableHeaderCell>
-                <CTableHeaderCell className="text-end">Saldo</CTableHeaderCell>
-                <CTableHeaderCell>Stato</CTableHeaderCell>
-                <CTableHeaderCell className="text-center text-nowrap">Azioni</CTableHeaderCell>
-              </CTableRow>
-            </CTableHead>
-            <CTableBody>
-              {filteredItems.map((row) => (
-                <CTableRow key={row.id_fattura}>
-                  <CTableDataCell className="text-nowrap">
-                    {row.anno ?? '-'}/{row.numero_documento ?? '-'}
-                  </CTableDataCell>
-                  <CTableDataCell>
-                    {row.id_sezionale || row.sezionale_code || row.sezionale_label ? (
-                      <>
-                        <div className="fw-semibold">{row.sezionale_code || row.sezionale_label || '-'}</div>
-                        {row.sezionale_label && row.sezionale_code && row.sezionale_label !== row.sezionale_code && (
-                          <small className="text-body-secondary">{row.sezionale_label}</small>
-                        )}
-                      </>
-                    ) : (
-                      <span className="text-body-secondary">-</span>
-                    )}
-                  </CTableDataCell>
-                  <CTableDataCell>{formatDate(row.data_fattura)}</CTableDataCell>
-                  <CTableDataCell>{row.cliente_ragione_sociale || '-'}</CTableDataCell>
-                  <CTableDataCell className="text-end">
-                    {formatCurrency(row.totale_imponibile)}
-                  </CTableDataCell>
-                  <CTableDataCell className="text-end">{formatCurrency(row.totale_iva)}</CTableDataCell>
-                  <CTableDataCell className="text-end">{formatCurrency(row.totale)}</CTableDataCell>
-                  <CTableDataCell className="text-end">{formatCurrency(row.saldo)}</CTableDataCell>
-                  <CTableDataCell>
-                    {row.stato_label ? (
-                      <CBadge color="secondary">{row.stato_label}</CBadge>
-                    ) : (
-                      <span className="text-body-secondary">-</span>
-                    )}
-                  </CTableDataCell>
-                  <CTableDataCell className="text-center">
-                    <div className="d-inline-flex gap-2 flex-wrap justify-content-center">
-                      <PermissionButton
-                        color="link"
-                        size="sm"
-                        className="p-0"
-                        onClick={() => handleView(row.id_fattura)}
-                        title="Apri dettaglio"
-                        permission="fatt.read"
-                      >
-                        <CIcon icon={cilArrowRight} />
-                      </PermissionButton>
-                      <PermissionButton
-                        color="link"
-                        size="sm"
-                        className="p-0"
-                        onClick={() => handlePrintPdf(row.id_fattura)}
-                        title="Stampa PDF"
-                        permission="fatt.read"
-                      >
-                        <CIcon icon={cilPrint} />
-                      </PermissionButton>
-                    </div>
-                  </CTableDataCell>
+          <>
+            <CTable hover responsive>
+              <CTableHead color="light">
+                <CTableRow className="align-middle">
+                  <CTableHeaderCell
+                    className="cursor-pointer"
+                    onClick={() => handleSort('numero_documento')}
+                  >
+                    Numero{renderSortIndicator('numero_documento')}
+                  </CTableHeaderCell>
+                  <CTableHeaderCell
+                    className="cursor-pointer"
+                    onClick={() => handleSort('tipo_label')}
+                  >
+                    Tipo{renderSortIndicator('tipo_label')}
+                  </CTableHeaderCell>
+                  <CTableHeaderCell
+                    className="cursor-pointer"
+                    onClick={() => handleSort('sezionale_label')}
+                  >
+                    Sezionale{renderSortIndicator('sezionale_label')}
+                  </CTableHeaderCell>
+                  <CTableHeaderCell
+                    className="cursor-pointer"
+                    onClick={() => handleSort('data_fattura')}
+                  >
+                    Data{renderSortIndicator('data_fattura')}
+                  </CTableHeaderCell>
+                  <CTableHeaderCell
+                    className="cursor-pointer"
+                    onClick={() => handleSort('cliente_ragione_sociale')}
+                  >
+                    Cliente{renderSortIndicator('cliente_ragione_sociale')}
+                  </CTableHeaderCell>
+                  <CTableHeaderCell
+                    className="text-end cursor-pointer"
+                    onClick={() => handleSort('totale_imponibile')}
+                  >
+                    Imponibile{renderSortIndicator('totale_imponibile')}
+                  </CTableHeaderCell>
+                  <CTableHeaderCell
+                    className="text-end cursor-pointer"
+                    onClick={() => handleSort('totale_iva')}
+                  >
+                    IVA{renderSortIndicator('totale_iva')}
+                  </CTableHeaderCell>
+                  <CTableHeaderCell
+                    className="text-end cursor-pointer"
+                    onClick={() => handleSort('totale')}
+                  >
+                    Totale{renderSortIndicator('totale')}
+                  </CTableHeaderCell>
+                  <CTableHeaderCell
+                    className="text-end cursor-pointer"
+                    onClick={() => handleSort('saldo')}
+                  >
+                    Saldo{renderSortIndicator('saldo')}
+                  </CTableHeaderCell>
+                  <CTableHeaderCell
+                    className="cursor-pointer"
+                    onClick={() => handleSort('stato_label')}
+                  >
+                    Stato{renderSortIndicator('stato_label')}
+                  </CTableHeaderCell>
+                  <CTableHeaderCell className="text-center text-nowrap">Azioni</CTableHeaderCell>
                 </CTableRow>
-              ))}
-            </CTableBody>
-          </CTable>
+              </CTableHead>
+              <CTableBody>
+                {paginatedItems.map((row) => (
+                  <CTableRow key={row.id_fattura}>
+                    <CTableDataCell className="text-nowrap">
+                      {row.anno ?? '-'}/{row.numero_documento ?? '-'}
+                      {row.numero_documento_originale && (
+                        <small className="text-body-secondary d-block">
+                          Origine: {row.numero_documento_originale}
+                        </small>
+                      )}
+                    </CTableDataCell>
+                    <CTableDataCell>
+                      {row.tipo_label || row.tipo_code ? (
+                        <div className="fw-semibold">
+                          {row.tipo_label || row.tipo_code}
+                        </div>
+                      ) : (
+                        <span className="text-body-secondary">-</span>
+                      )}
+                    </CTableDataCell>
+                    <CTableDataCell>
+                      {row.id_sezionale || row.sezionale_code || row.sezionale_label ? (
+                        <>
+                          <div className="fw-semibold">{row.sezionale_code || row.sezionale_label || '-'}</div>
+                          {row.sezionale_label && row.sezionale_code && row.sezionale_label !== row.sezionale_code && (
+                            <small className="text-body-secondary">{row.sezionale_label}</small>
+                          )}
+                        </>
+                      ) : (
+                        <span className="text-body-secondary">-</span>
+                      )}
+                    </CTableDataCell>
+                    <CTableDataCell>{formatDate(row.data_fattura)}</CTableDataCell>
+                    <CTableDataCell>{row.cliente_ragione_sociale || '-'}</CTableDataCell>
+                    <CTableDataCell className="text-end">
+                      {formatCurrency(row.totale_imponibile)}
+                    </CTableDataCell>
+                    <CTableDataCell className="text-end">{formatCurrency(row.totale_iva)}</CTableDataCell>
+                    <CTableDataCell className="text-end">{formatCurrency(row.totale)}</CTableDataCell>
+                    <CTableDataCell className="text-end">{formatCurrency(row.saldo)}</CTableDataCell>
+                    <CTableDataCell>
+                      {row.stato_label ? (
+                        <CBadge color="secondary">{row.stato_label}</CBadge>
+                      ) : (
+                        <span className="text-body-secondary">-</span>
+                      )}
+                    </CTableDataCell>
+                    <CTableDataCell className="text-center">
+                      <div className="d-inline-flex gap-2 flex-wrap justify-content-center">
+                        <PermissionButton
+                          color="link"
+                          size="sm"
+                          className="p-0"
+                          onClick={() => handleView(row.id_fattura)}
+                          title="Apri dettaglio"
+                          permission="fatt.read"
+                        >
+                          <CIcon icon={cilArrowRight} />
+                        </PermissionButton>
+                        <PermissionButton
+                          color="link"
+                          size="sm"
+                          className="p-0"
+                          onClick={() => handlePrintPdf(row.id_fattura)}
+                          title="Stampa PDF"
+                          permission="fatt.read"
+                        >
+                          <CIcon icon={cilPrint} />
+                        </PermissionButton>
+                      </div>
+                    </CTableDataCell>
+                  </CTableRow>
+                ))}
+              </CTableBody>
+            </CTable>
+            <div className="d-flex flex-column flex-lg-row gap-3 align-items-center justify-content-between mt-3">
+              <div className="small text-body-secondary">
+                {totalItems > 0
+                  ? `Risultati ${startIndex}-${endIndex} di ${totalItems}`
+                  : 'Nessun risultato disponibile'}
+              </div>
+              {totalPages > 1 && (
+                <CSmartPagination
+                  size="sm"
+                  align="end"
+                  pages={totalPages}
+                  activePage={currentPage + 1}
+                  onActivePageChange={(page) => setCurrentPage(Math.max(page - 1, 0))}
+                />
+              )}
+            </div>
+          </>
         )}
       </CCardBody>
     </CCard>

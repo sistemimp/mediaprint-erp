@@ -115,15 +115,6 @@ const ProdottiFatturazione = () => {
     })
   }, [items, search, onlyBilled])
 
-  const summaryCards = useMemo(
-    () => [
-      { key: 'prodotti_totali', label: 'Totale prodotti', value: formatInteger(kpi.prodotti_totali) },
-      { key: 'prodotti_fatturati', label: 'Prodotti fatturati', value: formatInteger(kpi.prodotti_fatturati) },
-      { key: 'quantita_totale', label: 'Quantita totale', value: formatInteger(kpi.quantita_totale) },
-      { key: 'fatturato_totale', label: 'Fatturato totale', value: formatCurrency(kpi.fatturato_totale) },
-    ],
-    [kpi],
-  )
   const enrichedItems = useMemo(
     () =>
       filteredItems.map((row) => {
@@ -173,19 +164,6 @@ const ProdottiFatturazione = () => {
           {error}
         </CAlert>
       ) : null}
-
-      <CRow className="mb-4">
-        {summaryCards.map((card) => (
-          <CCol key={card.key} sm={6} lg={3} className="mb-3">
-            <CCard className="h-100 border-0 shadow-sm">
-              <CCardBody>
-                <div className="text-body-secondary text-uppercase small fw-semibold">{card.label}</div>
-                <div className="fs-3 fw-semibold mt-2">{loading ? <CSpinner size="sm" /> : card.value}</div>
-              </CCardBody>
-            </CCard>
-          </CCol>
-        ))}
-      </CRow>
 
       <CCard className="mb-4">
         <CCardHeader>Filtri</CCardHeader>

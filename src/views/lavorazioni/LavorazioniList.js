@@ -2,6 +2,10 @@
 import React, { Fragment, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
+  CAccordion,
+  CAccordionBody,
+  CAccordionHeader,
+  CAccordionItem,
   CAlert,
   CBadge,
   CButton,
@@ -257,14 +261,7 @@ const LavorazioniList = () => {
   const [activitiesByJob, setActivitiesByJob] = useState({})
   const [activitiesLoading, setActivitiesLoading] = useState({})
   const [activitiesError, setActivitiesError] = useState({})
-  const [expandedKanbanJobs, setExpandedKanbanJobs] = useState([])
   const todayIso = useMemo(() => formatISODate(new Date()), [])
-  const toggleKanbanJob = (jobId) => {
-    setExpandedKanbanJobs((prev) =>
-      prev.includes(jobId) ? prev.filter((id) => id !== jobId) : [...prev, jobId],
-    )
-  }
-  const isKanbanJobExpanded = (jobId) => expandedKanbanJobs.includes(jobId)
 
   const repartoOptions = useMemo(() => {
     const unique = new Map()
@@ -805,70 +802,109 @@ const LavorazioniList = () => {
                       </div>
                       <div className="p-3 d-flex flex-column gap-3" style={{ minHeight: '160px' }}>
                         {columnItems.length > 0 ? (
-                          columnItems.map((job) => {
-                            const { referenceTitle, objectDescription } = buildJobLabelInfo(job)
-                            return (
-                              <div
-                                key={job.id_lavorazione || job.codice}
-                                role="button"
-                                tabIndex={0}
-                                className="border rounded-3 shadow-sm p-3 position-relative"
-                                onClick={() => job.id_lavorazione && navigate(`/lavorazioni/dettaglio?id=${job.id_lavorazione}`)}
-                                onKeyDown={(event) => {
-                                  if (event.key === 'Enter' || event.key === ' ') {
-                                    job.id_lavorazione && navigate(`/lavorazioni/dettaglio?id=${job.id_lavorazione}`)
-                                  }
-                                }}
-                                draggable={Boolean(job.id_lavorazione) && statusUpdatingJobId === null}
-                                onDragStart={handleKanbanCardDragStart(job)}
-                                onDragEnd={handleKanbanCardDragEnd}
-                                aria-grabbed={draggedJobId === Number(job.id_lavorazione)}
-                                style={{
-                                  ...kanbanCardStyle,
-                                  cursor:
-                                    Boolean(job.id_lavorazione) && statusUpdatingJobId === null ? 'grab' : 'pointer',
-                                }}
-                              >
-                                {statusUpdatingJobId === Number(job.id_lavorazione) ? (
-                                  <div
-                                    className="position-absolute top-0 start-0 w-100 h-100 d-flex align-items-center justify-content-center rounded-3"
-                                    style={{
-                                      backgroundColor: 'var(--cui-card-bg, var(--cui-body-bg, #fff))',
-                                      opacity: 0.75,
-                                    }}
-                                  >
-                                    <CSpinner size="sm" color="primary" />
-                                  </div>
+                          <CAccordion alwaysOpen flush className="gap-3">
+                            {columnItems.map((job, jobIndex) => {
+                              const jobId = Number(job.id_lavorazione)
+                              const hasValidId = Number.isFinite(jobId) && jobId > 0
+                              const jobKey = job.id_lavorazione
+                                ? `kanban-${job.id_lavorazione}`
+                                : job.codice || `kanban-${column.key}-${jobIndex}`
+                              const progressValue = Number(job.percentuale_avanzamento) || 0
+                      const { referenceTitle, objectDescription, codeLabel } = buildJobLabelInfo(job)
+                      const activitySummary = `${job.attivita_aperte ?? job.attivita_in_corso ?? '-'} / ${job.attivita_totali ?? '-'}`
+                      const headerLabel = codeLabel
+                              const customerName =
+                                job.cliente || job.cliente_ragione_sociale || job.ragione_sociale || job.anagrafica_ragione_sociale || ''
+                              const isUpdating = statusUpdatingJobId === jobId
+                              const isDraggable = hasValidId && statusUpdatingJobId === null
+                              const preventivoLabel = job.numero_preventivo ? `Preventivo ${job.numero_preventivo}` : null
+                              return (
+                                <CAccordionItem key={jobKey} itemKey={jobKey} className="border-0 p-0">
+                                  <div className="position-relative rounded-3" style={kanbanCardStyle}>
+                                    {isUpdating ? (
+                                      <div
+                                        className="position-absolute top-0 start-0 w-100 h-100 d-flex align-items-center justify-content-center rounded-3"
+                                        style={{
+                                          backgroundColor: 'var(--cui-card-bg, var(--cui-body-bg, #fff))',
+                                          opacity: 0.75,
+                                        }}
+                                      >
+                                        <CSpinner size="sm" color="primary" />
+                                      </div>
+                                    ) : null}
+                            <CAccordionHeader
+                              className="px-3 py-3 d-flex justify-content-between align-items-start gap-3"
+                              draggable={isDraggable}
+                              onDragStart={isDraggable ? handleKanbanCardDragStart(job) : undefined}
+                              onDragEnd={isDraggable ? handleKanbanCardDragEnd : undefined}
+                              aria-grabbed={draggedJobId === jobId}
+                              style={{ cursor: isDraggable ? 'grab' : 'pointer' }}
+                            >
+                              <div className="flex-grow-1 pe-3">
+                                <div className="fw-semibold text-truncate">{headerLabel}</div>
+                                {preventivoLabel ? (
+                                  <div className="text-body-secondary small text-truncate">{preventivoLabel}</div>
                                 ) : null}
-                                <div className="d-flex justify-content-between align-items-start gap-2 mb-2 kanban-card-body">
-                                  <div>
-                                  <div className="kanban-card-title">{referenceTitle}</div>
-                                  <div className="kanban-card-reference text-body-secondary small mb-1">
-                                    {formatJobReferenceLabel(job)}
-                                  </div>
-                                  {objectDescription ? (
-                                    <div className="text-body-secondary small mb-1">{objectDescription}</div>
-                                  ) : null}
-                                  <div className="text-body-secondary small kanban-card-meta">
-                                    {job.cliente || '-'}
-                                  </div>
-                                </div>
-                                  {renderPrioritaBadge(job.priorita)}
-                                </div>
-                                <div className="d-flex flex-wrap gap-2 align-items-center mb-2">
-                                  {renderStatoBadge(job)}
-                                  <CBadge color="light" textColor="dark">
-                                    {formatPercent(job.percentuale_avanzamento)}
-                                  </CBadge>
-                                </div>
-                                <div className="small text-body-secondary d-flex flex-column gap-1 kanban-card-meta">
-                                  <span>
-                                    Inizio: {formatDate(job.data_inizio_prevista)} - Fine: {formatDate(job.data_fine_prevista)}
-                                  </span>
-                                </div>
+                                {referenceTitle ? (
+                                  <div className="text-body-secondary small text-truncate">{referenceTitle}</div>
+                                ) : null}
+                                {customerName ? (
+                                  <div className="text-body-secondary small text-truncate">{customerName}</div>
+                                ) : null}
                               </div>
-                            )
-                          })
+                              <div className="d-flex flex-column align-items-end gap-2">
+                                {renderPrioritaBadge(job.priorita)}
+                              </div>
+                            </CAccordionHeader>
+                                    <CAccordionBody className="px-3 pb-3 pt-0">
+                                      {objectDescription ? (
+                                        <div className="text-body-secondary small mb-2">{objectDescription}</div>
+                                      ) : null}
+                                      <div className="d-flex flex-wrap gap-3 mb-2 small text-body-secondary">
+                                        <span>Cliente: {job.cliente || '-'}</span>
+                                        <span>Operatore: {job.operatore_principale || 'n/d'}</span>
+                                        <span>Reparto: {job.reparto_label || job.reparto || 'n/d'}</span>
+                                        <span>Preventivo: {job.numero_preventivo || '-'}</span>
+                                      </div>
+                                      <div className="d-flex align-items-center gap-2 mb-2">
+                                        <CProgress
+                                          thin
+                                          value={Math.min(100, Math.max(0, progressValue))}
+                                          color={progressValue >= 100 ? 'success' : 'primary'}
+                                          className="flex-grow-1"
+                                        />
+                                        <span className="small text-nowrap">{formatPercent(progressValue)}</span>
+                                      </div>
+                                      <div className="small text-body-secondary d-flex flex-wrap gap-3 align-items-center mb-3">
+                                        <span>Inizio: {formatDate(job.data_inizio_prevista)}</span>
+                                        <span>Fine: {formatDate(job.data_fine_prevista)}</span>
+                                        <span>Attività: {activitySummary}</span>
+                                        {job.ritardo_giorni > 0 ? (
+                                          <CBadge color="danger">Ritardo {job.ritardo_giorni}g</CBadge>
+                                        ) : null}
+                                      </div>
+                                      <div className="d-flex justify-content-end">
+                                        <CButton
+                                          color="primary"
+                                          variant="ghost"
+                                          size="sm"
+                                          onClick={() => {
+                                            if (!hasValidId) {
+                                              return
+                                            }
+                                            navigate(`/lavorazioni/dettaglio?id=${jobId}`)
+                                          }}
+                                          aria-label="Apri lavorazione"
+                                        >
+                                          <CIcon icon={cilArrowRight} />
+                                        </CButton>
+                                      </div>
+                                    </CAccordionBody>
+                                  </div>
+                                </CAccordionItem>
+                              )
+                            })}
+                          </CAccordion>
                         ) : (
                           <div className="text-center text-body-secondary small py-4">Nessuna lavorazione in questa colonna.</div>
                         )}

@@ -26,7 +26,6 @@ const FattureDetail = React.lazy(() => import('./views/fatture/FattureDetail'))
 
 // Prodotti
 const ProdottiDashboard = React.lazy(() => import('./views/prodotti/ProdottiDashboard'))
-const ProdottiFatturazione = React.lazy(() => import('./views/prodotti/ProdottiFatturazione'))
 const ProdottiCreate = React.lazy(() => import('./views/prodotti/ProdottiCreate'))
 const ProdottiList = React.lazy(() => import('./views/prodotti/ProdottiList'))
 const ProdottiDetail = React.lazy(() => import('./views/prodotti/ProdottiDetail'))
@@ -76,7 +75,6 @@ const routes = [
   { path: '/fatture/lista', name: 'Fatture - Lista', element: FattureList },
   { path: '/fatture/dettagli', name: 'Fatture - Dettagli', element: FattureDetail },
   { path: '/prodotti/dashboard', name: 'Prodotti - Dashboard', element: ProdottiDashboard },
-  { path: '/prodotti/fatturazione', name: 'Prodotti - Fatturazione', element: ProdottiFatturazione },
   { path: '/prodotti/crea', name: 'Prodotti - Crea nuovo', element: ProdottiCreate },
   { path: '/prodotti/lista', name: 'Prodotti - Lista', element: ProdottiList },
   { path: '/prodotti/dettagli', name: 'Prodotti - Dettagli', element: ProdottiDetail },

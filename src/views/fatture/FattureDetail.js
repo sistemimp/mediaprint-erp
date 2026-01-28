@@ -897,6 +897,23 @@ const FattureDetail = () => {
     return 'paid'
   }, [currentStatusId, currentStatusCode])
 
+  const documentTypeLabel = useMemo(() => {
+    if (!record) return null
+    return record.tipo_label || record.tipo_code || null
+  }, [record])
+
+  const documentTypeCode = useMemo(() => {
+    if (!record?.tipo_code) return null
+    return String(record.tipo_code).toLowerCase()
+  }, [record?.tipo_code])
+
+  const isCreditNoteDocument = documentTypeCode === 'nota_credito'
+
+  const documentTypeBadgeVariant = useMemo(() => {
+    if (!documentTypeLabel) return 'secondary'
+    return isCreditNoteDocument ? 'danger' : 'primary'
+  }, [documentTypeLabel, isCreditNoteDocument])
+
   const timelineStepperClass = useMemo(
     () =>
       ['invoice-timeline-stepper', finalStatusVariant ? `invoice-timeline-stepper--${finalStatusVariant}` : null]
@@ -1766,7 +1783,14 @@ const FattureDetail = () => {
       <CCardHeader>
         <div className="d-flex justify-content-between align-items-center flex-wrap gap-3">
           <div>
-            <h5 className="mb-0">Fattura {numeroDisplay}</h5>
+            <div className="d-flex align-items-baseline gap-2 flex-wrap mb-1">
+              <h5 className="mb-0">Fattura {numeroDisplay}</h5>
+              {documentTypeLabel && (
+                <CBadge color={documentTypeBadgeVariant} className="text-uppercase">
+                  {documentTypeLabel}
+                </CBadge>
+              )}
+            </div>
             <small className="text-body-secondary">
               Dettaglio documento {record?.id_fattura ? `#${record.id_fattura}` : ''}
             </small>
@@ -2210,6 +2234,13 @@ const FattureDetail = () => {
                 </CAlert>
               )}
               <div className="border rounded p-3 mb-3 bg-body-tertiary">
+                {documentTypeLabel && (
+                  <div className="d-flex justify-content-end mb-2">
+                    <CBadge color={documentTypeBadgeVariant} className="text-uppercase">
+                      {documentTypeLabel}
+                    </CBadge>
+                  </div>
+                )}
                 <CRow className="g-3">
                   <CCol md={4}>
                     <div className="text-body-secondary small">Totale documento</div>
@@ -2439,7 +2470,7 @@ const FattureDetail = () => {
                               {(Number(r.prezzo_unitario) || 0).toFixed(2)}
                             </CTableDataCell>
                             <CTableDataCell className="text-end">
-                              {r.iva ?? r.aliquota_iva ?? '-'}
+                              {r.aliquota_iva ?? r.iva ?? '-'}
                             </CTableDataCell>
                             <CTableDataCell className="text-end">{r.sconto ?? 0}</CTableDataCell>
                           </CTableRow>
@@ -2466,7 +2497,11 @@ const FattureDetail = () => {
                         prezzo_unitario:
                           r.prezzo_unitario != null ? Number(r.prezzo_unitario) : Number(r.prezzo) || 0,
                         aliquota_iva:
-                          r.iva != null ? Number(r.iva) : r.aliquota_iva != null ? Number(r.aliquota_iva) : 22,
+                          r.aliquota_iva != null
+                            ? Number(r.aliquota_iva)
+                            : r.iva != null
+                            ? Number(r.iva)
+                            : 22,
                         sconto: r.sconto != null ? Number(r.sconto) : 0,
                         id_prodotto: r.id_prodotto ?? null,
                         id_pacchetto: Number(selPacchetto) || null,
