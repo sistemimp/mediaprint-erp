@@ -36,19 +36,8 @@ const _nav = [
       },
       {
         component: CNavItem,
-        name: 'Crea nuovo Prodotto',
-        to: '/prodotti/crea',
-        permission: 'prod.create',
-      },
-      {
-        component: CNavItem,
-        name: 'Lista',
+        name: 'Prodotti',
         to: '/prodotti/lista',
-      },
-      {
-        component: CNavItem,
-        name: 'Dettagli',
-        to: '/prodotti/dettagli',
       },
       {
         component: CNavItem,

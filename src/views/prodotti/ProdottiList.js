@@ -181,7 +181,7 @@ const ProdottiList = () => {
           <PermissionButton
             color="primary"
             variant="outline"
-            onClick={() => navigate('/prodotti/crea')}
+            onClick={() => navigate('/prodotti/dettagli?mode=new')}
             permission="prod.create"
           >
             <CIcon icon={cilPlus} className="me-2" />

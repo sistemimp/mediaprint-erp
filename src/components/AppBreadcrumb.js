@@ -9,7 +9,8 @@ import { cilSave } from '@coreui/icons'
 import { useBreadcrumbActionsContext } from '../context/BreadcrumbActionsContext'
 
 const AppBreadcrumb = () => {
-  const currentLocation = useLocation().pathname
+  const routerLocation = useLocation()
+  const currentLocation = routerLocation.pathname
   const { actions } = useBreadcrumbActionsContext()
 
   const getRouteName = (pathname, routes) => {
@@ -33,7 +34,22 @@ const AppBreadcrumb = () => {
     return breadcrumbs
   }
 
-  const breadcrumbs = getBreadcrumbs(currentLocation)
+  const customBreadcrumbs = () => {
+    if (currentLocation.startsWith('/prodotti/dettagli')) {
+      const prodottiHref = `${window.location.origin}/#/prodotti/lista`
+      return [
+        {
+          pathname: prodottiHref,
+          name: 'Prodotti',
+          active: false,
+        },
+        { pathname: currentLocation, name: 'Dettagli', active: true },
+      ]
+    }
+    return null
+  }
+
+  const breadcrumbs = customBreadcrumbs() || getBreadcrumbs(currentLocation)
 
   return (
     <div className="d-flex align-items-center gap-3 w-100">

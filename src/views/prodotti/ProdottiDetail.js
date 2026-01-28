@@ -31,6 +31,7 @@ import {
   linkProdottoVariazione,
   unlinkProdottoVariazione,
   updateProdotto,
+  createProdotto,
   fetchProdottoPrezziCombinati,
   upsertProdottoPrezzoCombinato,
   deleteProdottoPrezzoCombinato,
@@ -44,17 +45,23 @@ const ProdottiDetail = () => {
   const navigate = useNavigate()
   const { token, logout } = useAuth()
   const query = useQuery()
-  const id = useMemo(() => Number(query.get('id')), [query])
+  const mode = query.get('mode') || 'edit'
+  const isCreating = mode === 'new'
+  const id = useMemo(() => {
+    const value = Number(query.get('id'))
+    return Number.isNaN(value) ? null : value
+  }, [query])
 
-  // Se l'ID non è presente/valido reindirizza alla lista
+  // Se l'ID non è presente/valido reindirizza alla lista (salvo la creazione)
   useEffect(() => {
-    if (!id || Number.isNaN(id)) {
+    if (isCreating) return
+    if (!id) {
       navigate('/prodotti/lista', { replace: true })
     }
-  }, [id, navigate])
+  }, [id, isCreating, navigate])
 
   const [categories, setCategories] = useState([])
-  const [form, setForm] = useState({ id_prodotto: id, codice: '', nome: '', id_categoria: '', prezzo_listino: '', id_iva: '', id_sdi_natura_iva: '' })
+  const [form, setForm] = useState({ id_prodotto: null, codice: '', nome: '', id_categoria: '', prezzo_listino: '', id_iva: '', id_sdi_natura_iva: '' })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [saving, setSaving] = useState(false)
@@ -81,6 +88,22 @@ const ProdottiDetail = () => {
   ])
   const [toast, setToast] = useState({ open: false, type: 'success', message: '' })
 
+  useEffect(() => {
+    if (!isCreating) return
+    setForm({ id_prodotto: null, codice: '', nome: '', id_categoria: '', prezzo_listino: '', id_iva: '', id_sdi_natura_iva: '' })
+    setVariazioni([])
+    setAssegnate([])
+    setSelectedVar('')
+    setComboPrezzi([])
+    setComboSelIds([])
+    setComboPrezzoVal('')
+    setComboEditing(false)
+    setComboSelByCat({})
+    setComboGenerating(false)
+    setGroupCat1('')
+    setGroupCat2('')
+  }, [isCreating])
+
   const showToast = (message, type = 'success') => {
     setToast({ open: true, type, message })
     window.clearTimeout(showToast._t)
@@ -88,12 +111,24 @@ const ProdottiDetail = () => {
   }
 
   useEffect(() => {
-    if (!token || !id) return
+    if (!token) return
+    if (!isCreating && !id) return
     const controller = new AbortController()
     const load = async () => {
       setLoading(true)
       setError(null)
       try {
+        if (isCreating) {
+          const [{ items: cats }, { items: ivas }, { items: nats }] = await Promise.all([
+            fetchCategorieProdotti({ token, signal: controller.signal }),
+            fetchIvaList({ token, signal: controller.signal }),
+            fetchNatureIva({ token, signal: controller.signal }),
+          ])
+          setCategories(cats)
+          setIvaOptions(ivas)
+          setNaturaOptions(nats)
+          return
+        }
         const [{ items: cats }, detail, { items: vars }, { items: assigned }, { items: combos }, { items: ivas }, { items: nats }] = await Promise.all([
           fetchCategorieProdotti({ token, signal: controller.signal }),
           fetchProdottoDetail({ token, id_prodotto: id, signal: controller.signal }),
@@ -130,7 +165,7 @@ const ProdottiDetail = () => {
     }
     load()
     return () => controller.abort()
-  }, [token, id, logout])
+  }, [token, id, isCreating, logout])
 
   const onChange = (e) => {
     const { name, value } = e.target
@@ -150,6 +185,15 @@ const ProdottiDetail = () => {
         prezzo_listino: form.prezzo_listino !== '' ? Number(form.prezzo_listino) : null,
         id_iva: form.id_iva ? Number(form.id_iva) : null,
         id_sdi_natura_iva: form.id_sdi_natura_iva ? Number(form.id_sdi_natura_iva) : null,
+      }
+      if (isCreating) {
+        const newProduct = await createProdotto({ token, body })
+        showToast('Prodotto creato', 'success')
+        const newId = newProduct?.id_prodotto
+        if (newId) {
+          navigate(`/prodotti/dettagli?id=${newId}`)
+        }
+        return
       }
       await updateProdotto({ token, body })
       showToast('Prodotto salvato', 'success')
@@ -460,11 +504,13 @@ const ProdottiDetail = () => {
     return ` ${dir}(${idx + 1})`
   }
 
+  const pageTitle = isCreating ? 'Prodotti - Nuovo prodotto' : 'Prodotti - Dettagli'
+
   return (
     <CCard>
       <CCardHeader>
         <div className="d-flex justify-content-between align-items-center">
-          <h5 className="mb-0">Prodotti - Dettagli</h5>
+          <h5 className="mb-0">{pageTitle}</h5>
           <CButton color="secondary" variant="outline" onClick={() => navigate('/prodotti/lista')}>Torna alla lista</CButton>
         </div>
       </CCardHeader>
@@ -528,13 +574,15 @@ const ProdottiDetail = () => {
                 </CCol>
               </CRow>
               <div className="mt-3 d-flex gap-2">
-                <PermissionButton type="submit" color="primary" disabled={saving} permission="prod.write">
+                <PermissionButton type="submit" color="primary" disabled={saving} permission={isCreating ? 'prod.create' : 'prod.write'}>
                   Salva
                 </PermissionButton>
               </div>
             </CForm>
 
-            <h6 className="mb-3">Variazioni</h6>
+            {!isCreating && (
+              <>
+                <h6 className="mb-3">Variazioni</h6>
             <CRow className="g-2 align-items-end mb-3">
               <CCol md={6}>
                 <CFormSelect value={selectedVar} onChange={(e) => setSelectedVar(e.target.value)}>
@@ -821,7 +869,9 @@ const ProdottiDetail = () => {
                 })}
               </CTableBody>
             </CTable>
-          <BottomToast open={toast.open} type={toast.type} message={toast.message} />
+              </>
+            )}
+            <BottomToast open={toast.open} type={toast.type} message={toast.message} />
         </>
       )}
       </CCardBody>
