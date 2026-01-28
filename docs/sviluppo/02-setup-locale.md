@@ -1,10 +1,10 @@
 # Setup locale
 
 ## Prerequisiti
-- Node.js + npm
-- PHP con estensione PDO per MySQL
-- Composer (per le dipendenze backend)
-- MySQL (schema e dati di riferimento in `sql/`)
+- Node.js (>= 18/20 consigliato) + npm
+- PHP 8 con estensione PDO/MySQL
+- Composer
+- MySQL compatibile con il dump `sql/mediaprint_erp_v2.sql`
 
 ## Frontend
 Da root progetto:
@@ -12,51 +12,60 @@ Da root progetto:
 npm install
 npm start
 ```
-
-Comandi utili:
+Il progetto usa Vite, quindi `npm start` avvia il server di sviluppo e proxya
+le chiamate verso il backend (`VITE_API_BASE_URL` o `/api` se si usa proxy).
+Per la build:
 ```bash
 npm run build
 npm run serve
 ```
+Per avviare anche il server WebSocket IM dal root:
+```bash
+npm run start:ws
+```
+Questo comando esegue internamente `npm --prefix backend/ws start`.
 
-Variabili ambiente frontend (opzionali):
-- `VITE_API_BASE_URL` (default `/api`)
-- `VITE_AUTH_LOGIN_URL`
-- `VITE_IM_WS_URL` (URL WebSocket instant messaging, es. `wss://wss.mediaprint.it/ws/im`)
+### Variabili frontend disponibili
+- `VITE_API_BASE_URL` (default `/api`, override per puntare a
+  `https://gestionale.mediaprint.it/pubblica`)
+- `VITE_AUTH_LOGIN_URL` (per autenticazione esterna o redirect alla login)
+- `VITE_IM_WS_URL` (es. `wss://wss.mediaprint.it/ws/im`)
 
 ## Backend
 Da `backend/`:
 ```bash
 composer install
 ```
+Configurare `backend/.env` con:
+- parametri DB (`DB_HOST`, `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD`)
+- `JWT_SECRET`, `JWT_ISSUER`, `JWT_AUDIENCE`, `JWT_TTL`
+- `CORS_ORIGIN` se si usa differente host
+- variabili `ERP_AZIENDA_*` richieste per export XML (vedi
+  `docs/sviluppo/08-sdi-export-xml.md`)
+- `IM_API_BASE_URL` (es. `https://gestionale.mediaprint.it/pubblica`) usata
+  dal WS per autenticare le richieste
 
 ## Instant messaging (WebSocket)
 Da `backend/ws/`:
 ```bash
 npm install
-node instant-messaging-server.js
+npm start
 ```
-
-Variabili ambiente (opzionali):
-- `IM_API_BASE_URL` (base URL backend, es. `https://gestionale.mediaprint.it/pubblica`)
+Variabili personalizzabili:
 - `IM_WS_HOST` (default `0.0.0.0`)
 - `IM_WS_PORT` (default `4010`)
-
-Configurare `backend/.env` con:
-- Parametri DB (host, nome db, utente, password)
-- `JWT_SECRET`, `JWT_ISSUER`, `JWT_AUDIENCE`, `JWT_TTL`
-- CORS (se previsto nel `.env`)
-- Variabili `ERP_AZIENDA_*` per export XML SdI (vedi `docs/sviluppo/08-sdi-export-xml.md`)
+- `IM_API_BASE_URL` (base URL backend per validare token e recuperare dati)
 
 ## Database
-Dump disponibili in `sql/`:
-- `sql/mediaprint_erp.sql` (schema + dati di riferimento)
-- `sql/20250107_add_contratti_status_revisioni.sql` (integrazione contratti)
-- `sql/20251224_add_instant_messaging.sql` (tabelle instant messaging)
-
-Esempio import:
+Importare il dump principale:
 ```bash
-mysql -u <user> -p <database> < sql/mediaprint_erp.sql
-mysql -u <user> -p <database> < sql/20250107_add_contratti_status_revisioni.sql
-mysql -u <user> -p <database> < sql/20251224_add_instant_messaging.sql
+mysql -u <user> -p <database> < sql/mediaprint_erp_v2.sql
 ```
+Poi applicare le migrazioni incremental (nell’ordine):
+- `sql/20260123_remove_delta_prezzo_prod_variazioni.sql`
+- `sql/20260127_purge_documents.sql`
+- `sql/20260201_remove_spedizioni_postali.sql`
+
+Questi script aggiornano tabelle prodotti/pacchetti, rimuovono documenti
+temporanei non più necessari e puliscono riferimenti alle spedizioni
+postali ormai inattive.

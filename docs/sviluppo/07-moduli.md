@@ -1,52 +1,79 @@
 # Moduli e copertura FE/BE
 
-Questa mappa si basa sui file presenti nel repository.
+Questa mappa raccoglie la corrispondenza tra i servizi frontend e gli endpoint
+PHP/WS che si trovano nel repository.
 
 ## Copertura end-to-end (servizi FE + endpoint BE)
-- Anagrafiche
-  - FE: `src/services/anagrafiche.js`
-  - BE: `backend/pubblica/anagrafiche*.php`
-- Prodotti
-  - FE: `src/services/prodotti.js`
-  - BE: `backend/pubblica/prodotti/*`
-- Preventivi
-  - FE: `src/services/preventivi.js`
-  - BE: `backend/pubblica/preventivi*.php`
-- Dashboard
-  - FE: `src/services/dashboard.js`
-  - BE: `backend/pubblica/dashboard*.php`
-- Fatture
-  - FE: `src/services/fatture.js`
-  - BE: `backend/pubblica/fatture*.php`
-- DDT
-  - FE: `src/services/ddt.js`
-  - BE: `backend/pubblica/ddt*.php`
-- Contratti
-  - FE: `src/services/contratti.js`
-  - BE: `backend/pubblica/contratti*.php`
-- Lavorazioni
-  - FE: `src/services/lavorazioni.js`
-  - BE: `backend/pubblica/lavorazioni*.php`
-- Pagamenti
-  - FE: `src/services/pagamenti.js`
-  - BE: `backend/pubblica/pagamenti*.php`
-- Pacchetti
-  - FE: `src/services/pacchetti.js`
-  - BE: `backend/pubblica/Pacchetti/*` e `backend/pubblica/pacchetti*.php`
-- Accounts
-  - FE: `src/services/accounts.js`
-  - BE: `backend/pubblica/accounts*.php`
-- Instant messaging
-  - FE: `src/services/instantMessagingApi.js`, `src/services/instantMessagingSocket.js`
-  - BE: `backend/pubblica/im*.php`, `backend/ws/instant-messaging-server.js`
+- **Auth e account:** FE `AuthContext`, `RequireAuth`, `src/views/pages/login`;
+  BE `backend/pubblica/login.php`, `accounts*.php` (list/detail/create/update/delete,
+  reset password, permessi,anagrafiche collegate).
+- **Anagrafiche:** `src/services/anagrafiche.js`, `src/views/anagrafica/*`;
+  BE `anagraficheList.php`, `anagraficheDetail.php`, `anagraficheCreate`,
+  `anagraficheUpdate`, `anagraficheArchiveList`, `anagraficheReactivate`.
+- **Prodotti:** `src/services/prodotti.js`, `src/views/prodotti/*`;
+  BE `prodottiDashboard`, `prodottiFatturazione`, `prodotti/list.php`,
+  `prodotti/detail.php`, `prodotti/create.php`, `prodotti/update.php`,
+  `prodotti/categorie/*`, `prodotti/variazioni/*`, `natureIvaList`,
+  `regimiFiscaliList`.
+- **Pacchetti:** `src/services/pacchetti.js`, `src/views/pacchetti/*`;
+  BE `backend/pubblica/Pacchetti/*`, `pacchettiList.php`, `pacchettiDetail`,
+  `pacchettiSave`, `pacchettiDelete`.
+- **Preventivi:** `src/services/preventivi.js`, `src/views/preventivi/*`;
+  BE `preventiviList`, `preventiviDetail`, `preventiviCreate`, `preventiviUpdate`,
+  `preventiviGenerateLavorazione`, `preventiviLineCed*`, `preventiviEmitDdt`,
+  `preventiviEmitFattura`, `preventiviStatus`, `preventiviStatusLog`,
+  `preventiviRevisionDetail`.
+- **DDT:** `src/services/ddt.js`, `src/views/ddt/*`;
+  BE `ddtList`, `ddtDetail`, `ddtUpdate`, `ddtDashboard`, `ddtDestinazioni`,
+  `ddtCausaliList`.
+- **Fatture:** `src/services/fatture.js`, `src/views/fatture/*`;
+  BE `fattureList`, `fattureDetail`, `fattureUpdate`, `fattureStatusLog`,
+  `fatturePagamenti*`, `fattureExportXml`, `fattureImportXml`, `fattureConfig`.
+- **Pagamenti:** `src/services/pagamenti.js`, `src/views/pagamenti/*`;
+  BE `pagamentiList`, `pagamentiDetail`, `pagamentiImportUpload`,
+  `pagamentiImportConfirm`, `pagamentiInvoicesSearch`, `pagamentiLedger`,
+  `pagamentiDashboard`.
+- **Lavorazioni:** `src/services/lavorazioni.js`, `src/views/lavorazioni/*`,
+  `LavorazioniTemplates`;
+  BE `lavorazioniList`, `lavorazioniDetail`, `lavorazioniUpdate`,
+  `lavorazioniAssign`, `lavorazioniFiles*`, `lavorazioniDocuments`,
+  `lavorazioniActivity*`, `lavorazioniNotifications*.php`, `lavorazioniStatus`.
+- **Contratti:** `src/services/contratti.js`, `src/views/contratti/*`;
+  BE `contrattiList`, `contrattiDetail`, `contrattiSave`, `contrattiStatus`,
+  `contrattiFiles*`, `contrattiRevisionDetail`, `contrattiSendEmail`.
+- **Dashboard:** `src/services/dashboard.js`, `src/views/dashboard/*`;
+  BE `dashboard.php`, `dashboardNewClients.php`, `preventiviDashboard`,
+  `fattureDashboard`, `pagamentiDashboard`, `lavorazioniDashboard`.
+- **Instant Messaging:** `instantMessagingApi.js`, `instantMessagingSocket.js`,
+  `src/components/InstantMessagingPanel.js`, `src/views/im/InstantMessagingPage`;
+  BE `imAccountsList`, `imThreadsList`, `imThreadCreate`, `imMessagesSend`,
+  `imMessagesList`, `imThreadRead`, più server `backend/ws/instant-messaging-server.js`.
+- **Notifiche:** `AppNotificationBell`, `NotificationsList`;
+  BE `lavorazioniNotifications.php`, `lavorazioniNotificationsRead.php`,
+  `lavorazioniNotificationsLatest*.php`.
+- **Profilo/Permessi:** `src/views/profile`, `src/services/profileAvatar.js`,
+  BE `profileAvatar.php`, `profileAvatarUpload.php`, `accountsPermissionsUpdate.php`.
 
-## Viste UI presenti
-Cartelle in `src/views/`:
-- `accounts`, `anagrafica`, `contratti`, `ddt`, `fatture`, `lavorazioni`
-- `pagamenti`, `pacchetti`, `preventivi`, `prodotti`, `dashboard`
-- `im`
+## Viste/UI disponibili
+- `src/views/accounts/`, `anagrafica/`, `contratti/`, `ddt/`, `fatture/`,
+  `lavorazioni/`, `pagamenti/`, `pacchetti/`, `preventivi/`, `prodotti/`,
+  `dashboard/`, `im/`, `notifiche/`, `profile/`.
+- `InstantMessagingWidget` e `InstantMessagingPanel` sono caricati
+  globalmente tramite `AppHeader`.
+- Il menu (`src/_nav.js`) crea gruppi dinamici con permessi e mostra solo
+  le voci abilitate per il ruolo.
+
+## Integrazioni trasversali
+- Le selezioni pacchetti (modali di `PacchettiList/Create/Detail`) vengono
+  riutilizzate in contratti, preventivi e fatture per importare righe
+  preconfezionate.
+- Le notifiche `lavorazioniNotifications` possono reindirizzare a preventivi,
+  fatture o lavorazioni (`payload.route` gestito da `AppNotificationBell`).
+- Il server IM notifica sia la campanella (`AppNotificationBell`) sia il widget
+  di chat; la stessa logica alimenta `desktopNotifications`.
 
 ## Gap documentazione
-- `docs/API.md` copre solo un sottoinsieme degli endpoint presenti.
-- Per i moduli non ancora documentati si consiglia di allineare
-  `docs/API.md` con i file in `backend/pubblica/`.
+- `docs/API.md` è aggiornato solo per un sottoinsieme di endpoint: consultare
+  direttamente `backend/pubblica/` per i nomi completi e le query.
+- Manca una mappa delle tabelle/dati per contratti/pacchetti avanzati e dei
+  campi extra usati in lavorazioni/attività.
