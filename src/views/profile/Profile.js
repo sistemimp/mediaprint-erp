@@ -60,6 +60,10 @@ const Profile = () => {
     () => new Set(permissions.map((permission) => permission.code)),
     [permissions],
   )
+  const roleLabels = roles
+    .map((role) => role.label || role.code)
+    .filter((label) => typeof label === 'string' && label !== '')
+  const roleDisplay = roleLabels.length > 0 ? roleLabels.join(', ') : 'N/D'
 
   useEffect(() => {
     const controller = new AbortController()
@@ -193,6 +197,10 @@ const Profile = () => {
               <CListGroupItem className="d-flex justify-content-between align-items-center">
                 <span className="text-body-secondary">Tipo account</span>
                 <span className="fw-semibold text-capitalize">{user?.accountType || 'N/D'}</span>
+              </CListGroupItem>
+              <CListGroupItem className="d-flex justify-content-between align-items-center">
+                <span className="text-body-secondary">Ruolo</span>
+                <span className="fw-semibold text-capitalize">{roleDisplay}</span>
               </CListGroupItem>
               <CListGroupItem className="d-flex justify-content-between align-items-center">
                 <span className="text-body-secondary">Ultimo accesso</span>

@@ -187,7 +187,7 @@ final class PreventiviService
         if ($value === null) {
             return '-';
         }
-        return number_format($value, 2, ',', '.') . ' â‚¬';
+        return number_format($value, 2, ',', '.') . ' €';
     }
 
     /**
@@ -785,7 +785,7 @@ final class PreventiviService
 
         $fromAddress = isset($input['from']) && filter_var($input['from'], FILTER_VALIDATE_EMAIL)
             ? $input['from']
-            : (getenv('SMTP_FROM_ADDRESS') ?: 'no-reply-mail@' . $this->getMailerDomain());
+            : (getenv('SMTP_FROM_ADDRESS') ?: 'no-reply-mail@mediaprint.it');
         $fromName = isset($input['from_name']) && trim((string) $input['from_name']) !== ''
             ? trim((string) $input['from_name'])
             : 'MediaPrint ERP';

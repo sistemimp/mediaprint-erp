@@ -70,7 +70,7 @@ final class SmtpMailer
         $headers[] = 'MIME-Version: 1.0';
         $headers[] = 'Message-ID: ' . $messageId;
         $headers[] = 'X-Mailer: MediaPrint ERP SMTP';
-        $headers[] = 'Content-Type: multipart/mixed; boundary="' . $boundaryMixed . '"';
+        $headers[] = 'Content-Type: multipart/mixed; charset=utf-8; boundary="' . $boundaryMixed . '"';
         $headers[] = '';
 
         $textBody = strip_tags(preg_replace('/<br\\s*\\/?>/i', "\n", $htmlBody));

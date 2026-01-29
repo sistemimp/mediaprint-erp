@@ -3137,7 +3137,7 @@ const PreventiviDetail = () => {
                   {pkgPreview.length > 0 && (
                     <div className="border rounded p-2">
                       <div className="fw-semibold mb-2">Righe del pacchetto</div>
-                      <CTable compact hover responsive>
+                      <CTable small hover responsive>
                         <CTableHead color="light">
                           <CTableRow>
                             <CTableHeaderCell>Descrizione</CTableHeaderCell>

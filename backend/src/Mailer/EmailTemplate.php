@@ -48,6 +48,29 @@ final class EmailTemplate
             ? '<p>Gentile cliente, ti inviamo una comunicazione ufficiale da MediaPrint ERP.</p>'
             : $bodyHtml;
 
+        $ctaHtml = '';
+        $cleanLabel = trim((string) ($ctaLabel ?? ''));
+        $cleanUrl = trim((string) ($ctaUrl ?? ''));
+        if ($cleanLabel !== '' && $cleanUrl !== '') {
+            $safeCtaLabel = htmlspecialchars($cleanLabel, ENT_QUOTES, 'UTF-8');
+            $safeCtaUrl = htmlspecialchars($cleanUrl, ENT_QUOTES, 'UTF-8');
+            $ctaHtml = <<<HTML
+            <tr>
+              <td style="padding:0 24px 18px 24px;">
+                <table width="100%" cellpadding="0" cellspacing="0" border="0">
+                  <tr>
+                    <td align="center">
+                      <a href="{$safeCtaUrl}" target="_blank" style="display:inline-block; padding:12px 20px; border-radius:8px; background:#f28c00; color:#ffffff; font-family:Arial, Helvetica, sans-serif; font-size:14px; text-decoration:none; font-weight:600;">
+                        {$safeCtaLabel}
+                      </a>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+            HTML;
+        }
+
         $infoRowsHtml = '';
         if ($summaryRows !== []) {
             foreach ($summaryRows as $label => $value) {

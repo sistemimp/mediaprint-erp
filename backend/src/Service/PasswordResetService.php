@@ -141,14 +141,14 @@ final class PasswordResetService
         $formattedExpires = $expiresAt->format('d/m/Y H:i');
         $safeFormattedExpires = htmlspecialchars($formattedExpires, ENT_QUOTES, 'UTF-8');
 
-        $subject = 'Ripristino password MediaPrint ERP';
+        $subject = 'Ripristino password Gestionale MediaPrint';
         $body = <<<HTML
         <p>Abbiamo ricevuto una richiesta di ripristino password.</p>
         <div class="highlight">
           {$safePassword}
         </div>
         <p>Usa la password temporanea entro il {$safeFormattedExpires} per accedere e impostare una nuova password personale.</p>
-        <p>Puoi anche visitare direttamente <a href="{$safeUrl}">MediaPrint ERP</a> per continuare.</p>
+        <p>Puoi anche visitare direttamente <a href="{$safeUrl}">gestionale.mediaprint.it</a> per continuare.</p>
         HTML;
 
         $messageHtml = EmailTemplate::render(

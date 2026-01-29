@@ -221,11 +221,6 @@ const AppNotificationBell = ({ limit = 10 }) => {
     }
   }
 
-  const handleShowAll = () => {
-    setVisible(false)
-    navigate('/notifiche')
-  }
-
   return (
     <CDropdown
       variant="nav-item"
@@ -261,9 +256,6 @@ const AppNotificationBell = ({ limit = 10 }) => {
               onClick={handleMarkAll}
             >
               Segna tutte come lette
-            </CButton>
-            <CButton color="link" size="sm" className="p-0" onClick={handleShowAll}>
-              Mostra tutte
             </CButton>
           </div>
         </CDropdownHeader>
