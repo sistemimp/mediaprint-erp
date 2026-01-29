@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace MediaPrint\Service;
 
+use MediaPrint\Backend\Mailer\EmailTemplate;
 use MediaPrint\Backend\Mailer\SmtpMailer;
 use MediaPrint\Repo\DdtRepository;
 use MediaPrint\Repo\FattureRepository;
@@ -26,7 +27,7 @@ final class PreventiviService
             return $this->ddtRepository;
         }
 
-        throw new \RuntimeException('Funzionalità DDT non disponibile.', 503);
+        throw new \RuntimeException('FunzionalitÃ  DDT non disponibile.', 503);
     }
 
     private function requireFattureRepository(): FattureRepository
@@ -35,7 +36,7 @@ final class PreventiviService
             return $this->fattureRepository;
         }
 
-        throw new \RuntimeException('Funzionalità fatture non disponibile.', 503);
+        throw new \RuntimeException('FunzionalitÃ  fatture non disponibile.', 503);
     }
 
     private function requireLavorazioniRepository(): LavorazioniRepository
@@ -44,7 +45,7 @@ final class PreventiviService
             return $this->lavorazioniRepository;
         }
 
-        throw new \RuntimeException('Funzionalità lavorazioni non disponibile.', 503);
+        throw new \RuntimeException('FunzionalitÃ  lavorazioni non disponibile.', 503);
     }
 
     /**
@@ -120,7 +121,7 @@ final class PreventiviService
         $safeTotale = htmlspecialchars($formattedTotale, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
 
         return sprintf(
-            '<p>Gentile %s,</p><p>in allegato trova il preventivo n. <strong>%s%s</strong> relativo a %s. Il valore complessivo del documento è <strong>%s</strong>.</p><p>Restiamo a disposizione per ulteriori informazioni.</p><p>Cordiali saluti,<br />MediaPrint ERP</p>',
+            '<p>Gentile %s,</p><p>in allegato trova il preventivo n. <strong>%s%s</strong> relativo a %s. Il valore complessivo del documento Ã¨ <strong>%s</strong>.</p><p>Restiamo a disposizione per ulteriori informazioni.</p><p>Cordiali saluti,<br />MediaPrint ERP</p>',
             $safeCliente,
             $safeNumero,
             $safeAnno,
@@ -131,88 +132,54 @@ final class PreventiviService
 
     private function renderPreventivoEmailTemplate(array $info, string $introHtml): string
     {
-        $styles = <<<CSS
-body { margin:0; font-family:Arial, Helvetica, sans-serif; background:#f5f5f5; color:#212121; }
-.wrapper { max-width:640px; margin:0 auto; background:#ffffff; border:1px solid #e0e0e0; border-radius:12px; overflow:hidden; box-shadow:0 4px 12px rgba(0,0,0,0.08); }
-header { background:#0f62fe; color:#ffffff; padding:24px 32px; }
-header h2 { margin:0; font-size:20px; letter-spacing:0.5px; }
-section { padding:24px 32px; }
-.message p { line-height:1.5; margin-bottom:16px; }
-.summary h3 { margin:0 0 12px 0; font-size:16px; color:#0f62fe; text-transform:uppercase; letter-spacing:0.5px; }
-.summary table { width:100%; border-collapse:collapse; }
-.summary th { text-align:left; width:40%; padding:8px 0; color:#5f6b7c; font-size:14px; }
-.summary td { padding:8px 0; font-weight:600; }
-footer { background:#f0f4ff; color:#44546f; padding:20px 32px; font-size:12px; text-align:center; }
-CSS;
-
-        $rows = [];
+        $summaryRows = [];
         if (!empty($info['cliente'])) {
-            $rows['Cliente'] = $info['cliente'];
+            $summaryRows['Cliente'] = $info['cliente'];
         }
         if (!empty($info['numero'])) {
-            $rows['Numero preventivo'] = $info['numero'] . ($info['anno'] ? '/' . $info['anno'] : '');
+            $summaryRows['Numero preventivo'] = $info['numero'] . ($info['anno'] ? '/' . $info['anno'] : '');
         }
         if (!empty($info['data'])) {
-            $rows['Data preventivo'] = $info['data'];
+            $summaryRows['Data preventivo'] = $info['data'];
         }
         if (!empty($info['oggetto'])) {
-            $rows['Oggetto'] = $info['oggetto'];
+            $summaryRows['Oggetto'] = $info['oggetto'];
         }
         if (!empty($info['riferimento'])) {
-            $rows['Riferimento cliente'] = $info['riferimento'];
+            $summaryRows['Riferimento cliente'] = $info['riferimento'];
         }
         if (array_key_exists('totale', $info)) {
-            $rows['Totale'] = $this->formatCurrency($info['totale']);
+            $summaryRows['Totale'] = $this->formatCurrency($info['totale']);
         }
         if (array_key_exists('totale_imponibile', $info)) {
-            $rows['Imponibile'] = $this->formatCurrency($info['totale_imponibile']);
+            $summaryRows['Imponibile'] = $this->formatCurrency($info['totale_imponibile']);
         }
         if (array_key_exists('totale_iva', $info)) {
-            $rows['IVA'] = $this->formatCurrency($info['totale_iva']);
-        }
-
-        $rowsHtml = '';
-        foreach ($rows as $label => $value) {
-            $rowsHtml .= sprintf(
-                '<tr><th>%s</th><td>%s</td></tr>',
-                htmlspecialchars($label, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
-                htmlspecialchars($value ?? '-', ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8')
-            );
+            $summaryRows['IVA'] = $this->formatCurrency($info['totale_iva']);
         }
 
         if (trim($introHtml) === '') {
             $introHtml = '<p>Gentile Cliente,</p><p>in allegato trova il preventivo aggiornato.</p>';
         }
 
-        return <<<HTML
-<!DOCTYPE html>
-<html lang="it">
-<head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<style>{$styles}</style>
-</head>
-<body>
-  <div class="wrapper">
-    <header>
-      <h2>Preventivo</h2>
-    </header>
-    <section class="message">
-      {$introHtml}
-    </section>
-    <section class="summary">
-      <h3>Dettagli preventivo</h3>
-      <table>
-        {$rowsHtml}
-      </table>
-    </section>
-    <footer>
-      Messaggio generato dal portale MediaPrint ERP. Non rispondere direttamente a questa email.
-    </footer>
-  </div>
-</body>
-</html>
-HTML;
+        $preheaderParts = [];
+        if (!empty($info['numero'])) {
+            $preheaderParts[] = 'Preventivo ' . $info['numero'] . ($info['anno'] ? '/' . $info['anno'] : '');
+        }
+        if (!empty($info['cliente'])) {
+            $preheaderParts[] = $info['cliente'];
+        }
+        $preheader = $preheaderParts !== [] ? implode(' · ', $preheaderParts) : 'Preventivo MediaPrint ERP';
+
+        return EmailTemplate::render(
+            'Preventivo',
+            $introHtml,
+            $summaryRows,
+            $info['cliente'] ?? 'Cliente',
+            null,
+            null,
+            (new \DateTimeImmutable('now'))->format('d/m/Y')
+        );
     }
 
     private function formatCurrency(?float $value): string
@@ -220,7 +187,7 @@ HTML;
         if ($value === null) {
             return '-';
         }
-        return number_format($value, 2, ',', '.') . ' €';
+        return number_format($value, 2, ',', '.') . ' â‚¬';
     }
 
     /**
@@ -620,7 +587,7 @@ HTML;
             }
             $existingStatus = strtolower((string) ($existing['stato_code'] ?? ''));
             if ($existingStatus !== '' && !in_array($existingStatus, ['bozza', 'revisionato_ced'], true) && !$send) {
-                throw new \RuntimeException('Il preventivo non è in stato bozza o revisionato CED, impossibile aggiornare.', 422);
+                throw new \RuntimeException('Il preventivo non Ã¨ in stato bozza o revisionato CED, impossibile aggiornare.', 422);
             }
 
             // Se non passato un id_anagrafica valido, verifica comunque che l'anagrafica legata sia attiva
@@ -825,7 +792,9 @@ HTML;
         $mailer = new SmtpMailer();
         $smtpError = null;
         try {
-            $sent = $mailer->send($toList, $ccList, $subject, $messageHtml, $fromAddress, $fromName);
+            $sent = $mailer->send($toList, $ccList, $subject, $messageHtml, $fromAddress, $fromName, [
+                'mediaprint-logo' => EmailTemplate::getLogoPath(),
+            ]);
         } catch (\Throwable $e) {
             $sent = false;
             $smtpError = $e->getMessage();
@@ -1307,12 +1276,12 @@ HTML;
 
         $statusCode = strtolower((string) ($detail['stato_code'] ?? ''));
         if ($statusCode !== 'confermato') {
-            throw new \RuntimeException('È possibile generare la lavorazione solo da preventivi confermati.', 422);
+            throw new \RuntimeException('Ãˆ possibile generare la lavorazione solo da preventivi confermati.', 422);
         }
 
         $idAnagrafica = isset($detail['id_anagrafica']) ? (int) $detail['id_anagrafica'] : 0;
         if ($idAnagrafica <= 0) {
-            throw new \RuntimeException('Il preventivo non è associato a un\'anagrafica valida.', 422);
+            throw new \RuntimeException('Il preventivo non Ã¨ associato a un\'anagrafica valida.', 422);
         }
 
         $titolo = trim((string) ($input['titolo'] ?? $detail['oggetto'] ?? ''));
@@ -1380,12 +1349,12 @@ HTML;
 
         $statusCode = strtolower((string) ($detail['stato_code'] ?? ''));
         if ($statusCode !== 'confermato') {
-            throw new \RuntimeException('È possibile emettere il DDT solo da preventivi confermati.', 422);
+            throw new \RuntimeException('Ãˆ possibile emettere il DDT solo da preventivi confermati.', 422);
         }
 
         $idAnagrafica = isset($detail['id_anagrafica']) ? (int) $detail['id_anagrafica'] : 0;
         if ($idAnagrafica <= 0) {
-            throw new \RuntimeException('Il preventivo non è associato a un\'anagrafica valida.', 422);
+            throw new \RuntimeException('Il preventivo non Ã¨ associato a un\'anagrafica valida.', 422);
         }
 
         $lines = $this->repository->getLines($id);
@@ -1458,12 +1427,12 @@ HTML;
 
         $statusCode = strtolower((string) ($detail['stato_code'] ?? ''));
         if ($statusCode !== 'confermato') {
-            throw new \RuntimeException('È possibile emettere la fattura solo da preventivi confermati.', 422);
+            throw new \RuntimeException('Ãˆ possibile emettere la fattura solo da preventivi confermati.', 422);
         }
 
         $idAnagrafica = isset($detail['id_anagrafica']) ? (int) $detail['id_anagrafica'] : 0;
         if ($idAnagrafica <= 0) {
-            throw new \RuntimeException('Il preventivo non è associato a un\'anagrafica valida.', 422);
+            throw new \RuntimeException('Il preventivo non Ã¨ associato a un\'anagrafica valida.', 422);
         }
 
         $lines = $this->repository->getLines($id);
@@ -1609,7 +1578,7 @@ HTML;
 
         $existing = $this->repository->getById($id);
         if ($existing === null) {
-            throw new \RuntimeException('Preventivo non trovato o già archiviato.', 404);
+            throw new \RuntimeException('Preventivo non trovato o giÃ  archiviato.', 404);
         }
 
         $this->repository->archiveById($id);

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace MediaPrint\Service;
 
+use MediaPrint\Backend\Mailer\EmailTemplate;
 use MediaPrint\Backend\Mailer\SmtpMailer;
 use MediaPrint\Repo\ContrattiRepository;
 
@@ -87,79 +88,45 @@ final class ContrattiService
 
     private function renderContrattoEmailTemplate(array $info, string $introHtml): string
     {
-        $styles = <<<CSS
-body { margin:0; font-family:Arial, Helvetica, sans-serif; background:#f5f5f5; color:#212121; }
-.wrapper { max-width:640px; margin:0 auto; background:#ffffff; border:1px solid #e0e0e0; border-radius:12px; overflow:hidden; box-shadow:0 4px 12px rgba(0,0,0,0.08); }
-header { background:#0f62fe; color:#ffffff; padding:24px 32px; }
-header h2 { margin:0; font-size:20px; letter-spacing:0.5px; }
-section { padding:24px 32px; }
-.message p { line-height:1.5; margin-bottom:16px; }
-.summary h3 { margin:0 0 12px 0; font-size:16px; color:#0f62fe; text-transform:uppercase; letter-spacing:0.5px; }
-.summary table { width:100%; border-collapse:collapse; }
-.summary th { text-align:left; width:40%; padding:8px 0; color:#5f6b7c; font-size:14px; }
-.summary td { padding:8px 0; font-weight:600; }
-footer { background:#f0f4ff; color:#44546f; padding:20px 32px; font-size:12px; text-align:center; }
-CSS;
-
-        $rows = [];
+        $summaryRows = [];
         if (!empty($info['cliente'])) {
-            $rows['Cliente'] = $info['cliente'];
+            $summaryRows['Cliente'] = $info['cliente'];
         }
         if (!empty($info['titolo'])) {
-            $rows['Titolo contratto'] = $info['titolo'];
+            $summaryRows['Titolo contratto'] = $info['titolo'];
         }
         if (!empty($info['codice'])) {
-            $rows['Codice'] = $info['codice'];
+            $summaryRows['Codice'] = $info['codice'];
         }
         if (!empty($info['data_inizio'])) {
-            $rows['Data inizio'] = $info['data_inizio'];
+            $summaryRows['Data inizio'] = $info['data_inizio'];
         }
         if (!empty($info['data_fine'])) {
-            $rows['Data fine'] = $info['data_fine'];
-        }
-
-        $rowsHtml = '';
-        foreach ($rows as $label => $value) {
-            $rowsHtml .= sprintf(
-                '<tr><th>%s</th><td>%s</td></tr>',
-                htmlspecialchars($label, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
-                htmlspecialchars($value ?? '-', ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8')
-            );
+            $summaryRows['Data fine'] = $info['data_fine'];
         }
 
         if (trim($introHtml) === '') {
             $introHtml = '<p>Gentile Cliente,</p><p>in allegato trova il contratto aggiornato.</p>';
         }
 
-        return <<<HTML
-<!DOCTYPE html>
-<html lang="it">
-<head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<style>{$styles}</style>
-</head>
-<body>
-  <div class="wrapper">
-    <header>
-      <h2>Contratto</h2>
-    </header>
-    <section class="message">
-      {$introHtml}
-    </section>
-    <section class="summary">
-      <h3>Dettagli contratto</h3>
-      <table>
-        {$rowsHtml}
-      </table>
-    </section>
-    <footer>
-      Messaggio generato dal portale MediaPrint ERP. Non rispondere direttamente a questa email.
-    </footer>
-  </div>
-</body>
-</html>
-HTML;
+        $preheaderParts = [];
+        if (!empty($info['titolo'])) {
+            $preheaderParts[] = $info['titolo'];
+        }
+        if (!empty($info['codice'])) {
+            $preheaderParts[] = 'Codice ' . $info['codice'];
+        }
+        $preheader = $preheaderParts !== [] ? implode(' · ', $preheaderParts) : 'Contratto MediaPrint ERP';
+
+        return EmailTemplate::render(
+            'Contratto',
+            $introHtml,
+            $summaryRows,
+            $info['cliente'] ?? 'Cliente',
+            null,
+            null,
+            (new \DateTimeImmutable('now'))->format('d/m/Y')
+        );
     }
 
     /**
@@ -354,7 +321,7 @@ HTML;
                 throw new \RuntimeException('Contratto non trovato.', 404);
             }
             if (($existing['stato_code'] ?? null) !== null && ($existing['stato_code'] ?? null) !== 'bozza') {
-                throw new \RuntimeException('Il contratto non è in stato bozza, impossibile aggiornare.', 422);
+                throw new \RuntimeException('Il contratto non ÃƒÂ¨ in stato bozza, impossibile aggiornare.', 422);
             }
             $this->repository->update($id, [
                 'id_anagrafica' => $idAnag,
@@ -444,7 +411,9 @@ HTML;
         $mailer = new SmtpMailer();
         $smtpError = null;
         try {
-            $sent = $mailer->send($toList, $ccList, $subject, $messageHtml, $fromAddress, $fromName);
+            $sent = $mailer->send($toList, $ccList, $subject, $messageHtml, $fromAddress, $fromName, [
+                'mediaprint-logo' => EmailTemplate::getLogoPath(),
+            ]);
         } catch (\Throwable $e) {
             $sent = false;
             $smtpError = $e->getMessage();
@@ -615,7 +584,7 @@ HTML;
         $originalName = isset($file['name']) ? basename((string) $file['name']) : 'contratto.pdf';
         $extension = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
         if ($extension !== 'pdf') {
-            throw new \RuntimeException('È possibile caricare solo file PDF firmati.', 422);
+            throw new \RuntimeException('ÃƒË† possibile caricare solo file PDF firmati.', 422);
         }
 
         $signature = file_get_contents($file['tmp_name'], false, null, 0, 4);

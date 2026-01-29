@@ -5,7 +5,6 @@ import {
   CButton,
   CCard,
   CCardBody,
-  CCardGroup,
   CCol,
   CContainer,
   CForm,
@@ -67,80 +66,58 @@ const Login = () => {
       <CContainer>
         <CRow className="justify-content-center">
           <CCol md={8}>
-            <CCardGroup>
-              <CCard className="p-4">
-                <CCardBody>
-                  <CForm onSubmit={handleSubmit}>
-                    <h1>Login</h1>
-                    <p className="text-body-secondary">Accedi al tuo account</p>
-                    {formError && (
-                      <CAlert color="danger" className="mb-3">
-                        {formError}
-                      </CAlert>
-                    )}
-                    <CInputGroup className="mb-3">
-                      <CInputGroupText>
-                        <CIcon icon={cilUser} />
-                      </CInputGroupText>
-                      <CFormInput
-                        placeholder="Username"
-                        autoComplete="username"
-                        value={username}
-                        onChange={(event) => setUsername(event.target.value)}
-                        disabled={loading}
-                      />
-                    </CInputGroup>
-                    <CInputGroup className="mb-4">
-                      <CInputGroupText>
-                        <CIcon icon={cilLockLocked} />
-                      </CInputGroupText>
-                      <CFormInput
-                        type="password"
-                        placeholder="Password"
-                        autoComplete="current-password"
-                        value={password}
-                        onChange={(event) => setPassword(event.target.value)}
-                        disabled={loading}
-                      />
-                    </CInputGroup>
-                    <CRow>
-                      <CCol xs={6}>
-                        <CButton color="primary" className="px-4" type="submit" disabled={loading}>
-                          {loading ? 'Accesso...' : 'Login'}
-                        </CButton>
-                      </CCol>
-                      <CCol xs={6} className="text-end">
-                        <CButton color="link" className="px-0" disabled={loading}>
-                          Password dimenticata?
-                        </CButton>
-                      </CCol>
-                    </CRow>
-                  </CForm>
-                </CCardBody>
-              </CCard>
-              <CCard className="text-white bg-primary py-5" style={{ width: '44%' }}>
-                <CCardBody className="text-center">
-                  <div>
-                    <h2>Registrati</h2>
-                    <p>
-                      Non hai ancora un account? Richiedilo all'amministratore oppure compila il
-                      modulo di registrazione.
-                    </p>
-                    <Link to="/register">
-                      <CButton
-                        color="primary"
-                        className="mt-3"
-                        active
-                        tabIndex={-1}
-                        disabled={loading}
-                      >
-                        Registrati ora
+            <CCard className="p-4">
+              <CCardBody>
+                <CForm onSubmit={handleSubmit}>
+                  <h1>Login</h1>
+                  <p className="text-body-secondary">Accedi al tuo account</p>
+                  {formError && (
+                    <CAlert color="danger" className="mb-3">
+                      {formError}
+                    </CAlert>
+                  )}
+                  <CInputGroup className="mb-3">
+                    <CInputGroupText>
+                      <CIcon icon={cilUser} />
+                    </CInputGroupText>
+                    <CFormInput
+                      placeholder="Username"
+                      autoComplete="username"
+                      value={username}
+                      onChange={(event) => setUsername(event.target.value)}
+                      disabled={loading}
+                    />
+                  </CInputGroup>
+                  <CInputGroup className="mb-4">
+                    <CInputGroupText>
+                      <CIcon icon={cilLockLocked} />
+                    </CInputGroupText>
+                    <CFormInput
+                      type="password"
+                      placeholder="Password"
+                      autoComplete="current-password"
+                      value={password}
+                      onChange={(event) => setPassword(event.target.value)}
+                      disabled={loading}
+                    />
+                  </CInputGroup>
+                  <CRow>
+                    <CCol xs={6}>
+                      <CButton color="primary" className="px-4" type="submit" disabled={loading}>
+                        {loading ? 'Accesso...' : 'Login'}
                       </CButton>
-                    </Link>
-                  </div>
-                </CCardBody>
-              </CCard>
-            </CCardGroup>
+                    </CCol>
+                      <CCol xs={6} className="text-end">
+                        <Link to="/reset-password">
+                          <CButton color="link" className="px-0" disabled={loading}>
+                            Password dimenticata?
+                          </CButton>
+                        </Link>
+                      </CCol>
+                  </CRow>
+                </CForm>
+              </CCardBody>
+            </CCard>
           </CCol>
         </CRow>
       </CContainer>

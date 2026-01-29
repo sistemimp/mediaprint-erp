@@ -341,6 +341,13 @@ final class AccountsRepository
         $stmt->execute();
     }
 
+    public function markTempPasswordsUsed(int $accountId): void
+    {
+        $stmt = $this->pdo->prepare('UPDATE auth_account_temp_passwords SET used_at = NOW() WHERE id_account = :id AND used_at IS NULL');
+        $stmt->bindValue(':id', $accountId, PDO::PARAM_INT);
+        $stmt->execute();
+    }
+
     /**
      * @param list<int> $contattiIds
      */

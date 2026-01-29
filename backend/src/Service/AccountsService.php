@@ -3,8 +3,10 @@ declare(strict_types=1);
 
 namespace MediaPrint\Service;
 
-use MediaPrint\Repo\AccountsRepository;
+use DateTimeImmutable;
+use MediaPrint\Backend\Mailer\EmailTemplate;
 use MediaPrint\Backend\Mailer\SmtpMailer;
+use MediaPrint\Repo\AccountsRepository;
 use RuntimeException;
 
 final class AccountsService
@@ -462,11 +464,16 @@ final class AccountsService
 
         $password = null;
         $tempId = null;
+        $expiresAt = null;
         if ((int) ($account['must_change_pwd'] ?? 0) === 1) {
             $existing = $this->repository->getActiveTempPassword($accountId);
             if ($existing !== null) {
                 $password = $existing['temp_password'];
                 $tempId = (int) $existing['id_temp'];
+                $parsed = DateTimeImmutable::createFromFormat('Y-m-d H:i:s', (string) ($existing['expires_at'] ?? ''));
+                if ($parsed !== false) {
+                    $expiresAt = $parsed;
+                }
             }
         }
 
@@ -483,7 +490,7 @@ final class AccountsService
             if ($expiresHours <= 0) {
                 $expiresHours = 48;
             }
-            $expiresAt = (new \DateTimeImmutable('now'))->modify('+' . $expiresHours . ' hours');
+            $expiresAt = (new DateTimeImmutable('now'))->modify('+' . $expiresHours . ' hours');
             if ($expiresAt === false) {
                 throw new RuntimeException('Impossibile calcolare la scadenza password.', 500);
             }
@@ -500,25 +507,42 @@ final class AccountsService
         $safeUsername = htmlspecialchars($username, ENT_QUOTES, 'UTF-8');
         $safePassword = htmlspecialchars((string) $password, ENT_QUOTES, 'UTF-8');
         $safeUrl = htmlspecialchars($appUrl, ENT_QUOTES, 'UTF-8');
+        if ($expiresAt === null) {
+            $expiresAt = new DateTimeImmutable('now');
+        }
+        $formattedExpires = $expiresAt->format('d/m/Y H:i');
+        $safeFormattedExpires = htmlspecialchars($formattedExpires, ENT_QUOTES, 'UTF-8');
         $body = <<<HTML
-        <div style="font-family: Arial, sans-serif; color:#1f2937; line-height:1.5;">
-          <h2 style="margin:0 0 12px 0; color:#111827;">Benvenuto in MediaPrint ERP</h2>
-          <p style="margin:0 0 12px 0;">Ciao {$safeUsername},</p>
-          <p style="margin:0 0 12px 0;">Il tuo account e' stato creato. Usa la password temporanea qui sotto per il primo accesso.</p>
-          <div style="padding:12px 16px; background:#f3f4f6; border-radius:8px; display:inline-block; font-weight:700; letter-spacing:0.5px;">
-            {$safePassword}
-          </div>
-          <p style="margin:16px 0 12px 0;">Al primo accesso ti verra' richiesto di sostituire la password.</p>
-          <p style="margin:0 0 4px 0;">Accedi qui:</p>
-          <p style="margin:0;"><a href="{$safeUrl}" style="color:#2563eb;">{$safeUrl}</a></p>
+        <p>Ciao {$safeUsername},</p>
+        <p>Il tuo account è pronto. Usa la password temporanea qui sotto per il primo accesso.</p>
+        <div class="highlight">
+          {$safePassword}
         </div>
+        <p>La password è valida fino al {$safeFormattedExpires}. Al primo accesso ti verrà richiesto di impostare una nuova password personale.</p>
+        <p>Puoi anche visitare direttamente <a href="{$safeUrl}">MediaPrint ERP</a> per continuare.</p>
         HTML;
+
+        $messageHtml = EmailTemplate::render(
+            $subject,
+            $body,
+            [
+                'Riferimento' => 'Benvenuto / password temporanea',
+                'Username' => $username,
+                'Scadenza' => $formattedExpires,
+            ],
+            $username,
+            'Accedi a MediaPrint ERP',
+            $appUrl,
+            (new DateTimeImmutable('now'))->format('d/m/Y')
+        );
 
         $fromAddress = getenv('SMTP_FROM_ADDRESS') ?: 'no-reply-mail@' . $this->getMailerDomain();
         $fromName = getenv('SMTP_FROM_NAME') ?: 'MediaPrint ERP';
 
         $mailer = new SmtpMailer();
-        $mailer->send([$email], [], $subject, $body, $fromAddress, $fromName);
+        $mailer->send([$email], [], $subject, $messageHtml, $fromAddress, $fromName, [
+            'mediaprint-logo' => EmailTemplate::getLogoPath(),
+        ]);
 
         $this->repository->logAccountEmail($accountId, $email, 'welcome', $tempId);
 

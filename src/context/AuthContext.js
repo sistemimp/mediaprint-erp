@@ -12,6 +12,7 @@ const AuthContext = createContext({
   login: async () => {},
   logout: () => {},
   refreshAvatar: async () => null,
+  updateUserSnapshot: () => {},
 })
 
 const isNonEmptyString = (value) => typeof value === 'string' && value.trim() !== ''
@@ -274,6 +275,13 @@ export const AuthProvider = ({ children }) => {
     return () => controller.abort()
   }, [token, user, refreshAvatar, updateAvatarUrl])
 
+  const updateUserSnapshot = useCallback((snapshot) => {
+    if (!snapshot || typeof snapshot !== 'object') {
+      return
+    }
+    setUser(snapshot)
+  }, [])
+
   const value = useMemo(
     () => ({
       token,
@@ -285,8 +293,9 @@ export const AuthProvider = ({ children }) => {
       login,
       logout,
       refreshAvatar,
+      updateUserSnapshot,
     }),
-    [token, user, avatarUrl, loading, error, login, logout, refreshAvatar],
+    [token, user, avatarUrl, loading, error, login, logout, refreshAvatar, updateUserSnapshot],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

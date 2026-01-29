@@ -5,7 +5,7 @@ import { CSpinner } from '@coreui/react'
 import { useAuth } from '../context/AuthContext'
 
 const RequireAuth = ({ children }) => {
-  const { isAuthenticated, loading } = useAuth()
+  const { isAuthenticated, loading, user } = useAuth()
   const location = useLocation()
 
   if (loading) {
@@ -18,6 +18,10 @@ const RequireAuth = ({ children }) => {
 
   if (!isAuthenticated) {
     return <Navigate to="/login" replace state={{ from: location }} />
+  }
+
+  if (user?.mustChangePassword && location.pathname !== '/change-password') {
+    return <Navigate to="/change-password" replace />
   }
 
   return children

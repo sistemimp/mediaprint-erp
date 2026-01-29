@@ -37,7 +37,10 @@ final class SmtpMailer
      * @param list<string> $to
      * @param list<string> $cc
      */
-    public function send(array $to, array $cc, string $subject, string $htmlBody, string $fromEmail, string $fromName): bool
+    /**
+     * @param array<string, string> $inlineImages
+     */
+    public function send(array $to, array $cc, string $subject, string $htmlBody, string $fromEmail, string $fromName, array $inlineImages = []): bool
     {
         $toRecipients = $this->normalizeAddresses($to);
         $ccRecipients = $this->normalizeAddresses($cc);
@@ -46,7 +49,7 @@ final class SmtpMailer
             throw new \InvalidArgumentException('Nessun destinatario email valido per l\'invio SMTP.');
         }
 
-        $fromEmail = filter_var($fromEmail, FILTER_VALIDATE_EMAIL) ? strtolower($fromEmail) : 'no-reply@' . $this->ehloDomain;
+        $fromEmail = filter_var($fromEmail, FILTER_VALIDATE_EMAIL) ? strtolower($fromEmail) : 'no-reply-mail@' . $this->ehloDomain;
         $fromName = trim(preg_replace("/[\r\n]+/", ' ', $fromName)) ?: 'MediaPrint';
         $safeSubject = trim(preg_replace("/[\r\n]+/", ' ', $subject)) ?: 'Comunicazione MediaPrint';
         $normalizedBody = preg_replace("/\r\n|\r|\n/", "\r\n", $htmlBody);
@@ -67,28 +70,45 @@ final class SmtpMailer
         $headers[] = 'MIME-Version: 1.0';
         $headers[] = 'Message-ID: ' . $messageId;
         $headers[] = 'X-Mailer: MediaPrint ERP SMTP';
-        $headers[] = 'Content-Type: multipart/alternative; boundary="' . $boundaryAlt . '"';
+        $headers[] = 'Content-Type: multipart/mixed; boundary="' . $boundaryMixed . '"';
         $headers[] = '';
 
         $textBody = strip_tags(preg_replace('/<br\\s*\\/?>/i', "\n", $htmlBody));
 
-        $bodyParts = [];
-        $bodyParts[] = '--' . $boundaryAlt;
-        $bodyParts[] = 'Content-Type: text/plain; charset=utf-8';
-        $bodyParts[] = 'Content-Transfer-Encoding: 8bit';
-        $bodyParts[] = '';
-        $bodyParts[] = $textBody;
-        $bodyParts[] = '';
-        $bodyParts[] = '--' . $boundaryAlt;
-        $bodyParts[] = 'Content-Type: text/html; charset=utf-8';
-        $bodyParts[] = 'Content-Transfer-Encoding: 8bit';
-        $bodyParts[] = '';
-        $bodyParts[] = $normalizedBody;
-        $bodyParts[] = '';
-        $bodyParts[] = '--' . $boundaryAlt . '--';
-        $bodyParts[] = '';
+        $altParts = [];
+        $altParts[] = '--' . $boundaryAlt;
+        $altParts[] = 'Content-Type: text/plain; charset=utf-8';
+        $altParts[] = 'Content-Transfer-Encoding: 8bit';
+        $altParts[] = '';
+        $altParts[] = $textBody;
+        $altParts[] = '';
+        $altParts[] = '--' . $boundaryAlt;
+        $altParts[] = 'Content-Type: text/html; charset=utf-8';
+        $altParts[] = 'Content-Transfer-Encoding: 8bit';
+        $altParts[] = '';
+        $altParts[] = $normalizedBody;
+        $altParts[] = '';
+        $altParts[] = '--' . $boundaryAlt . '--';
 
-        $messageData = implode("\r\n", $headers) . implode("\r\n", $bodyParts);
+        $mixedParts = [];
+        $mixedParts[] = '--' . $boundaryMixed;
+        $mixedParts[] = 'Content-Type: multipart/alternative; boundary="' . $boundaryAlt . '"';
+        $mixedParts[] = '';
+        $mixedParts[] = implode("\r\n", $altParts);
+
+        foreach ($this->normalizeInlineImages($inlineImages) as $inline) {
+            $mixedParts[] = '--' . $boundaryMixed;
+            $mixedParts[] = 'Content-Type: ' . $inline['mime'] . '; name="' . $inline['name'] . '"';
+            $mixedParts[] = 'Content-Transfer-Encoding: base64';
+            $mixedParts[] = 'Content-ID: <' . $inline['cid'] . '>';
+            $mixedParts[] = 'Content-Disposition: inline; filename="' . $inline['name'] . '"';
+            $mixedParts[] = '';
+            $mixedParts[] = chunk_split($inline['data']);
+        }
+
+        $mixedParts[] = '--' . $boundaryMixed . '--';
+
+        $messageData = implode("\r\n", $headers) . implode("\r\n", $mixedParts);
 
         $socket = $this->openConnection();
         try {
@@ -231,5 +251,58 @@ final class SmtpMailer
             }
         }
         return array_values(array_unique($valid));
+    }
+
+    /**
+     * @param array<string, string> $inlineImages
+     * @return list<array{cid:string,name:string,mime:string,data:string}>
+     */
+    private function normalizeInlineImages(array $inlineImages): array
+    {
+        $result = [];
+        foreach ($inlineImages as $cid => $path) {
+            $cidCandidate = trim((string) $cid);
+            $filePath = trim((string) $path);
+            if ($cidCandidate === '' || $filePath === '') {
+                continue;
+            }
+            if (!is_file($filePath) || !is_readable($filePath)) {
+                continue;
+            }
+            $content = file_get_contents($filePath);
+            if ($content === false) {
+                continue;
+            }
+            $mimeType = $this->detectMimeType($filePath);
+            $result[] = [
+                'cid' => $cidCandidate,
+                'name' => basename($filePath),
+                'mime' => $mimeType,
+                'data' => base64_encode($content),
+            ];
+        }
+        return $result;
+    }
+
+    private function detectMimeType(string $path): string
+    {
+        if (function_exists('finfo_open')) {
+            /** @noinspection PhpUnhandledExceptionInspection */
+            $finfo = finfo_open(FILEINFO_MIME_TYPE);
+            if ($finfo !== false) {
+                $mime = finfo_file($finfo, $path);
+                finfo_close($finfo);
+                if (is_string($mime)) {
+                    return $mime;
+                }
+            }
+        }
+        if (function_exists('mime_content_type')) {
+            $mime = mime_content_type($path);
+            if ($mime !== false) {
+                return $mime;
+            }
+        }
+        return 'application/octet-stream';
     }
 }
