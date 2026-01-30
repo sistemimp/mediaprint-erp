@@ -167,6 +167,50 @@ final class FattureRepository
         return isset($row['fatturato']) ? (float) $row['fatturato'] : 0.0;
     }
 
+    public function fetchRevenueByRange(string $startDate, string $endDate, ?array $allowedAnagrafiche = null): float
+    {
+        $allowed = null;
+        if (is_array($allowedAnagrafiche)) {
+            $allowed = array_values(array_filter(array_map('intval', $allowedAnagrafiche), static fn ($id) => $id > 0));
+            if ($allowed === []) {
+                return 0.0;
+            }
+        }
+
+        $expression = $this->getNetRevenueExpression();
+        $sql = <<<SQL
+            SELECT
+              COALESCE(SUM({$expression}), 0) AS fatturato
+            FROM tb_fatture f
+            LEFT JOIN cfg_stati_fattura sf ON sf.id_stato = f.id_stato_fatt
+            LEFT JOIN cfg_tipi_fattura tf ON tf.id_tipo = f.id_tipo_fatt
+            WHERE COALESCE(f.data_fattura, f.created_at) >= :start
+              AND COALESCE(f.data_fattura, f.created_at) < :end
+              AND (sf.code IS NULL OR sf.code <> 'bozza')
+        SQL;
+
+        if ($allowed !== null) {
+            $placeholders = implode(',', array_fill(0, count($allowed), '?'));
+            $sql .= " AND f.id_anagrafica IN ({$placeholders})";
+        }
+
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->bindValue(':start', $startDate);
+        $stmt->bindValue(':end', $endDate);
+        if ($allowed !== null) {
+            foreach ($allowed as $index => $id) {
+                $stmt->bindValue($index + 1, $id, PDO::PARAM_INT);
+            }
+        }
+        $stmt->execute();
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$row) {
+            return 0.0;
+        }
+
+        return isset($row['fatturato']) ? (float) $row['fatturato'] : 0.0;
+    }
+
     /**
      * @return list<array{id_anagrafica:int|null, ragione_sociale:?string, fatturato:float}>
      */
@@ -241,7 +285,13 @@ final class FattureRepository
     /**
      * @return list<array<string,mixed>>
      */
-    public function listLatest(int $limit = 200, ?array $allowedAnagrafiche = null, bool $excludeDraft = false): array
+    public function listLatest(
+        int $limit = 200,
+        ?array $allowedAnagrafiche = null,
+        bool $excludeDraft = false,
+        ?string $dateFrom = null,
+        ?string $dateTo = null
+    ): array
     {
         $sql = <<<'SQL'
             SELECT
@@ -287,12 +337,26 @@ final class FattureRepository
             }
         }
         $whereParts = [];
+        $params = [];
         if ($allowed !== null) {
-            $placeholders = implode(',', array_fill(0, count($allowed), '?'));
-            $whereParts[] = "f.id_anagrafica IN ({$placeholders})";
+            $placeholders = [];
+            foreach ($allowed as $index => $id) {
+                $key = ':allowed_' . $index;
+                $placeholders[] = $key;
+                $params[$key] = $id;
+            }
+            $whereParts[] = 'f.id_anagrafica IN (' . implode(',', $placeholders) . ')';
         }
         if ($excludeDraft) {
             $whereParts[] = "(sf.code IS NULL OR sf.code <> 'bozza')";
+        }
+        if ($dateFrom !== null && $dateFrom !== '') {
+            $whereParts[] = 'DATE(COALESCE(f.data_fattura, f.created_at)) >= :date_from';
+            $params[':date_from'] = $dateFrom;
+        }
+        if ($dateTo !== null && $dateTo !== '') {
+            $whereParts[] = 'DATE(COALESCE(f.data_fattura, f.created_at)) <= :date_to';
+            $params[':date_to'] = $dateTo;
         }
         $where = $whereParts ? ('WHERE ' . implode(' AND ', $whereParts)) : '';
 
@@ -304,9 +368,11 @@ final class FattureRepository
             $sql = str_replace('LIMIT :limit', '', $sql);
         }
         $stmt = $this->pdo->prepare($sql);
-        if ($allowed !== null) {
-            foreach ($allowed as $index => $id) {
-                $stmt->bindValue($index + 1, $id, PDO::PARAM_INT);
+        foreach ($params as $placeholder => $value) {
+            if (strpos($placeholder, ':allowed_') === 0) {
+                $stmt->bindValue($placeholder, $value, PDO::PARAM_INT);
+            } else {
+                $stmt->bindValue($placeholder, $value, PDO::PARAM_STR);
             }
         }
         $stmt->execute();

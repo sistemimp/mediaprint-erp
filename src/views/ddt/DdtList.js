@@ -223,7 +223,7 @@ const DdtList = () => {
 
         {!loading && !error && filteredItems.length > 0 && (
           <CTable hover responsive>
-            <CTableHead color="light">
+            <CTableHead className="mp-table-head">
               <CTableRow className="align-middle">
                 <CTableHeaderCell>Numero</CTableHeaderCell>
                 <CTableHeaderCell>Data</CTableHeaderCell>

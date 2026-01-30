@@ -37,6 +37,8 @@ const VariazioniList = () => {
   const [saving, setSaving] = useState(false)
   const [formVisible, setFormVisible] = useState(false)
   const [toast, setToast] = useState({ open: false, type: 'success', message: '' })
+  const [filterCategory, setFilterCategory] = useState('')
+  const [search, setSearch] = useState('')
   const [sorts, setSorts] = useState([
     { field: 'codice', dir: 'asc' },
     { field: 'categoria', dir: 'asc' },
@@ -88,6 +90,33 @@ const VariazioniList = () => {
     })
     return arr
   }, [items, sorts])
+
+  const filteredItems = React.useMemo(() => {
+    const q = String(search || '').trim().toLocaleLowerCase()
+    const cat = String(filterCategory || '').trim().toLocaleLowerCase()
+    if (!q && !cat) return sortedItems
+    return sortedItems.filter((r) => {
+      const c = String(r.categoria || '').toLocaleLowerCase()
+      if (cat) {
+        if (filterCategory === '__none__') return c === ''
+        if (c !== cat) return false
+      }
+      if (!q) return true
+      const name = String(r.nome || '').toLocaleLowerCase()
+      const code = String(r.codice || '').toLocaleLowerCase()
+      return name.includes(q) || code.includes(q) || c.includes(q)
+    })
+  }, [sortedItems, search, filterCategory])
+
+  const groupedItems = React.useMemo(() => {
+    const map = new Map()
+    for (const v of filteredItems) {
+      const cat = String(v.categoria || 'Senza categoria')
+      if (!map.has(cat)) map.set(cat, [])
+      map.get(cat).push(v)
+    }
+    return Array.from(map.entries()).sort((a, b) => String(a[0]).localeCompare(String(b[0])))
+  }, [filteredItems])
 
   const toggleSort = (field, shiftKey = false) => {
     setSorts((prev) => {
@@ -222,8 +251,39 @@ const VariazioniList = () => {
         {loading && (<div className="d-flex justify-content-center py-5"><CSpinner /></div>)}
         {!loading && (
           <>
+            <CRow className="g-2 mb-3">
+              <CCol md={4}>
+                <CFormInput
+                  placeholder="Cerca per nome, codice o categoria"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
+              </CCol>
+              <CCol md={3}>
+                <CFormSelect
+                  value={filterCategory}
+                  onChange={(e) => setFilterCategory(e.target.value)}
+                >
+                  <option value="">Tutte le categorie</option>
+                  {categoryOptions.map((c) => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                  <option value="__none__">Senza categoria</option>
+                </CFormSelect>
+              </CCol>
+              <CCol md="auto">
+                <CButton
+                  color="secondary"
+                  variant="outline"
+                  onClick={() => { setSearch(''); setFilterCategory('') }}
+                  disabled={!search && !filterCategory}
+                >
+                  Reset filtri
+                </CButton>
+              </CCol>
+            </CRow>
             <CTable hover responsive>
-            <CTableHead color="light">
+            <CTableHead className="mp-table-head">
               <CTableRow>
                 <CTableHeaderCell role="button" onClick={(e) => toggleSort('categoria', e.shiftKey)} className="text-nowrap">
                   Categoria{sortIndicator('categoria')}
@@ -238,24 +298,40 @@ const VariazioniList = () => {
               </CTableRow>
             </CTableHead>
             <CTableBody>
-              {sortedItems.map((r) => (
-                <CTableRow key={r.id_variazione} onClick={() => startEdit(r)} style={{ cursor: 'pointer' }}>
-                  <CTableDataCell>{r.categoria || '-'}</CTableDataCell>
-                  <CTableDataCell>{r.nome}</CTableDataCell>
-                  <CTableDataCell>{r.codice || '-'}</CTableDataCell>
-                  <CTableDataCell className="text-center">
-                    <PermissionButton
-                      size="sm"
-                      color="danger"
-                        variant="outline"
-                        onClick={(e) => { e.stopPropagation(); handleDelete(r) }}
-                        permission="prod.delete"
-                      >
-                        Elimina
-                      </PermissionButton>
+              {groupedItems.length === 0 && (
+                <CTableRow>
+                  <CTableDataCell colSpan={4} className="text-center text-muted py-4">
+                    Nessuna variazione trovata
+                  </CTableDataCell>
+                </CTableRow>
+              )}
+              {groupedItems.map(([cat, list]) => (
+                <React.Fragment key={cat}>
+                  <CTableRow className="mp-group-row">
+                    <CTableDataCell colSpan={4} className="fw-semibold">
+                      {cat}
                     </CTableDataCell>
                   </CTableRow>
-                ))}
+                  {list.map((r) => (
+                    <CTableRow key={r.id_variazione} onClick={() => startEdit(r)} style={{ cursor: 'pointer' }}>
+                      <CTableDataCell>{r.categoria || '-'}</CTableDataCell>
+                      <CTableDataCell>{r.nome}</CTableDataCell>
+                      <CTableDataCell>{r.codice || '-'}</CTableDataCell>
+                      <CTableDataCell className="text-center">
+                        <PermissionButton
+                          size="sm"
+                          color="danger"
+                            variant="outline"
+                            onClick={(e) => { e.stopPropagation(); handleDelete(r) }}
+                            permission="prod.delete"
+                          >
+                            Elimina
+                          </PermissionButton>
+                        </CTableDataCell>
+                      </CTableRow>
+                    ))}
+                </React.Fragment>
+              ))}
               </CTableBody>
             </CTable>
             <BottomToast open={toast.open} type={toast.type} message={toast.message} />

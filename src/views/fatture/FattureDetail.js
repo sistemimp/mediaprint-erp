@@ -1977,7 +1977,7 @@ const FattureDetail = () => {
                     )}
                     {!statusLogError && statusLog.length > 0 && (
                       <CTable small responsive className="mb-0">
-                        <CTableHead color="light">
+                        <CTableHead className="mp-table-head">
                           <CTableRow>
                             <CTableHeaderCell>Data</CTableHeaderCell>
                             <CTableHeaderCell>Transizione</CTableHeaderCell>
@@ -2266,7 +2266,7 @@ const FattureDetail = () => {
                 <CAlert color="info">Nessun pagamento registrato.</CAlert>
               ) : (
                 <CTable responsive hover>
-                  <CTableHead color="light">
+                  <CTableHead className="mp-table-head">
                     <CTableRow className="align-middle">
                       <CTableHeaderCell className="text-nowrap">ID pagamento</CTableHeaderCell>
                       <CTableHeaderCell>Data</CTableHeaderCell>
@@ -2450,7 +2450,7 @@ const FattureDetail = () => {
                   <div className="border rounded p-2">
                     <div className="fw-semibold mb-2">Righe del pacchetto</div>
                     <CTable compact hover responsive>
-                      <CTableHead color="light">
+                      <CTableHead className="mp-table-head">
                         <CTableRow>
                           <CTableHeaderCell>Descrizione</CTableHeaderCell>
                           <CTableHeaderCell className="text-end">Q.tà</CTableHeaderCell>
@@ -3008,7 +3008,7 @@ const FattureDetail = () => {
               <CAlert color="info">Nessuna riga presente nella fattura.</CAlert>
             ) : (
               <CTable hover responsive>
-                <CTableHead color="light">
+                <CTableHead className="mp-table-head">
                   <CTableRow className="align-middle">
                     <CTableHeaderCell style={{ minWidth: '220px' }}>Descrizione</CTableHeaderCell>
                     <CTableHeaderCell className="text-end" style={{ width: '140px' }}>
@@ -3137,7 +3137,7 @@ const FattureDetail = () => {
                 </CAlert>
               ) : (
                 <CTable hover responsive className="mb-4">
-                  <CTableHead color="light">
+                  <CTableHead className="mp-table-head">
                     <CTableRow className="align-middle">
                       <CTableHeaderCell>Aliquota</CTableHeaderCell>
                       <CTableHeaderCell>Natura</CTableHeaderCell>

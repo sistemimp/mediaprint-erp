@@ -8,10 +8,11 @@ require __DIR__ . '/../bootstrap.php';
  
 use MediaPrint\Backend\Database;
 use MediaPrint\Backend\HttpResponse;
-
+use MediaPrint\Repo\AccountsRepository;
 use MediaPrint\Repo\AuthRepository;
-
+use MediaPrint\Repo\MfaRepository;
 use MediaPrint\Service\AuthService;
+use MediaPrint\Service\MfaService;
 
 
 // use RuntimeException;
@@ -42,10 +43,25 @@ if (!is_array($payload)) {
 $identifier = (string) ($payload['identifier'] ?? $payload['email'] ?? $payload['username'] ?? '');
 $password = (string) ($payload['password'] ?? '');
 
-$authService = new AuthService(new AuthRepository(Database::getConnection()));
+$pdo = Database::getConnection();
+$authRepository = new AuthRepository($pdo);
+$accountsRepository = new AccountsRepository($pdo);
+$authService = new AuthService($authRepository);
+$mfaService = new MfaService($accountsRepository, $authRepository, new MfaRepository($pdo));
 
 try {
     $result = $authService->login($identifier, $password);
+    if (!empty($result['mfa_required']) && isset($result['account']['id_account'])) {
+        $mfaToken = $mfaService->createSessionToken((int) $result['account']['id_account']);
+        HttpResponse::json([
+            'mfa_required' => true,
+            'mfa_method' => $result['account']['mfa_method'] ?? 'otp',
+            'mfa_token' => $mfaToken,
+            'account' => $result['account'],
+            'mfa_otpauth_uri' => $result['mfa_otpauth_uri'] ?? null,
+        ], 200);
+        return;
+    }
     HttpResponse::json($result, 200);
 } catch (RuntimeException $exception) {
     $message = $exception->getMessage();

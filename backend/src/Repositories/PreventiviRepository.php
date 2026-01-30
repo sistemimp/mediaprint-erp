@@ -818,6 +818,51 @@ final class PreventiviRepository
     }
 
     /**
+     * @return array{total:int, accepted:int}
+     */
+    public function fetchConversionByRange(string $startDate, string $endDate, ?array $allowedAnagrafiche = null): array
+    {
+        $allowed = null;
+        if (is_array($allowedAnagrafiche)) {
+            $allowed = array_values(array_filter(array_map('intval', $allowedAnagrafiche), static fn ($id) => $id > 0));
+            if ($allowed === []) {
+                return ['total' => 0, 'accepted' => 0];
+            }
+        }
+
+        $sql = <<<'SQL'
+            SELECT
+              COUNT(p.id_preventivo) AS total,
+              SUM(CASE WHEN sp.code = 'confermato' THEN 1 ELSE 0 END) AS accepted
+            FROM tb_preventivi p
+            LEFT JOIN cfg_stati_preventivo sp ON sp.id_stato = p.id_stato_prev
+            WHERE COALESCE(p.data_preventivo, p.created_at) >= :start
+              AND COALESCE(p.data_preventivo, p.created_at) < :end
+        SQL;
+
+        if ($allowed !== null) {
+            $placeholders = implode(',', array_fill(0, count($allowed), '?'));
+            $sql .= " AND p.id_anagrafica IN ({$placeholders})";
+        }
+
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->bindValue(':start', $startDate);
+        $stmt->bindValue(':end', $endDate);
+        if ($allowed !== null) {
+            foreach ($allowed as $index => $id) {
+                $stmt->bindValue($index + 1, $id, PDO::PARAM_INT);
+            }
+        }
+        $stmt->execute();
+        $row = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
+
+        return [
+            'total' => isset($row['total']) ? (int) $row['total'] : 0,
+            'accepted' => isset($row['accepted']) ? (int) $row['accepted'] : 0,
+        ];
+    }
+
+    /**
      * @return list<array{periodo:string, totale:int, confermati:int, tasso:float}>
      */
     public function fetchConversionSeriesLast6(?array $allowedAnagrafiche = null): array

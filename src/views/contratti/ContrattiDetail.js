@@ -1085,7 +1085,7 @@ const ContrattiDetail = () => {
                   <div className="border rounded p-2">
                     <div className="fw-semibold mb-2">Righe del pacchetto</div>
                     <CTable compact hover responsive>
-                      <CTableHead color="light">
+                      <CTableHead className="mp-table-head">
                         <CTableRow>
                           <CTableHeaderCell>Descrizione</CTableHeaderCell>
                           <CTableHeaderCell className="text-end">Q.ta</CTableHeaderCell>
@@ -1382,7 +1382,7 @@ const ContrattiDetail = () => {
               </CModalFooter>
             </CModal>
             <CTable hover responsive>
-              <CTableHead color="light">
+              <CTableHead className="mp-table-head">
                 <CTableRow className="align-middle">
                   <CTableHeaderCell>Prodotto</CTableHeaderCell>
                   <CTableHeaderCell>Descrizione</CTableHeaderCell>
@@ -1575,7 +1575,7 @@ const ContrattiDetail = () => {
           <div className="small text-body-secondary">Nessun file caricato.</div>
         ) : (
           <CTable hover responsive small>
-            <CTableHead color="light">
+            <CTableHead className="mp-table-head">
               <CTableRow>
                 <CTableHeaderCell>File</CTableHeaderCell>
                 <CTableHeaderCell>Dimensione</CTableHeaderCell>
@@ -1630,7 +1630,7 @@ const ContrattiDetail = () => {
             <div className="small text-body-secondary">Nessuna revisione registrata.</div>
           ) : (
             <CTable hover responsive>
-              <CTableHead color="light">
+              <CTableHead className="mp-table-head">
                 <CTableRow>
                   <CTableHeaderCell>Revisione</CTableHeaderCell>
                   <CTableHeaderCell>Nota</CTableHeaderCell>
@@ -1713,7 +1713,7 @@ const ContrattiDetail = () => {
                   <div className="small text-body-secondary">Nessuna riga salvata.</div>
                 ) : (
                   <CTable small responsive>
-                    <CTableHead color="light">
+                    <CTableHead className="mp-table-head">
                       <CTableRow>
                         <CTableHeaderCell>Descrizione</CTableHeaderCell>
                         <CTableHeaderCell className="text-end">Prezzo</CTableHeaderCell>

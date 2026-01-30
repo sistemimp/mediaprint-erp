@@ -1263,7 +1263,7 @@ const PreventiviCreate = () => {
                   <div className="border rounded p-2">
                     <div className="fw-semibold mb-2">Righe del pacchetto</div>
                     <CTable compact hover responsive>
-                      <CTableHead color="light">
+                      <CTableHead className="mp-table-head">
                         <CTableRow>
                           <CTableHeaderCell>Descrizione</CTableHeaderCell>
                           <CTableHeaderCell className="text-end">Q.tà</CTableHeaderCell>
@@ -1488,7 +1488,7 @@ const PreventiviCreate = () => {
               </div>
             )}
             <CTable hover responsive size="sm">
-              <CTableHead color="light">
+              <CTableHead className="mp-table-head">
                 <CTableRow className="align-middle">
                   <CTableHeaderCell>Descrizione</CTableHeaderCell>
                   <CTableHeaderCell className="text-end" style={{ width: 120 }}>

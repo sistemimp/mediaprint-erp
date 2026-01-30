@@ -22,28 +22,14 @@ function resolveDashboardPeriod(?string $periodRaw): array
         $period = 'monthly';
     }
 
-    $now = new DateTimeImmutable('now');
-    $year = (int) $now->format('Y');
-    $month = (int) $now->format('n');
-    $months = 1;
-
-    if ($period === 'quarterly') {
-        $quarterIndex = intdiv($month - 1, 3);
-        $startMonth = ($quarterIndex * 3) + 1;
-        $months = 3;
-        $start = new DateTimeImmutable(sprintf('%d-%02d-01 00:00:00', $year, $startMonth));
-    } elseif ($period === 'semiannual') {
-        $startMonth = $month <= 6 ? 1 : 7;
-        $months = 6;
-        $start = new DateTimeImmutable(sprintf('%d-%02d-01 00:00:00', $year, $startMonth));
-    } elseif ($period === 'yearly') {
-        $months = 12;
-        $start = new DateTimeImmutable(sprintf('%d-01-01 00:00:00', $year));
-    } else {
-        $start = new DateTimeImmutable($now->format('Y-m-01 00:00:00'));
-    }
-
-    $end = $start->modify('+' . $months . ' months');
+    $months = match ($period) {
+        'quarterly' => 3,
+        'semiannual' => 6,
+        'yearly' => 12,
+        default => 1,
+    };
+    $end = new DateTimeImmutable('now');
+    $start = $end->modify('-' . $months . ' months');
 
     return [
         'start' => $start,

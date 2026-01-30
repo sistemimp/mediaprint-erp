@@ -292,7 +292,7 @@ const LavorazioniTemplates = () => {
           )}
           {!loading && (
             <CTable hover responsive>
-              <CTableHead color="light">
+              <CTableHead className="mp-table-head">
                 <CTableRow>
                   <CTableHeaderCell>ID</CTableHeaderCell>
                   <CTableHeaderCell>Titolo</CTableHeaderCell>

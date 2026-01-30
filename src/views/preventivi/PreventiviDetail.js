@@ -2549,7 +2549,7 @@ const PreventiviDetail = () => {
                       <small className="text-body-secondary">Nessun evento di stato.</small>
                     ) : (
                       <CTable small responsive className="mb-0">
-                        <CTableHead color="light">
+                        <CTableHead className="mp-table-head">
                           <CTableRow>
                             <CTableHeaderCell>Data</CTableHeaderCell>
                             <CTableHeaderCell>Utente</CTableHeaderCell>
@@ -2580,7 +2580,7 @@ const PreventiviDetail = () => {
                     <small className="text-body-secondary">Nessuna revisione registrata.</small>
                   ) : (
                     <CTable small responsive className="mb-0">
-                      <CTableHead color="light">
+                      <CTableHead className="mp-table-head">
                         <CTableRow>
                           <CTableHeaderCell>Revisione</CTableHeaderCell>
                           <CTableHeaderCell>Data</CTableHeaderCell>
@@ -2620,7 +2620,7 @@ const PreventiviDetail = () => {
                     <CAlert color="info" className="mb-4">Nessuna lavorazione collegata al preventivo.</CAlert>
                   ) : (
                     <CTable small responsive className="mb-4">
-                      <CTableHead color="light">
+                      <CTableHead className="mp-table-head">
                         <CTableRow>
                           <CTableHeaderCell>Codice</CTableHeaderCell>
                           <CTableHeaderCell>Titolo</CTableHeaderCell>
@@ -2658,7 +2658,7 @@ const PreventiviDetail = () => {
                         <CAlert color="info" className="mb-0">Nessun DDT collegato al preventivo.</CAlert>
                       ) : (
                         <CTable small responsive>
-                          <CTableHead color="light">
+                          <CTableHead className="mp-table-head">
                             <CTableRow>
                               <CTableHeaderCell>Numero</CTableHeaderCell>
                               <CTableHeaderCell>Data</CTableHeaderCell>
@@ -2704,7 +2704,7 @@ const PreventiviDetail = () => {
                         <CAlert color="info" className="mb-0">Nessuna fattura collegata al preventivo.</CAlert>
                       ) : (
                         <CTable small responsive>
-                          <CTableHead color="light">
+                          <CTableHead className="mp-table-head">
                             <CTableRow>
                               <CTableHeaderCell>Numero</CTableHeaderCell>
                               <CTableHeaderCell>Data</CTableHeaderCell>
@@ -3138,7 +3138,7 @@ const PreventiviDetail = () => {
                     <div className="border rounded p-2">
                       <div className="fw-semibold mb-2">Righe del pacchetto</div>
                       <CTable small hover responsive>
-                        <CTableHead color="light">
+                        <CTableHead className="mp-table-head">
                           <CTableRow>
                             <CTableHeaderCell>Descrizione</CTableHeaderCell>
                             <CTableHeaderCell className="text-end">Q.tà</CTableHeaderCell>
@@ -3621,7 +3621,7 @@ const PreventiviDetail = () => {
               </CModal>
 
               <CTable className="mt-3" responsive small>
-                <CTableHead color="light">
+                <CTableHead className="mp-table-head">
                   <CTableRow className="align-middle">
                     <CTableHeaderCell>Descrizione</CTableHeaderCell>
                     <CTableHeaderCell className="text-end" style={{ width: 180 }}>
@@ -3924,7 +3924,7 @@ const PreventiviDetail = () => {
               <h6 className="mb-2 text-body-secondary">Righe incluse</h6>
               {preventivoHasRighe ? (
                 <CTable responsive hover small>
-                  <CTableHead color="light">
+                  <CTableHead className="mp-table-head">
                     <CTableRow>
                       <CTableHeaderCell>Descrizione</CTableHeaderCell>
                       <CTableHeaderCell className="text-end">Q.tà</CTableHeaderCell>
@@ -4101,7 +4101,7 @@ const PreventiviDetail = () => {
               <h6 className="mb-2 text-body-secondary">Righe incluse</h6>
               {preventivoHasRighe ? (
                 <CTable responsive hover small>
-                  <CTableHead color="light">
+                  <CTableHead className="mp-table-head">
                     <CTableRow>
                       <CTableHeaderCell>Descrizione</CTableHeaderCell>
                       <CTableHeaderCell className="text-end">Q.tà</CTableHeaderCell>
@@ -4324,7 +4324,7 @@ const PreventiviDetail = () => {
                 )}
                 {revisionModalLines.length > 0 ? (
                   <CTable small responsive className="mb-0">
-                    <CTableHead color="light">
+                    <CTableHead className="mp-table-head">
                       <CTableRow>
                         <CTableHeaderCell>Descrizione</CTableHeaderCell>
                         <CTableHeaderCell className="text-end">Q.tà</CTableHeaderCell>

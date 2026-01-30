@@ -23,26 +23,14 @@ function resolveDashboardPeriod(?string $periodRaw): array
         $period = 'monthly';
     }
 
-    $now = new DateTimeImmutable('now');
-    $year = (int) $now->format('Y');
-    $month = (int) $now->format('n');
-
-    if ($period === 'quarterly') {
-        $quarterIndex = intdiv($month - 1, 3);
-        $startMonth = ($quarterIndex * 3) + 1;
-        $start = new DateTimeImmutable(sprintf('%d-%02d-01 00:00:00', $year, $startMonth));
-        $end = $start->modify('+3 months');
-    } elseif ($period === 'semiannual') {
-        $startMonth = $month <= 6 ? 1 : 7;
-        $start = new DateTimeImmutable(sprintf('%d-%02d-01 00:00:00', $year, $startMonth));
-        $end = $start->modify('+6 months');
-    } elseif ($period === 'yearly') {
-        $start = new DateTimeImmutable(sprintf('%d-01-01 00:00:00', $year));
-        $end = $start->modify('+1 year');
-    } else {
-        $start = new DateTimeImmutable($now->format('Y-m-01 00:00:00'));
-        $end = $start->modify('+1 month');
-    }
+    $months = match ($period) {
+        'quarterly' => 3,
+        'semiannual' => 6,
+        'yearly' => 12,
+        default => 1,
+    };
+    $end = new DateTimeImmutable('now');
+    $start = $end->modify('-' . $months . ' months');
 
     return [
         'start' => $start,
@@ -92,7 +80,11 @@ try {
         $allowedClause = ' AND f.id_anagrafica IN (' . implode(',', $placeholders) . ')';
     }
 
-    $fatturatoMese = $repo->fetchCurrentMonthRevenue($allowed);
+    $fatturatoMese = $repo->fetchRevenueByRange(
+        $range['start']->format('Y-m-d H:i:s'),
+        $range['end']->format('Y-m-d H:i:s'),
+        $allowed
+    );
 
     $stmt = $pdo->prepare(
         'SELECT COUNT(*) AS totale

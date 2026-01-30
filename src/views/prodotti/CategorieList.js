@@ -120,7 +120,7 @@ const CategorieList = () => {
           {loading && (<div className="d-flex justify-content-center py-5"><CSpinner /></div>)}
           {!loading && (
             <CTable hover responsive>
-              <CTableHead color="light">
+              <CTableHead className="mp-table-head">
                 <CTableRow>
                   <CTableHeaderCell>ID</CTableHeaderCell>
                   <CTableHeaderCell>Nome</CTableHeaderCell>

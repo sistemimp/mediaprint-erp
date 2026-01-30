@@ -1,10 +1,9 @@
 <?php
 namespace MediaPrint\Service;
 
-use MediaPrint\Repo\AuthRepository; 
-
 use DateTimeImmutable;
 use Firebase\JWT\JWT;
+use MediaPrint\Repo\AuthRepository;
 use RuntimeException;
 
 final class AuthService
@@ -38,6 +37,23 @@ final class AuthService
             throw new RuntimeException('Credenziali non valide.');
         }
 
+        if ((int) ($account['has_mfa'] ?? 0) === 1) {
+            return [
+                'mfa_required' => true,
+                'account' => [
+                    'id_account' => (int) $account['id_account'],
+                    'username' => $account['username'],
+                    'mfa_method' => $account['mfa_method'] ?? 'otp',
+                ],
+                'mfa_otpauth_uri' => $this->buildTotpUri($account),
+            ];
+        }
+
+        return $this->buildLoginResult($account);
+    }
+
+    private function buildLoginResult(array $account): array
+    {
         $roles = $this->repository->getAccountRoles((int) $account['id_account'], isset($account['id_ruolo']) ? (int) $account['id_ruolo'] : null);
         $roleIds = array_map(static fn(array $role): int => (int) $role['id_ruolo'], $roles);
         $permissions = $this->resolveAccountPermissions((int) $account['id_account'], $roleIds);
@@ -50,6 +66,15 @@ final class AuthService
             'token' => $token,
             'user' => $this->buildUserPayload($account, $roles, $permissions),
         ];
+    }
+
+    public function issueTokenForAccountId(int $accountId): array
+    {
+        $account = $this->repository->findActiveAccountById($accountId);
+        if ($account === null) {
+            throw new RuntimeException('Account non trovato o disattivato.', 404);
+        }
+        return $this->buildLoginResult($account);
     }
 
     public function getUserSnapshot(int $accountId): array
@@ -131,6 +156,26 @@ final class AuthService
         return $this->repository->getPermissionsForRoles($roleIds);
     }
 
+    private function buildTotpUri(array $account): ?string
+    {
+        $secret = trim((string) ($account['mfa_secret'] ?? ''));
+        if ($secret === '') {
+            return null;
+        }
+        $issuer = urlencode(getenv('MFA_ISSUER') ?: 'MediaPrint ERP');
+        $label = urlencode(sprintf('MediaPrint ERP:%s', $account['username']));
+        $digits = 6;
+        $period = 30;
+        return sprintf(
+            'otpauth://totp/%s?secret=%s&issuer=%s&algorithm=SHA1&digits=%d&period=%d',
+            $label,
+            $secret,
+            $issuer,
+            $digits,
+            $period
+        );
+    }
+
     private function buildUserPayload(array $account, array $roles, array $permissions): array
     {
         return [
@@ -157,6 +202,7 @@ final class AuthService
                 ],
                 $permissions
             ),
+            'mfa_method' => $account['mfa_method'] ?? 'none',
             'lastLogin' => $account['last_login'],
         ];
     }

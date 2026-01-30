@@ -3,7 +3,8 @@
     "description": "API per MediaPrint ERP",
     "type": "project",
     "require": {
-        "firebase/php-jwt": "^6.10"
+        "firebase/php-jwt": "^6.10",
+        "web-auth/webauthn-lib": "^4.9"
     },
     "autoload": {
         "psr-4": {

@@ -140,7 +140,7 @@ const formatVatLabel = (line) => {
     return (
       <div className="table-responsive" style={{ maxHeight: 'calc(90vh - 380px)' }}>
         <CTable small className="mb-0 align-middle">
-          <CTableHead color="light">
+          <CTableHead className="mp-table-head">
             <CTableRow>
               <CTableHeaderCell className="text-nowrap">Qtd.</CTableHeaderCell>
               <CTableHeaderCell>Descrizione</CTableHeaderCell>
@@ -826,7 +826,7 @@ const PreventiviList = () => {
           {!loading && !error && total > 0 && (
             <>
               <CTable hover responsive>
-                <CTableHead color="light">
+                <CTableHead className="mp-table-head">
                   <CTableRow className="align-middle">
                     <CTableHeaderCell role="button" onClick={(e) => toggleSort('cliente', e.shiftKey)} className="text-nowrap">
                       Cliente{sortIndicator('cliente')}

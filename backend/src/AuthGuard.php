@@ -88,6 +88,23 @@ final class AuthGuard
     /**
      * @param array<string, mixed> $payload
      */
+    public static function requireAdmin(array $payload): void
+    {
+        $roles = $payload['roles'] ?? [];
+        if (!is_array($roles)) {
+            $roles = [];
+        }
+        foreach ($roles as $role) {
+            if (is_string($role) && strtolower($role) === 'admin') {
+                return;
+            }
+        }
+        throw new RuntimeException('Accesso riservato agli amministratori.', 403);
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     */
     public static function getAccountId(array $payload): int
     {
         return isset($payload['sub']) ? (int) $payload['sub'] : 0;

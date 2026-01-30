@@ -593,7 +593,7 @@ const ContrattiCreate = () => {
                   <div className="border rounded p-2">
                     <div className="fw-semibold mb-2">Righe del pacchetto</div>
                     <CTable compact hover responsive>
-                      <CTableHead color="light">
+                      <CTableHead className="mp-table-head">
                         <CTableRow>
                           <CTableHeaderCell>Descrizione</CTableHeaderCell>
                           <CTableHeaderCell className="text-end">Q.ta</CTableHeaderCell>
@@ -893,7 +893,7 @@ const ContrattiCreate = () => {
               </CModalFooter>
             </CModal>
             <CTable hover responsive>
-              <CTableHead color="light">
+              <CTableHead className="mp-table-head">
                 <CTableRow className="align-middle">
                   <CTableHeaderCell>Prodotto</CTableHeaderCell>
                   <CTableHeaderCell>Descrizione</CTableHeaderCell>
@@ -1010,7 +1010,7 @@ const ContrattiCreate = () => {
                           </div>
                           {row.sconti && row.sconti.length > 0 ? (
                             <CTable small responsive className="mb-0">
-                              <CTableHead color="light">
+                              <CTableHead className="mp-table-head">
                                 <CTableRow>
                                   <CTableHeaderCell style={{ width: 160 }}>Q.ta min</CTableHeaderCell>
                                   <CTableHeaderCell style={{ width: 160 }}>Q.ta max</CTableHeaderCell>

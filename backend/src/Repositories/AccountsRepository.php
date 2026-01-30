@@ -409,7 +409,8 @@ final class AccountsRepository
                 is_active,
                 must_change_pwd,
                 has_mfa,
-                mfa_secret
+                mfa_secret,
+                mfa_method
             )
             VALUES (
                 :account_type,
@@ -421,7 +422,8 @@ final class AccountsRepository
                 :is_active,
                 :must_change_pwd,
                 :has_mfa,
-                :mfa_secret
+                :mfa_secret,
+                :mfa_method
             )
         SQL;
 
@@ -436,6 +438,7 @@ final class AccountsRepository
         $stmt->bindValue(':must_change_pwd', $data['must_change_pwd'], PDO::PARAM_INT);
         $stmt->bindValue(':has_mfa', $data['has_mfa'], PDO::PARAM_INT);
         $stmt->bindValue(':mfa_secret', $data['mfa_secret'], $data['mfa_secret'] === null ? PDO::PARAM_NULL : PDO::PARAM_STR);
+        $stmt->bindValue(':mfa_method', $data['mfa_method'], PDO::PARAM_STR);
         $stmt->execute();
 
         return (int) $this->pdo->lastInsertId();
@@ -456,6 +459,8 @@ final class AccountsRepository
             'is_active' => PDO::PARAM_INT,
             'must_change_pwd' => PDO::PARAM_INT,
             'has_mfa' => PDO::PARAM_INT,
+            'mfa_secret' => PDO::PARAM_STR,
+            'mfa_method' => PDO::PARAM_STR,
             'avatar_path' => PDO::PARAM_STR,
         ];
 
@@ -514,6 +519,24 @@ final class AccountsRepository
         }
         $path = trim((string) $value);
         return $path === '' ? null : $path;
+    }
+
+    /**
+     * @return array{has_mfa:int,mfa_method:string}|null
+     */
+    public function getMfaState(int $accountId): ?array
+    {
+        $stmt = $this->pdo->prepare('SELECT has_mfa, mfa_method FROM auth_accounts WHERE id_account = :id LIMIT 1');
+        $stmt->bindValue(':id', $accountId, PDO::PARAM_INT);
+        $stmt->execute();
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$row) {
+            return null;
+        }
+        return [
+            'has_mfa' => (int) ($row['has_mfa'] ?? 0),
+            'mfa_method' => (string) ($row['mfa_method'] ?? 'none'),
+        ];
     }
 
     /**

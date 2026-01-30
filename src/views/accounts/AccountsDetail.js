@@ -290,7 +290,7 @@ const AccountsDetail = () => {
             </div>
 
             <CTable hover responsive>
-              <CTableHead color="light">
+              <CTableHead className="mp-table-head">
                 <CTableRow>
                   <CTableHeaderCell style={{ width: '60px' }}>Attivo</CTableHeaderCell>
                   <CTableHeaderCell>Permesso</CTableHeaderCell>

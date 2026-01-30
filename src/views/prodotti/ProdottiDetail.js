@@ -630,7 +630,7 @@ const ProdottiDetail = () => {
             </CRow>
 
             <CTable hover responsive>
-              <CTableHead color="light">
+              <CTableHead className="mp-table-head">
                 <CTableRow>
                   <CTableHeaderCell role="button" onClick={(e) => toggleSort('categoria', e.shiftKey)} className="text-nowrap">Categoria{sortIndicator('categoria')}</CTableHeaderCell>
                   <CTableHeaderCell role="button" onClick={(e) => toggleSort('nome', e.shiftKey)} className="text-nowrap">Variazione{sortIndicator('nome')}</CTableHeaderCell>
@@ -641,7 +641,7 @@ const ProdottiDetail = () => {
               <CTableBody>
                 {groupedAssegnate.map(([cat, items]) => (
                   <React.Fragment key={cat}>
-                    <CTableRow className="table-secondary">
+                    <CTableRow className="mp-group-row">
                       <CTableDataCell colSpan={4} className="fw-semibold">{cat}</CTableDataCell>
                     </CTableRow>
                     {items.map((v) => (
@@ -738,7 +738,7 @@ const ProdottiDetail = () => {
             </div>
 
             <CTable small responsive>
-              <CTableHead color="light">
+              <CTableHead className="mp-table-head">
                 <CTableRow>
                   <CTableHeaderCell>Combinazione</CTableHeaderCell>
                   <CTableHeaderCell className="text-end">Prezzo</CTableHeaderCell>
@@ -760,7 +760,7 @@ const ProdottiDetail = () => {
                     const subs = rows ? null : sub
                     return (
                       <React.Fragment key={k1}>
-                        <CTableRow className="table-secondary"><CTableDataCell colSpan={3} className="fw-semibold">{k1}</CTableDataCell></CTableRow>
+                        <CTableRow className="mp-group-row"><CTableDataCell colSpan={3} className="fw-semibold">{k1}</CTableDataCell></CTableRow>
                         {rows && rows.map(({ r, restLabel }, idx) => (
                           <CTableRow key={(r.id ?? idx) + '-flat'}>
                             <CTableDataCell>{restLabel}</CTableDataCell>

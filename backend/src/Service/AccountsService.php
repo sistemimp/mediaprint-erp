@@ -259,6 +259,7 @@ final class AccountsService
             'must_change_pwd' => $mustChange,
             'has_mfa' => 0,
             'mfa_secret' => null,
+            'mfa_method' => 'none',
         ]);
 
         if ($accountType === 'cliente' && $anagrafiche !== []) {
@@ -346,6 +347,15 @@ final class AccountsService
 
         if (array_key_exists('has_mfa', $input)) {
             $payload['has_mfa'] = (int) $input['has_mfa'] === 1 ? 1 : 0;
+        }
+
+        if (array_key_exists('mfa_method', $input)) {
+            $method = strtolower((string) ($input['mfa_method'] ?? ''));
+            $allowed = ['none', 'otp', 'passkey', 'both'];
+            if ($method === '' || !in_array($method, $allowed, true)) {
+                throw new RuntimeException('Metodo MFA non valido.', 422);
+            }
+            $payload['mfa_method'] = $method;
         }
 
         $accountType = $payload['account_type'] ?? (string) ($meta['account_type'] ?? '');

@@ -2971,7 +2971,7 @@ const AnagraficaDetail = () => {
                 {latestDdt.length > 0 ? (
                   <>
                     <CTable hover responsive size="sm">
-                      <CTableHead color="light">
+                      <CTableHead className="mp-table-head">
                         <CTableRow>
                           <CTableHeaderCell scope="col">Numero</CTableHeaderCell>
                           <CTableHeaderCell scope="col">Data</CTableHeaderCell>
@@ -3025,7 +3025,7 @@ const AnagraficaDetail = () => {
                   {latestFatture.length > 0 ? (
                     <>
                       <CTable hover responsive size="sm">
-                        <CTableHead color="light">
+                        <CTableHead className="mp-table-head">
                           <CTableRow>
                             <CTableHeaderCell scope="col">Numero</CTableHeaderCell>
                             <CTableHeaderCell scope="col">Data</CTableHeaderCell>

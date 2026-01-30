@@ -1077,7 +1077,7 @@ const LavorazioniList = () => {
               ) : null}
               <div className="d-none d-md-block">
                 <CTable hover responsive className="mb-0 w-100">
-                  <CTableHead color="light">
+                  <CTableHead className="mp-table-head">
                     <CTableRow>
                       <CTableHeaderCell>Lavorazione</CTableHeaderCell>
                       <CTableHeaderCell>Cliente</CTableHeaderCell>

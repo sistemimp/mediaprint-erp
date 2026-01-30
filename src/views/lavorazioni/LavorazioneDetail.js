@@ -2202,7 +2202,7 @@ const LavorazioneDetail = () => {
                       <h6 className="text-body-secondary mb-3">Preventivo</h6>
                       {relatedDocs.preventivo ? (
                         <CTable hover responsive size="sm" className="mb-4">
-                          <CTableHead color="light">
+                          <CTableHead className="mp-table-head">
                             <CTableRow>
                               <CTableHeaderCell>Numero</CTableHeaderCell>
                               <CTableHeaderCell>Data</CTableHeaderCell>
@@ -2237,7 +2237,7 @@ const LavorazioneDetail = () => {
                       <h6 className="text-body-secondary mb-3">DDT</h6>
                       {relatedDocs.ddt.length > 0 ? (
                         <CTable hover responsive size="sm" className="mb-4">
-                          <CTableHead color="light">
+                          <CTableHead className="mp-table-head">
                             <CTableRow>
                               <CTableHeaderCell>Numero</CTableHeaderCell>
                               <CTableHeaderCell>Data</CTableHeaderCell>
@@ -2272,7 +2272,7 @@ const LavorazioneDetail = () => {
                       <h6 className="text-body-secondary mb-3">Fatture</h6>
                       {relatedDocs.fatture.length > 0 ? (
                         <CTable hover responsive size="sm">
-                          <CTableHead color="light">
+                          <CTableHead className="mp-table-head">
                             <CTableRow>
                               <CTableHeaderCell>Numero</CTableHeaderCell>
                               <CTableHeaderCell>Data</CTableHeaderCell>
@@ -2395,7 +2395,7 @@ const LavorazioneDetail = () => {
                     </div>
                   ) : (
                     <CTable hover responsive size="sm">
-                      <CTableHead color="light">
+                      <CTableHead className="mp-table-head">
                         <CTableRow>
                           <CTableHeaderCell>Titolo</CTableHeaderCell>
                           <CTableHeaderCell>Categoria</CTableHeaderCell>

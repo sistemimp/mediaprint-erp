@@ -31,8 +31,16 @@ try {
         $excludeDraft = true;
     }
     $limit = isset($_GET['limit']) ? (int) $_GET['limit'] : 200;
+    $dateFrom = isset($_GET['date_from']) ? trim((string) $_GET['date_from']) : null;
+    $dateTo = isset($_GET['date_to']) ? trim((string) $_GET['date_to']) : null;
+    if ($dateFrom === '') {
+        $dateFrom = null;
+    }
+    if ($dateTo === '') {
+        $dateTo = null;
+    }
     $repo = new FattureRepository(Database::getConnection());
-    $items = $repo->listLatest($limit, $allowed, $excludeDraft);
+    $items = $repo->listLatest($limit, $allowed, $excludeDraft, $dateFrom, $dateTo);
 
     HttpResponse::json(['data' => $items], 200);
 } catch (RuntimeException $exception) {

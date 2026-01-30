@@ -116,6 +116,16 @@ const ProdottiList = () => {
     return out
   }, [withCategoryName, sorts])
 
+  const grouped = useMemo(() => {
+    const map = new Map()
+    for (const row of sorted) {
+      const cat = String(row.categoria_nome || 'Senza categoria')
+      if (!map.has(cat)) map.set(cat, [])
+      map.get(cat).push(row)
+    }
+    return Array.from(map.entries())
+  }, [sorted])
+
   const toggleSort = (field, shiftKey = false) => {
     setSorts((prev) => {
       if (!shiftKey) {
@@ -227,7 +237,7 @@ const ProdottiList = () => {
 
         {!loading && !error && (
           <CTable hover responsive>
-            <CTableHead color="light">
+            <CTableHead className="mp-table-head">
               <CTableRow className="align-middle">
                 <CTableHeaderCell role="button" onClick={(e) => toggleSort('categoria', e.shiftKey)} className="text-nowrap">
                   Categoria{sortIndicator('categoria')}
@@ -243,38 +253,54 @@ const ProdottiList = () => {
               </CTableRow>
             </CTableHead>
             <CTableBody>
-              {sorted.map((row) => (
-                <CTableRow key={row.id_prodotto}>
-                  <CTableDataCell>{row.categoria_nome || '-'}</CTableDataCell>
-                  <CTableDataCell>{row.codice || '-'}</CTableDataCell>
-                  <CTableDataCell>{row.nome}</CTableDataCell>
-                  <CTableDataCell>{row.prezzo_listino ?? '-'}</CTableDataCell>
-                <CTableDataCell className="text-center">
-                    <div className="d-flex justify-content-center gap-2">
-                      <PermissionButton
-                        color="link"
-                        size="sm"
-                        className="p-0"
-                        onClick={() => handleView(row.id_prodotto)}
-                        permission="prod.read"
-                      >
-                        <CIcon icon={cilDescription} />
-                      </PermissionButton>
-                      <PermissionButton
-                        color="danger"
-                        size="sm"
-                        variant="outline"
-                        className="p-0"
-                        title="Elimina"
-                        onClick={() => handleDelete(row.id_prodotto)}
-                        disabled={deletingId === row.id_prodotto}
-                        permission="prod.delete"
-                      >
-                        {deletingId === row.id_prodotto ? <CSpinner size="sm" /> : <CIcon icon={cilTrash} />}
-                      </PermissionButton>
-                    </div>
-                </CTableDataCell>
+              {grouped.length === 0 && (
+                <CTableRow>
+                  <CTableDataCell colSpan={5} className="text-center text-muted py-4">
+                    Nessun prodotto trovato
+                  </CTableDataCell>
                 </CTableRow>
+              )}
+              {grouped.map(([cat, rows]) => (
+                <React.Fragment key={cat}>
+                  <CTableRow className="mp-group-row">
+                    <CTableDataCell colSpan={5} className="fw-semibold">
+                      {cat}
+                    </CTableDataCell>
+                  </CTableRow>
+                  {rows.map((row) => (
+                    <CTableRow key={row.id_prodotto}>
+                      <CTableDataCell>{row.categoria_nome || '-'}</CTableDataCell>
+                      <CTableDataCell>{row.codice || '-'}</CTableDataCell>
+                      <CTableDataCell>{row.nome}</CTableDataCell>
+                      <CTableDataCell>{row.prezzo_listino ?? '-'}</CTableDataCell>
+                    <CTableDataCell className="text-center">
+                        <div className="d-flex justify-content-center gap-2">
+                          <PermissionButton
+                            color="link"
+                            size="sm"
+                            className="p-0"
+                            onClick={() => handleView(row.id_prodotto)}
+                            permission="prod.read"
+                          >
+                            <CIcon icon={cilDescription} />
+                          </PermissionButton>
+                          <PermissionButton
+                            color="danger"
+                            size="sm"
+                            variant="outline"
+                            className="p-0"
+                            title="Elimina"
+                            onClick={() => handleDelete(row.id_prodotto)}
+                            disabled={deletingId === row.id_prodotto}
+                            permission="prod.delete"
+                          >
+                            {deletingId === row.id_prodotto ? <CSpinner size="sm" /> : <CIcon icon={cilTrash} />}
+                          </PermissionButton>
+                        </div>
+                    </CTableDataCell>
+                    </CTableRow>
+                  ))}
+                </React.Fragment>
               ))}
             </CTableBody>
           </CTable>

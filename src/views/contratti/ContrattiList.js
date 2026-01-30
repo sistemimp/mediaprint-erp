@@ -121,7 +121,7 @@ const ContrattiList = () => {
           </CAlert>
         ) : (
           <CTable hover responsive>
-            <CTableHead color="light">
+            <CTableHead className="mp-table-head">
               <CTableRow>
                 <CTableHeaderCell>Cliente</CTableHeaderCell>
                 <CTableHeaderCell>Titolo</CTableHeaderCell>

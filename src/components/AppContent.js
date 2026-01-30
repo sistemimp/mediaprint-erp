@@ -33,6 +33,7 @@ const AppContent = () => {
       ['/pagamenti', 'pay'],
       ['/lavorazioni', 'job'],
       ['/messaggi', 'msg'],
+      ['/tickets', 'bug'],
     ]
     const match = map.find(([prefix]) => pathname.startsWith(prefix))
     return match ? match[1] : null

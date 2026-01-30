@@ -1,3 +1,5 @@
+import { logSupportApiCall } from './supportLogs'
+
 const DEFAULT_BASE_URL = 'https://gestionale.mediaprint.it/pubblica/'
 
 const resolveBaseUrl = () => {
@@ -65,8 +67,33 @@ export const apiFetch = async (path, { method = 'GET', token, body, params, sign
     options.body = JSON.stringify(body)
   }
 
-  const response = await fetch(url.toString(), options)
-  return handleApiResponse(response)
+  const startedAt = Date.now()
+  let response
+  let payload = null
+  let error = null
+  try {
+    response = await fetch(url.toString(), options)
+    payload = await handleApiResponse(response)
+    return payload
+  } catch (err) {
+    error = err
+    throw err
+  } finally {
+    const baseUrl = resolveBaseUrl().replace(/\/$/, '')
+    if (url.toString().startsWith(baseUrl)) {
+      const responseBody = payload ?? error?.payload ?? null
+      logSupportApiCall({
+        url: url.toString(),
+        method,
+        status: response?.status ?? null,
+        ok: response?.ok ?? false,
+        durationMs: Date.now() - startedAt,
+        requestBody: body ?? null,
+        responseBody,
+        errorMessage: error?.message,
+      })
+    }
+  }
 }
 
 const handleApiResponse = async (response) => {
@@ -129,12 +156,42 @@ export const uploadToApi = async (path, { token, formData, params, signal } = {}
     headers['X-Access-Token'] = resolvedToken
   }
 
-  const response = await fetch(url.toString(), {
-    method: 'POST',
-    headers,
-    body: formData,
-    signal,
-  })
-
-  return handleApiResponse(response)
+  const startedAt = Date.now()
+  let response
+  let payload = null
+  let error = null
+  try {
+    response = await fetch(url.toString(), {
+      method: 'POST',
+      headers,
+      body: formData,
+      signal,
+    })
+    payload = await handleApiResponse(response)
+    return payload
+  } catch (err) {
+    error = err
+    throw err
+  } finally {
+    const baseUrl = resolveBaseUrl().replace(/\/$/, '')
+    if (url.toString().startsWith(baseUrl)) {
+      const fields = []
+      try {
+        formData.forEach((_value, key) => fields.push(key))
+      } catch (_e) {
+        // ignore
+      }
+      const responseBody = payload ?? error?.payload ?? null
+      logSupportApiCall({
+        url: url.toString(),
+        method: 'POST',
+        status: response?.status ?? null,
+        ok: response?.ok ?? false,
+        durationMs: Date.now() - startedAt,
+        requestBody: { formDataFields: fields },
+        responseBody,
+        errorMessage: error?.message,
+      })
+    }
+  }
 }

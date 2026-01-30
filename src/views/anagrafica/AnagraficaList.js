@@ -684,7 +684,7 @@ const AnagraficaList = () => {
               </div>
             </div>
             <CTable hover responsive>
-              <CTableHead color="light">
+              <CTableHead className="mp-table-head">
                 <CTableRow className="align-middle">
                   {columns.map((column) => {
                     const isSorted = sortKey === column.key

@@ -28,6 +28,7 @@ final class AuthRepository
             a.last_login,
             a.created_at,
             a.updated_at,
+            a.mfa_method,
             r.code AS primary_role_code,
             r.label AS primary_role_label
         FROM auth_accounts AS a
@@ -65,6 +66,7 @@ final class AuthRepository
             a.last_login,
             a.created_at,
             a.updated_at,
+            a.mfa_method,
             r.code AS primary_role_code,
             r.label AS primary_role_label
         FROM auth_accounts AS a

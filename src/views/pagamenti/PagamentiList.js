@@ -306,7 +306,7 @@ const PagamentiList = () => {
             ) : (
               <>
                 <CTable responsive hover>
-                  <CTableHead color="light">
+                  <CTableHead className="mp-table-head">
                     <CTableRow className="align-middle">
                       <CTableHeaderCell>Cliente</CTableHeaderCell>
                       <CTableHeaderCell>Partita IVA</CTableHeaderCell>
@@ -393,7 +393,7 @@ const PagamentiList = () => {
               <CAlert color="info">Nessun pagamento registrato.</CAlert>
             ) : (
               <CTable responsive hover>
-                <CTableHead color="light">
+                <CTableHead className="mp-table-head">
                   <CTableRow className="align-middle">
                     <CTableHeaderCell>Data</CTableHeaderCell>
                     <CTableHeaderCell>Cliente</CTableHeaderCell>
@@ -500,7 +500,7 @@ const PagamentiList = () => {
                   completare l'associazione o eliminarli se non piu necessari.
                 </CAlert>
                 <CTable responsive hover>
-                  <CTableHead color="light">
+                  <CTableHead className="mp-table-head">
                     <CTableRow className="align-middle">
                       <CTableHeaderCell>Data</CTableHeaderCell>
                       <CTableHeaderCell>Cliente</CTableHeaderCell>

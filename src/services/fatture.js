@@ -1,9 +1,15 @@
 import { apiFetch, buildApiUrl, getStoredToken, uploadToApi } from './apiClient'
 
-export const fetchFattureList = async ({ token, limit, signal } = {}) => {
+export const fetchFattureList = async ({ token, limit, date_from, date_to, signal } = {}) => {
   const params = {}
   if (limit !== undefined && limit !== null) {
     params.limit = limit
+  }
+  if (date_from) {
+    params.date_from = date_from
+  }
+  if (date_to) {
+    params.date_to = date_to
   }
 
   const response = await apiFetch('/fattureList.php', {

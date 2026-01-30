@@ -1143,7 +1143,7 @@ const DdtDetail = () => {
               <CAlert color="info">Nessuna riga presente nel DDT.</CAlert>
             ) : (
               <CTable hover responsive>
-                <CTableHead color="light">
+                <CTableHead className="mp-table-head">
                   <CTableRow className="align-middle">
                     <CTableHeaderCell style={{ minWidth: '220px' }}>Descrizione</CTableHeaderCell>
                     <CTableHeaderCell className="text-end" style={{ width: '140px' }}>

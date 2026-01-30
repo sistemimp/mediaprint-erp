@@ -177,7 +177,12 @@ const aggregateConversionSeries = (source, period) => {
     const rate = Number(item?.tasso ?? 0)
     const total = Number(item?.totale ?? 0)
     const acceptedRaw = Number(item?.accettati ?? item?.accepted ?? NaN)
-    const accepted = Number.isNaN(acceptedRaw) ? (Number.isNaN(rate) ? 0 : (total * rate) / 100) : acceptedRaw
+    const accepted =
+      Number.isNaN(acceptedRaw)
+        ? Number.isNaN(rate)
+          ? 0
+          : (total * rate) / 100
+        : acceptedRaw
 
     if (!Number.isNaN(total)) {
       entry.total += total
@@ -198,7 +203,11 @@ const aggregateConversionSeries = (source, period) => {
   return order.map((key) => {
     const entry = grouped.get(key)
     const value =
-      entry.weight > 0 ? entry.sumWeighted / entry.weight : entry.count > 0 ? entry.sumRate / entry.count : 0
+      entry.weight > 0
+        ? entry.sumWeighted / entry.weight
+        : entry.count > 0
+        ? entry.sumRate / entry.count
+        : 0
     return {
       label: entry.label,
       value,
@@ -206,6 +215,39 @@ const aggregateConversionSeries = (source, period) => {
       accepted: entry.accepted,
     }
   })
+}
+
+const getSmartPaginationItems = (totalPages, currentPage, neighbors = 2) => {
+  if (!Number.isFinite(totalPages) || totalPages <= 0) {
+    return []
+  }
+  const pages = new Set()
+  pages.add(0)
+  pages.add(Math.max(totalPages - 1, 0))
+  for (let offset = -neighbors; offset <= neighbors; offset += 1) {
+    const candidate = currentPage + offset
+    if (candidate >= 0 && candidate < totalPages) {
+      pages.add(candidate)
+    }
+  }
+  const sorted = Array.from(pages).sort((a, b) => a - b)
+  const result = []
+  let last = -1
+  sorted.forEach((page) => {
+    if (last !== -1 && page - last > 1) {
+      result.push({
+        type: 'ellipsis',
+        key: `ellipsis-${last}-${page}`,
+      })
+    }
+    result.push({
+      type: 'page',
+      page,
+      key: `page-${page}`,
+    })
+    last = page
+  })
+  return result
 }
 
 const getTrendFromSeries = (series, key) => {
@@ -334,13 +376,13 @@ const Dashboard = () => {
     '-'
 
   const currentRevenueValue =
-    aggregatedRevenueSeries.length > 0
+    sales?.fatturato ?? (aggregatedRevenueSeries.length > 0
       ? aggregatedRevenueSeries[aggregatedRevenueSeries.length - 1].value
-      : sales?.fatturato ?? 0
+      : 0)
   const currentClientsValue =
-    aggregatedClientsSeries.length > 0
+    sales?.nuovi_clienti ?? (aggregatedClientsSeries.length > 0
       ? aggregatedClientsSeries[aggregatedClientsSeries.length - 1].value
-      : sales?.nuovi_clienti ?? 0
+      : 0)
   const currentConversionEntry = aggregatedConversionSeries[aggregatedConversionSeries.length - 1]
   const currentConversionRate = currentConversionEntry?.value ?? sales?.tasso_conversione ?? 0
   const totalPreventivi = currentConversionEntry?.total ?? sales?.preventivi_totali ?? 0
@@ -407,6 +449,10 @@ const Dashboard = () => {
     const start = newClientsPageIndex * NEW_CLIENTS_PAGE_SIZE
     return newClients.slice(start, start + NEW_CLIENTS_PAGE_SIZE)
   }, [newClients, newClientsPageIndex])
+  const newClientsPaginationItems = useMemo(
+    () => getSmartPaginationItems(newClientsPageCount, newClientsPageIndex, 2),
+    [newClientsPageCount, newClientsPageIndex],
+  )
 
   const renderValueWithTrend = (value, trend) => (
     <span className="d-inline-flex align-items-center gap-2">
@@ -574,15 +620,21 @@ const Dashboard = () => {
                             >
                               ‹
                             </CPaginationItem>
-                            {Array.from({ length: newClientsPageCount }, (_, index) => (
-                              <CPaginationItem
-                                key={`new-clients-page-${index}`}
-                                active={index === newClientsPageIndex}
-                                onClick={() => setNewClientsPage(index)}
-                              >
-                                {index + 1}
-                              </CPaginationItem>
-                            ))}
+                            {newClientsPaginationItems.map((item) =>
+                              item.type === 'page' ? (
+                                <CPaginationItem
+                                  key={item.key}
+                                  active={item.page === newClientsPageIndex}
+                                  onClick={() => setNewClientsPage(item.page)}
+                                >
+                                  {item.page + 1}
+                                </CPaginationItem>
+                              ) : (
+                                <CPaginationItem key={item.key} disabled className="pointer-events-none">
+                                  ...
+                                </CPaginationItem>
+                              ),
+                            )}
                             <CPaginationItem
                               disabled={newClientsPageIndex >= newClientsPageCount - 1}
                               onClick={() =>

@@ -702,7 +702,7 @@ const AccountsList = () => {
 
         {!loading && !error && (
           <CTable hover responsive>
-            <CTableHead color="light">
+            <CTableHead className="mp-table-head">
               <CTableRow className="align-middle">
                 <CTableHeaderCell>Username</CTableHeaderCell>
                 <CTableHeaderCell>Email</CTableHeaderCell>
@@ -885,7 +885,7 @@ const AccountsList = () => {
                   />
                   <div className="border rounded">
                     <CTable small hover responsive className="mb-0">
-                      <CTableHead color="light">
+                      <CTableHead className="mp-table-head">
                         <CTableRow>
                           <CTableHeaderCell style={{ width: '40px' }}></CTableHeaderCell>
                           <CTableHeaderCell>Anagrafica</CTableHeaderCell>
@@ -969,7 +969,7 @@ const AccountsList = () => {
                   />
                   <div className="border rounded">
                     <CTable small hover responsive className="mb-0">
-                      <CTableHead color="light">
+                      <CTableHead className="mp-table-head">
                         <CTableRow>
                           <CTableHeaderCell style={{ width: '40px' }}></CTableHeaderCell>
                           <CTableHeaderCell style={{ width: '60px' }}>Primario</CTableHeaderCell>

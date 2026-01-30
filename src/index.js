@@ -6,6 +6,9 @@ import 'core-js'
 import App from './App'
 import store from './store'
 import { AuthProvider } from './context/AuthContext'
+import { initSupportLogCapture } from './services/supportLogs'
+
+initSupportLogCapture()
 
 createRoot(document.getElementById('root')).render(
   <Provider store={store}>

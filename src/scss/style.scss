@@ -16,6 +16,13 @@ body {
   background-color: var(--cui-tertiary-bg);
 }
 
+:root {
+  --mp-group-row-bg: var(--cui-secondary-bg);
+  --mp-group-row-border: var(--cui-border-color);
+  --mp-table-head-bg: var(--cui-tertiary-bg);
+  --mp-table-head-color: var(--cui-body-color);
+}
+
 .accounts-modal .modal-dialog {
   max-width: 70vw;
   width: 70vw;
@@ -107,9 +114,28 @@ body {
     background-color: var(--cui-dark-bg-subtle);
   }
 
+  :root {
+    --mp-group-row-bg: var(--cui-tertiary-bg);
+    --mp-group-row-border: var(--cui-border-color);
+    --mp-table-head-bg: var(--cui-secondary-bg);
+    --mp-table-head-color: var(--cui-body-color);
+  }
+
   .footer {
     --cui-footer-bg: var(--cui-body-bg);
   }
+}
+
+.mp-group-row td {
+  background-color: var(--mp-group-row-bg) !important;
+  border-top: 1px solid var(--mp-group-row-border);
+  border-bottom: 1px solid var(--mp-group-row-border);
+}
+
+.mp-table-head th {
+  background-color: var(--mp-table-head-bg) !important;
+  color: var(--mp-table-head-color);
+  border-bottom-color: var(--mp-group-row-border);
 }
 
 /* Sticky header for detail cards */
@@ -418,6 +444,7 @@ body.read-only-mode {
     opacity: 0.6;
   }
 }
+
 // Kanban cards should wrap long text instead of overflowing
 .kanban-card-body,
 .kanban-card-meta {

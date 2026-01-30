@@ -1,0 +1,2 @@
+RewriteEngine On
+RewriteRule ^webauthn$ webauthn.php [L]

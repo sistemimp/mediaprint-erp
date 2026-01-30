@@ -52,6 +52,9 @@ const NotificationsList = React.lazy(() => import('./views/notifiche/Notificatio
 const AccountsList = React.lazy(() => import('./views/accounts/AccountsList'))
 const AccountsDetail = React.lazy(() => import('./views/accounts/AccountsDetail'))
 const Profile = React.lazy(() => import('./views/profile/Profile'))
+const TicketsList = React.lazy(() => import('./views/tickets/TicketsList'))
+const TicketsDetail = React.lazy(() => import('./views/tickets/TicketsDetail'))
+const ReleaseNotesTimeline = React.lazy(() => import('./views/release-notes/ReleaseNotesTimeline'))
 
 const routes = [
   { path: '/', exact: true, name: 'Home' },
@@ -98,6 +101,9 @@ const routes = [
   { path: '/accounts/lista', name: 'Account - Lista', element: AccountsList },
   { path: '/accounts/dettagli', name: 'Account - Dettagli', element: AccountsDetail },
   { path: '/profilo', name: 'Profilo', element: Profile },
+  { path: '/tickets/lista', name: 'Ticketing - Lista', element: TicketsList },
+  { path: '/tickets/dettagli', name: 'Ticketing - Dettagli', element: TicketsDetail },
+  { path: '/release-notes', name: 'Note di aggiornamento', element: ReleaseNotesTimeline },
 ]
 
 export default routes

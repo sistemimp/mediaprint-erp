@@ -21,7 +21,7 @@
 --
 
 DROP SEQUENCE IF EXISTS `seq_tb_audit_log`;
-CREATE SEQUENCE `seq_tb_audit_log` start with 1 minvalue 1 maxvalue 9223372036854775806 increment by 1 cache 1000 nocycle ENGINE=InnoDB;
+CREATE SEQUENCE `seq_tb_audit_log` start with 1 minvalue 1 maxvalue 9223372036854775806 increment by 1 cache 1000 nocycle;
 DO SETVAL(`seq_tb_audit_log`, 1, 0);
 
 --
@@ -49,6 +49,48 @@ LOCK TABLES `appoggio_ddt_fattura` WRITE;
 /*!40000 ALTER TABLE `appoggio_ddt_fattura` DISABLE KEYS */;
 /*!40000 ALTER TABLE `appoggio_ddt_fattura` ENABLE KEYS */;
 UNLOCK TABLES;
+--
+-- Table structure for table `auth_account_mfa_sessions`
+--
+
+DROP TABLE IF EXISTS `auth_account_mfa_sessions`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `auth_account_mfa_sessions` (
+  `id_session` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `id_account` bigint(20) unsigned NOT NULL,
+  `token` varchar(128) NOT NULL,
+  `expires_at` datetime NOT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id_session`),
+  UNIQUE KEY `idx_mfa_sessions_token` (`token`),
+  KEY `idx_mfa_sessions_account` (`id_account`),
+  CONSTRAINT `fk_mfa_sessions_account` FOREIGN KEY (`id_account`) REFERENCES `auth_accounts` (`id_account`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `auth_account_passkeys`
+--
+
+DROP TABLE IF EXISTS `auth_account_passkeys`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `auth_account_passkeys` (
+  `id_passkey` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `id_account` bigint(20) unsigned NOT NULL,
+  `credential_id` varbinary(256) NOT NULL,
+  `public_key` varbinary(1024) NOT NULL,
+  `transports` varchar(255) DEFAULT NULL,
+  `label` varchar(255) DEFAULT NULL,
+  `sign_count` int unsigned NOT NULL DEFAULT 0,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id_passkey`),
+  UNIQUE KEY `idx_passkeys_account_credential` (`id_account`, `credential_id`),
+  KEY `idx_passkeys_account` (`id_account`),
+  CONSTRAINT `fk_passkeys_account` FOREIGN KEY (`id_account`) REFERENCES `auth_accounts` (`id_account`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
 /*!50003 SET @saved_cs_client      = @@character_set_client */ ;
 /*!50003 SET @saved_cs_results     = @@character_set_results */ ;
 /*!50003 SET @saved_col_connection = @@collation_connection */ ;
@@ -525,6 +567,7 @@ CREATE TABLE `auth_accounts` (
   `must_change_pwd` tinyint(1) NOT NULL DEFAULT 0,
   `has_mfa` tinyint(1) NOT NULL DEFAULT 0,
   `mfa_secret` varchar(128) DEFAULT NULL,
+  `mfa_method` enum('none','otp','passkey','both') NOT NULL DEFAULT 'none',
   `avatar_path` varchar(255) DEFAULT NULL,
   `last_login` datetime DEFAULT NULL,
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
@@ -545,11 +588,11 @@ CREATE TABLE `auth_accounts` (
 LOCK TABLES `auth_accounts` WRITE;
 /*!40000 ALTER TABLE `auth_accounts` DISABLE KEYS */;
 INSERT INTO `auth_accounts` VALUES
-(1,'operatore','Alex Olivieri','alex.o@mediaprint.it','$2y$10$JkB3w1sOK6qwNJ2MJRSJeubmFPXJ5p7swDshAcocO/.jTQ0XtTNDW',1,NULL,1,0,0,NULL,'avatars/1/avatar_6952b140b4272122542101.jpg','2026-01-22 10:41:50','2025-10-01 10:41:38','2026-01-22 10:41:50'),
-(2,'operatore','Simona Cappelletti','simona.c@mediaprint.it','$2y$10$GGynM5njfCwd7S6oCjP3geZr.ipXkLAOKvDBuhOzUPBuinxtIEASi',2,NULL,1,0,0,NULL,NULL,'2025-12-29 14:47:55','2025-10-15 16:18:53','2025-12-29 14:47:55'),
-(7,'cliente','ClienteMediaprint','nexus.olivieri@gmail.com','$2y$10$tDJ/Nl2nDqbHrhifKB/ZRuvVKKSK9PfvyD40evWzfMesqS0lJkZDa',3,1618,1,0,0,NULL,'avatars/7/avatar_6953bd9be26df9.60398937.jpg','2026-01-13 17:17:08','2025-12-29 17:19:00','2026-01-13 17:17:08'),
-(8,'operatore','Giampiero Zippilli','giampiero.z@postanetwork.it','$2y$10$eXt5TT2oKZp/HddpROAHOud2YbazRdngnkSJGfeKFYa2FIkGfYy/S',1,NULL,1,1,0,NULL,NULL,'2025-12-30 16:24:01','2025-12-30 15:31:41','2025-12-30 16:24:01'),
-(9,'operatore','Daniele Sciarretta','daniele@mediaprint.it','$2y$10$TT6YOxKZcJTVQSFwcqzvAeXFMgr54p2HIRULil28DefMFslps2jDK',1,NULL,1,1,0,NULL,NULL,NULL,'2026-01-13 17:04:21','2026-01-13 17:04:21');
+(1,'operatore','Alex Olivieri','alex.o@mediaprint.it','$2y$10$JkB3w1sOK6qwNJ2MJRSJeubmFPXJ5p7swDshAcocO/.jTQ0XtTNDW',1,NULL,1,0,0,NULL,'none','avatars/1/avatar_6952b140b4272122542101.jpg','2026-01-22 10:41:50','2025-10-01 10:41:38','2026-01-22 10:41:50'),
+(2,'operatore','Simona Cappelletti','simona.c@mediaprint.it','$2y$10$GGynM5njfCwd7S6oCjP3geZr.ipXkLAOKvDBuhOzUPBuinxtIEASi',2,NULL,1,0,0,NULL,'none',NULL,'2025-12-29 14:47:55','2025-10-15 16:18:53','2025-12-29 14:47:55'),
+(7,'cliente','ClienteMediaprint','nexus.olivieri@gmail.com','$2y$10$tDJ/Nl2nDqbHrhifKB/ZRuvVKKSK9PfvyD40evWzfMesqS0lJkZDa',3,1618,1,0,0,NULL,'none','avatars/7/avatar_6953bd9be26df9.60398937.jpg','2026-01-13 17:17:08','2025-12-29 17:19:00','2026-01-13 17:17:08'),
+(8,'operatore','Giampiero Zippilli','giampiero.z@postanetwork.it','$2y$10$eXt5TT2oKZp/HddpROAHOud2YbazRdngnkSJGfeKFYa2FIkGfYy/S',1,NULL,1,1,0,NULL,'none',NULL,'2025-12-30 16:24:01','2025-12-30 15:31:41','2025-12-30 16:24:01'),
+(9,'operatore','Daniele Sciarretta','daniele@mediaprint.it','$2y$10$TT6YOxKZcJTVQSFwcqzvAeXFMgr54p2HIRULil28DefMFslps2jDK',1,NULL,1,1,0,NULL,'none',NULL,NULL,'2026-01-13 17:04:21','2026-01-13 17:04:21');
 /*!40000 ALTER TABLE `auth_accounts` ENABLE KEYS */;
 UNLOCK TABLES;
 /*!50003 SET @saved_cs_client      = @@character_set_client */ ;

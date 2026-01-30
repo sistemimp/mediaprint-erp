@@ -9,12 +9,14 @@ import {
   CCardHeader,
   CCol,
   CFormInput,
+  CFormLabel,
   CFormSelect,
   CRow,
   CSpinner,
   CTable,
   CTableBody,
   CTableDataCell,
+  CTableFoot,
   CTableHead,
   CTableHeaderCell,
   CTableRow,
@@ -57,6 +59,8 @@ const FattureList = () => {
   const [yearFilter, setYearFilter] = useState('all')
   const [statusFilter, setStatusFilter] = useState('all')
   const [sezionaleFilter, setSezionaleFilter] = useState('all')
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
   const [refreshIndex, setRefreshIndex] = useState(0)
   const [currentPage, setCurrentPage] = useState(0)
   const [sortKey, setSortKey] = useState('data_fattura')
@@ -78,6 +82,8 @@ const FattureList = () => {
           token,
           signal: controller.signal,
           limit: FETCH_LIMIT,
+          date_from: dateFrom || undefined,
+          date_to: dateTo || undefined,
         })
         const normalized = Array.isArray(data) ? data : []
         setItems(normalized)
@@ -96,11 +102,11 @@ const FattureList = () => {
     }
     load()
     return () => controller.abort()
-  }, [token, logout, refreshIndex])
+  }, [token, logout, refreshIndex, dateFrom, dateTo])
 
   useEffect(() => {
     setCurrentPage(0)
-  }, [search, yearFilter, statusFilter, sezionaleFilter])
+  }, [search, yearFilter, statusFilter, sezionaleFilter, dateFrom, dateTo])
 
   const years = useMemo(() => {
     const values = new Set()
@@ -219,6 +225,18 @@ const FattureList = () => {
 
   const totalPages = Math.max(Math.ceil(sortedItems.length / ROWS_PER_PAGE), 1)
   const totalItems = sortedItems.length
+  const totals = useMemo(() => {
+    return sortedItems.reduce(
+      (acc, row) => {
+        acc.imponibile += Number(row.totale_imponibile) || 0
+        acc.iva += Number(row.totale_iva) || 0
+        acc.totale += Number(row.totale) || 0
+        acc.saldo += Number(row.saldo) || 0
+        return acc
+      },
+      { imponibile: 0, iva: 0, totale: 0, saldo: 0 },
+    )
+  }, [sortedItems])
   const paginatedItems = useMemo(() => {
     const start = currentPage * ROWS_PER_PAGE
     return sortedItems.slice(start, start + ROWS_PER_PAGE)
@@ -228,7 +246,7 @@ const FattureList = () => {
 
   useEffect(() => {
     setCurrentPage(0)
-  }, [search, yearFilter, statusFilter, sezionaleFilter])
+  }, [search, yearFilter, statusFilter, sezionaleFilter, dateFrom, dateTo])
 
   useEffect(() => {
     if (currentPage >= totalPages) {
@@ -414,6 +432,22 @@ const FattureList = () => {
               ))}
             </CFormSelect>
           </CCol>
+          <CCol xs={6} md={3} lg={2}>
+            <CFormLabel className="text-body-secondary small">Dal</CFormLabel>
+            <CFormInput
+              type="date"
+              value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
+            />
+          </CCol>
+          <CCol xs={6} md={3} lg={2}>
+            <CFormLabel className="text-body-secondary small">Al</CFormLabel>
+            <CFormInput
+              type="date"
+              value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)}
+            />
+          </CCol>
         </CRow>
 
         {loading && (
@@ -433,7 +467,7 @@ const FattureList = () => {
         {!loading && !error && filteredItems.length > 0 && (
           <>
             <CTable hover responsive>
-              <CTableHead color="light">
+              <CTableHead className="mp-table-head">
                 <CTableRow className="align-middle">
                   <CTableHeaderCell
                     className="cursor-pointer"
@@ -572,6 +606,19 @@ const FattureList = () => {
                   </CTableRow>
                 ))}
               </CTableBody>
+              <CTableFoot>
+                <CTableRow className="fw-semibold">
+                  <CTableDataCell colSpan={5}>Totali</CTableDataCell>
+                  <CTableDataCell className="text-end">
+                    {formatCurrency(totals.imponibile)}
+                  </CTableDataCell>
+                  <CTableDataCell className="text-end">{formatCurrency(totals.iva)}</CTableDataCell>
+                  <CTableDataCell className="text-end">{formatCurrency(totals.totale)}</CTableDataCell>
+                  <CTableDataCell className="text-end">{formatCurrency(totals.saldo)}</CTableDataCell>
+                  <CTableDataCell />
+                  <CTableDataCell />
+                </CTableRow>
+              </CTableFoot>
             </CTable>
             <div className="d-flex flex-column flex-lg-row gap-3 align-items-center justify-content-between mt-3">
               <div className="small text-body-secondary">

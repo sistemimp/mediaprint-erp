@@ -9,7 +9,13 @@ const AuthContext = createContext({
   isAuthenticated: false,
   loading: false,
   error: null,
+  mfaChallenge: null,
+  passkeyChallenge: null,
   login: async () => {},
+  verifyMfaCode: async () => {},
+  requestPasskeyChallenge: async () => {},
+  verifyPasskeyCredential: async () => {},
+  clearMfaChallenge: () => {},
   logout: () => {},
   refreshAvatar: async () => null,
   updateUserSnapshot: () => {},
@@ -81,6 +87,8 @@ export const AuthProvider = ({ children }) => {
   const avatarUrlRef = useRef(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
+  const [mfaChallenge, setMfaChallenge] = useState(null)
+  const [passkeyChallenge, setPasskeyChallenge] = useState(null)
 
   useEffect(() => {
     if (token) {
@@ -111,6 +119,7 @@ export const AuthProvider = ({ children }) => {
 
     setLoading(true)
     setError(null)
+    setMfaChallenge(null)
 
     try {
       const response = await fetch(loginUrl, {
@@ -129,6 +138,17 @@ export const AuthProvider = ({ children }) => {
 
       const data = await response.json()
 
+      if (data?.mfa_required && data?.account?.id_account && data?.mfa_token) {
+        setMfaChallenge({
+          token: data.mfa_token,
+          method: data.mfa_method || 'otp',
+          qrUri: data.mfa_otpauth_uri ?? null,
+          account: data.account,
+        })
+        setPasskeyChallenge(null)
+        return data
+      }
+
       if (!data?.token) {
         throw new Error('La risposta del server non contiene un token.')
       }
@@ -141,6 +161,7 @@ export const AuthProvider = ({ children }) => {
       setToken(null)
       setUser(null)
       setError(loginError)
+      setMfaChallenge(null)
       throw loginError
     } finally {
       setLoading(false)
@@ -158,6 +179,7 @@ export const AuthProvider = ({ children }) => {
     setToken(null)
     setUser(null)
     setError(null)
+    setMfaChallenge(null)
   }, [])
 
   useEffect(() => {
@@ -282,6 +304,130 @@ export const AuthProvider = ({ children }) => {
     setUser(snapshot)
   }, [])
 
+  const requestPasskeyChallenge = useCallback(async () => {
+    if (!mfaChallenge?.token) {
+      throw new Error('Nessuna richiesta MFA attiva.')
+    }
+    const url = buildApiUrl('/authMfaPasskeyChallenge.php')
+    const response = await fetch(url.toString(), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        mfa_token: mfaChallenge.token,
+      }),
+    })
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null)
+      const message = payload?.message || 'Impossibile iniziare la verifica passkey.'
+      throw new Error(message)
+    }
+    const data = await response.json()
+    setPasskeyChallenge({
+      challengeToken: data.challenge_token,
+      publicKey: data.publicKey,
+    })
+    return data
+  }, [mfaChallenge])
+
+  const verifyPasskeyCredential = useCallback(
+    async ({ challengeToken, credential }) => {
+      if (!mfaChallenge?.token) {
+        throw new Error('Nessuna richiesta MFA attiva.')
+      }
+      setLoading(true)
+      setError(null)
+      try {
+        const url = buildApiUrl('/authMfaVerifyPasskey.php')
+        const response = await fetch(url.toString(), {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            mfa_token: mfaChallenge.token,
+            challenge_token: challengeToken,
+            credential,
+          }),
+        })
+        if (!response.ok) {
+          const payload = await response.json().catch(() => null)
+          const message = payload?.message || 'Verifica passkey fallita.'
+          const errorToThrow = new Error(message)
+          errorToThrow.status = response.status
+          throw errorToThrow
+        }
+        const data = await response.json()
+        if (!data?.token) {
+          throw new Error('La risposta del server non contiene un token.')
+        }
+        localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, data.token)
+        setToken(data.token)
+        setUser(data.user ?? null)
+        setMfaChallenge(null)
+        setPasskeyChallenge(null)
+        return data
+      } catch (fetchError) {
+        setError(fetchError)
+        throw fetchError
+      } finally {
+        setLoading(false)
+      }
+    },
+    [mfaChallenge],
+  )
+
+  const verifyMfaCode = useCallback(
+    async (code) => {
+      if (!mfaChallenge?.token) {
+        throw new Error('Nessuna richiesta MFA attiva.')
+      }
+      setLoading(true)
+      setError(null)
+      try {
+        const url = buildApiUrl('/authMfaVerifyOtp.php')
+        const response = await fetch(url.toString(), {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            mfa_token: mfaChallenge.token,
+            code,
+          }),
+        })
+        if (!response.ok) {
+          const payload = await response.json().catch(() => null)
+          const message = payload?.message || 'Codice OTP non valido.'
+          const errorToThrow = new Error(message)
+          errorToThrow.status = response.status
+          throw errorToThrow
+        }
+        const data = await response.json()
+        if (!data?.token) {
+          throw new Error('La risposta del server non contiene un token.')
+        }
+        localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, data.token)
+        setToken(data.token)
+        setUser(data.user ?? null)
+        setMfaChallenge(null)
+        return data
+      } catch (fetchError) {
+        setError(fetchError)
+        throw fetchError
+      } finally {
+        setLoading(false)
+      }
+    },
+    [mfaChallenge],
+  )
+
+  const clearMfaChallenge = useCallback(() => {
+    setMfaChallenge(null)
+    setPasskeyChallenge(null)
+  }, [])
+
   const value = useMemo(
     () => ({
       token,
@@ -289,13 +435,35 @@ export const AuthProvider = ({ children }) => {
       avatarUrl,
       loading,
       error,
+      mfaChallenge,
+      passkeyChallenge,
       isAuthenticated: Boolean(token),
       login,
+      verifyMfaCode,
+      requestPasskeyChallenge,
+      verifyPasskeyCredential,
+      clearMfaChallenge,
       logout,
       refreshAvatar,
       updateUserSnapshot,
     }),
-    [token, user, avatarUrl, loading, error, login, logout, refreshAvatar, updateUserSnapshot],
+    [
+      token,
+      user,
+      avatarUrl,
+      loading,
+      error,
+      login,
+      logout,
+      refreshAvatar,
+      updateUserSnapshot,
+      mfaChallenge,
+      passkeyChallenge,
+      verifyMfaCode,
+      requestPasskeyChallenge,
+      verifyPasskeyCredential,
+      clearMfaChallenge,
+    ],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
