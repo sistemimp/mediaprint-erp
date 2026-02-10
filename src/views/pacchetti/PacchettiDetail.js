@@ -658,7 +658,7 @@ const PacchettiDetail = () => {
                   </PermissionButton>
                 </div>
               </div>
-              <CTable hover responsive small>
+              <CTable data-testid="table" hover responsive small>
                 <CTableHead color={tableHeadColor}>
                   <CTableRow>
                     <CTableHeaderCell >Descrizione</CTableHeaderCell>
@@ -803,3 +803,6 @@ const PacchettiDetail = () => {
 }
 
 export default PacchettiDetail
+
+
+

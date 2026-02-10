@@ -21,8 +21,14 @@ const BottomToast = ({ open, message, type = 'success' }) => {
     fontSize: 14,
   }
 
-  return <div style={style}>{message}</div>
+  return (
+    <div
+      style={style}
+      data-testid={type === 'error' ? 'toast-error' : 'toast-success'}
+    >
+      {message}
+    </div>
+  )
 }
 
 export default BottomToast
-

@@ -567,7 +567,13 @@ const AnagraficaList = () => {
               Archiviate
             </CButton>
           </div>
-          <CButton color="primary" component={Link} to="/anagrafica/crea" disabled={loading}>
+          <CButton
+            color="primary"
+            component={Link}
+            to="/anagrafica/crea"
+            disabled={loading}
+            data-testid="create"
+          >
             <CIcon icon={cilPlus} className="me-2" /> Nuova anagrafica
           </CButton>
           <CButton color="secondary" variant="outline" onClick={handleRefresh} disabled={loading}>
@@ -589,6 +595,7 @@ const AnagraficaList = () => {
                   onChange={handleSearchChange}
                   placeholder="Cerca in tutte le colonne"
                   disabled={loading}
+                  data-testid="search"
                 />
               </CInputGroup>
             </CCol>
@@ -683,7 +690,7 @@ const AnagraficaList = () => {
                 </CButton>
               </div>
             </div>
-            <CTable hover responsive>
+            <CTable hover responsive data-testid="table">
               <CTableHead className="mp-table-head">
                 <CTableRow className="align-middle">
                   {columns.map((column) => {
@@ -742,7 +749,7 @@ const AnagraficaList = () => {
                   const anagrafica = row.data
                   const rowKey = anagrafica.id_anagrafica ?? anagrafica.id ?? index
                   return (
-                    <CTableRow key={rowKey}>
+                    <CTableRow key={rowKey} data-testid={`row-${rowKey}`}>
                       {columns.map((column) => (
                         <CTableDataCell key={column.key}>
                           {renderCell(anagrafica, column)}
@@ -874,3 +881,5 @@ const AnagraficaList = () => {
 }
 
 export default AnagraficaList
+
+

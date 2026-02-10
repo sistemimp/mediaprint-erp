@@ -88,6 +88,7 @@ const CategorieList = () => {
               variant="outline"
               onClick={startCreate}
               permission="prod.create"
+              data-testid="create"
             >
               Nuova categoria
             </PermissionButton>
@@ -107,6 +108,7 @@ const CategorieList = () => {
                     color="primary"
                     disabled={saving || String(name).trim() === ''}
                     permission="prod.write"
+                    data-testid="save"
                   >
                     Salva
                   </PermissionButton>
@@ -119,7 +121,7 @@ const CategorieList = () => {
           )}
           {loading && (<div className="d-flex justify-content-center py-5"><CSpinner /></div>)}
           {!loading && (
-            <CTable hover responsive>
+            <CTable hover responsive data-testid="table">
               <CTableHead className="mp-table-head">
                 <CTableRow>
                   <CTableHeaderCell>ID</CTableHeaderCell>
@@ -129,7 +131,7 @@ const CategorieList = () => {
               </CTableHead>
               <CTableBody>
                 {items.map((r) => (
-                  <CTableRow key={r.id_categoria}>
+                  <CTableRow key={r.id_categoria} data-testid={`row-${r.id_categoria}`}>
                     <CTableDataCell>{r.id_categoria}</CTableDataCell>
                     <CTableDataCell>{r.nome}</CTableDataCell>
                     <CTableDataCell className="text-center">
@@ -156,3 +158,5 @@ const CategorieList = () => {
 }
 
 export default CategorieList
+
+

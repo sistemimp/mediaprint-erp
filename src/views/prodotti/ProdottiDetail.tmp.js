@@ -416,7 +416,7 @@ const ProdottiDetail = () => {
               </CCol>
             </CRow>
 
-            <CTable hover responsive>
+            <CTable data-testid="table" hover responsive>
               <CTableHead color="light">
                 <CTableRow>
                   <CTableHeaderCell role="button" onClick={(e) => toggleSort('categoria', e.shiftKey)} className="text-nowrap">Categoria{sortIndicator('categoria')}</CTableHeaderCell>
@@ -484,7 +484,7 @@ const ProdottiDetail = () => {
               </div>
             </div>
 
-            <CTable small responsive>
+            <CTable data-testid="table" small responsive>
               <CTableHead color="light">
                 <CTableRow>
                   <CTableHeaderCell>Combinazione</CTableHeaderCell>
@@ -569,3 +569,6 @@ const ProdottiDetail = () => {
 }
 
 export default ProdottiDetail
+
+
+

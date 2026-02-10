@@ -720,7 +720,7 @@ const Profile = () => {
         <CCard>
           <CCardHeader>Cambio password</CCardHeader>
           <CCardBody>
-            <CTable responsive borderless className="mb-3">
+            <CTable data-testid="table" responsive borderless className="mb-3">
               <CTableBody>
                 <CTableRow>
                   <CTableDataCell className="fw-semibold">Password attuale</CTableDataCell>
@@ -807,4 +807,7 @@ const Profile = () => {
 }
 
 export default Profile
+
+
+
 

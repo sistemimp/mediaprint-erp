@@ -181,7 +181,7 @@ const PreventiviDashboard = () => {
                 : statusCounts.length === 0
                   ? renderTablePlaceholder('Nessun dato disponibile.')
                   : (
-                    <CTable small hover responsive className="mb-0">
+                    <CTable data-testid="table" small hover responsive className="mb-0">
                       <CTableHead>
                         <CTableRow>
                           <CTableHeaderCell>Stato</CTableHeaderCell>
@@ -210,7 +210,7 @@ const PreventiviDashboard = () => {
                 : latest.length === 0
                   ? renderTablePlaceholder('Nessun dato disponibile.')
                   : (
-                    <CTable small hover responsive className="mb-0">
+                    <CTable data-testid="table" small hover responsive className="mb-0">
                       <CTableHead>
                         <CTableRow>
                           <CTableHeaderCell>Preventivo</CTableHeaderCell>
@@ -262,7 +262,7 @@ const PreventiviDashboard = () => {
                 : topClients.length === 0
                   ? renderTablePlaceholder('Nessun dato disponibile.')
                   : (
-                    <CTable small hover responsive className="mb-0">
+                    <CTable data-testid="table" small hover responsive className="mb-0">
                       <CTableHead>
                         <CTableRow>
                           <CTableHeaderCell>Cliente</CTableHeaderCell>
@@ -290,3 +290,6 @@ const PreventiviDashboard = () => {
 }
 
 export default PreventiviDashboard
+
+
+

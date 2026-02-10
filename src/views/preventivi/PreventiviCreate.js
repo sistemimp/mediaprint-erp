@@ -1262,7 +1262,7 @@ const PreventiviCreate = () => {
                 {pkgPreview.length > 0 && (
                   <div className="border rounded p-2">
                     <div className="fw-semibold mb-2">Righe del pacchetto</div>
-                    <CTable compact hover responsive>
+                    <CTable data-testid="table" compact hover responsive>
                       <CTableHead className="mp-table-head">
                         <CTableRow>
                           <CTableHeaderCell>Descrizione</CTableHeaderCell>
@@ -1487,7 +1487,7 @@ const PreventiviCreate = () => {
                 </CRow>
               </div>
             )}
-            <CTable hover responsive size="sm">
+            <CTable data-testid="table" hover responsive size="sm">
               <CTableHead className="mp-table-head">
                 <CTableRow className="align-middle">
                   <CTableHeaderCell>Descrizione</CTableHeaderCell>
@@ -1675,3 +1675,6 @@ const PreventiviCreate = () => {
 }
 
 export default PreventiviCreate
+
+
+

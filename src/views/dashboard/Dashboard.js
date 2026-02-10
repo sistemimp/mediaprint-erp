@@ -541,7 +541,7 @@ const Dashboard = () => {
                 : revenueRows.length === 0
                   ? renderTablePlaceholder('Nessun dato disponibile.')
                   : (
-                    <CTable small hover responsive className="mb-0">
+                    <CTable data-testid="table" small hover responsive className="mb-0">
                       <CTableHead>
                         <CTableRow>
                           <CTableHeaderCell>Cliente</CTableHeaderCell>
@@ -594,7 +594,7 @@ const Dashboard = () => {
                     ? renderTablePlaceholder('Nessun cliente registrato.')
                     : (
                       <>
-                        <CTable small hover responsive className="mb-0">
+                        <CTable data-testid="table" small hover responsive className="mb-0">
                           <CTableHead>
                             <CTableRow>
                               <CTableHeaderCell>Cliente</CTableHeaderCell>
@@ -660,7 +660,7 @@ const Dashboard = () => {
                 : conversionRows.length === 0
                   ? renderTablePlaceholder('Nessun dato disponibile.')
                   : (
-                    <CTable small hover responsive className="mb-0">
+                    <CTable data-testid="table" small hover responsive className="mb-0">
                       <CTableHead>
                         <CTableRow>
                           <CTableHeaderCell>Cliente</CTableHeaderCell>
@@ -722,7 +722,7 @@ const Dashboard = () => {
                 : balanceRows.length === 0
                   ? renderTablePlaceholder('Nessun dato disponibile.')
                   : (
-                    <CTable small hover responsive className="mb-0">
+                    <CTable data-testid="table" small hover responsive className="mb-0">
                       <CTableHead>
                         <CTableRow>
                           <CTableHeaderCell>Cliente</CTableHeaderCell>
@@ -750,3 +750,6 @@ const Dashboard = () => {
 }
 
 export default Dashboard
+
+
+

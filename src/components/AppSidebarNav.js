@@ -61,7 +61,7 @@ export const AppSidebarNav = ({ items }) => {
   }
 
   return (
-    <CSidebarNav as={SimpleBar}>
+    <CSidebarNav as={SimpleBar} data-testid="app-nav">
       {items &&
         items.map((item, index) => (item.items ? navGroup(item, index) : navItem(item, index)))}
     </CSidebarNav>

@@ -524,7 +524,7 @@ const PacchettiCreate = () => {
                 </PermissionButton>
               </div>
             </div>
-            <CTable hover responsive>
+            <CTable data-testid="table" hover responsive>
               <CTableHead color="light">
                 <CTableRow>
                   <CTableHeaderCell>Descrizione</CTableHeaderCell>
@@ -630,3 +630,6 @@ const PacchettiCreate = () => {
 }
 
 export default PacchettiCreate
+
+
+

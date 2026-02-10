@@ -592,7 +592,7 @@ const ContrattiCreate = () => {
                 {pkgPreview.length > 0 && (
                   <div className="border rounded p-2">
                     <div className="fw-semibold mb-2">Righe del pacchetto</div>
-                    <CTable compact hover responsive>
+                    <CTable data-testid="table" compact hover responsive>
                       <CTableHead className="mp-table-head">
                         <CTableRow>
                           <CTableHeaderCell>Descrizione</CTableHeaderCell>
@@ -892,7 +892,7 @@ const ContrattiCreate = () => {
                 </div>
               </CModalFooter>
             </CModal>
-            <CTable hover responsive>
+            <CTable data-testid="table" hover responsive>
               <CTableHead className="mp-table-head">
                 <CTableRow className="align-middle">
                   <CTableHeaderCell>Prodotto</CTableHeaderCell>
@@ -1009,7 +1009,7 @@ const ContrattiCreate = () => {
                             </PermissionButton>
                           </div>
                           {row.sconti && row.sconti.length > 0 ? (
-                            <CTable small responsive className="mb-0">
+                            <CTable data-testid="table" small responsive className="mb-0">
                               <CTableHead className="mp-table-head">
                                 <CTableRow>
                                   <CTableHeaderCell style={{ width: 160 }}>Q.ta min</CTableHeaderCell>
@@ -1088,3 +1088,6 @@ const ContrattiCreate = () => {
 }
 
 export default ContrattiCreate
+
+
+

@@ -193,6 +193,7 @@ const ProdottiList = () => {
             variant="outline"
             onClick={() => navigate('/prodotti/dettagli?mode=new')}
             permission="prod.create"
+            data-testid="create"
           >
             <CIcon icon={cilPlus} className="me-2" />
             Nuovo prodotto
@@ -216,6 +217,7 @@ const ProdottiList = () => {
                 value={filters.q}
                 onChange={onChangeFilter}
                 placeholder="Cerca per nome o codice..."
+                data-testid="search"
               />
             </CCol>
           </CRow>
@@ -236,7 +238,7 @@ const ProdottiList = () => {
         )}
 
         {!loading && !error && (
-          <CTable hover responsive>
+          <CTable hover responsive data-testid="table">
             <CTableHead className="mp-table-head">
               <CTableRow className="align-middle">
                 <CTableHeaderCell role="button" onClick={(e) => toggleSort('categoria', e.shiftKey)} className="text-nowrap">
@@ -268,7 +270,7 @@ const ProdottiList = () => {
                     </CTableDataCell>
                   </CTableRow>
                   {rows.map((row) => (
-                    <CTableRow key={row.id_prodotto}>
+                    <CTableRow key={row.id_prodotto} data-testid={`row-${row.id_prodotto}`}>
                       <CTableDataCell>{row.categoria_nome || '-'}</CTableDataCell>
                       <CTableDataCell>{row.codice || '-'}</CTableDataCell>
                       <CTableDataCell>{row.nome}</CTableDataCell>
@@ -293,6 +295,7 @@ const ProdottiList = () => {
                             onClick={() => handleDelete(row.id_prodotto)}
                             disabled={deletingId === row.id_prodotto}
                             permission="prod.delete"
+                            data-testid="delete"
                           >
                             {deletingId === row.id_prodotto ? <CSpinner size="sm" /> : <CIcon icon={cilTrash} />}
                           </PermissionButton>
@@ -311,3 +314,5 @@ const ProdottiList = () => {
 }
 
 export default ProdottiList
+
+

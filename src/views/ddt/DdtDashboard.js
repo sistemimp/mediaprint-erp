@@ -158,7 +158,7 @@ const DdtDashboard = () => {
                 : topCausali.length === 0
                   ? renderTablePlaceholder('Nessun dato disponibile.')
                   : (
-                    <CTable small hover responsive className="mb-0">
+                    <CTable data-testid="table" small hover responsive className="mb-0">
                       <CTableHead>
                         <CTableRow>
                           <CTableHeaderCell>Causale</CTableHeaderCell>
@@ -187,7 +187,7 @@ const DdtDashboard = () => {
                 : latest.length === 0
                   ? renderTablePlaceholder('Nessun dato disponibile.')
                   : (
-                    <CTable small hover responsive className="mb-0">
+                    <CTable data-testid="table" small hover responsive className="mb-0">
                       <CTableHead>
                         <CTableRow>
                           <CTableHeaderCell>DDT</CTableHeaderCell>
@@ -230,3 +230,6 @@ const DdtDashboard = () => {
 }
 
 export default DdtDashboard
+
+
+

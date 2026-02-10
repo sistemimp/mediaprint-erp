@@ -74,6 +74,7 @@ const PacchettiList = () => {
             variant="outline"
             onClick={() => navigate('/pacchetti/crea')}
             permission="pack.create"
+            data-testid="create"
           >
             <CIcon icon={cilPlus} className="me-2" />
             Nuovo pacchetto
@@ -84,7 +85,12 @@ const PacchettiList = () => {
         <CForm className="mb-3">
           <CRow className="g-2 align-items-end">
             <CCol md={6}>
-              <CFormInput placeholder="Cerca..." value={q} onChange={(e) => setQ(e.target.value)} />
+              <CFormInput
+                placeholder="Cerca..."
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                data-testid="search"
+              />
             </CCol>
             <CCol md={3}>
               <div className="form-check">
@@ -104,7 +110,7 @@ const PacchettiList = () => {
         )}
 
         {!loading && !error && (
-          <CTable hover responsive>
+          <CTable hover responsive data-testid="table">
             <CTableHead color="light">
               <CTableRow>
                 <CTableHeaderCell>Codice</CTableHeaderCell>
@@ -115,7 +121,7 @@ const PacchettiList = () => {
             </CTableHead>
             <CTableBody>
               {sorted.map((p) => (
-                <CTableRow key={p.id_pacchetto}>
+                <CTableRow key={p.id_pacchetto} data-testid={`row-${p.id_pacchetto}`}>
                   <CTableDataCell>{p.codice || '-'}</CTableDataCell>
                   <CTableDataCell>{p.nome}</CTableDataCell>
                   <CTableDataCell>{Number(p.attivo) === 1 ? 'attivo' : 'disattivo'}</CTableDataCell>
@@ -142,3 +148,5 @@ const PacchettiList = () => {
 }
 
 export default PacchettiList
+
+

@@ -77,6 +77,7 @@ const ContrattiList = () => {
           variant="outline"
           onClick={() => navigate('/contratti/crea')}
           permission="contr.create"
+          data-testid="create"
         >
           <CIcon icon={cilPlus} className="me-2" /> Nuovo contratto
         </PermissionButton>
@@ -89,11 +90,12 @@ const ContrattiList = () => {
         )}
         <CRow className="g-3 align-items-end mb-3">
           <CCol md={6}>
-            <CFormInput
-              value={search}
-              placeholder="Cerca per titolo, codice o cliente"
-              onChange={(e) => setSearch(e.target.value)}
-            />
+          <CFormInput
+            value={search}
+            placeholder="Cerca per titolo, codice o cliente"
+            onChange={(e) => setSearch(e.target.value)}
+            data-testid="search"
+          />
           </CCol>
           <CCol md={3}>
             <CFormCheck
@@ -120,7 +122,7 @@ const ContrattiList = () => {
             Nessun contratto disponibile.
           </CAlert>
         ) : (
-          <CTable hover responsive>
+          <CTable hover responsive data-testid="table">
             <CTableHead className="mp-table-head">
               <CTableRow>
                 <CTableHeaderCell>Cliente</CTableHeaderCell>
@@ -135,7 +137,7 @@ const ContrattiList = () => {
             </CTableHead>
             <CTableBody>
               {items.map((row) => (
-                <CTableRow key={row.id_contratto}>
+                <CTableRow key={row.id_contratto} data-testid={`row-${row.id_contratto}`}>
                   <CTableDataCell>{row.ragione_sociale || '-'}</CTableDataCell>
                   <CTableDataCell>{row.titolo}</CTableDataCell>
                   <CTableDataCell>{row.codice || '-'}</CTableDataCell>
@@ -168,3 +170,5 @@ const ContrattiList = () => {
 }
 
 export default ContrattiList
+
+

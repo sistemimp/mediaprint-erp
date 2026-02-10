@@ -166,6 +166,7 @@ const TicketsList = () => {
             variant="outline"
             onClick={() => navigate('/tickets/dettagli?mode=new')}
             permission="bug.create"
+            data-testid="create"
           >
             <CIcon icon={cilPlus} className="me-2" />
             Nuovo ticket
@@ -182,6 +183,7 @@ const TicketsList = () => {
                 placeholder="Titolo, descrizione o modulo"
                 value={filters.q}
                 onChange={handleChange}
+                data-testid="search"
               />
             </CCol>
             <CCol md={3}>
@@ -221,7 +223,13 @@ const TicketsList = () => {
               <CButton type="submit" color="primary" disabled={loading}>
                 {loading ? <CSpinner size="sm" /> : 'Cerca'}
               </CButton>
-              <CButton type="button" color="light" variant="outline" onClick={handleReset}>
+              <CButton
+                type="button"
+                color="light"
+                variant="outline"
+                onClick={handleReset}
+                data-testid="filters-reset"
+              >
                 Reset
               </CButton>
             </CCol>
@@ -234,7 +242,7 @@ const TicketsList = () => {
           </CAlert>
         )}
 
-        <CTable hover responsive>
+        <CTable hover responsive data-testid="table">
           <CTableHead>
             <CTableRow>
               <CTableHeaderCell style={{ width: 80 }}>ID</CTableHeaderCell>
@@ -262,7 +270,7 @@ const TicketsList = () => {
               </CTableRow>
             ) : (
               items.map((ticket) => (
-                <CTableRow key={ticket.id_ticket}>
+                <CTableRow key={ticket.id_ticket} data-testid={`row-${ticket.id_ticket}`}>
                   <CTableDataCell>{ticket.id_ticket}</CTableDataCell>
                   <CTableDataCell>
                     <div className="fw-semibold">{ticket.titolo}</div>
@@ -306,3 +314,5 @@ const TicketsList = () => {
 }
 
 export default TicketsList
+
+

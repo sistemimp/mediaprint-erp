@@ -30,7 +30,7 @@ const Tables = () => {
               tables look in CoreUI.
             </p>
             <DocsExample href="components/table">
-              <CTable>
+              <CTable data-testid="table">
                 <CTableHead>
                   <CTableRow>
                     <CTableHeaderCell scope="col">#</CTableHeaderCell>
@@ -73,7 +73,7 @@ const Tables = () => {
               Use contextual classes to color tables, table rows or individual cells.
             </p>
             <DocsExample href="components/table#variants">
-              <CTable>
+              <CTable data-testid="table">
                 <CTableHead>
                   <CTableRow>
                     <CTableHeaderCell scope="col">Class</CTableHeaderCell>
@@ -144,7 +144,7 @@ const Tables = () => {
               <code>&lt;CTableBody&gt;</code>.
             </p>
             <DocsExample href="components/table#striped-rows">
-              <CTable striped>
+              <CTable data-testid="table" striped>
                 <CTableHead>
                   <CTableRow>
                     <CTableHeaderCell scope="col">#</CTableHeaderCell>
@@ -178,7 +178,7 @@ const Tables = () => {
               These classes can also be added to table variants:
             </p>
             <DocsExample href="components/table#striped-rows">
-              <CTable color="dark" striped>
+              <CTable data-testid="table" color="dark" striped>
                 <CTableHead>
                   <CTableRow>
                     <CTableHeaderCell scope="col">#</CTableHeaderCell>
@@ -209,7 +209,7 @@ const Tables = () => {
               </CTable>
             </DocsExample>
             <DocsExample href="components/table#striped-rows">
-              <CTable color="success" striped>
+              <CTable data-testid="table" color="success" striped>
                 <CTableHead>
                   <CTableRow>
                     <CTableHeaderCell scope="col">#</CTableHeaderCell>
@@ -253,7 +253,7 @@ const Tables = () => {
               <code>&lt;CTableBody&gt;</code>.
             </p>
             <DocsExample href="components/table#hoverable-rows">
-              <CTable hover>
+              <CTable data-testid="table" hover>
                 <CTableHead>
                   <CTableRow>
                     <CTableHeaderCell scope="col">#</CTableHeaderCell>
@@ -284,7 +284,7 @@ const Tables = () => {
               </CTable>
             </DocsExample>
             <DocsExample href="components/table#hoverable-rows">
-              <CTable color="dark" hover>
+              <CTable data-testid="table" color="dark" hover>
                 <CTableHead>
                   <CTableRow>
                     <CTableHeaderCell scope="col">#</CTableHeaderCell>
@@ -315,7 +315,7 @@ const Tables = () => {
               </CTable>
             </DocsExample>
             <DocsExample href="components/table#hoverable-rows">
-              <CTable striped hover>
+              <CTable data-testid="table" striped hover>
                 <CTableHead>
                   <CTableRow>
                     <CTableHeaderCell scope="col">#</CTableHeaderCell>
@@ -355,7 +355,7 @@ const Tables = () => {
           </CCardHeader>
           <CCardBody>
             <DocsExample href="components/table#active-tables">
-              <CTable>
+              <CTable data-testid="table">
                 <CTableHead>
                   <CTableRow>
                     <CTableHeaderCell scope="col">#</CTableHeaderCell>
@@ -388,7 +388,7 @@ const Tables = () => {
               </CTable>
             </DocsExample>
             <DocsExample href="components/table#active-tables">
-              <CTable color="dark">
+              <CTable data-testid="table" color="dark">
                 <CTableHead>
                   <CTableRow>
                     <CTableHeaderCell scope="col">#</CTableHeaderCell>
@@ -433,7 +433,7 @@ const Tables = () => {
               Add <code>bordered</code> property for borders on all sides of the table and cells.
             </p>
             <DocsExample href="components/table#bordered-tables">
-              <CTable bordered>
+              <CTable data-testid="table" bordered>
                 <CTableHead>
                   <CTableRow>
                     <CTableHeaderCell scope="col">#</CTableHeaderCell>
@@ -470,7 +470,7 @@ const Tables = () => {
               can be added to change colors:
             </p>
             <DocsExample href="components/table#bordered-tables">
-              <CTable bordered borderColor="primary">
+              <CTable data-testid="table" bordered borderColor="primary">
                 <CTableHead>
                   <CTableRow>
                     <CTableHeaderCell scope="col">#</CTableHeaderCell>
@@ -513,7 +513,7 @@ const Tables = () => {
               Add <code>borderless</code> property for a table without borders.
             </p>
             <DocsExample href="components/table#tables-without-borders">
-              <CTable borderless>
+              <CTable data-testid="table" borderless>
                 <CTableHead>
                   <CTableRow>
                     <CTableHeaderCell scope="col">#</CTableHeaderCell>
@@ -544,7 +544,7 @@ const Tables = () => {
               </CTable>
             </DocsExample>
             <DocsExample href="components/table#tables-without-borders">
-              <CTable color="dark" borderless>
+              <CTable data-testid="table" color="dark" borderless>
                 <CTableHead>
                   <CTableRow>
                     <CTableHeaderCell scope="col">#</CTableHeaderCell>
@@ -588,7 +588,7 @@ const Tables = () => {
               by cutting all cell <code>padding</code> in half.
             </p>
             <DocsExample href="components/table#small-tables">
-              <CTable small>
+              <CTable data-testid="table" small>
                 <CTableHead>
                   <CTableRow>
                     <CTableHeaderCell scope="col">#</CTableHeaderCell>
@@ -634,7 +634,7 @@ const Tables = () => {
               property to re-align where needed.
             </p>
             <DocsExample href="components/table#vertical-alignment">
-              <CTable align="middle" responsive>
+              <CTable data-testid="table" align="middle" responsive>
                 <CTableHead>
                   <CTableRow>
                     <CTableHeaderCell scope="col" className="w-25">
@@ -714,7 +714,7 @@ const Tables = () => {
               Border styles, active styles, and table variants are not inherited by nested tables.
             </p>
             <DocsExample href="components/table#nesting">
-              <CTable striped>
+              <CTable data-testid="table" striped>
                 <CTableHead>
                   <CTableRow>
                     <CTableHeaderCell scope="col">#</CTableHeaderCell>
@@ -732,7 +732,7 @@ const Tables = () => {
                   </CTableRow>
                   <CTableRow>
                     <CTableHeaderCell colSpan={4}>
-                      <CTable>
+                      <CTable data-testid="table">
                         <CTableHead>
                           <CTableRow>
                             <CTableHeaderCell scope="col">Header</CTableHeaderCell>
@@ -783,7 +783,7 @@ const Tables = () => {
               <code>&lt;CTableHead&gt;</code>s appear light or dark gray.
             </p>
             <DocsExample href="components/table#table-head">
-              <CTable>
+              <CTable data-testid="table">
                 <CTableHead color="light">
                   <CTableRow>
                     <CTableHeaderCell scope="col">#</CTableHeaderCell>
@@ -815,7 +815,7 @@ const Tables = () => {
               </CTable>
             </DocsExample>
             <DocsExample href="components/table#table-head">
-              <CTable>
+              <CTable data-testid="table">
                 <CTableHead color="dark">
                   <CTableRow>
                     <CTableHeaderCell scope="col">#</CTableHeaderCell>
@@ -855,7 +855,7 @@ const Tables = () => {
           </CCardHeader>
           <CCardBody>
             <DocsExample href="components/table#table-foot">
-              <CTable>
+              <CTable data-testid="table">
                 <CTableHead color="light">
                   <CTableRow>
                     <CTableHeaderCell scope="col">#</CTableHeaderCell>
@@ -908,7 +908,7 @@ const Tables = () => {
               decide if they want to read it.
             </p>
             <DocsExample href="components/table#captions">
-              <CTable>
+              <CTable data-testid="table">
                 <CTableCaption>List of users</CTableCaption>
                 <CTableHead>
                   <CTableRow>
@@ -945,7 +945,7 @@ const Tables = () => {
               <code>caption=&#34;top&#34;</code>.
             </p>
             <DocsExample href="components/table#captions">
-              <CTable caption="top">
+              <CTable data-testid="table" caption="top">
                 <CTableCaption>List of users</CTableCaption>
                 <CTableHead>
                   <CTableRow>
@@ -985,3 +985,6 @@ const Tables = () => {
 }
 
 export default Tables
+
+
+

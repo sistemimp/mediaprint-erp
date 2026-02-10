@@ -4,7 +4,7 @@
 /node_modules
 /backend/ws/node_modules
 /backend/example/
-
+/QA-Agent
 /MyChatElectron/dist/
 /MyChatElectron/release/
 /MyChatElectron/node_modules/

@@ -647,6 +647,7 @@ const AccountsList = () => {
             variant="outline"
             onClick={openCreateModal}
             permission="acct.create"
+            data-testid="create"
           >
             <CIcon icon={cilPlus} className="me-2" />
             Nuovo account
@@ -662,6 +663,7 @@ const AccountsList = () => {
                 value={filters.search}
                 onChange={handleFilterChange}
                 placeholder="Cerca per username o email..."
+                data-testid="search"
               />
             </CCol>
             <CCol md={3}>
@@ -701,7 +703,7 @@ const AccountsList = () => {
         )}
 
         {!loading && !error && (
-          <CTable hover responsive>
+          <CTable hover responsive data-testid="table">
             <CTableHead className="mp-table-head">
               <CTableRow className="align-middle">
                 <CTableHeaderCell>Username</CTableHeaderCell>
@@ -715,7 +717,11 @@ const AccountsList = () => {
             </CTableHead>
             <CTableBody>
               {accounts.map((row) => (
-                <CTableRow key={row.id_account} className="align-middle">
+                <CTableRow
+                  key={row.id_account}
+                  className="align-middle"
+                  data-testid={`row-${row.id_account}`}
+                >
                   <CTableDataCell>
                     <div className="d-flex align-items-center gap-2">
                       <CAvatar size="sm" src={resolveAvatarUrl(row.avatar_path) || avatarFallback} />
@@ -788,6 +794,7 @@ const AccountsList = () => {
                           onClick={() => handleDelete(row.id_account)}
                           disabled={deletingId === row.id_account}
                           permission="acct.delete"
+                          data-testid="delete"
                         >
                           {deletingId === row.id_account ? <CSpinner size="sm" /> : <CIcon icon={cilTrash} />}
                         </PermissionButton>
@@ -884,7 +891,7 @@ const AccountsList = () => {
                     className="mb-2"
                   />
                   <div className="border rounded">
-                    <CTable small hover responsive className="mb-0">
+                    <CTable small hover responsive className="mb-0" data-testid="table">
                       <CTableHead className="mp-table-head">
                         <CTableRow>
                           <CTableHeaderCell style={{ width: '40px' }}></CTableHeaderCell>
@@ -896,7 +903,11 @@ const AccountsList = () => {
                           const id = String(item.id_anagrafica)
                           const checked = selectedAnagrafiche.includes(id)
                           return (
-                            <CTableRow key={id} className="align-middle">
+                            <CTableRow
+                              key={id}
+                              className="align-middle"
+                              data-testid={`row-${id}`}
+                            >
                               <CTableDataCell>
                                 <CFormCheck
                                   checked={checked}
@@ -968,7 +979,7 @@ const AccountsList = () => {
                     className="mb-2"
                   />
                   <div className="border rounded">
-                    <CTable small hover responsive className="mb-0">
+                    <CTable small hover responsive className="mb-0" data-testid="table">
                       <CTableHead className="mp-table-head">
                         <CTableRow>
                           <CTableHeaderCell style={{ width: '40px' }}></CTableHeaderCell>
@@ -984,7 +995,11 @@ const AccountsList = () => {
                           const id = String(item.id_contatto)
                           const isSelected = selectedContatti.includes(id)
                           return (
-                            <CTableRow key={id} className="align-middle">
+                            <CTableRow
+                              key={id}
+                              className="align-middle"
+                              data-testid={`row-${id}`}
+                            >
                               <CTableDataCell>
                                 <CFormCheck
                                   checked={isSelected}
@@ -1104,7 +1119,7 @@ const AccountsList = () => {
           <CButton color="secondary" variant="outline" onClick={closeModal} disabled={saving}>
             Annulla
           </CButton>
-          <CButton color="primary" onClick={handleSave} disabled={saving}>
+          <CButton color="primary" onClick={handleSave} disabled={saving} data-testid="save">
             {saving ? <CSpinner size="sm" /> : 'Salva'}
           </CButton>
         </CModalFooter>
@@ -1114,3 +1129,5 @@ const AccountsList = () => {
 }
 
 export default AccountsList
+
+

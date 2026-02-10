@@ -2548,7 +2548,7 @@ const PreventiviDetail = () => {
                     statusLog.length === 0 ? (
                       <small className="text-body-secondary">Nessun evento di stato.</small>
                     ) : (
-                      <CTable small responsive className="mb-0">
+                      <CTable data-testid="table" small responsive className="mb-0">
                         <CTableHead className="mp-table-head">
                           <CTableRow>
                             <CTableHeaderCell>Data</CTableHeaderCell>
@@ -2579,7 +2579,7 @@ const PreventiviDetail = () => {
                   {revisions.length === 0 ? (
                     <small className="text-body-secondary">Nessuna revisione registrata.</small>
                   ) : (
-                    <CTable small responsive className="mb-0">
+                    <CTable data-testid="table" small responsive className="mb-0">
                       <CTableHead className="mp-table-head">
                         <CTableRow>
                           <CTableHeaderCell>Revisione</CTableHeaderCell>
@@ -2619,7 +2619,7 @@ const PreventiviDetail = () => {
                   {linkedLavorazioni.length === 0 ? (
                     <CAlert color="info" className="mb-4">Nessuna lavorazione collegata al preventivo.</CAlert>
                   ) : (
-                    <CTable small responsive className="mb-4">
+                    <CTable data-testid="table" small responsive className="mb-4">
                       <CTableHead className="mp-table-head">
                         <CTableRow>
                           <CTableHeaderCell>Codice</CTableHeaderCell>
@@ -2657,7 +2657,7 @@ const PreventiviDetail = () => {
                       {linkedDdt.length === 0 ? (
                         <CAlert color="info" className="mb-0">Nessun DDT collegato al preventivo.</CAlert>
                       ) : (
-                        <CTable small responsive>
+                        <CTable data-testid="table" small responsive>
                           <CTableHead className="mp-table-head">
                             <CTableRow>
                               <CTableHeaderCell>Numero</CTableHeaderCell>
@@ -2703,7 +2703,7 @@ const PreventiviDetail = () => {
                       {linkedFatture.length === 0 ? (
                         <CAlert color="info" className="mb-0">Nessuna fattura collegata al preventivo.</CAlert>
                       ) : (
-                        <CTable small responsive>
+                        <CTable data-testid="table" small responsive>
                           <CTableHead className="mp-table-head">
                             <CTableRow>
                               <CTableHeaderCell>Numero</CTableHeaderCell>
@@ -2824,7 +2824,7 @@ const PreventiviDetail = () => {
                 </CCol>
                 <CCol md={6}>
                   <CFormLabel>CIG</CFormLabel>
-                  <CTable small bordered responsive>
+                  <CTable data-testid="table" small bordered responsive>
                     <CTableHead>
                       <CTableRow>
                         <CTableHeaderCell style={{ width: '25%' }}>CIG</CTableHeaderCell>
@@ -2882,7 +2882,7 @@ const PreventiviDetail = () => {
                 </CCol>
                 <CCol md={6}>
                   <CFormLabel>Determina</CFormLabel>
-                  <CTable small bordered responsive>
+                  <CTable data-testid="table" small bordered responsive>
                     <CTableHead>
                       <CTableRow>
                         <CTableHeaderCell style={{ width: '25%' }}>Determina</CTableHeaderCell>
@@ -3137,7 +3137,7 @@ const PreventiviDetail = () => {
                   {pkgPreview.length > 0 && (
                     <div className="border rounded p-2">
                       <div className="fw-semibold mb-2">Righe del pacchetto</div>
-                      <CTable small hover responsive>
+                      <CTable data-testid="table" small hover responsive>
                         <CTableHead className="mp-table-head">
                           <CTableRow>
                             <CTableHeaderCell>Descrizione</CTableHeaderCell>
@@ -3620,7 +3620,7 @@ const PreventiviDetail = () => {
                 </CModalFooter>
               </CModal>
 
-              <CTable className="mt-3" responsive small>
+              <CTable data-testid="table" className="mt-3" responsive small>
                 <CTableHead className="mp-table-head">
                   <CTableRow className="align-middle">
                     <CTableHeaderCell>Descrizione</CTableHeaderCell>
@@ -3923,7 +3923,7 @@ const PreventiviDetail = () => {
             <div className="mt-4">
               <h6 className="mb-2 text-body-secondary">Righe incluse</h6>
               {preventivoHasRighe ? (
-                <CTable responsive hover small>
+                <CTable data-testid="table" responsive hover small>
                   <CTableHead className="mp-table-head">
                     <CTableRow>
                       <CTableHeaderCell>Descrizione</CTableHeaderCell>
@@ -4100,7 +4100,7 @@ const PreventiviDetail = () => {
             <div className="mt-4">
               <h6 className="mb-2 text-body-secondary">Righe incluse</h6>
               {preventivoHasRighe ? (
-                <CTable responsive hover small>
+                <CTable data-testid="table" responsive hover small>
                   <CTableHead className="mp-table-head">
                     <CTableRow>
                       <CTableHeaderCell>Descrizione</CTableHeaderCell>
@@ -4323,7 +4323,7 @@ const PreventiviDetail = () => {
                   </CAlert>
                 )}
                 {revisionModalLines.length > 0 ? (
-                  <CTable small responsive className="mb-0">
+                  <CTable data-testid="table" small responsive className="mb-0">
                     <CTableHead className="mp-table-head">
                       <CTableRow>
                         <CTableHeaderCell>Descrizione</CTableHeaderCell>
@@ -4365,3 +4365,6 @@ const PreventiviDetail = () => {
 }
 
 export default PreventiviDetail
+
+
+

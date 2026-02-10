@@ -163,7 +163,7 @@ const FattureDashboard = () => {
                 : latest.length === 0
                   ? renderTablePlaceholder('Nessun dato disponibile.')
                   : (
-                    <CTable small hover responsive className="mb-0">
+                    <CTable data-testid="table" small hover responsive className="mb-0">
                       <CTableHead>
                         <CTableRow>
                           <CTableHeaderCell>Fattura</CTableHeaderCell>
@@ -212,7 +212,7 @@ const FattureDashboard = () => {
                 : topClients.length === 0
                   ? renderTablePlaceholder('Nessun dato disponibile.')
                   : (
-                    <CTable small hover responsive className="mb-0">
+                    <CTable data-testid="table" small hover responsive className="mb-0">
                       <CTableHead>
                         <CTableRow>
                           <CTableHeaderCell>Cliente</CTableHeaderCell>
@@ -238,3 +238,6 @@ const FattureDashboard = () => {
 }
 
 export default FattureDashboard
+
+
+

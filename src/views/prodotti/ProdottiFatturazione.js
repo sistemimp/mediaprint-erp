@@ -223,7 +223,7 @@ const ProdottiFatturazione = () => {
                       </CAccordionHeader>
                       <CAccordionBody>
                         {hasCombos ? (
-                          <CTable small responsive className="mb-0">
+                          <CTable small responsive className="mb-0" data-testid="table">
                             <CTableHead>
                               <CTableRow>
                                 <CTableHeaderCell>Combinazione</CTableHeaderCell>
@@ -242,7 +242,10 @@ const ProdottiFatturazione = () => {
                                   listinoValue !== undefined &&
                                   !Number.isNaN(Number(listinoValue))
                                 return (
-                                  <CTableRow key={`${row.id_prodotto}-${combo.combo_key || index}`}>
+                                  <CTableRow
+                                    key={`${row.id_prodotto}-${combo.combo_key || index}`}
+                                    data-testid={`row-${row.id_prodotto}`}
+                                  >
                                     <CTableDataCell>{comboLabel}</CTableDataCell>
                                     <CTableDataCell className="text-end">
                                       {showListino ? formatCurrency(listinoValue) : '-'}
@@ -270,3 +273,5 @@ const ProdottiFatturazione = () => {
 }
 
 export default ProdottiFatturazione
+
+

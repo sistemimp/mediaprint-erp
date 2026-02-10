@@ -2825,7 +2825,7 @@ const AnagraficaDetail = () => {
                   </CButton>
                 </div>
                 {contratti.length > 0 ? (
-                  <CTable hover responsive size="sm">
+                  <CTable data-testid="table" hover responsive size="sm">
                     <CTableHead color="dark">
                       <CTableRow>
                         <CTableHeaderCell scope="col">Titolo</CTableHeaderCell>
@@ -2884,7 +2884,7 @@ const AnagraficaDetail = () => {
                 </div>
                 {totalPreventivi > 0 ? (
                   <>
-                    <CTable hover responsive size="sm">
+                    <CTable data-testid="table" hover responsive size="sm">
                       <CTableHead color="dark">
                         <CTableRow className="align-middle">
                           <CTableHeaderCell scope="col">Numero</CTableHeaderCell>
@@ -2970,7 +2970,7 @@ const AnagraficaDetail = () => {
                 <h3 className="h6 mb-3">DDT correlati</h3>
                 {latestDdt.length > 0 ? (
                   <>
-                    <CTable hover responsive size="sm">
+                    <CTable data-testid="table" hover responsive size="sm">
                       <CTableHead className="mp-table-head">
                         <CTableRow>
                           <CTableHeaderCell scope="col">Numero</CTableHeaderCell>
@@ -3024,7 +3024,7 @@ const AnagraficaDetail = () => {
                   <h3 className="h6 mb-3">Fatture correlate</h3>
                   {latestFatture.length > 0 ? (
                     <>
-                      <CTable hover responsive size="sm">
+                      <CTable data-testid="table" hover responsive size="sm">
                         <CTableHead className="mp-table-head">
                           <CTableRow>
                             <CTableHeaderCell scope="col">Numero</CTableHeaderCell>
@@ -3086,3 +3086,6 @@ const AnagraficaDetail = () => {
 }
 
 export default AnagraficaDetail
+
+
+

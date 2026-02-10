@@ -184,6 +184,7 @@ const LavorazioniTemplates = () => {
               variant="outline"
               onClick={startCreate}
               permission="job.create"
+              data-testid="create"
             >
               Nuovo template
             </PermissionButton>
@@ -273,6 +274,7 @@ const LavorazioniTemplates = () => {
                     color="primary"
                     disabled={saving || form.titolo.trim() === ''}
                     permission="job.write"
+                    data-testid="save"
                   >
                     Salva
                   </PermissionButton>
@@ -291,7 +293,7 @@ const LavorazioniTemplates = () => {
             </div>
           )}
           {!loading && (
-            <CTable hover responsive>
+            <CTable hover responsive data-testid="table">
               <CTableHead className="mp-table-head">
                 <CTableRow>
                   <CTableHeaderCell>ID</CTableHeaderCell>
@@ -306,7 +308,7 @@ const LavorazioniTemplates = () => {
               </CTableHead>
               <CTableBody>
                 {items.map((row) => (
-                  <CTableRow key={row.id_template}>
+                  <CTableRow key={row.id_template} data-testid={`row-${row.id_template}`}>
                     <CTableDataCell>{row.id_template}</CTableDataCell>
                     <CTableDataCell>{row.titolo}</CTableDataCell>
                     <CTableDataCell>{row.priorita}</CTableDataCell>
@@ -342,3 +344,5 @@ const LavorazioniTemplates = () => {
 }
 
 export default LavorazioniTemplates
+
+

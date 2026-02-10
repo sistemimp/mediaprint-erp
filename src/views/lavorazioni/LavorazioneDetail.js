@@ -2201,7 +2201,7 @@ const LavorazioneDetail = () => {
                     <>
                       <h6 className="text-body-secondary mb-3">Preventivo</h6>
                       {relatedDocs.preventivo ? (
-                        <CTable hover responsive size="sm" className="mb-4">
+                        <CTable data-testid="table" hover responsive size="sm" className="mb-4">
                           <CTableHead className="mp-table-head">
                             <CTableRow>
                               <CTableHeaderCell>Numero</CTableHeaderCell>
@@ -2236,7 +2236,7 @@ const LavorazioneDetail = () => {
 
                       <h6 className="text-body-secondary mb-3">DDT</h6>
                       {relatedDocs.ddt.length > 0 ? (
-                        <CTable hover responsive size="sm" className="mb-4">
+                        <CTable data-testid="table" hover responsive size="sm" className="mb-4">
                           <CTableHead className="mp-table-head">
                             <CTableRow>
                               <CTableHeaderCell>Numero</CTableHeaderCell>
@@ -2271,7 +2271,7 @@ const LavorazioneDetail = () => {
 
                       <h6 className="text-body-secondary mb-3">Fatture</h6>
                       {relatedDocs.fatture.length > 0 ? (
-                        <CTable hover responsive size="sm">
+                        <CTable data-testid="table" hover responsive size="sm">
                           <CTableHead className="mp-table-head">
                             <CTableRow>
                               <CTableHeaderCell>Numero</CTableHeaderCell>
@@ -2394,7 +2394,7 @@ const LavorazioneDetail = () => {
                       <CSpinner />
                     </div>
                   ) : (
-                    <CTable hover responsive size="sm">
+                    <CTable data-testid="table" hover responsive size="sm">
                       <CTableHead className="mp-table-head">
                         <CTableRow>
                           <CTableHeaderCell>Titolo</CTableHeaderCell>
@@ -2510,7 +2510,7 @@ const LavorazioneDetail = () => {
                             </div>
                           </CAccordionHeader>
                           <CAccordionBody>
-                            <CTable small responsive className="mb-0">
+                            <CTable data-testid="table" small responsive className="mb-0">
                               <CTableHead>
                                 <CTableRow>
                                   <CTableHeaderCell scope="col">Categoria</CTableHeaderCell>
@@ -2915,7 +2915,7 @@ const LavorazioneDetail = () => {
                                 </div>
                               </div>
                               {stampaRows.length > 0 ? (
-                                <CTable small responsive className="mb-0">
+                                <CTable data-testid="table" small responsive className="mb-0">
                                   <CTableHead>
                                     <CTableRow>
                                       <CTableHeaderCell scope="col">Categoria</CTableHeaderCell>
@@ -3858,3 +3858,6 @@ const LavorazioneDetail = () => {
 }
 
 export default LavorazioneDetail
+
+
+

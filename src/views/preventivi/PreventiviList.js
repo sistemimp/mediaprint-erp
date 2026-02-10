@@ -139,7 +139,7 @@ const formatVatLabel = (line) => {
     }
     return (
       <div className="table-responsive" style={{ maxHeight: 'calc(90vh - 380px)' }}>
-        <CTable small className="mb-0 align-middle">
+        <CTable small className="mb-0 align-middle" data-testid="table">
           <CTableHead className="mp-table-head">
             <CTableRow>
               <CTableHeaderCell className="text-nowrap">Qtd.</CTableHeaderCell>
@@ -152,7 +152,10 @@ const formatVatLabel = (line) => {
           </CTableHead>
           <CTableBody>
             {normalized.map((line, idx) => (
-              <CTableRow key={`${line.id_riga ?? line.id ?? idx}-${idx}`}>
+              <CTableRow
+                key={`${line.id_riga ?? line.id ?? idx}-${idx}`}
+                data-testid={`row-${line.id_riga ?? line.id ?? idx}`}
+              >
                 <CTableDataCell className="text-nowrap">{getLineQuantity(line)}</CTableDataCell>
                 <CTableDataCell>{getLineDescription(line)}</CTableDataCell>
                 <CTableDataCell className="text-nowrap">{formatCurrency(getLinePrice(line))}</CTableDataCell>
@@ -801,6 +804,7 @@ const PreventiviList = () => {
                 variant="outline"
                 onClick={handleCreateNewPreventivo}
                 permission="prev.create"
+                data-testid="create"
               >
                 <CIcon icon={cilPlus} className="me-2" />
                 Nuovo preventivo
@@ -825,7 +829,7 @@ const PreventiviList = () => {
 
           {!loading && !error && total > 0 && (
             <>
-              <CTable hover responsive>
+              <CTable hover responsive data-testid="table">
                 <CTableHead className="mp-table-head">
                   <CTableRow className="align-middle">
                     <CTableHeaderCell role="button" onClick={(e) => toggleSort('cliente', e.shiftKey)} className="text-nowrap">
@@ -880,6 +884,7 @@ const PreventiviList = () => {
                           className="align-middle"
                           style={{ cursor: 'pointer' }}
                           aria-expanded={isExpanded}
+                          data-testid={`row-${r.id_preventivo}`}
                         >
                           <CTableDataCell>
                             {r.ragione_sociale || '-'}
@@ -1249,3 +1254,5 @@ const PreventiviList = () => {
 }
 
 export default PreventiviList
+
+

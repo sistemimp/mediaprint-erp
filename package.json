@@ -1,7 +1,7 @@
 {
   "name": "Gestionale MediaPrint",
   "version": "2026.1.29.002",
-  "description": "Gestionale MediaPrint ad uso interno",
+  "description": "Portale gestionale MediaPrint per amministrare ordini, documenti e reportistica interna.",
   "homepage": ".",
   "bugs": {
     "url": "https://github.com/coreui/coreui-free-react-admin-template/issues"
@@ -11,7 +11,7 @@
     "url": "git@github.com:coreui/coreui-free-react-admin-template.git"
   },
   "license": "MIT",
-  "author": "The CoreUI Team (https://github.com/orgs/coreui/people)",
+  "author": "Alex Olivieri",
   "scripts": {
     "build": "vite build",
     "lint": "eslint",
@@ -42,7 +42,7 @@
     "redux": "5.0.1",
     "simplebar-react": "^3.3.2",
     "socket.io-client": "^4.8.1",
-    "xlsx": "^0.18.5"
+    "exceljs": "^4.4.0"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^5.0.0",

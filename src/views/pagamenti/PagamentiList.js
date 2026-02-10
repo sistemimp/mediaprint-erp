@@ -27,7 +27,7 @@ import {
 } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
 import { cilArrowRight, cilSpreadsheet, cilWarning } from '@coreui/icons'
-import { utils, write } from 'xlsx'
+import ExcelJS from 'exceljs'
 
 import { useAuth } from '../../context/AuthContext'
 import { fetchPagamentiLedger, fetchPagamentiList } from '../../services/pagamenti'
@@ -148,11 +148,12 @@ const PagamentiList = () => {
         row.saldo_residuo ?? 0,
         row.pending_residuo ?? 0,
       ])
-      const wb = utils.book_new()
-      const ws = utils.aoa_to_sheet([headers, ...rows])
-      utils.book_append_sheet(wb, ws, 'Ledger')
-      const wbout = write(wb, { bookType: 'xlsx', type: 'array' })
-      const blob = new Blob([wbout], {
+      const workbook = new ExcelJS.Workbook()
+      const worksheet = workbook.addWorksheet('Ledger')
+      worksheet.addRow(headers)
+      rows.forEach((row) => worksheet.addRow(row))
+      const buffer = await workbook.xlsx.writeBuffer()
+      const blob = new Blob([buffer], {
         type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       })
       const url = URL.createObjectURL(blob)
@@ -231,6 +232,7 @@ const PagamentiList = () => {
                 placeholder="Cliente, fattura o note"
                 value={filters.q}
                 onChange={handleFiltersChange('q')}
+                data-testid="search"
               />
             </CCol>
             <CCol xs={6} md={4} lg={3}>
@@ -253,6 +255,7 @@ const PagamentiList = () => {
                   placeholder="Nome o P.IVA"
                   value={ledgerSearch}
                   onChange={(e) => setLedgerSearch(e.target.value)}
+                  data-testid="search"
                 />
               </CCol>
             </CRow>
@@ -305,7 +308,7 @@ const PagamentiList = () => {
               <CAlert color="info">Nessun cliente trovato.</CAlert>
             ) : (
               <>
-                <CTable responsive hover>
+                <CTable responsive hover data-testid="table">
                   <CTableHead className="mp-table-head">
                     <CTableRow className="align-middle">
                       <CTableHeaderCell>Cliente</CTableHeaderCell>
@@ -317,7 +320,7 @@ const PagamentiList = () => {
                   </CTableHead>
                   <CTableBody>
                     {paginatedLedger.map((row) => (
-                      <CTableRow key={row.id_anagrafica}>
+                      <CTableRow key={row.id_anagrafica} data-testid={`row-${row.id_anagrafica}`}>
                         <CTableDataCell>
                           <div className="d-flex flex-wrap align-items-center gap-2">
                             <span>{row.ragione_sociale}</span>
@@ -392,7 +395,7 @@ const PagamentiList = () => {
             ) : !hasAssignedPayments ? (
               <CAlert color="info">Nessun pagamento registrato.</CAlert>
             ) : (
-              <CTable responsive hover>
+              <CTable responsive hover data-testid="table">
                 <CTableHead className="mp-table-head">
                   <CTableRow className="align-middle">
                     <CTableHeaderCell>Data</CTableHeaderCell>
@@ -416,7 +419,7 @@ const PagamentiList = () => {
                       isUnassigned && importoDocumento != null ? importoDocumento : importoRegistrato
 
                     return (
-                      <CTableRow key={row.id_pagamento}>
+                      <CTableRow key={row.id_pagamento} data-testid={`row-${row.id_pagamento}`}>
                         <CTableDataCell>{row.data_pagamento || '-'}</CTableDataCell>
                         <CTableDataCell>{row.cliente || '-'}</CTableDataCell>
                         <CTableDataCell>
@@ -499,7 +502,7 @@ const PagamentiList = () => {
                   Questi pagamenti sono stati importati ma non ancora assegnati a una fattura. Utilizza il dettaglio per
                   completare l'associazione o eliminarli se non piu necessari.
                 </CAlert>
-                <CTable responsive hover>
+                <CTable responsive hover data-testid="table">
                   <CTableHead className="mp-table-head">
                     <CTableRow className="align-middle">
                       <CTableHeaderCell>Data</CTableHeaderCell>
@@ -522,7 +525,10 @@ const PagamentiList = () => {
                         ? Math.max(0, Math.round((totaleImporto - allocatoValue) * 100) / 100)
                         : residuoRaw
                       return (
-                        <CTableRow key={`pending-${row.id_pagamento}`}>
+                        <CTableRow
+                          key={`pending-${row.id_pagamento}`}
+                          data-testid={`row-${row.id_pagamento}`}
+                        >
                           <CTableDataCell>{row.data_pagamento || '-'}</CTableDataCell>
                           <CTableDataCell>{row.cliente || '-'}</CTableDataCell>
                           <CTableDataCell>
@@ -578,3 +584,5 @@ const PagamentiList = () => {
 }
 
 export default PagamentiList
+
+

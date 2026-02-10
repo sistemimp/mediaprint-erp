@@ -160,7 +160,7 @@ const AnagraficaDashboard = () => {
                 : statusCounts.length === 0
                   ? renderTablePlaceholder('Nessun dato disponibile.')
                   : (
-                    <CTable small hover responsive className="mb-0">
+                    <CTable data-testid="table" small hover responsive className="mb-0">
                       <CTableHead>
                         <CTableRow>
                           <CTableHeaderCell>Stato</CTableHeaderCell>
@@ -189,7 +189,7 @@ const AnagraficaDashboard = () => {
                 : latest.length === 0
                   ? renderTablePlaceholder('Nessun dato disponibile.')
                   : (
-                    <CTable small hover responsive className="mb-0">
+                    <CTable data-testid="table" small hover responsive className="mb-0">
                       <CTableHead>
                         <CTableRow>
                           <CTableHeaderCell>Cliente</CTableHeaderCell>
@@ -228,3 +228,6 @@ const AnagraficaDashboard = () => {
 }
 
 export default AnagraficaDashboard
+
+
+

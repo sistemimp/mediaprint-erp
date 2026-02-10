@@ -709,6 +709,7 @@ const LavorazioniList = () => {
                   placeholder="Titolo, cliente, codice, preventivo..."
                   value={filters.search}
                   onChange={handleFilterChange('search')}
+                  data-testid="search"
                 />
               </CInputGroup>
             </CCol>
@@ -743,7 +744,12 @@ const LavorazioniList = () => {
               </CFormSelect>
             </CCol>
             <CCol xs={12} className="d-flex justify-content-end gap-2">
-              <CButton color="light" type="button" onClick={() => setFilters(defaultFilters)}>
+              <CButton
+                color="light"
+                type="button"
+                onClick={() => setFilters(defaultFilters)}
+                data-testid="filters-reset"
+              >
                 Azzera filtri
               </CButton>
               <CButton color="primary" type="submit">
@@ -965,7 +971,7 @@ const LavorazioniList = () => {
                   <CSpinner color="primary" />
                 </div>
               ) : null}
-              <table className="table table-bordered align-middle calendar-table mb-0">
+              <table className="table table-bordered align-middle calendar-table mb-0" data-testid="table">
                 <thead className="table-light text-center">
                   <tr>
                     {weekdayLabels.map((day) => (
@@ -1076,7 +1082,7 @@ const LavorazioniList = () => {
                 </div>
               ) : null}
               <div className="d-none d-md-block">
-                <CTable hover responsive className="mb-0 w-100">
+                <CTable hover responsive className="mb-0 w-100" data-testid="table">
                   <CTableHead className="mp-table-head">
                     <CTableRow>
                       <CTableHeaderCell>Lavorazione</CTableHeaderCell>
@@ -1105,7 +1111,10 @@ const LavorazioniList = () => {
                     const { referenceTitle, objectDescription, codeLabel } = buildJobLabelInfo(job)
                     return (
                       <Fragment key={fragmentKey}>
-                        <CTableRow className="align-middle">
+                        <CTableRow
+                          className="align-middle"
+                          data-testid={`row-${hasValidId ? jobId : index}`}
+                        >
                           <CTableDataCell>
                             <div className="d-flex align-items-start gap-3">
                               <CButton
@@ -1346,3 +1355,5 @@ const LavorazioniList = () => {
 }
 
 export default LavorazioniList
+
+

@@ -174,7 +174,7 @@ const PreventivoContattiTable = ({
         </div>
       </div>
       {hasContacts ? (
-        <CTable responsive hover align="middle" className="mb-0">
+        <CTable data-testid="table" responsive hover align="middle" className="mb-0">
           <CTableHead color="light">
             <CTableRow>
               <CTableHeaderCell>Nome</CTableHeaderCell>
@@ -268,3 +268,6 @@ const PreventivoContattiTable = ({
 }
 
 export default PreventivoContattiTable
+
+
+

@@ -170,7 +170,12 @@ const DdtList = () => {
               <CIcon icon={cilReload} className="me-2" />
               Aggiorna
             </CButton>
-            <PermissionButton color="primary" onClick={() => navigate('/ddt/crea')} permission="ddt.create">
+            <PermissionButton
+              color="primary"
+              onClick={() => navigate('/ddt/crea')}
+              permission="ddt.create"
+              data-testid="create"
+            >
               Nuovo DDT
             </PermissionButton>
           </div>
@@ -183,6 +188,7 @@ const DdtList = () => {
               placeholder="Cerca per cliente, numero o nota..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
+              data-testid="search"
             />
           </CCol>
           <CCol xs={6} md={3} lg={2}>
@@ -222,7 +228,7 @@ const DdtList = () => {
         )}
 
         {!loading && !error && filteredItems.length > 0 && (
-          <CTable hover responsive>
+          <CTable hover responsive data-testid="table">
             <CTableHead className="mp-table-head">
               <CTableRow className="align-middle">
                 <CTableHeaderCell>Numero</CTableHeaderCell>
@@ -243,7 +249,7 @@ const DdtList = () => {
                     ? { label: 'Emesso', color: 'success' }
                     : { label: 'Bozza', color: 'warning' }
                 return (
-                  <CTableRow key={row.id_ddt}>
+                  <CTableRow key={row.id_ddt} data-testid={`row-${row.id_ddt}`}>
                     <CTableDataCell className="text-nowrap">
                       {row.anno ?? '-'}/{row.numero_documento ?? '-'}
                     </CTableDataCell>
@@ -308,3 +314,5 @@ const DdtList = () => {
 }
 
 export default DdtList
+
+

@@ -143,7 +143,7 @@ const ProdottiDashboard = () => {
                 : topCategorie.length === 0
                   ? renderTablePlaceholder('Nessun dato disponibile.')
                   : (
-                    <CTable small hover responsive className="mb-0">
+                    <CTable data-testid="table" small hover responsive className="mb-0">
                       <CTableHead>
                         <CTableRow>
                           <CTableHeaderCell>Categoria</CTableHeaderCell>
@@ -172,7 +172,7 @@ const ProdottiDashboard = () => {
                 : latest.length === 0
                   ? renderTablePlaceholder('Nessun dato disponibile.')
                   : (
-                    <CTable small hover responsive className="mb-0">
+                    <CTable data-testid="table" small hover responsive className="mb-0">
                       <CTableHead>
                         <CTableRow>
                           <CTableHeaderCell>Prodotto</CTableHeaderCell>
@@ -213,3 +213,6 @@ const ProdottiDashboard = () => {
 }
 
 export default ProdottiDashboard
+
+
+

@@ -323,7 +323,7 @@ const DashboardMP = () => {
 
               <br />
 
-              <CTable align="middle" className="mb-0 border" hover responsive>
+              <CTable data-testid="table" align="middle" className="mb-0 border" hover responsive>
                 <CTableHead className="text-nowrap">
                   <CTableRow>
                     <CTableHeaderCell className="bg-body-tertiary text-center">
@@ -385,3 +385,6 @@ const DashboardMP = () => {
 }
 
 export default Dashboard
+
+
+

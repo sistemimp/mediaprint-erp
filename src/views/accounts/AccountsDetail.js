@@ -289,7 +289,7 @@ const AccountsDetail = () => {
               />
             </div>
 
-            <CTable hover responsive>
+            <CTable data-testid="table" hover responsive>
               <CTableHead className="mp-table-head">
                 <CTableRow>
                   <CTableHeaderCell style={{ width: '60px' }}>Attivo</CTableHeaderCell>
@@ -336,3 +336,6 @@ const AccountsDetail = () => {
 }
 
 export default AccountsDetail
+
+
+

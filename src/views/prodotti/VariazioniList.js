@@ -193,14 +193,15 @@ const VariazioniList = () => {
       <CCardHeader>
         <div className="d-flex justify-content-between align-items-center">
           <h5 className="mb-0">Prodotti - Variazioni</h5>
-          <PermissionButton
-            color="primary"
-            variant="outline"
-            onClick={startCreate}
-            permission="prod.create"
-          >
-            Nuova variazione
-          </PermissionButton>
+            <PermissionButton
+              color="primary"
+              variant="outline"
+              onClick={startCreate}
+              permission="prod.create"
+              data-testid="create"
+            >
+              Nuova variazione
+            </PermissionButton>
         </div>
       </CCardHeader>
       <CCardBody>
@@ -233,14 +234,15 @@ const VariazioniList = () => {
                 <CFormInput placeholder="Codice variazione (unico)" value={code} onChange={(e) => setCode(e.target.value)} />
               </CCol>
               <CCol md="auto">
-                <PermissionButton
-                  type="submit"
-                  color="primary"
-                  disabled={saving || String(name).trim() === ''}
-                  permission="prod.write"
-                >
-                  Salva
-                </PermissionButton>
+                  <PermissionButton
+                    type="submit"
+                    color="primary"
+                    disabled={saving || String(name).trim() === ''}
+                    permission="prod.write"
+                    data-testid="save"
+                  >
+                    Salva
+                  </PermissionButton>
               </CCol>
               <CCol md="auto">
                 <CButton color="secondary" variant="outline" onClick={cancel}>Annulla</CButton>
@@ -257,6 +259,7 @@ const VariazioniList = () => {
                   placeholder="Cerca per nome, codice o categoria"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
+                  data-testid="search"
                 />
               </CCol>
               <CCol md={3}>
@@ -277,12 +280,13 @@ const VariazioniList = () => {
                   variant="outline"
                   onClick={() => { setSearch(''); setFilterCategory('') }}
                   disabled={!search && !filterCategory}
+                  data-testid="filters-reset"
                 >
                   Reset filtri
                 </CButton>
               </CCol>
             </CRow>
-            <CTable hover responsive>
+            <CTable hover responsive data-testid="table">
             <CTableHead className="mp-table-head">
               <CTableRow>
                 <CTableHeaderCell role="button" onClick={(e) => toggleSort('categoria', e.shiftKey)} className="text-nowrap">
@@ -313,7 +317,12 @@ const VariazioniList = () => {
                     </CTableDataCell>
                   </CTableRow>
                   {list.map((r) => (
-                    <CTableRow key={r.id_variazione} onClick={() => startEdit(r)} style={{ cursor: 'pointer' }}>
+                    <CTableRow
+                      key={r.id_variazione}
+                      onClick={() => startEdit(r)}
+                      style={{ cursor: 'pointer' }}
+                      data-testid={`row-${r.id_variazione}`}
+                    >
                       <CTableDataCell>{r.categoria || '-'}</CTableDataCell>
                       <CTableDataCell>{r.nome}</CTableDataCell>
                       <CTableDataCell>{r.codice || '-'}</CTableDataCell>
@@ -321,12 +330,13 @@ const VariazioniList = () => {
                         <PermissionButton
                           size="sm"
                           color="danger"
-                            variant="outline"
-                            onClick={(e) => { e.stopPropagation(); handleDelete(r) }}
-                            permission="prod.delete"
-                          >
-                            Elimina
-                          </PermissionButton>
+                          variant="outline"
+                          onClick={(e) => { e.stopPropagation(); handleDelete(r) }}
+                          permission="prod.delete"
+                          data-testid="delete"
+                        >
+                          Elimina
+                        </PermissionButton>
                         </CTableDataCell>
                       </CTableRow>
                     ))}
@@ -343,3 +353,5 @@ const VariazioniList = () => {
 }
 
 export default VariazioniList
+
+

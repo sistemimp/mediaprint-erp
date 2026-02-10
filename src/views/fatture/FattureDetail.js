@@ -1976,7 +1976,7 @@ const FattureDetail = () => {
                       <small className="text-body-secondary">Nessun evento registrato.</small>
                     )}
                     {!statusLogError && statusLog.length > 0 && (
-                      <CTable small responsive className="mb-0">
+                      <CTable data-testid="table" small responsive className="mb-0">
                         <CTableHead className="mp-table-head">
                           <CTableRow>
                             <CTableHeaderCell>Data</CTableHeaderCell>
@@ -2109,7 +2109,7 @@ const FattureDetail = () => {
                   {paymentSchedule.length > 0 && (
                     <div className="mt-3">
                       <div className="text-body-secondary small mb-2">Rate e scadenze</div>
-                      <CTable bordered responsive size="sm" className="mb-0">
+                      <CTable data-testid="table" bordered responsive size="sm" className="mb-0">
                         <CTableHead>
                           <CTableRow>
                             <CTableHeaderCell scope="col">Rata</CTableHeaderCell>
@@ -2265,7 +2265,7 @@ const FattureDetail = () => {
               ) : payments.length === 0 ? (
                 <CAlert color="info">Nessun pagamento registrato.</CAlert>
               ) : (
-                <CTable responsive hover>
+                <CTable data-testid="table" responsive hover>
                   <CTableHead className="mp-table-head">
                     <CTableRow className="align-middle">
                       <CTableHeaderCell className="text-nowrap">ID pagamento</CTableHeaderCell>
@@ -2449,7 +2449,7 @@ const FattureDetail = () => {
                 {pkgPreview.length > 0 && (
                   <div className="border rounded p-2">
                     <div className="fw-semibold mb-2">Righe del pacchetto</div>
-                    <CTable compact hover responsive>
+                    <CTable data-testid="table" compact hover responsive>
                       <CTableHead className="mp-table-head">
                         <CTableRow>
                           <CTableHeaderCell>Descrizione</CTableHeaderCell>
@@ -3007,7 +3007,7 @@ const FattureDetail = () => {
             {rows.length === 0 ? (
               <CAlert color="info">Nessuna riga presente nella fattura.</CAlert>
             ) : (
-              <CTable hover responsive>
+              <CTable data-testid="table" hover responsive>
                 <CTableHead className="mp-table-head">
                   <CTableRow className="align-middle">
                     <CTableHeaderCell style={{ minWidth: '220px' }}>Descrizione</CTableHeaderCell>
@@ -3136,7 +3136,7 @@ const FattureDetail = () => {
                   Nessun dato IVA disponibile. Inserire almeno una riga con valori validi.
                 </CAlert>
               ) : (
-                <CTable hover responsive className="mb-4">
+                <CTable data-testid="table" hover responsive className="mb-4">
                   <CTableHead className="mp-table-head">
                     <CTableRow className="align-middle">
                       <CTableHeaderCell>Aliquota</CTableHeaderCell>
@@ -3226,3 +3226,6 @@ const FattureDetail = () => {
 }
 
 export default FattureDetail
+
+
+

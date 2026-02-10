@@ -1084,7 +1084,7 @@ const ContrattiDetail = () => {
                 {pkgPreview.length > 0 && (
                   <div className="border rounded p-2">
                     <div className="fw-semibold mb-2">Righe del pacchetto</div>
-                    <CTable compact hover responsive>
+                    <CTable data-testid="table" compact hover responsive>
                       <CTableHead className="mp-table-head">
                         <CTableRow>
                           <CTableHeaderCell>Descrizione</CTableHeaderCell>
@@ -1381,7 +1381,7 @@ const ContrattiDetail = () => {
                 </div>
               </CModalFooter>
             </CModal>
-            <CTable hover responsive>
+            <CTable data-testid="table" hover responsive>
               <CTableHead className="mp-table-head">
                 <CTableRow className="align-middle">
                   <CTableHeaderCell>Prodotto</CTableHeaderCell>
@@ -1574,7 +1574,7 @@ const ContrattiDetail = () => {
         ) : files.length === 0 ? (
           <div className="small text-body-secondary">Nessun file caricato.</div>
         ) : (
-          <CTable hover responsive small>
+          <CTable data-testid="table" hover responsive small>
             <CTableHead className="mp-table-head">
               <CTableRow>
                 <CTableHeaderCell>File</CTableHeaderCell>
@@ -1629,7 +1629,7 @@ const ContrattiDetail = () => {
           {revisions.length === 0 ? (
             <div className="small text-body-secondary">Nessuna revisione registrata.</div>
           ) : (
-            <CTable hover responsive>
+            <CTable data-testid="table" hover responsive>
               <CTableHead className="mp-table-head">
                 <CTableRow>
                   <CTableHeaderCell>Revisione</CTableHeaderCell>
@@ -1712,7 +1712,7 @@ const ContrattiDetail = () => {
                 {revisionLines.length === 0 ? (
                   <div className="small text-body-secondary">Nessuna riga salvata.</div>
                 ) : (
-                  <CTable small responsive>
+                  <CTable data-testid="table" small responsive>
                     <CTableHead className="mp-table-head">
                       <CTableRow>
                         <CTableHeaderCell>Descrizione</CTableHeaderCell>
@@ -1817,3 +1817,6 @@ const ContrattiDetail = () => {
 }
 
 export default ContrattiDetail
+
+
+

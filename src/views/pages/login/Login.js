@@ -206,6 +206,7 @@ const Login = () => {
                     <CFormInput
                       placeholder="Username"
                       autoComplete="username"
+                      data-testid="login-email"
                       value={username}
                       onChange={(event) => setUsername(event.target.value)}
                       disabled={loading}
@@ -219,6 +220,7 @@ const Login = () => {
                       type="password"
                       placeholder="Password"
                       autoComplete="current-password"
+                      data-testid="login-password"
                       value={password}
                       onChange={(event) => setPassword(event.target.value)}
                       disabled={loading}
@@ -226,7 +228,13 @@ const Login = () => {
                   </CInputGroup>
                   <CRow>
                     <CCol xs={6}>
-                      <CButton color="primary" className="px-4" type="submit" disabled={loading || Boolean(mfaChallenge)}>
+                      <CButton
+                        color="primary"
+                        className="px-4"
+                        type="submit"
+                        data-testid="login-submit"
+                        disabled={loading || Boolean(mfaChallenge)}
+                      >
                         {loading ? 'Accesso...' : 'Login'}
                       </CButton>
                     </CCol>

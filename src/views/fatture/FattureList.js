@@ -339,6 +339,7 @@ const FattureList = () => {
               color="primary"
               permission="fatt.create"
               onClick={() => navigate('/fatture/crea')}
+              data-testid="create"
             >
               Nuova fattura
             </PermissionButton>
@@ -396,6 +397,7 @@ const FattureList = () => {
               placeholder="Cerca per cliente, numero o note..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
+              data-testid="search"
             />
           </CCol>
           <CCol xs={6} md={2} lg={2}>
@@ -466,7 +468,7 @@ const FattureList = () => {
 
         {!loading && !error && filteredItems.length > 0 && (
           <>
-            <CTable hover responsive>
+            <CTable hover responsive data-testid="table">
               <CTableHead className="mp-table-head">
                 <CTableRow className="align-middle">
                   <CTableHeaderCell
@@ -534,7 +536,7 @@ const FattureList = () => {
               </CTableHead>
               <CTableBody>
                 {paginatedItems.map((row) => (
-                  <CTableRow key={row.id_fattura}>
+                  <CTableRow key={row.id_fattura} data-testid={`row-${row.id_fattura}`}>
                     <CTableDataCell className="text-nowrap">
                       {row.anno ?? '-'}/{row.numero_documento ?? '-'}
                       {row.numero_documento_originale && (
@@ -644,3 +646,5 @@ const FattureList = () => {
 }
 
 export default FattureList
+
+
