@@ -763,6 +763,7 @@ const AnagraficaList = () => {
                             size="sm"
                             onClick={() => handleRestore(anagrafica)}
                             disabled={loading}
+                            data-testid={`anagrafica-restore-${rowKey}`}
                           >
                             Ripristina
                           </CButton>
@@ -772,6 +773,7 @@ const AnagraficaList = () => {
                             size="sm"
                             className="p-0"
                             onClick={() => handleViewDetails(anagrafica)}
+                            data-testid={`anagrafica-open-${rowKey}`}
                           >
                             <CIcon icon={cilSearch} />
                           </CButton>

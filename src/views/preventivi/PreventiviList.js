@@ -936,6 +936,7 @@ const PreventiviList = () => {
                                 onClick={() => handleView(r.id_preventivo)}
                                 title="Apri dettaglio"
                                 permission="prev.read"
+                                data-testid={`preventivo-open-${r.id_preventivo ?? ''}`}
                               >
                                 <CIcon icon={cilDescription} />
                               </PermissionButton>
@@ -946,6 +947,7 @@ const PreventiviList = () => {
                                 onClick={() => handlePrintPDF(r.id_preventivo)}
                                 title="Stampa PDF"
                                 permission="prev.read"
+                                data-testid={`preventivo-print-${r.id_preventivo ?? ''}`}
                               >
                                 <CIcon icon={cilPrint} />
                               </PermissionButton>
@@ -956,6 +958,7 @@ const PreventiviList = () => {
                                 onClick={() => handleOpenEmailModal(r)}
                                 title="Invia PDF via email"
                                 permission="prev.write"
+                                data-testid={`preventivo-email-${r.id_preventivo ?? ''}`}
                               >
                                 <CIcon icon={cilEnvelopeClosed} />
                               </PermissionButton>
