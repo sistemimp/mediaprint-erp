@@ -18,12 +18,7 @@
     "serve": "vite preview",
     "start": "vite",
     "start:ws": "npm --prefix backend/ws start",
-    "postinstall": "patch-package",
-    "test:e2e": "playwright test",
-    "test:agent": "playwright test e2e/agent/agent.spec.ts",
-    "test:agent:headed": "playwright test e2e/agent/agent.spec.ts --headed",
-    "test:e2e:ui": "playwright test --ui",
-    "test:e2e:install": "playwright install"
+    "postinstall": "patch-package"
   },
   "dependencies": {
     "@coreui/chartjs": "^4.1.0",
