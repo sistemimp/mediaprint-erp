@@ -18,7 +18,12 @@
     "serve": "vite preview",
     "start": "vite",
     "start:ws": "npm --prefix backend/ws start",
-    "postinstall": "patch-package"
+    "postinstall": "patch-package",
+    "test:e2e": "playwright test",
+    "test:agent": "playwright test e2e/agent/agent.spec.ts",
+    "test:agent:headed": "playwright test e2e/agent/agent.spec.ts --headed",
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:install": "playwright install"
   },
   "dependencies": {
     "@coreui/chartjs": "^4.1.0",
@@ -34,6 +39,7 @@
     "chart.js": "^4.5.0",
     "classnames": "^2.5.1",
     "core-js": "^3.45.0",
+    "exceljs": "^4.4.0",
     "prop-types": "^15.8.1",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
@@ -41,12 +47,13 @@
     "react-router-dom": "^7.7.1",
     "redux": "5.0.1",
     "simplebar-react": "^3.3.2",
-    "socket.io-client": "^4.8.1",
-    "exceljs": "^4.4.0"
+    "socket.io-client": "^4.8.1"
   },
   "devDependencies": {
+    "@playwright/test": "^1.58.2",
     "@vitejs/plugin-react": "^5.0.0",
     "autoprefixer": "^10.4.21",
+    "dotenv": "^17.2.4",
     "eslint": "^9.32.0",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-prettier": "^5.5.4",
@@ -54,6 +61,7 @@
     "eslint-plugin-react-hooks": "^5.2.0",
     "globals": "^16.3.0",
     "patch-package": "^8.0.1",
+    "playwright": "^1.58.2",
     "postcss": "^8.5.6",
     "prettier": "3.6.2",
     "sass": "^1.90.0",

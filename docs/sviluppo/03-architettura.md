@@ -1,50 +1,44 @@
 # Architettura
 
-## Separazione FE/BE e deployment
-- Frontend React (src/) serve le viste CoreUI/Vite e gestisce routing, layout e
-  autenticazione con `AuthContext`.
-- Backend PHP (backend/) carica `backend/bootstrap.php`, legge `.env`, valida
-  input e delega a service/repository (PDO + transazioni).
-- Endpoints pubblici in `backend/pubblica` e server WebSocket in `backend/ws`.
-- Database MySQL con dump `sql/mediaprint_erp_v2.sql`; eventuali script di
-  migrazione (`sql/*.sql`) vanno applicati in ordine per mantenere consistenza.
+## Vista generale
+- FE: React/CoreUI in `src/` (routing, layout, permessi UI, servizi API)
+- BE: PHP in `backend/` (auth, validazioni, repository/service)
+- DB: MySQL in `sql/`
+- Realtime: socket.io in `backend/ws/`
 
-## Flussi principali
-1. Il frontend invoca `src/services/apiClient.js` (base URL, token, error handling)
-   e i client specifici (`anagrafiche.js`, `preventivi.js`, `lavorazioni.js`, ecc).
-2. Il backend autentica il JWT, controlla permessi (`cfg_auth_permessi`) e richiama
-   service/repository.
-3. Il repository manipola le tabelle MySQL (`tb_*`), normalizza i payload e
-   restituisce JSON con `success`/`items`/`message`.
-4. Il frontend aggiorna lo stato Redux/locale, mostra widget CoreUI e rende
-   i modali o le tabelle verdi.
+## Flusso request standard
+1. Il FE usa `src/services/apiClient.js`.
+2. La richiesta arriva a un endpoint in `backend/pubblica/*.php`.
+3. Il BE valida token/permessi e delega a service/repository.
+4. Il repository esegue query su tabelle `tb_*`/`cfg_*`.
+5. Il FE aggiorna UI/stato locale e mostra feedback utente.
 
-## Componenti frontend chiave
-- `src/routes.js` riassume tutte le rotte protette (dashboard, preventivi, DDT,
-  fatture, pagamenti, lavorazioni, accounts, notifiche, messaggi, ecc.).
-- `src/_nav.js` costruisce il menu CoreUI con `permissions` e `CNavGroup/CNavItem`.
-- `AppHeader`, `AppSidebar`, `AppContent`, `RequireAuth` proteggono il layout e
-  inseriscono `ChatNotificationBell`, `AppNotificationBell` (notifiche/lavorazioni)
-  e `InstantMessagingWidget`.
-- `src/services/instantMessagingSocket.js` mantiene la connessione WebSocket e
-  notifica `AppNotificationBell``/`InstantMessagingPanel`.
-- `src/services/desktopNotifications.js` centralizza la Notification API per
-  badge/campanello (con `showDesktopNotification`).
+## Flusso realtime
+1. Il client apre websocket con token (`instantMessagingSocket`).
+2. `backend/ws/instant-messaging-server.js` valida token via `me.php`.
+3. Il WS pubblica eventi chat/notifiche ai client connessi.
+4. Il FE aggiorna `InstantMessagingWidget` e `AppNotificationBell`.
 
-## Componenti backend chiave
-- `backend/src/Repositories` contiene l’accesso a tabelle come `tb_preventivi`,
-  `tb_fatture`, `tb_lavorazioni`, `tb_pacchetti`, `tb_im_message`.
-- `backend/src/Service` coordina logiche su contratti, pagamenti, preventivi,
-  pacchetti e messaging.
-- `backend/pubblica` espone file PHP (accounts, anagrafiche, contatti, DDT,
-  fatture, pagamenti, lavorazioni, notifiche, im, pacchetti, prodotti…).
-- `backend/ws/instant-messaging-server.js` riceve connessioni socket, valida
-  token contro l’API (`IM_API_BASE_URL`) e inoltra eventi di chat/notifica.
+## Componenti FE chiave
+- `src/App.js` (shell applicativa)
+- `src/routes.js` (rotte lazy-loaded)
+- `src/_nav.js` (menu con permessi)
+- `src/components/AppHeader`, `AppSidebar`, `AppContent`
+- `src/components/InstantMessagingPanel`, `InstantMessagingWidget`
 
-## Convenzioni e osservazioni
-- Risposte JSON con `code`, `message`, `items`, `payload`, `errors`.
-- Error handler centrali (`apiClient`) mostrano toasts o CAlert per gli errori.
-- JWT e permessi (`pack.read`, `msg.read`, `lavor.read`, ecc.) determinano
-  visibilità del menu e bilanciamento lato server.
-- La documentazione `docs/API.md` è parziale: per aggiornamenti recenti
-  consultare direttamente `backend/pubblica`.
+## Componenti BE chiave
+- `backend/bootstrap.php`
+- `backend/pubblica/` (entrypoint endpoint)
+- `backend/src/Repositories`
+- `backend/src/Service`
+- `backend/ws/instant-messaging-server.js`
+
+## Sicurezza applicativa
+- Auth JWT su endpoint protetti
+- Permessi granulari (`cfg_auth_permessi`) usati sia lato FE che BE
+- Endpoint dedicati a reset password e MFA (`authMfa*.php`, `passwordReset*.php`)
+
+## Convenzioni
+- Risposte JSON uniformi con campi come `code`, `message`, `items`, `payload`, `errors`
+- Error handling FE centralizzato in `apiClient.js`
+- `docs/API.md` non esaustivo: fonte primaria resta il codice

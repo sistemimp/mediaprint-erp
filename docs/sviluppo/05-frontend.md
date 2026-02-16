@@ -1,55 +1,47 @@
 # Frontend
 
-## Layout, routing e autorizzazioni
-- `src/App.js` definisce il wrapper CoreUI, il `Suspense` per il caricamento
-  lazy delle rotte e il `RequireAuth` per proteggere accessi segnalati.
-- `src/routes.js` mappa tutte le pagine disponibili: dashboard, anagrafiche,
-  prodotti, pacchetti, preventivi, DDT, fatture, pagamenti, lavorazioni,
-  contatti, accounts, notifiche, messaggi e profilo.
-- `src/_nav.js` genera il menu principale (sidebar) con gruppi,
-  permessi (`pack.read`, `contr.read`, `msg.read`, ecc.) e icone CoreUI.
-- `src/components/AppHeader`, `AppSidebar`, `AppContent` compongono il layout
-  CoreUI standard, includendo `ChatNotificationBell`, `AppNotificationBell`
-  (che usa `lavorazioniNotifications`) e `InstantMessagingWidget`.
+## Struttura generale
+- `src/App.js`: shell, guardie auth, mounting layout
+- `src/routes.js`: rotte lazy per moduli gestionali
+- `src/_nav.js`: sidebar CoreUI filtrata per permessi
+- `src/views/`: pagine per dominio
+- `src/services/`: client API e servizi condivisi
 
-## Client API e servizi
-- `src/services/apiClient.js` centralizza base URL, headers, error handling,
-  interceptor di token e fallback `/api` per dev proxy.
-- Client esposti:
-  - `accounts.js`, `anagrafiche.js`
-  - `contratti.js`, `ddt.js`, `fatture.js`, `lavorazioni.js`
-  - `pagamenti.js`, `pacchetti.js`, `preventivi.js`, `prodotti.js`
-  - `instantMessagingApi.js`, `instantMessagingSocket.js`
-  - `desktopNotifications.js` (Notification API + toast), `profileAvatar.js`
-  - `paymentTerms.js`, `permissions.js`, `dashboard.js`
-- `instantMessagingSocket` mantiene la connessione WebSocket e chiama
-  `AppNotificationBell` per caricare nuove notifiche (`lavorazioniNotifications`).
+## Moduli UI presenti
+- Dashboard (`dashboard`, varianti REW/MP)
+- Anagrafica
+- Prodotti
+- Pacchetti
+- Contratti
+- Preventivi
+- DDT
+- Fatture
+- Pagamenti
+- Lavorazioni
+- Messaggi / notifiche
+- Account / profilo
+- Ticketing
+- Release notes
 
-## Viste e moduli
-- Cartelle `src/views/` ospitano tutte le UI:
-  `accounts/`, `anagrafica/`, `contratti/`, `ddt/`, `fatture/`, `lavorazioni/`,
-  `pagamenti/`, `pacchetti/`, `preventivi/`, `prodotti/`, `dashboard/`,
-  `im/`, `notifiche/`, `profile/` (oltre alle viste CoreUI di base).
-- Ogni modulo ha pagine per dashboard/lista/dettaglio (quando previste) e
-  modali per selezione prodotto, invio email, upload file, ecc.
-- `src/components/InstantMessagingPanel` + `InstantMessagingWidget` gestiscono
-  la chat persistente con preview, toasts e desktop notification.
-- `NotificationsList` (pagina `/notifiche`) mostra l’elenco completo delle
-  notifiche `lavorazioniNotifications` e permette di navigare verso
-  preventivi/fatture/lavorazioni segnalate.
+## Servizi client principali
+- Infrastruttura: `apiClient.js`, `permissions.js`
+- Dominio: `anagrafiche.js`, `prodotti.js`, `contratti.js`, `preventivi.js`, `ddt.js`, `fatture.js`, `pagamenti.js`, `lavorazioni.js`, `pacchetti.js`, `accounts.js`
+- Realtime/notifiche: `instantMessagingApi.js`, `instantMessagingSocket.js`, `desktopNotifications.js`
+- Extra: `tickets.js`, `releaseNotes.js`, `passwordReset.js`, `dashboard.js`, `profileAvatar.js`
 
-## Notifiche e messaggistica in tempo reale
-- `AppNotificationBell` richiama `fetchLavorazioneNotifications` e
-  segnala badge/testo nel menu; `showDesktopNotification` visualizza alert
-  browser per nuove notifiche.
-- `InstantMessagingWidget` e `InstantMessagingPanel` consumano
-  `instantMessagingSocket` + `instantMessagingApi` per thread, messaggi
-  e allegati (usano `ChatNotificationBell` in header).
-- `desktopNotifications.js` attiva le Notification API solo quando i permessi
-  sono concessi e abbina toast per nuove conversazioni o notifiche critiche.
+## Autorizzazioni
+- Le voci menu in `src/_nav.js` usano permessi (`prod.read`, `pack.read`, `msg.read`, ecc.)
+- Le rotte sono protette da auth context/guard
+- Alcune funzioni (es. create/import) richiedono permessi write dedicati
 
-## Servizi condivisi
-- `src/hooks/useDebounce`, `useSearchParams`, ecc. (in `src/hooks/`) aiutano
-  nei moduli di ricerca e debouncing.
-- `src/utils` contiene helper di formattazione (valute, date, query string)
-  e `store.js` centralizza eventuali stati condivisi.
+## Notifiche e websocket
+- `InstantMessagingWidget` e `InstantMessagingPanel` gestiscono chat/thread
+- `AppNotificationBell` e `NotificationsList` gestiscono notifiche lavorazioni
+- `desktopNotifications.js` integra Notification API browser
+
+## Coerenza FE/BE
+- I nomi endpoint usati nei servizi FE sono allineati a `backend/pubblica`
+- Ogni nuovo endpoint deve essere riflesso in:
+  - servizio in `src/services`
+  - vista in `src/views` (se esposta a UI)
+  - eventuale voce in `src/_nav.js` + route in `src/routes.js`

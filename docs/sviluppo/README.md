@@ -1,19 +1,24 @@
 # MediaPrint ERP - Documentazione sviluppo
 
-Questi file raccolgono la documentazione sullo stato di sviluppo del progetto
-cosi come presente nel repository.
+Documentazione tecnica del gestionale basata sul codice presente nel repository.
+Aggiornata al 2026-02-13.
 
 Indice:
-- `docs/sviluppo/01-panorama.md` - sintesi progetto e stato attuale
-- `docs/sviluppo/02-setup-locale.md` - setup locale e variabili ambiente
-- `docs/sviluppo/03-architettura.md` - architettura e flussi principali
-- `docs/sviluppo/04-backend.md` - backend PHP, servizi e API
-- `docs/sviluppo/05-frontend.md` - frontend React e servizi client
-- `docs/sviluppo/06-database.md` - schema DB e dump disponibili
-- `docs/sviluppo/07-moduli.md` - mappa moduli e copertura FE/BE
-- `docs/sviluppo/08-sdi-export-xml.md` - export XML SdI (fatture)
-- `docs/sviluppo/09-roadmap.md` - passi successivi suggeriti
-- `docs/sviluppo/10-changelog.md` - log sintetico evoluzione
+- `docs/sviluppo/01-panorama.md` - panoramica prodotto, stack e stato moduli
+- `docs/sviluppo/02-setup-locale.md` - setup locale (frontend, backend, websocket, database)
+- `docs/sviluppo/03-architettura.md` - architettura applicativa e flussi FE/BE/DB/WS
+- `docs/sviluppo/04-backend.md` - struttura backend PHP, sicurezza, endpoint e convenzioni
+- `docs/sviluppo/05-frontend.md` - struttura frontend React, routing, nav, servizi client
+- `docs/sviluppo/06-database.md` - dump, migrazioni e macro-aree dati
+- `docs/sviluppo/07-moduli.md` - mappa copertura moduli FE/BE
+- `docs/sviluppo/08-sdi-export-xml.md` - flussi export/import XML SdI fatture
+- `docs/sviluppo/09-roadmap.md` - backlog tecnico suggerito
+- `docs/sviluppo/10-changelog.md` - changelog documentale sintetico
+- `docs/sviluppo/11-schema-er-sintetico.md` - schema ER logico ad alto livello
 
-Documentazione API esistente:
-- `docs/API.md`
+Riferimenti utili:
+- `docs/API.md` (copertura parziale, da completare)
+- `src/routes.js`
+- `src/_nav.js`
+- `backend/pubblica/`
+- `sql/`

@@ -1,26 +1,21 @@
 # Export e import XML SdI (fatture)
 
-## Export
-- `GET /fattureExportXml.php` (`backend/pubblica/fattureExportXml.php`)
-- Query param `id` (obbligatorio) – id della fattura da esportare.
-- Risposta: `Content-Type: application/xml` e `Content-Disposition` con
-  attachment (altrimenti JSON con errori 422/404/500).
-- Il backend concatena header fattura/righe, calcola `TotaleDocumento`
-  e inserisce gli elementi obbligatori (`CessionarioCommittente`,
-  `DatiBeniServizi`, `DatiPagamento`, ecc.).
+## Endpoint
+- Export: `backend/pubblica/fattureExportXml.php` (GET, query `id`)
+- Import: `backend/pubblica/fattureImportXml.php` (POST multipart, campo `file`)
 
-## Import
-- `POST /fattureImportXml.php` (`backend/pubblica/fattureImportXml.php`).
-- Richiede un upload `multipart/form-data` con parametro `file` (XML o SdI)
-  e può ricevere `tipo` per specificare il tipo di documento allegato.
-- Il backend valida struttura XML, verifica il progressivo progressivo (sotto
-  `ERP_AZIENDA_PROGRESSIVO_PREFIX`) e restituisce JSON con esito,
-  dettagli e potenziali errori di validazione (422/400/500).
-- Il frontend usa `src/services/fatture.js` (`exportFatturaXml`, `importFatturaXml`)
-  per scaricare o inviare i file; la UI mostra spinner, toasts e il log dell’esito.
+## Export XML
+- Genera XML fattura con nodi obbligatori SdI
+- Restituisce attachment XML in caso positivo
+- Restituisce JSON con errore in caso di validazione fallita
+
+## Import XML
+- Accetta file XML/SdI via upload
+- Esegue validazioni sintattiche e controlli applicativi
+- Restituisce JSON con esito e dettagli errori/avvisi
 
 ## Variabili ambiente richieste
-Da definire in `backend/.env` (necessarie per export e per associare il progressivo):
+Configurare in `backend/.env`:
 - `ERP_AZIENDA_DENOMINAZIONE`
 - `ERP_AZIENDA_PIVA`
 - `ERP_AZIENDA_CODICE_FISCALE`
@@ -30,18 +25,18 @@ Da definire in `backend/.env` (necessarie per export e per associare il progress
 - `ERP_AZIENDA_COMUNE`
 - `ERP_AZIENDA_PROVINCIA`
 - `ERP_AZIENDA_NAZIONE`
-- `ERP_AZIENDA_REGIME_FISCALE` (es. RF01)
-- `ERP_AZIENDA_FORMATO_TRASMISSIONE` (es. FPR12)
+- `ERP_AZIENDA_REGIME_FISCALE`
+- `ERP_AZIENDA_FORMATO_TRASMISSIONE`
 - `ERP_AZIENDA_VALUTA`
 - `ERP_AZIENDA_PROGRESSIVO_PREFIX`
-- `ERP_AZIENDA_MODALITA_PAGAMENTO` (es. MP05)
-- `ERP_AZIENDA_CONDIZIONI_PAGAMENTO` (es. TP02)
+- `ERP_AZIENDA_MODALITA_PAGAMENTO`
+- `ERP_AZIENDA_CONDIZIONI_PAGAMENTO`
 
-## Note operative
-- L’export prende i dati fattura + righe + pagamenti e costruisce l’XML
-  con nodi obbligatori (se manca un campo viene restituito errore).
-- L’import controlla che il file XML non sia già stato processato
-  verificando il progressivo (prefisso `ERP_AZIENDA_PROGRESSIVO_PREFIX`) e
-  la tipologia; eventuali errori sono spiegati nel JSON di risposta.
-- I client FE mostrano spinner e messaggi grazie a `src/services/fatture.js`
-  e alle toast globali (`BottomToast`, `AppNotificationBell`).
+## Frontend
+- Servizio: `src/services/fatture.js`
+- UI: viste fatture con azioni import/export e feedback utente
+
+## Controlli raccomandati
+- Test export su fattura completa e incompleta
+- Test import su XML valido, duplicato e malformato
+- Verifica coerenza progressivo con prefisso azienda
