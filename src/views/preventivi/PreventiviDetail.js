@@ -287,6 +287,9 @@ const useQuery = () => new URLSearchParams(useLocation().search)
 const PreventiviDetail = () => {
   const navigate = useNavigate()
   const location = useLocation()
+  const isAcquisto = location.pathname.startsWith('/acquisti')
+  const basePath = isAcquisto ? '/acquisti/preventivi' : '/preventivi'
+  const clienteLabel = isAcquisto ? 'Fornitore' : 'Cliente'
   const query = useQuery()
   const modeParam = String(query.get('mode') || '').toLowerCase()
   const createMode = Boolean(
@@ -305,7 +308,7 @@ const PreventiviDetail = () => {
   // Se non viene passato un ID valido, reindirizza alla lista
   useEffect(() => {
     if ((!id || Number.isNaN(id)) && !createMode) {
-      navigate('/preventivi/lista', { replace: true })
+      navigate(`${basePath}/lista`, { replace: true })
     }
   }, [createMode, id, navigate])
 
@@ -845,6 +848,7 @@ const PreventiviDetail = () => {
         } = await fetchPreventivoDetail({
           token,
           id,
+          is_acquisto: isAcquisto,
           signal: controller.signal,
         })
         if (!data) throw new Error('Dettaglio non disponibile')
@@ -1054,7 +1058,7 @@ const PreventiviDetail = () => {
 
     load()
     return () => controller.abort()
-  }, [token, id, refreshCounter])
+  }, [token, id, refreshCounter, isAcquisto])
 
   // Carica storico cambi stato
   useEffect(() => {
@@ -1147,6 +1151,7 @@ const PreventiviDetail = () => {
           // no search: fetch all, filter locally
           sortBy: 'ragione_sociale',
           sortDirection: 'asc',
+          tipologie: isAcquisto ? [2, 3] : undefined,
         })
         let allItems = Array.isArray(first.items) ? [...first.items] : []
         const totalPages = Math.max(first?.meta?.pages ?? first?.meta?.last_page ?? 1, 1)
@@ -1161,6 +1166,7 @@ const PreventiviDetail = () => {
               pageSize: perPage,
               sortBy: 'ragione_sociale',
               sortDirection: 'asc',
+              tipologie: isAcquisto ? [2, 3] : undefined,
             })
             if (Array.isArray(pageItems) && pageItems.length > 0) {
               allItems = allItems.concat(pageItems)
@@ -1178,6 +1184,7 @@ const PreventiviDetail = () => {
               pageSize: perPage,
               sortBy: 'ragione_sociale',
               sortDirection: 'asc',
+              tipologie: isAcquisto ? [2, 3] : undefined,
             })
             if (!Array.isArray(pageItems) || pageItems.length === 0) break
             allItems = allItems.concat(pageItems)
@@ -1209,7 +1216,7 @@ const PreventiviDetail = () => {
     }
     load()
     return () => controller.abort()
-  }, [token])
+  }, [token, isAcquisto])
 
   const clientiOptions = useMemo(
     () =>
@@ -1543,7 +1550,7 @@ const PreventiviDetail = () => {
   }, [oggetto, oggettiOptions, selectedOggetti])
 
   const defaultEmailBody = useMemo(() => {
-    const clienteName = clienteDisplay?.label || 'Cliente'
+    const clienteName = clienteDisplay?.label || clienteLabel
     const numero =
       header?.numero != null
         ? `${header.numero}${header?.anno ? `/${header.anno}` : ''}`
@@ -2092,11 +2099,17 @@ const PreventiviDetail = () => {
       try {
         const controller = new AbortController()
         const payload = buildPayload()
-        const result = await createPreventivo({ token, ...payload, send: false, signal: controller.signal })
+        const result = await createPreventivo({
+          token,
+          ...payload,
+          is_acquisto: isAcquisto,
+          send: false,
+          signal: controller.signal,
+        })
         setNoteDirty(false)
         const newId = getPreventivoIdFromResponse(result)
         if (!silent && (!id || createMode) && newId) {
-          navigate(`/preventivi/dettagli?id=${newId}`, { replace: true })
+          navigate(`${basePath}/dettagli?id=${newId}`, { replace: true })
         }
         if (!silent) {
           setSubmitSuccess(
@@ -2119,7 +2132,18 @@ const PreventiviDetail = () => {
         setSubmitting(false)
       }
     },
-    [buildPayload, createPreventivo, createMode, editable, id, logout, navigate, pendingOggettoCreate, token],
+    [
+      buildPayload,
+      createPreventivo,
+      createMode,
+      editable,
+      id,
+      isAcquisto,
+      logout,
+      navigate,
+      pendingOggettoCreate,
+      token,
+    ],
   )
 
   const handleSalvaBozza = async (e) => {
@@ -2145,7 +2169,7 @@ const PreventiviDetail = () => {
     setArchiveLoading(true)
     try {
       await archivePreventivo({ token, id })
-      navigate('/preventivi/lista', { replace: true })
+      navigate(`${basePath}/lista`, { replace: true })
     } catch (err) {
       if (err?.status === 401 && logout) {
         logout()
@@ -2167,6 +2191,7 @@ const PreventiviDetail = () => {
       const result = await createPreventivo({
         token,
         ...payload,
+        is_acquisto: isAcquisto,
         send: false,
         signal: controller.signal,
       })
@@ -2174,7 +2199,7 @@ const PreventiviDetail = () => {
       if (!newId) {
         throw new Error('Non è stato possibile recuperare l\'ID del preventivo duplicato.')
       }
-      navigate(`/preventivi/dettagli?id=${newId}`)
+      navigate(`${basePath}/dettagli?id=${newId}`)
     } catch (err) {
       if (err?.status === 401 && logout) {
         logout()
@@ -2184,7 +2209,7 @@ const PreventiviDetail = () => {
     } finally {
       setDuplicateLoading(false)
     }
-  }, [buildPayload, createPreventivo, token, navigate, logout])
+  }, [buildPayload, createPreventivo, isAcquisto, token, navigate, logout])
 
   // Allow the component to run all Hooks on every render; effects and logic below already guard on `id`.
   // Visualizzazione stato: 3 step (Bozza -> Inviato -> Finale),
@@ -2416,7 +2441,9 @@ const PreventiviDetail = () => {
               </CAlert>
             )}
             {anagraficaDisabled && (
-              <CAlert color="warning" className="mb-3">Cliente disattivato: modifiche e conferma disabilitate.</CAlert>
+              <CAlert color="warning" className="mb-3">
+                {clienteLabel} disattivato: modifiche e conferma disabilitate.
+              </CAlert>
             )}
             {submitError && (
               <CAlert color="danger" className="mb-3">
@@ -2755,7 +2782,7 @@ const PreventiviDetail = () => {
               <h6 className="mb-3 text-body-secondary">Dati generali</h6>
               <CRow className="g-3">
                 <CCol md={6}>
-                  <CFormLabel>Cliente</CFormLabel>
+                  <CFormLabel>{clienteLabel}</CFormLabel>
                   <AnagraficaAutocomplete
                     items={clientiOptions}
                     value={idAnagrafica}
@@ -2873,7 +2900,7 @@ const PreventiviDetail = () => {
                   />
                 </CCol>
                 <CCol md={3}>
-                  <CFormLabel>Riferimento cliente</CFormLabel>
+                  <CFormLabel>Riferimento {clienteLabel.toLowerCase()}</CFormLabel>
                   <CFormInput
                     value={rifCliente}
                     onChange={(e) => setRifCliente(e.target.value)}
@@ -3852,7 +3879,7 @@ const PreventiviDetail = () => {
               <CButton color="secondary" variant="outline" type="button" onClick={handleSalvaBozza} disabled={uiDisabled || submitting || pendingOggettoCreate}>
                 <CIcon icon={cilSave} className="me-2" /> Aggiorna bozza
               </CButton>
-              <CButton color="link" type="button" onClick={() => navigate('/preventivi/lista')}>
+              <CButton color="link" type="button" onClick={() => navigate(`${basePath}/lista`)}>
                 Torna alla lista
               </CButton>
             </div>
@@ -4304,7 +4331,7 @@ const PreventiviDetail = () => {
                         </div>
                       </div>
                       <div className="col-6 col-md-3">
-                        <small className="text-body-secondary">Cliente</small>
+                        <small className="text-body-secondary">{clienteLabel}</small>
                         <div className="fw-semibold">{revisionModalDetail.data.ragione_sociale ?? '-'}</div>
                       </div>
                       <div className="col-6 col-md-3">

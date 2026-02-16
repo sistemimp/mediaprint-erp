@@ -45,7 +45,7 @@ final class FatturaXmlImporter
      * @param array<string,mixed> $upload
      * @return array<string,mixed>
      */
-    public function import(array $upload): array
+    public function import(array $upload, bool $isAcquisto = false): array
     {
         // 1. Recupero il contenuto XML dal file caricato (ZIP o puro XML).
         $xml = $this->extractXmlContent($upload);
@@ -81,8 +81,10 @@ final class FatturaXmlImporter
         $tipoFatturaId = $this->determineTipoFatturaId($tipoDocumentoCode);
 
         // 5. Leggo i dati cliente e risolvo o creo l'anagrafica associata.
-        $customer = $this->parseCustomerData($xpath);
-        $anagraficaId = $this->resolveCustomer($customer);
+        $customer = $isAcquisto
+            ? $this->parseSupplierData($xpath)
+            : $this->parseCustomerData($xpath);
+        $anagraficaId = $this->resolveCustomer($customer, $isAcquisto);
 
         // 6. Estraggo le righe e verifico la presenza di almeno una riga valida.
         $lines = $this->parseLineItems($xpath, $body);
@@ -124,6 +126,7 @@ final class FatturaXmlImporter
             'id_tipo_fatt' => $tipoFatturaId,
             'id_stato_fatt' => $statusId,
             'data_fattura' => $dataDocumento,
+            'is_acquisto' => $isAcquisto ? 1 : 0,
             'id_sdi_tipo_documento' => $this->resolveSdiId($tipoDocumentoCode, $this->tipoMap),
             'id_sdi_esigibilita' => $this->resolveSdiId($esigibilitaCode, $this->esigibilitaMap),
             'id_sdi_modalita' => $payment['id_modalita'] ?? null,
@@ -446,11 +449,50 @@ final class FatturaXmlImporter
         ];
     }
 
+    // Estrae i dati anagrafici del fornitore (Cedente/Prestatore) dall'SDI.
+    private function parseSupplierData(DOMXPath $xpath): array
+    {
+        $supplierNode = $this->getRequiredNode($xpath,'/p:FatturaElettronica/FatturaElettronicaHeader/CedentePrestatore');
+        $denominazione = $this->getNodeValue($xpath, $supplierNode, 'DatiAnagrafici/Anagrafica/Denominazione')
+            ?? $this->getNodeValue($xpath, $supplierNode, 'DatiAnagrafici/Anagrafica/Nome')
+            ?? 'Fornitore SDI';
+
+        $vatNode = $this->getNode($xpath, 'DatiAnagrafici/IdFiscaleIVA', $supplierNode);
+        $piva = null;
+        if ($vatNode !== null) {
+            $paese = $this->getNodeValue($xpath, $vatNode, 'IdPaese');
+            $codice = $this->getNodeValue($xpath, $vatNode, 'IdCodice');
+            if ($codice !== null) {
+                $piva = strtoupper(trim(($paese ?? '') . $codice));
+            }
+        }
+
+        $codiceFiscale = $this->sanitizeTaxIdentifier(
+            $this->getNodeValue($xpath, $supplierNode, 'DatiAnagrafici/CodiceFiscale')
+        );
+        $pec = $this->getNodeValue($xpath, $supplierNode, 'DatiAnagrafici/Contatti/Email')
+            ?? $this->getNodeValue($xpath, $supplierNode, 'Sede/Email');
+
+        return [
+            'ragione_sociale' => $denominazione,
+            'piva' => $this->sanitizeTaxIdentifier($piva),
+            'codice_fiscale' => $codiceFiscale,
+            'pec' => $pec,
+        ];
+    }
+
     // Cerca un'anagrafica esistente oppure la crea con i dati estratti dal cliente.
-    private function resolveCustomer(array $customer): int
+    private function resolveCustomer(array $customer, bool $isAcquisto): int
     {
         $found = $this->anagraficheRepository->findByTaxIdentifier($customer['piva'] ?? null, $customer['codice_fiscale'] ?? null);
         if ($found !== null) {
+            if ($isAcquisto) {
+                $tipologia = isset($found['id_tipologia']) ? (int) $found['id_tipologia'] : null;
+                if ($tipologia === 1) {
+                    // Promuove a Cliente/Fornitore se esiste solo come Cliente
+                    $this->anagraficheRepository->updateAnagrafica((int) $found['id_anagrafica'], ['id_tipologia' => 3]);
+                }
+            }
             return $found['id_anagrafica'];
         }
 
@@ -458,6 +500,7 @@ final class FatturaXmlImporter
             'ragione_sociale' => $customer['ragione_sociale'],
             'piva' => $customer['piva'] ?? null,
             'codice_fiscale' => $customer['codice_fiscale'] ?? null,
+            'id_tipologia' => $isAcquisto ? 2 : 1,
         ];
 
         return $this->anagraficheRepository->createAnagrafica($createData);

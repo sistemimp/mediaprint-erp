@@ -33,6 +33,7 @@ try {
     $limit = isset($_GET['limit']) ? (int) $_GET['limit'] : 200;
     $dateFrom = isset($_GET['date_from']) ? trim((string) $_GET['date_from']) : null;
     $dateTo = isset($_GET['date_to']) ? trim((string) $_GET['date_to']) : null;
+    $isAcquisto = isset($_GET['is_acquisto']) ? (int) $_GET['is_acquisto'] : 0;
     if ($dateFrom === '') {
         $dateFrom = null;
     }
@@ -40,7 +41,7 @@ try {
         $dateTo = null;
     }
     $repo = new FattureRepository(Database::getConnection());
-    $items = $repo->listLatest($limit, $allowed, $excludeDraft, $dateFrom, $dateTo);
+    $items = $repo->listLatest($limit, $allowed, $excludeDraft, $dateFrom, $dateTo, $isAcquisto);
 
     HttpResponse::json(['data' => $items], 200);
 } catch (RuntimeException $exception) {

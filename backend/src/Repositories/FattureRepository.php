@@ -37,7 +37,7 @@ final class FattureRepository
      *
      * @return list<array{mese:string, totale:float, pagate:float}>
      */
-    public function fetchMonthlyTotalsLast12(?array $allowedAnagrafiche = null): array
+    public function fetchMonthlyTotalsLast12(?array $allowedAnagrafiche = null, int $isAcquisto = 0): array
     {
         $allowed = null;
         if (is_array($allowedAnagrafiche)) {
@@ -64,12 +64,13 @@ final class FattureRepository
             LEFT JOIN tb_fatture f
               ON f.data_fattura >= m.ms
              AND f.data_fattura <  DATE_ADD(m.ms, INTERVAL 1 MONTH)
+             AND f.is_acquisto = :is_acquisto
             LEFT JOIN cfg_stati_fattura sf ON sf.id_stato = f.id_stato_fatt
             LEFT JOIN cfg_tipi_fattura tf ON tf.id_tipo = f.id_tipo_fatt
             GROUP BY m.ms
             ORDER BY m.ms
         SQL;
-        $params = [];
+        $params = [':is_acquisto' => $isAcquisto];
         if ($allowed !== null) {
             $placeholders = [];
             foreach ($allowed as $index => $id) {
@@ -85,17 +86,12 @@ final class FattureRepository
             );
         }
 
-        if ($params === []) {
-            $stmt = $this->pdo->query($sql);
-            $rows = $stmt ? ($stmt->fetchAll(PDO::FETCH_ASSOC) ?: []) : [];
-        } else {
-            $stmt = $this->pdo->prepare($sql);
-            foreach ($params as $placeholder => $value) {
-                $stmt->bindValue($placeholder, $value, PDO::PARAM_INT);
-            }
-            $stmt->execute();
-            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        $stmt = $this->pdo->prepare($sql);
+        foreach ($params as $placeholder => $value) {
+            $stmt->bindValue($placeholder, $value, PDO::PARAM_INT);
         }
+        $stmt->execute();
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
         $out = [];
         foreach ($rows as $r) {
             $out[] = [
@@ -107,7 +103,7 @@ final class FattureRepository
         return $out;
     }
 
-    public function fetchCurrentMonthRevenue(?array $allowedAnagrafiche = null): float
+    public function fetchCurrentMonthRevenue(?array $allowedAnagrafiche = null, int $isAcquisto = 0): float
     {
         $allowed = null;
         if (is_array($allowedAnagrafiche)) {
@@ -132,9 +128,10 @@ final class FattureRepository
              AND COALESCE(f.data_fattura, f.created_at) < p.next_month
             LEFT JOIN cfg_stati_fattura sf ON sf.id_stato = f.id_stato_fatt
             LEFT JOIN cfg_tipi_fattura tf ON tf.id_tipo = f.id_tipo_fatt
-            WHERE sf.code IS NULL OR sf.code <> 'bozza'
+            WHERE (sf.code IS NULL OR sf.code <> 'bozza')
+              AND f.is_acquisto = :is_acquisto
         SQL;
-        $params = [];
+        $params = [':is_acquisto' => $isAcquisto];
         if ($allowed !== null) {
             $placeholders = [];
             foreach ($allowed as $index => $id) {
@@ -150,15 +147,11 @@ final class FattureRepository
             );
         }
 
-        if ($params === []) {
-            $stmt = $this->pdo->query($sql);
-        } else {
-            $stmt = $this->pdo->prepare($sql);
-            foreach ($params as $placeholder => $value) {
-                $stmt->bindValue($placeholder, $value, PDO::PARAM_INT);
-            }
-            $stmt->execute();
+        $stmt = $this->pdo->prepare($sql);
+        foreach ($params as $placeholder => $value) {
+            $stmt->bindValue($placeholder, $value, PDO::PARAM_INT);
         }
+        $stmt->execute();
         $row = $stmt ? $stmt->fetch(PDO::FETCH_ASSOC) : false;
         if (!$row) {
             return 0.0;
@@ -167,7 +160,7 @@ final class FattureRepository
         return isset($row['fatturato']) ? (float) $row['fatturato'] : 0.0;
     }
 
-    public function fetchRevenueByRange(string $startDate, string $endDate, ?array $allowedAnagrafiche = null): float
+    public function fetchRevenueByRange(string $startDate, string $endDate, ?array $allowedAnagrafiche = null, int $isAcquisto = 0): float
     {
         $allowed = null;
         if (is_array($allowedAnagrafiche)) {
@@ -187,6 +180,7 @@ final class FattureRepository
             WHERE COALESCE(f.data_fattura, f.created_at) >= :start
               AND COALESCE(f.data_fattura, f.created_at) < :end
               AND (sf.code IS NULL OR sf.code <> 'bozza')
+              AND f.is_acquisto = :is_acquisto
         SQL;
 
         if ($allowed !== null) {
@@ -197,6 +191,7 @@ final class FattureRepository
         $stmt = $this->pdo->prepare($sql);
         $stmt->bindValue(':start', $startDate);
         $stmt->bindValue(':end', $endDate);
+        $stmt->bindValue(':is_acquisto', $isAcquisto, PDO::PARAM_INT);
         if ($allowed !== null) {
             foreach ($allowed as $index => $id) {
                 $stmt->bindValue($index + 1, $id, PDO::PARAM_INT);
@@ -214,7 +209,7 @@ final class FattureRepository
     /**
      * @return list<array{id_anagrafica:int|null, ragione_sociale:?string, fatturato:float}>
      */
-    public function listTopClientsByRevenue(string $startDate, string $endDate, int $limit = 5, ?array $allowedAnagrafiche = null): array
+    public function listTopClientsByRevenue(string $startDate, string $endDate, int $limit = 5, ?array $allowedAnagrafiche = null, int $isAcquisto = 0): array
     {
         $effectiveLimit = max(1, $limit);
         $allowed = null;
@@ -237,6 +232,7 @@ final class FattureRepository
             WHERE COALESCE(f.data_fattura, f.created_at) >= :start
               AND COALESCE(f.data_fattura, f.created_at) < :end
               AND (sf.code IS NULL OR sf.code <> 'bozza')
+              AND f.is_acquisto = :is_acquisto
             GROUP BY a.id_anagrafica, a.ragione_sociale
             ORDER BY fatturato DESC
             LIMIT :limit
@@ -257,6 +253,7 @@ final class FattureRepository
         $stmt = $this->pdo->prepare($sql);
         $stmt->bindValue(':start', $startDate);
         $stmt->bindValue(':end', $endDate);
+        $stmt->bindValue(':is_acquisto', $isAcquisto, PDO::PARAM_INT);
         if ($allowed !== null) {
             foreach ($allowed as $index => $id) {
                 $stmt->bindValue(':allowed_' . $index, $id, PDO::PARAM_INT);
@@ -290,13 +287,16 @@ final class FattureRepository
         ?array $allowedAnagrafiche = null,
         bool $excludeDraft = false,
         ?string $dateFrom = null,
-        ?string $dateTo = null
+        ?string $dateTo = null,
+        int $isAcquisto = 0
     ): array
     {
         $sql = <<<'SQL'
             SELECT
                 f.id_fattura,
                 f.id_anagrafica,
+                f.is_acquisto,
+                f.is_acquisto,
                 f.anno,
                 f.numero_documento,
                 f.data_fattura,
@@ -350,6 +350,10 @@ final class FattureRepository
         if ($excludeDraft) {
             $whereParts[] = "(sf.code IS NULL OR sf.code <> 'bozza')";
         }
+        if ($isAcquisto !== null) {
+            $whereParts[] = 'f.is_acquisto = :is_acquisto';
+            $params[':is_acquisto'] = $isAcquisto;
+        }
         if ($dateFrom !== null && $dateFrom !== '') {
             $whereParts[] = 'DATE(COALESCE(f.data_fattura, f.created_at)) >= :date_from';
             $params[':date_from'] = $dateFrom;
@@ -383,6 +387,7 @@ final class FattureRepository
             $items[] = [
                 'id_fattura' => (int) $row['id_fattura'],
                 'id_anagrafica' => isset($row['id_anagrafica']) ? (int) $row['id_anagrafica'] : null,
+                'is_acquisto' => isset($row['is_acquisto']) ? (int) $row['is_acquisto'] : 0,
                 'anno' => isset($row['anno']) ? (int) $row['anno'] : null,
                 'numero_documento' => isset($row['numero_documento']) ? (int) $row['numero_documento'] : null,
                 'data_fattura' => $row['data_fattura'] ?? null,
@@ -696,6 +701,7 @@ final class FattureRepository
         return [
             'id_fattura' => (int) $row['id_fattura'],
             'id_anagrafica' => isset($row['id_anagrafica']) ? (int) $row['id_anagrafica'] : null,
+            'is_acquisto' => isset($row['is_acquisto']) ? (int) $row['is_acquisto'] : 0,
             'anno' => isset($row['anno']) ? (int) $row['anno'] : null,
             'numero_documento' => isset($row['numero_documento']) ? (int) $row['numero_documento'] : null,
             'data_fattura' => $row['data_fattura'] ?? null,
@@ -1075,24 +1081,25 @@ final class FattureRepository
     /**
      * @return array{anno:int,numero:int}
      */
-    private function reserveNumeroDocumenti(int $idSezionale, DateTimeImmutable $date): array
+    private function reserveNumeroDocumenti(int $idSezionale, DateTimeImmutable $date, int $isAcquisto): array
     {
         $anno = (int) $date->format('Y');
         if ($anno <= 0) {
             throw new RuntimeException('Anno fattura non valido.', 422);
         }
 
-        $baseNext = $this->fetchMaxNumeroDocumenti($idSezionale, $anno) + 1;
+        $baseNext = $this->fetchMaxNumeroDocumenti($idSezionale, $anno, $isAcquisto) + 1;
         if ($baseNext < 1) {
             $baseNext = 1;
         }
 
         while (true) {
             $select = $this->pdo->prepare(
-                'SELECT next_num FROM cfg_sezionali_progress WHERE id_sezionale = :id_sezionale AND anno = :anno FOR UPDATE'
+                'SELECT next_num FROM cfg_sezionali_progress WHERE id_sezionale = :id_sezionale AND anno = :anno AND is_acquisto = :is_acquisto FOR UPDATE'
             );
             $select->bindValue(':id_sezionale', $idSezionale, PDO::PARAM_INT);
             $select->bindValue(':anno', $anno, PDO::PARAM_INT);
+            $select->bindValue(':is_acquisto', $isAcquisto, PDO::PARAM_INT);
             $select->execute();
             $row = $select->fetch(PDO::FETCH_ASSOC);
             if ($row !== false) {
@@ -1101,21 +1108,23 @@ final class FattureRepository
                 $desired = $candidate + 1;
 
                 $update = $this->pdo->prepare(
-                    'UPDATE cfg_sezionali_progress SET next_num = :next WHERE id_sezionale = :id_sezionale AND anno = :anno'
+                    'UPDATE cfg_sezionali_progress SET next_num = :next WHERE id_sezionale = :id_sezionale AND anno = :anno AND is_acquisto = :is_acquisto'
                 );
                 $update->bindValue(':next', $desired, PDO::PARAM_INT);
                 $update->bindValue(':id_sezionale', $idSezionale, PDO::PARAM_INT);
                 $update->bindValue(':anno', $anno, PDO::PARAM_INT);
+                $update->bindValue(':is_acquisto', $isAcquisto, PDO::PARAM_INT);
                 $update->execute();
                 return ['anno' => $anno, 'numero' => $candidate];
             }
 
             try {
                 $insert = $this->pdo->prepare(
-                    'INSERT INTO cfg_sezionali_progress (id_sezionale, anno, next_num) VALUES (:id_sezionale, :anno, :next)'
+                    'INSERT INTO cfg_sezionali_progress (id_sezionale, anno, is_acquisto, next_num) VALUES (:id_sezionale, :anno, :is_acquisto, :next)'
                 );
                 $insert->bindValue(':id_sezionale', $idSezionale, PDO::PARAM_INT);
                 $insert->bindValue(':anno', $anno, PDO::PARAM_INT);
+                $insert->bindValue(':is_acquisto', $isAcquisto, PDO::PARAM_INT);
                 $insert->bindValue(':next', $baseNext + 1, PDO::PARAM_INT);
                 $insert->execute();
                 return ['anno' => $anno, 'numero' => $baseNext];
@@ -1128,13 +1137,14 @@ final class FattureRepository
         }
     }
 
-    private function fetchMaxNumeroDocumenti(int $idSezionale, int $anno): int
+    private function fetchMaxNumeroDocumenti(int $idSezionale, int $anno, int $isAcquisto): int
     {
         $stmt = $this->pdo->prepare(
-            'SELECT COALESCE(MAX(numero_documento), 0) AS max_num FROM tb_fatture WHERE id_sezionale = :id_sezionale AND anno = :anno'
+            'SELECT COALESCE(MAX(numero_documento), 0) AS max_num FROM tb_fatture WHERE id_sezionale = :id_sezionale AND anno = :anno AND is_acquisto = :is_acquisto'
         );
         $stmt->bindValue(':id_sezionale', $idSezionale, PDO::PARAM_INT);
         $stmt->bindValue(':anno', $anno, PDO::PARAM_INT);
+        $stmt->bindValue(':is_acquisto', $isAcquisto, PDO::PARAM_INT);
         $stmt->execute();
         $value = $stmt->fetchColumn();
         return is_numeric($value) ? (int) $value : 0;
@@ -1195,6 +1205,7 @@ final class FattureRepository
         $idSdiTipoDocumento = isset($data['id_sdi_tipo_documento']) ? (int) $data['id_sdi_tipo_documento'] : null;
         $idSdiEsigibilita = isset($data['id_sdi_esigibilita']) ? (int) $data['id_sdi_esigibilita'] : null;
         $idSdiModalita = isset($data['id_sdi_modalita']) ? (int) $data['id_sdi_modalita'] : null;
+        $isAcquisto = !empty($data['is_acquisto']) ? 1 : 0;
         $clientePec = isset($data['cliente_pec']) ? trim((string) $data['cliente_pec']) : null;
         if ($clientePec === '') {
             $clientePec = null;
@@ -1230,7 +1241,7 @@ final class FattureRepository
             $this->pdo->beginTransaction();
         }
         try {
-            $numbering = $this->reserveNumeroDocumenti($idSezionale, $date);
+            $numbering = $this->reserveNumeroDocumenti($idSezionale, $date, $isAcquisto);
             $annoFattura = $numbering['anno'];
             $numeroDocumento = $numbering['numero'];
         $createdAt = isset($data['created_at']) ? trim((string) $data['created_at']) : null;
@@ -1241,6 +1252,7 @@ final class FattureRepository
                     id_sezionale,
                     id_serie,
                     id_anagrafica,
+                    is_acquisto,
                     anno,
                     numero_documento,
                     data_fattura,
@@ -1268,6 +1280,7 @@ final class FattureRepository
                     :id_sezionale,
                     NULL,
                     :id_anagrafica,
+                    :is_acquisto,
                     :anno,
                     :numero_documento,
                     :data_fattura,
@@ -1295,6 +1308,7 @@ final class FattureRepository
             );
             $stmt->bindValue(':id_sezionale', $idSezionale, PDO::PARAM_INT);
             $stmt->bindValue(':id_anagrafica', $idAnagrafica, PDO::PARAM_INT);
+            $stmt->bindValue(':is_acquisto', $isAcquisto, PDO::PARAM_INT);
             $stmt->bindValue(':anno', $annoFattura, PDO::PARAM_INT);
             $stmt->bindValue(':numero_documento', $numeroDocumento, PDO::PARAM_INT);
             $stmt->bindValue(':data_fattura', $dateValue, PDO::PARAM_STR);

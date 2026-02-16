@@ -52,6 +52,7 @@ final class AnagraficheRepository
         $sql = <<<'SQL'
             SELECT
                 id_anagrafica,
+                id_tipologia,
                 ragione_sociale,
                 piva,
                 codice_fiscale,
@@ -90,6 +91,14 @@ final class AnagraficheRepository
 
         // Nasconde per default le anagrafiche disattivate/archiviate
         $where[] = 'is_active = 1';
+
+        if (isset($filters['tipologie']) && is_array($filters['tipologie'])) {
+            $tipologie = array_values(array_filter(array_map('intval', $filters['tipologie']), static fn($id) => $id > 0));
+            if ($tipologie !== []) {
+                $placeholders = implode(',', array_fill(0, count($tipologie), '?'));
+                $where[] = "id_tipologia IN ({$placeholders})";
+            }
+        }
 
         if (isset($allowed) && $allowed !== []) {
             $placeholders = implode(',', array_fill(0, count($allowed), '?'));
@@ -130,6 +139,12 @@ final class AnagraficheRepository
         if (isset($allowed) && $allowed !== []) {
             $offsetParam = count($params);
             foreach ($allowed as $index => $id) {
+                $statement->bindValue($offsetParam + $index + 1, $id, PDO::PARAM_INT);
+            }
+        }
+        if (isset($tipologie) && $tipologie !== []) {
+            $offsetParam = count($params) + (isset($allowed) ? count($allowed) : 0);
+            foreach ($tipologie as $index => $id) {
                 $statement->bindValue($offsetParam + $index + 1, $id, PDO::PARAM_INT);
             }
         }
@@ -180,6 +195,12 @@ final class AnagraficheRepository
         if (isset($allowed) && $allowed !== []) {
             $offsetParam = count($params);
             foreach ($allowed as $index => $id) {
+                $countStatement->bindValue($offsetParam + $index + 1, $id, PDO::PARAM_INT);
+            }
+        }
+        if (isset($tipologie) && $tipologie !== []) {
+            $offsetParam = count($params) + (isset($allowed) ? count($allowed) : 0);
+            foreach ($tipologie as $index => $id) {
                 $countStatement->bindValue($offsetParam + $index + 1, $id, PDO::PARAM_INT);
             }
         }
@@ -1410,7 +1431,7 @@ final class AnagraficheRepository
     }
 
     /**
-     * @return array{id_anagrafica:int, ragione_sociale:string, piva:?string, codice_fiscale:?string}|null
+     * @return array{id_anagrafica:int, ragione_sociale:string, piva:?string, codice_fiscale:?string, id_tipologia?:int}|null
      */
     public function findByTaxIdentifier(?string $piva, ?string $codiceFiscale): ?array
     {
@@ -1433,7 +1454,7 @@ final class AnagraficheRepository
             return null;
         }
 
-        $sql = 'SELECT id_anagrafica, ragione_sociale, piva, codice_fiscale
+        $sql = 'SELECT id_anagrafica, ragione_sociale, piva, codice_fiscale, id_tipologia
                 FROM tb_anagrafiche
                 WHERE is_active = 1 AND (' . implode(' OR ', $clauses) . ')
                 ORDER BY id_anagrafica DESC
@@ -1455,6 +1476,7 @@ final class AnagraficheRepository
             'ragione_sociale' => (string) ($row['ragione_sociale'] ?? ''),
             'piva' => $row['piva'] !== null ? (string) $row['piva'] : null,
             'codice_fiscale' => $row['codice_fiscale'] !== null ? (string) $row['codice_fiscale'] : null,
+            'id_tipologia' => isset($row['id_tipologia']) ? (int) $row['id_tipologia'] : null,
         ];
     }
 

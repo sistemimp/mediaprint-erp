@@ -32,6 +32,7 @@ try {
     }
 
     $id = isset($_GET['id']) ? (int) $_GET['id'] : 0;
+    $isAcquisto = isset($_GET['is_acquisto']) ? (int) $_GET['is_acquisto'] : null;
     if ($id <= 0) {
         throw new RuntimeException('ID fattura mancante o non valido.', 422);
     }
@@ -39,6 +40,9 @@ try {
     $repo = new FattureRepository(Database::getConnection());
     $detail = $repo->fetchDetail($id);
     if ($detail === null) {
+        throw new RuntimeException('Fattura non trovata.', 404);
+    }
+    if ($isAcquisto !== null && (int) ($detail['is_acquisto'] ?? 0) !== $isAcquisto) {
         throw new RuntimeException('Fattura non trovata.', 404);
     }
     if (is_array($allowed) && $allowed !== [] && !in_array((int) ($detail['id_anagrafica'] ?? 0), $allowed, true)) {

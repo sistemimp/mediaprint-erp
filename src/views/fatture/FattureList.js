@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import {
   CAlert,
   CBadge,
@@ -50,7 +50,12 @@ const FETCH_LIMIT = 0
 
 const FattureList = () => {
   const navigate = useNavigate()
+  const location = useLocation()
   const { token, logout } = useAuth()
+  const isAcquisto = location.pathname.includes('/acquisti/')
+  const basePath = isAcquisto ? '/acquisti/fatture' : '/fatture'
+  const counterpartyLabel = isAcquisto ? 'Fornitore' : 'Cliente'
+  const showStatus = !isAcquisto
 
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(false)
@@ -84,6 +89,7 @@ const FattureList = () => {
           limit: FETCH_LIMIT,
           date_from: dateFrom || undefined,
           date_to: dateTo || undefined,
+          is_acquisto: isAcquisto ? 1 : 0,
         })
         const normalized = Array.isArray(data) ? data : []
         setItems(normalized)
@@ -102,7 +108,7 @@ const FattureList = () => {
     }
     load()
     return () => controller.abort()
-  }, [token, logout, refreshIndex, dateFrom, dateTo])
+  }, [token, logout, refreshIndex, dateFrom, dateTo, isAcquisto])
 
   useEffect(() => {
     setCurrentPage(0)
@@ -182,7 +188,7 @@ const FattureList = () => {
       if (yearFilter !== 'all' && row.anno && String(row.anno) !== String(yearFilter)) {
         return false
       }
-      if (statusFilter !== 'all') {
+      if (showStatus && statusFilter !== 'all') {
         if ((row.stato_label || '-') !== statusFilter) {
           return false
         }
@@ -212,7 +218,7 @@ const FattureList = () => {
       }
       return true
     })
-  }, [items, search, yearFilter, statusFilter, sezionaleFilter])
+  }, [items, search, yearFilter, statusFilter, sezionaleFilter, showStatus])
 
   const sortedItems = useMemo(() => {
     const copy = [...filteredItems]
@@ -274,7 +280,7 @@ const FattureList = () => {
 
   const handleView = (id) => {
     if (!id) return
-    navigate(`/fatture/dettagli?id=${id}`)
+    navigate(`${basePath}/dettagli?id=${id}`)
   }
 
   const handlePrintPdf = (id) => {
@@ -301,6 +307,7 @@ const FattureList = () => {
       const result = await importFatturaXml({
         token,
         files: Array.from(fileList),
+        is_acquisto: isAcquisto ? 1 : 0,
       })
       setImportResults(result?.results ?? [])
       setImportMessage('Importazione completata.')
@@ -320,7 +327,7 @@ const FattureList = () => {
       <CCardHeader>
         <div className="d-flex flex-column flex-lg-row justify-content-between gap-3">
           <div>
-            <h5 className="mb-0">Fatture</h5>
+            <h5 className="mb-0">{isAcquisto ? 'Fatture acquisto' : 'Fatture'}</h5>
             <small className="text-body-secondary">
               Elenco ultimi {items.length} documenti fattura con importi principali.
             </small>
@@ -338,10 +345,10 @@ const FattureList = () => {
             <PermissionButton
               color="primary"
               permission="fatt.create"
-              onClick={() => navigate('/fatture/crea')}
+              onClick={() => navigate(`${basePath}/crea`)}
               data-testid="create"
             >
-              Nuova fattura
+              {isAcquisto ? 'Nuova fattura acquisto' : 'Nuova fattura'}
             </PermissionButton>
             <PermissionButton
               color="outline-primary"
@@ -394,7 +401,7 @@ const FattureList = () => {
         <CRow className="g-3 mb-4">
           <CCol xs={12} md={4}>
             <CFormInput
-              placeholder="Cerca per cliente, numero o note..."
+              placeholder={`Cerca per ${counterpartyLabel.toLowerCase()}, numero o note...`}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               data-testid="search"
@@ -410,16 +417,18 @@ const FattureList = () => {
               ))}
             </CFormSelect>
           </CCol>
-          <CCol xs={6} md={3} lg={3}>
-            <CFormSelect value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
-              <option value="all">Tutti gli stati</option>
-              {statuses.map((label) => (
-                <option key={label} value={label}>
-                  {label}
-                </option>
-              ))}
-            </CFormSelect>
-          </CCol>
+          {showStatus && (
+            <CCol xs={6} md={3} lg={3}>
+              <CFormSelect value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+                <option value="all">Tutti gli stati</option>
+                {statuses.map((label) => (
+                  <option key={label} value={label}>
+                    {label}
+                  </option>
+                ))}
+              </CFormSelect>
+            </CCol>
+          )}
           <CCol xs={6} md={3} lg={3}>
             <CFormSelect
               value={sezionaleFilter}
@@ -499,7 +508,8 @@ const FattureList = () => {
                     className="cursor-pointer"
                     onClick={() => handleSort('cliente_ragione_sociale')}
                   >
-                    Cliente{renderSortIndicator('cliente_ragione_sociale')}
+                    {counterpartyLabel}
+                    {renderSortIndicator('cliente_ragione_sociale')}
                   </CTableHeaderCell>
                   <CTableHeaderCell
                     className="text-end cursor-pointer"
@@ -525,12 +535,14 @@ const FattureList = () => {
                   >
                     Saldo{renderSortIndicator('saldo')}
                   </CTableHeaderCell>
-                  <CTableHeaderCell
-                    className="cursor-pointer"
-                    onClick={() => handleSort('stato_label')}
-                  >
-                    Stato{renderSortIndicator('stato_label')}
-                  </CTableHeaderCell>
+                  {showStatus && (
+                    <CTableHeaderCell
+                      className="cursor-pointer"
+                      onClick={() => handleSort('stato_label')}
+                    >
+                      Stato{renderSortIndicator('stato_label')}
+                    </CTableHeaderCell>
+                  )}
                   <CTableHeaderCell className="text-center text-nowrap">Azioni</CTableHeaderCell>
                 </CTableRow>
               </CTableHead>
@@ -574,13 +586,15 @@ const FattureList = () => {
                     <CTableDataCell className="text-end">{formatCurrency(row.totale_iva)}</CTableDataCell>
                     <CTableDataCell className="text-end">{formatCurrency(row.totale)}</CTableDataCell>
                     <CTableDataCell className="text-end">{formatCurrency(row.saldo)}</CTableDataCell>
-                    <CTableDataCell>
-                      {row.stato_label ? (
-                        <CBadge color="secondary">{row.stato_label}</CBadge>
-                      ) : (
-                        <span className="text-body-secondary">-</span>
-                      )}
-                    </CTableDataCell>
+                    {showStatus && (
+                      <CTableDataCell>
+                        {row.stato_label ? (
+                          <CBadge color="secondary">{row.stato_label}</CBadge>
+                        ) : (
+                          <span className="text-body-secondary">-</span>
+                        )}
+                      </CTableDataCell>
+                    )}
                     <CTableDataCell className="text-center">
                       <div className="d-inline-flex gap-2 flex-wrap justify-content-center">
                         <PermissionButton
@@ -617,7 +631,7 @@ const FattureList = () => {
                   <CTableDataCell className="text-end">{formatCurrency(totals.iva)}</CTableDataCell>
                   <CTableDataCell className="text-end">{formatCurrency(totals.totale)}</CTableDataCell>
                   <CTableDataCell className="text-end">{formatCurrency(totals.saldo)}</CTableDataCell>
-                  <CTableDataCell />
+                  {showStatus && <CTableDataCell />}
                   <CTableDataCell />
                 </CTableRow>
               </CTableFoot>

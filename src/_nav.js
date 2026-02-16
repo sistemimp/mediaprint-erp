@@ -224,6 +224,24 @@ const _nav = [
   },
   {
     component: CNavGroup,
+    name: 'Acquisti',
+    icon: <CIcon icon={cilMoney} customClassName="nav-icon" />,
+    permissions: ['prev.read', 'fatt.read'],
+    items: [
+      {
+        component: CNavItem,
+        name: 'Preventivi acquisto',
+        to: '/acquisti/preventivi/lista',
+      },
+      {
+        component: CNavItem,
+        name: 'Fatture acquisto',
+        to: '/acquisti/fatture/lista',
+      },
+    ],
+  },
+  {
+    component: CNavGroup,
     name: 'Pagamenti',
     icon: <CIcon icon={cilCreditCard} customClassName="nav-icon" />,
     permissions: ['pay.read'],

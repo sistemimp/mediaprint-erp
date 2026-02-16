@@ -1,6 +1,6 @@
 import { apiFetch, buildApiUrl, getStoredToken, uploadToApi } from './apiClient'
 
-export const fetchFattureList = async ({ token, limit, date_from, date_to, signal } = {}) => {
+export const fetchFattureList = async ({ token, limit, date_from, date_to, is_acquisto, signal } = {}) => {
   const params = {}
   if (limit !== undefined && limit !== null) {
     params.limit = limit
@@ -10,6 +10,9 @@ export const fetchFattureList = async ({ token, limit, date_from, date_to, signa
   }
   if (date_to) {
     params.date_to = date_to
+  }
+  if (is_acquisto !== undefined) {
+    params.is_acquisto = is_acquisto ? 1 : 0
   }
 
   const response = await apiFetch('/fattureList.php', {
@@ -27,10 +30,13 @@ export const fetchFattureList = async ({ token, limit, date_from, date_to, signa
   return { items }
 }
 
-export const fetchFattureDashboard = async ({ token, period, signal } = {}) => {
+export const fetchFattureDashboard = async ({ token, period, is_acquisto, signal } = {}) => {
   const params = {}
   if (period) {
     params.period = period
+  }
+  if (is_acquisto !== undefined) {
+    params.is_acquisto = is_acquisto ? 1 : 0
   }
   const payload = await apiFetch('/fattureDashboard.php', { token, params, signal })
   if (!payload?.ok) {
@@ -39,10 +45,10 @@ export const fetchFattureDashboard = async ({ token, period, signal } = {}) => {
   return payload
 }
 
-export const fetchFatturaDetail = async ({ token, id, signal } = {}) => {
+export const fetchFatturaDetail = async ({ token, id, is_acquisto, signal } = {}) => {
   const response = await apiFetch('/fattureDetail.php', {
     token,
-    params: { id },
+    params: { id, ...(is_acquisto !== undefined ? { is_acquisto: is_acquisto ? 1 : 0 } : {}) },
     signal,
   })
 
@@ -51,9 +57,14 @@ export const fetchFatturaDetail = async ({ token, id, signal } = {}) => {
   }
 }
 
-export const fetchFattureConfig = async ({ token, signal } = {}) => {
+export const fetchFattureConfig = async ({ token, is_acquisto, signal } = {}) => {
+  const params = {}
+  if (is_acquisto !== undefined) {
+    params.is_acquisto = is_acquisto ? 1 : 0
+  }
   const response = await apiFetch('/fattureConfig.php', {
     token,
+    params,
     signal,
   })
 
@@ -74,6 +85,7 @@ export const emitPreventivoFattura = async ({
   id_tipo_fatt,
   id_stato_fatt,
   note,
+  is_acquisto,
   signal,
 } = {}) => {
   const payload = {
@@ -83,6 +95,7 @@ export const emitPreventivoFattura = async ({
     id_tipo_fatt: Number(id_tipo_fatt) || undefined,
     id_stato_fatt: Number(id_stato_fatt) || undefined,
     note: typeof note === 'string' && note.trim() !== '' ? note.trim() : undefined,
+    is_acquisto: is_acquisto !== undefined ? (is_acquisto ? 1 : 0) : undefined,
   }
 
   Object.keys(payload).forEach((key) => {
@@ -371,7 +384,7 @@ export const exportFatturaXml = async ({ token, id, signal } = {}) => {
   return { blob, filename }
 }
 
-export const importFatturaXml = async ({ token, files, signal } = {}) => {
+export const importFatturaXml = async ({ token, files, is_acquisto, signal } = {}) => {
   const normalized = files
     ? Array.isArray(files)
       ? files.filter(Boolean)
@@ -388,6 +401,7 @@ export const importFatturaXml = async ({ token, files, signal } = {}) => {
   const payload = await uploadToApi('/fattureImportXml.php', {
     token,
     formData,
+    params: is_acquisto !== undefined ? { is_acquisto: is_acquisto ? 1 : 0 } : undefined,
     signal,
   })
 

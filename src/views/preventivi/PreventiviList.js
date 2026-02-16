@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import {
   CBadge,
   CButton,
@@ -172,6 +172,9 @@ const formatVatLabel = (line) => {
 
 const PreventiviList = () => {
   const navigate = useNavigate()
+  const location = useLocation()
+  const isAcquisto = location.pathname.startsWith('/acquisti')
+  const basePath = isAcquisto ? '/acquisti/preventivi' : '/preventivi'
   const { token, logout, user } = useAuth()
 
   const [items, setItems] = useState([])
@@ -324,6 +327,7 @@ const PreventiviList = () => {
             pageSize: 100,
             sortBy: 'data_preventivo',
             sortDirection: 'desc',
+            is_acquisto: isAcquisto,
           })
           let all = Array.isArray(first.items) ? [...first.items] : []
           const totalPages = Math.max(first?.meta?.pages ?? first?.meta?.last_page ?? 1, 1)
@@ -338,6 +342,7 @@ const PreventiviList = () => {
                 pageSize: perPage,
                 sortBy: 'data_preventivo',
                 sortDirection: 'desc',
+                is_acquisto: isAcquisto,
               })
               if (Array.isArray(pageRes.items) && pageRes.items.length > 0) {
                 all = all.concat(pageRes.items)
@@ -349,6 +354,7 @@ const PreventiviList = () => {
           const { items: data = [] } = await fetchLatestPreventivi({
             token,
             signal: controller.signal,
+            is_acquisto: isAcquisto,
           })
           setItems(Array.isArray(data) ? data : [])
         }
@@ -368,7 +374,7 @@ const PreventiviList = () => {
 
     load()
     return () => controller.abort()
-  }, [token, logout, viewMode, refreshIndex])
+  }, [token, logout, viewMode, refreshIndex, isAcquisto])
 
   const total = items.length
   const totalPages = Math.max(Math.ceil(total / rowsPerPage), 1)
@@ -541,11 +547,11 @@ const PreventiviList = () => {
 
   const handleView = (id) => {
     if (!id) return
-    navigate(`/preventivi/dettagli?id=${id}`)
+    navigate(`${basePath}/dettagli?id=${id}`)
   }
 
   const handleCreateNewPreventivo = useCallback(() => {
-    navigate('/preventivi/dettagli?mode=create', { state: { createMode: true } })
+    navigate(`${basePath}/dettagli?mode=create`, { state: { createMode: true } })
   }, [navigate])
 
   const handleRestore = async (id) => {
@@ -559,7 +565,7 @@ const PreventiviList = () => {
       setRefreshIndex((v) => v + 1)
       const newId = res?.id_preventivo
       if (newId) {
-        navigate(`/preventivi/dettagli?id=${newId}`)
+        navigate(`${basePath}/dettagli?id=${newId}`)
       }
     } catch (e) {
       if (e?.status === 401 && logout) {
@@ -629,7 +635,7 @@ const PreventiviList = () => {
         pushEmail(header?.email_cliente)
         const numeroDoc = header?.numero_documento ?? row?.numero_documento ?? null
         const annoDoc = header?.anno_preventivo ?? row?.anno_preventivo ?? null
-        const clienteLabel = header?.ragione_sociale ?? row?.ragione_sociale ?? 'Cliente'
+        const clienteLabel = header?.ragione_sociale ?? row?.ragione_sociale ?? (isAcquisto ? 'Fornitore' : 'Cliente')
         const numeroDisplay = numeroDoc ? `${numeroDoc}${annoDoc ? `/${annoDoc}` : ''}` : `ID ${numericId}`
         const docDate = header?.data_preventivo
           ? (() => {
@@ -747,7 +753,9 @@ const PreventiviList = () => {
         <CCardHeader>
           <div className="d-flex justify-content-between align-items-center">
             <div>
-              <h5 className="mb-0">Preventivi - Elenco {viewMode === 'archiviati' ? '(archiviati)' : ''}</h5>
+              <h5 className="mb-0">
+                {isAcquisto ? 'Preventivi acquisto' : 'Preventivi'} - Elenco {viewMode === 'archiviati' ? '(archiviati)' : ''}
+              </h5>
               <small className="text-body-secondary">
                 {viewMode === 'archiviati' ? 'Archivio preventivi, ordinati per data decrescente' : 'Ordinati per data decrescente'}
               </small>
@@ -783,7 +791,7 @@ const PreventiviList = () => {
                   <option value="giorno">Giorno</option>
                   <option value="mese">Mese</option>
                   <option value="stato">Stato</option>
-                  <option value="cliente">Cliente</option>
+                  <option value="cliente">{isAcquisto ? 'Fornitore' : 'Cliente'}</option>
                 </select>
               </div>
               <div className="d-flex align-items-center">
@@ -833,7 +841,7 @@ const PreventiviList = () => {
                 <CTableHead className="mp-table-head">
                   <CTableRow className="align-middle">
                     <CTableHeaderCell role="button" onClick={(e) => toggleSort('cliente', e.shiftKey)} className="text-nowrap">
-                      Cliente{sortIndicator('cliente')}
+                      {isAcquisto ? 'Fornitore' : 'Cliente'}{sortIndicator('cliente')}
                     </CTableHeaderCell>
                     <CTableHeaderCell role="button" onClick={(e) => toggleSort('documento', e.shiftKey)} className="text-nowrap">
                       Documento{sortIndicator('documento')}
@@ -1168,7 +1176,7 @@ const PreventiviList = () => {
                         {formatDateTime(revisionDetailModalData.created_at)}
                       </div>
                     </div>
-                    <div className="text-body-secondary small mt-3">Cliente</div>
+                    <div className="text-body-secondary small mt-3">{isAcquisto ? 'Fornitore' : 'Cliente'}</div>
                     <div className="fw-semibold">{revisionDetailClientLabel}</div>
                     {revisionDetailClientIdentifiers && (
                       <div className="small text-body-secondary">{revisionDetailClientIdentifiers}</div>
@@ -1208,7 +1216,7 @@ const PreventiviList = () => {
                         {currentPreventivoUpdatedLabel}
                       </div>
                     </div>
-                    <div className="text-body-secondary small mt-3">Cliente</div>
+                    <div className="text-body-secondary small mt-3">{isAcquisto ? 'Fornitore' : 'Cliente'}</div>
                     <div className="fw-semibold">{currentPreventivoClientLabel}</div>
                     {currentPreventivoClientIdentifiers && (
                       <div className="small text-body-secondary">{currentPreventivoClientIdentifiers}</div>

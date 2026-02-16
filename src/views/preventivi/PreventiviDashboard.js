@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import {
   CAlert,
   CCard,
@@ -67,6 +67,10 @@ const PERIOD_OPTIONS = [
 
 const PreventiviDashboard = () => {
   const { token } = useAuth()
+  const location = useLocation()
+  const isAcquisto = location.pathname.includes('/acquisti/')
+  const basePath = isAcquisto ? '/acquisti/preventivi' : '/preventivi'
+  const counterpartyLabel = isAcquisto ? 'Fornitore' : 'Cliente'
   const [payload, setPayload] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -80,7 +84,12 @@ const PreventiviDashboard = () => {
       setLoading(true)
       setError(null)
       try {
-        const data = await fetchPreventiviDashboard({ token, period, signal: controller.signal })
+        const data = await fetchPreventiviDashboard({
+          token,
+          period,
+          signal: controller.signal,
+          is_acquisto: isAcquisto ? 1 : 0,
+        })
         if (!isMounted) return
         setPayload(data)
       } catch (err) {
@@ -97,7 +106,7 @@ const PreventiviDashboard = () => {
       isMounted = false
       controller.abort()
     }
-  }, [token, period])
+  }, [token, period, isAcquisto])
 
   const conversion = payload?.conversion ?? {}
   const statusCounts = payload?.status_counts ?? []
@@ -127,8 +136,12 @@ const PreventiviDashboard = () => {
     <>
       <CRow className="mb-4 align-items-end">
         <CCol>
-          <h2 className="h4 mb-1">Dashboard preventivi</h2>
-          <p className="text-body-secondary mb-0">Conversione, stati e clienti principali.</p>
+          <h2 className="h4 mb-1">
+            {isAcquisto ? 'Dashboard preventivi acquisto' : 'Dashboard preventivi'}
+          </h2>
+          <p className="text-body-secondary mb-0">
+            {isAcquisto ? 'Conversione e fornitori principali.' : 'Conversione, stati e clienti principali.'}
+          </p>
         </CCol>
         <CCol xs="auto">
           <CFormSelect
@@ -214,7 +227,7 @@ const PreventiviDashboard = () => {
                       <CTableHead>
                         <CTableRow>
                           <CTableHeaderCell>Preventivo</CTableHeaderCell>
-                          <CTableHeaderCell>Cliente</CTableHeaderCell>
+                          <CTableHeaderCell>{counterpartyLabel}</CTableHeaderCell>
                           <CTableHeaderCell className="text-end">Totale</CTableHeaderCell>
                           <CTableHeaderCell className="text-end">Stato</CTableHeaderCell>
                         </CTableRow>
@@ -227,7 +240,7 @@ const PreventiviDashboard = () => {
                               <CTableDataCell>
                                 {row.id_preventivo ? (
                                   <Link
-                                    to={`/preventivi/dettagli?id=${row.id_preventivo}`}
+                                    to={`${basePath}/dettagli?id=${row.id_preventivo}`}
                                     className="text-decoration-none"
                                   >
                                     {numero}
@@ -255,7 +268,11 @@ const PreventiviDashboard = () => {
       <CRow className="mt-4">
         <CCol lg={6}>
           <CCard>
-            <CCardHeader>Top clienti ({periodLabel.toLowerCase()})</CCardHeader>
+            <CCardHeader>
+              {isAcquisto
+                ? `Top fornitori (${periodLabel.toLowerCase()})`
+                : `Top clienti (${periodLabel.toLowerCase()})`}
+            </CCardHeader>
             <CCardBody>
               {loading
                 ? renderTablePlaceholder('Caricamento...')
@@ -265,7 +282,7 @@ const PreventiviDashboard = () => {
                     <CTable data-testid="table" small hover responsive className="mb-0">
                       <CTableHead>
                         <CTableRow>
-                          <CTableHeaderCell>Cliente</CTableHeaderCell>
+                          <CTableHeaderCell>{counterpartyLabel}</CTableHeaderCell>
                           <CTableHeaderCell className="text-end">Preventivi</CTableHeaderCell>
                           <CTableHeaderCell className="text-end">Totale</CTableHeaderCell>
                         </CTableRow>

@@ -26,6 +26,9 @@ final class AnagraficheService
         if (isset($input['allowed_anagrafiche']) && is_array($input['allowed_anagrafiche'])) {
             $filters['allowed_ids'] = $input['allowed_anagrafiche'];
         }
+        if (isset($input['tipologie']) && is_array($input['tipologie'])) {
+            $filters['tipologie'] = $input['tipologie'];
+        }
 
         $result = $this->repository->search($filters);
         $total = (int) $result['total'];

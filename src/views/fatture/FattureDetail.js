@@ -279,6 +279,11 @@ const FattureDetail = () => {
   const location = useLocation()
   const query = new URLSearchParams(location.search)
   const id = Number(query.get('id') || 0)
+  const isAcquisto = location.pathname.includes('/acquisti/')
+  const basePath = isAcquisto ? '/acquisti/fatture' : '/fatture'
+  const counterpartyLabel = isAcquisto ? 'Fornitore' : 'Cliente'
+  const showStatus = !isAcquisto
+  const showPayments = !isAcquisto
   const { token, logout, user } = useAuth()
   const { setBreadcrumbActions, clearBreadcrumbActions } = useBreadcrumbActions()
 
@@ -364,9 +369,9 @@ const FattureDetail = () => {
 
   useEffect(() => {
     if (!id) {
-      navigate('/fatture/lista', { replace: true })
+      navigate(`${basePath}/lista`, { replace: true })
     }
-  }, [id, navigate])
+  }, [id, navigate, basePath])
 
   useEffect(() => {
     if (!token || !id) return
@@ -379,6 +384,7 @@ const FattureDetail = () => {
           token,
           id,
           signal: controller.signal,
+          is_acquisto: isAcquisto ? 1 : 0,
         })
         setRecord(data)
       } catch (err) {
@@ -395,7 +401,7 @@ const FattureDetail = () => {
     }
     load()
     return () => controller.abort()
-  }, [token, id, logout, reloadVersion])
+  }, [token, id, logout, reloadVersion, isAcquisto])
 
   useEffect(() => {
     if (!token) return
@@ -407,6 +413,7 @@ const FattureDetail = () => {
         const data = await fetchFattureConfig({
           token,
           signal: controller.signal,
+          is_acquisto: isAcquisto ? 1 : 0,
         })
         setConfig(data)
       } catch (err) {
@@ -423,7 +430,7 @@ const FattureDetail = () => {
     }
     load()
     return () => controller.abort()
-  }, [token, logout, reloadVersion])
+  }, [token, logout, reloadVersion, isAcquisto])
 
   useEffect(() => {
     if (!token) return
@@ -454,7 +461,7 @@ const FattureDetail = () => {
   }, [token, logout])
 
   useEffect(() => {
-    if (!token || !id) return
+    if (!token || !id || !showPayments) return
     const controller = new AbortController()
     const load = async () => {
       setPaymentsLoading(true)
@@ -486,10 +493,10 @@ const FattureDetail = () => {
     }
     load()
     return () => controller.abort()
-  }, [token, id, logout, paymentsReload])
+  }, [token, id, logout, paymentsReload, showPayments])
 
   useEffect(() => {
-    if (!token || !id) return
+    if (!token || !id || !showStatus) return
     const controller = new AbortController()
     const load = async () => {
       setStatusLogLoading(true)
@@ -515,7 +522,7 @@ const FattureDetail = () => {
     }
     load()
     return () => controller.abort()
-  }, [token, id, logout, reloadVersion])
+  }, [token, id, logout, reloadVersion, showStatus])
 
   useEffect(() => {
     if (!paymentBanner) return
@@ -1581,26 +1588,28 @@ const FattureDetail = () => {
     event.preventDefault()
     if (!record || !token) return
 
-    const previousStatusId = record?.id_stato_fatt ? Number(record.id_stato_fatt) : null
-    const desiredStatusId = formValues.id_stato_fatt ? Number(formValues.id_stato_fatt) : null
+    const previousStatusId = showStatus && record?.id_stato_fatt ? Number(record.id_stato_fatt) : null
+    const desiredStatusId = showStatus && formValues.id_stato_fatt ? Number(formValues.id_stato_fatt) : null
 
-    const wantsRejectTransition =
-      desiredStatusId !== null &&
-      rifiutataStatusId !== null &&
-      desiredStatusId === rifiutataStatusId &&
-      previousStatusId !== rifiutataStatusId
-    if (wantsRejectTransition) {
-      const confirmMessage =
-        'Confermi di generare automaticamente una nota di credito e impostare lo stato su "Rifiutata"?'
-      const confirmed = typeof window !== 'undefined' ? window.confirm(confirmMessage) : true
-      if (!confirmed) {
-        setSaveError(null)
-        setSaveSuccess(null)
-        setFormValues((prev) => ({
-          ...prev,
-          id_stato_fatt: previousStatusId ? String(previousStatusId) : '',
-        }))
-        return
+    if (showStatus) {
+      const wantsRejectTransition =
+        desiredStatusId !== null &&
+        rifiutataStatusId !== null &&
+        desiredStatusId === rifiutataStatusId &&
+        previousStatusId !== rifiutataStatusId
+      if (wantsRejectTransition) {
+        const confirmMessage =
+          'Confermi di generare automaticamente una nota di credito e impostare lo stato su "Rifiutata"?'
+        const confirmed = typeof window !== 'undefined' ? window.confirm(confirmMessage) : true
+        if (!confirmed) {
+          setSaveError(null)
+          setSaveSuccess(null)
+          setFormValues((prev) => ({
+            ...prev,
+            id_stato_fatt: previousStatusId ? String(previousStatusId) : '',
+          }))
+          return
+        }
       }
     }
 
@@ -1633,7 +1642,8 @@ const FattureDetail = () => {
         id: record.id_fattura,
         data_fattura: formValues.data_fattura || undefined,
         note: formValues.note ?? '',
-        id_stato_fatt: formValues.id_stato_fatt ? Number(formValues.id_stato_fatt) : undefined,
+        id_stato_fatt:
+          showStatus && formValues.id_stato_fatt ? Number(formValues.id_stato_fatt) : undefined,
         id_sezionale: formValues.id_sezionale ? Number(formValues.id_sezionale) : undefined,
         saldo: saldoValue,
         cliente_pec: formValues.cliente_pec,
@@ -1647,33 +1657,35 @@ const FattureDetail = () => {
       })
       if (updated) {
         setRecord(updated)
-        const updatedStatusId = updated.id_stato_fatt ? Number(updated.id_stato_fatt) : null
-        if (
-          desiredStatusId !== null &&
-          updatedStatusId !== null &&
-          updatedStatusId !== previousStatusId
-        ) {
-          const now = new Date().toISOString()
-          const fromLabel =
-            previousStatusId !== null
-              ? statiById[previousStatusId]?.label || record?.stato_label || `#${previousStatusId}`
-              : 'N.D.'
-          const toLabel =
-            statiById[updatedStatusId]?.label ||
-            updated?.stato_label ||
-            `#${updatedStatusId}`
-          const operatorName = user?.username || user?.name || user?.email || 'Operatore'
-          setStatusLog((prev) => [
-            {
-              at: now,
-              from_status_id: previousStatusId,
-              from_status: fromLabel,
-              to_status_id: updatedStatusId,
-              to_status: toLabel,
-              user_name: operatorName,
-            },
-            ...prev,
-          ])
+        if (showStatus) {
+          const updatedStatusId = updated.id_stato_fatt ? Number(updated.id_stato_fatt) : null
+          if (
+            desiredStatusId !== null &&
+            updatedStatusId !== null &&
+            updatedStatusId !== previousStatusId
+          ) {
+            const now = new Date().toISOString()
+            const fromLabel =
+              previousStatusId !== null
+                ? statiById[previousStatusId]?.label || record?.stato_label || `#${previousStatusId}`
+                : 'N.D.'
+            const toLabel =
+              statiById[updatedStatusId]?.label ||
+              updated?.stato_label ||
+              `#${updatedStatusId}`
+            const operatorName = user?.username || user?.name || user?.email || 'Operatore'
+            setStatusLog((prev) => [
+              {
+                at: now,
+                from_status_id: previousStatusId,
+                from_status: fromLabel,
+                to_status_id: updatedStatusId,
+                to_status: toLabel,
+                user_name: operatorName,
+              },
+              ...prev,
+            ])
+          }
         }
       }
       setSaveSuccess('Fattura aggiornata correttamente.')
@@ -1860,7 +1872,7 @@ const FattureDetail = () => {
 
             <CRow className="mb-4 gy-3">
               <CCol md={3}>
-                <div className="text-body-secondary small">Cliente</div>
+                <div className="text-body-secondary small">{counterpartyLabel}</div>
                 <div className="fw-semibold">{record.cliente_ragione_sociale || '-'}</div>
               </CCol>
               <CCol md={3}>
@@ -1871,14 +1883,16 @@ const FattureDetail = () => {
                 <div className="text-body-secondary small">Cod. fiscale</div>
                 <div className="fw-semibold">{record.cliente_codice_fiscale || '-'}</div>
               </CCol>
-              <CCol md={3}>
-                <div className="text-body-secondary small">Stato attuale</div>
-                {record.stato_label ? (
-                  <CBadge color="secondary">{record.stato_label}</CBadge>
-                ) : (
-                  <span className="text-body-secondary">-</span>
-                )}
-              </CCol>
+              {showStatus && (
+                <CCol md={3}>
+                  <div className="text-body-secondary small">Stato attuale</div>
+                  {record.stato_label ? (
+                    <CBadge color="secondary">{record.stato_label}</CBadge>
+                  ) : (
+                    <span className="text-body-secondary">-</span>
+                  )}
+                </CCol>
+              )}
               <CCol md={3}>
                 <div className="text-body-secondary small">Data fattura</div>
                 <div className="fw-semibold">{formatDate(record.data_fattura)}</div>
@@ -1891,128 +1905,130 @@ const FattureDetail = () => {
               </CCol>
             </CRow>
 
-            <section className="mb-4">
-              <h6 className="mb-3 text-body-secondary">Timeline stato documento</h6>
-              <div className="border rounded p-3 bg-body-tertiary">
-                <CNav variant="tabs" role="tablist" className="mb-3">
-                  <CNavItem>
-                    <CNavLink
-                      role="tab"
-                      aria-selected={statusTab === 'timeline'}
-                      active={statusTab === 'timeline'}
-                      onClick={() => setStatusTab('timeline')}
-                    >
-                      Timeline
-                    </CNavLink>
-                  </CNavItem>
-                  <CNavItem>
-                    <CNavLink
-                      role="tab"
-                      aria-selected={statusTab === 'log'}
-                      active={statusTab === 'log'}
-                      onClick={() => setStatusTab('log')}
-                    >
-                      Log
-                    </CNavLink>
-                  </CNavItem>
-                </CNav>
-                <CTabContent>
-                  <CTabPane visible={statusTab === 'timeline'} role="tabpanel">
-                    {timelineSteps.length > 0 ? (
-                      <>
-                        {statusUpdateError && (
-                          <CAlert color="danger" className="mb-3">
-                            {statusUpdateError?.message ||
-                              "Errore durante l'aggiornamento dello stato."}
-                          </CAlert>
-                        )}
-                        {statusUpdateSuccess && (
-                          <CAlert color="success" className="mb-3">{statusUpdateSuccess}</CAlert>
-                        )}
-                        <div className="d-flex align-items-center gap-2 flex-wrap mb-3">
-                          <small className="text-body-secondary">Stato attuale:</small>
-                          {currentStatusLabel ? (
-                            <CBadge color="secondary">{currentStatusLabel}</CBadge>
-                          ) : (
-                            <span className="text-body-secondary">N.D.</span>
+            {showStatus && (
+              <section className="mb-4">
+                <h6 className="mb-3 text-body-secondary">Timeline stato documento</h6>
+                <div className="border rounded p-3 bg-body-tertiary">
+                  <CNav variant="tabs" role="tablist" className="mb-3">
+                    <CNavItem>
+                      <CNavLink
+                        role="tab"
+                        aria-selected={statusTab === 'timeline'}
+                        active={statusTab === 'timeline'}
+                        onClick={() => setStatusTab('timeline')}
+                      >
+                        Timeline
+                      </CNavLink>
+                    </CNavItem>
+                    <CNavItem>
+                      <CNavLink
+                        role="tab"
+                        aria-selected={statusTab === 'log'}
+                        active={statusTab === 'log'}
+                        onClick={() => setStatusTab('log')}
+                      >
+                        Log
+                      </CNavLink>
+                    </CNavItem>
+                  </CNav>
+                  <CTabContent>
+                    <CTabPane visible={statusTab === 'timeline'} role="tabpanel">
+                      {timelineSteps.length > 0 ? (
+                        <>
+                          {statusUpdateError && (
+                            <CAlert color="danger" className="mb-3">
+                              {statusUpdateError?.message ||
+                                "Errore durante l'aggiornamento dello stato."}
+                            </CAlert>
                           )}
-                          {statusUpdating && <CSpinner size="sm" />}
-                        </div>
-                        <div className={timelineStepperClass}>
-                          <CStepper
-                            className="w-100"
-                            activeStepNumber={activeStatusStep || 1}
-                            steps={timelineSteps.map((step) => step.label)}
-                            linear={false}
-                            validation={false}
-                            onStepChange={(step) => {
-                              if (statusUpdating || saving) return
-                              const index = Number(step) - 1
-                              if (!Number.isFinite(index) || index < 0) return
-                              const meta = timelineSteps[index]
-                              if (!meta || !Array.isArray(meta.matchIds) || meta.matchIds.length !== 1) {
-                                return
-                              }
-                              handleTimelineStatusChange(meta.matchIds[0])
-                            }}
-                          />
-                        </div>
-                      </>
-                    ) : (
-                      <small className="text-body-secondary">Nessuno stato configurato.</small>
-                    )}
-                  </CTabPane>
-                  <CTabPane visible={statusTab === 'log'} role="tabpanel">
-                    <div className="d-flex align-items-center gap-2 mb-2">
-                      <h6 className="mb-0 text-body-secondary">Log cambi stato</h6>
-                      {statusLogLoading && <CSpinner size="sm" />}
-                    </div>
-                    {statusLogError && (
-                      <CAlert color="danger" className="mb-0">
-                        Impossibile caricare il log degli stati.
-                      </CAlert>
-                    )}
-                    {!statusLogError && statusLog.length === 0 && !statusLogLoading && (
-                      <small className="text-body-secondary">Nessun evento registrato.</small>
-                    )}
-                    {!statusLogError && statusLog.length > 0 && (
-                      <CTable data-testid="table" small responsive className="mb-0">
-                        <CTableHead className="mp-table-head">
-                          <CTableRow>
-                            <CTableHeaderCell>Data</CTableHeaderCell>
-                            <CTableHeaderCell>Transizione</CTableHeaderCell>
-                            <CTableHeaderCell>Operatore</CTableHeaderCell>
-                          </CTableRow>
-                        </CTableHead>
-                        <CTableBody>
-                          {statusLog.map((entry, index) => (
-                            <CTableRow key={`${entry.at || entry.timestamp || entry.created_at || index}-${index}`}>
-                              <CTableDataCell className="text-nowrap">
-                                {formatDateTime(entry.at || entry.timestamp || entry.created_at || entry.ts)}
-                              </CTableDataCell>
-                              <CTableDataCell>
-                                {entry.from_status
-                                  ? `${entry.from_status} → ${entry.to_status || ''}`
-                                  : entry.to_status || '-'}
-                              </CTableDataCell>
-                              <CTableDataCell>
-                                <div>{entry.user_name || entry.username || entry.user || '-'}</div>
-                                {entry.app && (
-                                  <small className="text-body-secondary">{entry.app}</small>
-                                )}
-                              </CTableDataCell>
+                          {statusUpdateSuccess && (
+                            <CAlert color="success" className="mb-3">{statusUpdateSuccess}</CAlert>
+                          )}
+                          <div className="d-flex align-items-center gap-2 flex-wrap mb-3">
+                            <small className="text-body-secondary">Stato attuale:</small>
+                            {currentStatusLabel ? (
+                              <CBadge color="secondary">{currentStatusLabel}</CBadge>
+                            ) : (
+                              <span className="text-body-secondary">N.D.</span>
+                            )}
+                            {statusUpdating && <CSpinner size="sm" />}
+                          </div>
+                          <div className={timelineStepperClass}>
+                            <CStepper
+                              className="w-100"
+                              activeStepNumber={activeStatusStep || 1}
+                              steps={timelineSteps.map((step) => step.label)}
+                              linear={false}
+                              validation={false}
+                              onStepChange={(step) => {
+                                if (statusUpdating || saving) return
+                                const index = Number(step) - 1
+                                if (!Number.isFinite(index) || index < 0) return
+                                const meta = timelineSteps[index]
+                                if (!meta || !Array.isArray(meta.matchIds) || meta.matchIds.length !== 1) {
+                                  return
+                                }
+                                handleTimelineStatusChange(meta.matchIds[0])
+                              }}
+                            />
+                          </div>
+                        </>
+                      ) : (
+                        <small className="text-body-secondary">Nessuno stato configurato.</small>
+                      )}
+                    </CTabPane>
+                    <CTabPane visible={statusTab === 'log'} role="tabpanel">
+                      <div className="d-flex align-items-center gap-2 mb-2">
+                        <h6 className="mb-0 text-body-secondary">Log cambi stato</h6>
+                        {statusLogLoading && <CSpinner size="sm" />}
+                      </div>
+                      {statusLogError && (
+                        <CAlert color="danger" className="mb-0">
+                          Impossibile caricare il log degli stati.
+                        </CAlert>
+                      )}
+                      {!statusLogError && statusLog.length === 0 && !statusLogLoading && (
+                        <small className="text-body-secondary">Nessun evento registrato.</small>
+                      )}
+                      {!statusLogError && statusLog.length > 0 && (
+                        <CTable data-testid="table" small responsive className="mb-0">
+                          <CTableHead className="mp-table-head">
+                            <CTableRow>
+                              <CTableHeaderCell>Data</CTableHeaderCell>
+                              <CTableHeaderCell>Transizione</CTableHeaderCell>
+                              <CTableHeaderCell>Operatore</CTableHeaderCell>
                             </CTableRow>
-                          ))}
-                        </CTableBody>
-                      </CTable>
-                    )}
-                  </CTabPane>
-                </CTabContent>
-              </div>
-            </section>
+                          </CTableHead>
+                          <CTableBody>
+                            {statusLog.map((entry, index) => (
+                              <CTableRow key={`${entry.at || entry.timestamp || entry.created_at || index}-${index}`}>
+                                <CTableDataCell className="text-nowrap">
+                                  {formatDateTime(entry.at || entry.timestamp || entry.created_at || entry.ts)}
+                                </CTableDataCell>
+                                <CTableDataCell>
+                                  {entry.from_status
+                                    ? `${entry.from_status} → ${entry.to_status || ''}`
+                                    : entry.to_status || '-'}
+                                </CTableDataCell>
+                                <CTableDataCell>
+                                  <div>{entry.user_name || entry.username || entry.user || '-'}</div>
+                                  {entry.app && (
+                                    <small className="text-body-secondary">{entry.app}</small>
+                                  )}
+                                </CTableDataCell>
+                              </CTableRow>
+                            ))}
+                          </CTableBody>
+                        </CTable>
+                      )}
+                    </CTabPane>
+                  </CTabContent>
+                </div>
+              </section>
+            )}
 
             <section className="mb-4">
-              <h6 className="mb-3 text-body-secondary">Dati fiscali cliente</h6>
+              <h6 className="mb-3 text-body-secondary">Dati fiscali {counterpartyLabel.toLowerCase()}</h6>
               <div className="border rounded p-3 bg-body-tertiary">
                 <CRow className="g-3">
                   <CCol md={4}>
@@ -2166,21 +2182,23 @@ const FattureDetail = () => {
                     ))}
                   </CFormSelect>
                 </CCol>
-                <CCol md={3}>
-                  <CFormLabel>Stato</CFormLabel>
-                  <CFormSelect
-                    value={formValues.id_stato_fatt}
-                    onChange={handleFormChange('id_stato_fatt')}
-                    disabled={formDisabled || configLoading}
-                  >
-                    <option value="">Seleziona stato</option>
-                    {statiOptions.map((option) => (
-                      <option key={option.id_stato} value={option.id_stato}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </CFormSelect>
-                </CCol>
+                {showStatus && (
+                  <CCol md={3}>
+                    <CFormLabel>Stato</CFormLabel>
+                    <CFormSelect
+                      value={formValues.id_stato_fatt}
+                      onChange={handleFormChange('id_stato_fatt')}
+                      disabled={formDisabled || configLoading}
+                    >
+                      <option value="">Seleziona stato</option>
+                      {statiOptions.map((option) => (
+                        <option key={option.id_stato} value={option.id_stato}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </CFormSelect>
+                  </CCol>
+                )}
                 <CCol md={3}>
                   <CFormLabel>Saldo residuo</CFormLabel>
                   <div className="d-flex gap-2 align-items-start">
@@ -2219,141 +2237,143 @@ const FattureDetail = () => {
                 </CCol>
               </CRow>
             </CForm>
-            <section className="mb-4">
-              <div className="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-                <h6 className="mb-0 text-body-secondary">Pagamenti registrati</h6>
-              </div>
-              {paymentBanner && (
-                <CAlert color="success" className="mb-3">
-                  {paymentBanner}
-                </CAlert>
-              )}
-              {paymentsError && (
-                <CAlert color="danger" className="mb-3">
-                  {paymentsError.message || 'Impossibile caricare i pagamenti.'}
-                </CAlert>
-              )}
-              <div className="border rounded p-3 mb-3 bg-body-tertiary">
-                {documentTypeLabel && (
-                  <div className="d-flex justify-content-end mb-2">
-                    <CBadge color={documentTypeBadgeVariant} className="text-uppercase">
-                      {documentTypeLabel}
-                    </CBadge>
-                  </div>
-                )}
-                <CRow className="g-3">
-                  <CCol md={4}>
-                    <div className="text-body-secondary small">Totale documento</div>
-                    <div className="fw-semibold">{formatCurrency(paymentsStats.totale_documento)}</div>
-                  </CCol>
-                  <CCol md={4}>
-                    <div className="text-body-secondary small">Pagato</div>
-                    <div className="fw-semibold text-success">
-                      {formatCurrency(paymentsStats.totale_pagato)}
-                    </div>
-                  </CCol>
-                  <CCol md={4}>
-                    <div className="text-body-secondary small">Residuo stimato</div>
-                    <div className="fw-semibold">{formatCurrency(paymentsStats.saldo_residuo)}</div>
-                  </CCol>
-                </CRow>
-              </div>
-              {paymentsLoading ? (
-                <div className="d-flex justify-content-center py-4">
-                  <CSpinner color="primary" />
+            {showPayments && (
+              <section className="mb-4">
+                <div className="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+                  <h6 className="mb-0 text-body-secondary">Pagamenti registrati</h6>
                 </div>
-              ) : payments.length === 0 ? (
-                <CAlert color="info">Nessun pagamento registrato.</CAlert>
-              ) : (
-                <CTable data-testid="table" responsive hover>
-                  <CTableHead className="mp-table-head">
-                    <CTableRow className="align-middle">
-                      <CTableHeaderCell className="text-nowrap">ID pagamento</CTableHeaderCell>
-                      <CTableHeaderCell>Data</CTableHeaderCell>
-                      <CTableHeaderCell>Metodo</CTableHeaderCell>
-                      <CTableHeaderCell>Modalità SdI</CTableHeaderCell>
-                      <CTableHeaderCell className="text-end">Importo</CTableHeaderCell>
-                      <CTableHeaderCell>Note</CTableHeaderCell>
-                      <CTableHeaderCell className="text-center text-nowrap">Azioni</CTableHeaderCell>
-                    </CTableRow>
-                  </CTableHead>
-                  <CTableBody>
-                    {payments.map((payment) => (
-                      <CTableRow key={payment.id_pagamento}>
-                        <CTableDataCell className="text-nowrap">
-                          {payment.id_pagamento ? (
+                {paymentBanner && (
+                  <CAlert color="success" className="mb-3">
+                    {paymentBanner}
+                  </CAlert>
+                )}
+                {paymentsError && (
+                  <CAlert color="danger" className="mb-3">
+                    {paymentsError.message || 'Impossibile caricare i pagamenti.'}
+                  </CAlert>
+                )}
+                <div className="border rounded p-3 mb-3 bg-body-tertiary">
+                  {documentTypeLabel && (
+                    <div className="d-flex justify-content-end mb-2">
+                      <CBadge color={documentTypeBadgeVariant} className="text-uppercase">
+                        {documentTypeLabel}
+                      </CBadge>
+                    </div>
+                  )}
+                  <CRow className="g-3">
+                    <CCol md={4}>
+                      <div className="text-body-secondary small">Totale documento</div>
+                      <div className="fw-semibold">{formatCurrency(paymentsStats.totale_documento)}</div>
+                    </CCol>
+                    <CCol md={4}>
+                      <div className="text-body-secondary small">Pagato</div>
+                      <div className="fw-semibold text-success">
+                        {formatCurrency(paymentsStats.totale_pagato)}
+                      </div>
+                    </CCol>
+                    <CCol md={4}>
+                      <div className="text-body-secondary small">Residuo stimato</div>
+                      <div className="fw-semibold">{formatCurrency(paymentsStats.saldo_residuo)}</div>
+                    </CCol>
+                  </CRow>
+                </div>
+                {paymentsLoading ? (
+                  <div className="d-flex justify-content-center py-4">
+                    <CSpinner color="primary" />
+                  </div>
+                ) : payments.length === 0 ? (
+                  <CAlert color="info">Nessun pagamento registrato.</CAlert>
+                ) : (
+                  <CTable data-testid="table" responsive hover>
+                    <CTableHead className="mp-table-head">
+                      <CTableRow className="align-middle">
+                        <CTableHeaderCell className="text-nowrap">ID pagamento</CTableHeaderCell>
+                        <CTableHeaderCell>Data</CTableHeaderCell>
+                        <CTableHeaderCell>Metodo</CTableHeaderCell>
+                        <CTableHeaderCell>Modalità SdI</CTableHeaderCell>
+                        <CTableHeaderCell className="text-end">Importo</CTableHeaderCell>
+                        <CTableHeaderCell>Note</CTableHeaderCell>
+                        <CTableHeaderCell className="text-center text-nowrap">Azioni</CTableHeaderCell>
+                      </CTableRow>
+                    </CTableHead>
+                    <CTableBody>
+                      {payments.map((payment) => (
+                        <CTableRow key={payment.id_pagamento}>
+                          <CTableDataCell className="text-nowrap">
+                            {payment.id_pagamento ? (
+                              <CButton
+                                color="link"
+                                size="sm"
+                                className="p-0"
+                                onClick={() => navigate(`/pagamenti/dettaglio?id=${payment.id_pagamento}`)}
+                              >
+                                #{payment.id_pagamento}
+                              </CButton>
+                            ) : (
+                              <span className="text-body-secondary">-</span>
+                            )}
+                          </CTableDataCell>
+                          <CTableDataCell>{formatDate(payment.data_pagamento)}</CTableDataCell>
+                          <CTableDataCell>
+                            {payment.metodo_label ? (
+                              <>
+                                <div className="fw-semibold">{payment.metodo_label}</div>
+                                {payment.metodo_code && (
+                                  <small className="text-body-secondary">{payment.metodo_code}</small>
+                                )}
+                              </>
+                            ) : (
+                              <span className="text-body-secondary">-</span>
+                            )}
+                          </CTableDataCell>
+                          <CTableDataCell>
+                            {payment.mp_code ? (
+                              <>
+                                <div className="fw-semibold">{payment.mp_code}</div>
+                                {payment.mp_label && (
+                                  <small className="text-body-secondary">{payment.mp_label}</small>
+                                )}
+                              </>
+                            ) : (
+                              <span className="text-body-secondary">-</span>
+                            )}
+                          </CTableDataCell>
+                          <CTableDataCell className="text-end">
+                            {formatCurrency(payment.importo)}
+                          </CTableDataCell>
+                          <CTableDataCell className="text-break">
+                            {payment.note ? payment.note : <span className="text-body-secondary">-</span>}
+                          </CTableDataCell>
+                          <CTableDataCell className="text-center text-nowrap">
                             <CButton
                               color="link"
                               size="sm"
-                              className="p-0"
-                              onClick={() => navigate(`/pagamenti/dettaglio?id=${payment.id_pagamento}`)}
+                              className="p-0 me-2"
+                              onClick={() => openPaymentModal(payment)}
+                              disabled={formDisabled}
                             >
-                              #{payment.id_pagamento}
+                              <CIcon icon={cilPencil} />
                             </CButton>
-                          ) : (
-                            <span className="text-body-secondary">-</span>
-                          )}
-                        </CTableDataCell>
-                        <CTableDataCell>{formatDate(payment.data_pagamento)}</CTableDataCell>
-                        <CTableDataCell>
-                          {payment.metodo_label ? (
-                            <>
-                              <div className="fw-semibold">{payment.metodo_label}</div>
-                              {payment.metodo_code && (
-                                <small className="text-body-secondary">{payment.metodo_code}</small>
-                              )}
-                            </>
-                          ) : (
-                            <span className="text-body-secondary">-</span>
-                          )}
-                        </CTableDataCell>
-                        <CTableDataCell>
-                          {payment.mp_code ? (
-                            <>
-                              <div className="fw-semibold">{payment.mp_code}</div>
-                              {payment.mp_label && (
-                                <small className="text-body-secondary">{payment.mp_label}</small>
-                              )}
-                            </>
-                          ) : (
-                            <span className="text-body-secondary">-</span>
-                          )}
-                        </CTableDataCell>
-                        <CTableDataCell className="text-end">
-                          {formatCurrency(payment.importo)}
-                        </CTableDataCell>
-                        <CTableDataCell className="text-break">
-                          {payment.note ? payment.note : <span className="text-body-secondary">-</span>}
-                        </CTableDataCell>
-                        <CTableDataCell className="text-center text-nowrap">
-                          <CButton
-                            color="link"
-                            size="sm"
-                            className="p-0 me-2"
-                            onClick={() => openPaymentModal(payment)}
-                            disabled={formDisabled}
-                          >
-                            <CIcon icon={cilPencil} />
-                          </CButton>
-                          <CButton
-                            color="link"
-                            size="sm"
-                            className="text-danger p-0"
-                            onClick={() => {
-                              setPaymentDeleteError(null)
-                              setPaymentDeleteTarget(payment)
-                            }}
-                            disabled={formDisabled}
-                          >
-                            <CIcon icon={cilTrash} />
-                          </CButton>
-                        </CTableDataCell>
-                      </CTableRow>
-                    ))}
-                  </CTableBody>
-                </CTable>
-              )}
-            </section>
+                            <CButton
+                              color="link"
+                              size="sm"
+                              className="text-danger p-0"
+                              onClick={() => {
+                                setPaymentDeleteError(null)
+                                setPaymentDeleteTarget(payment)
+                              }}
+                              disabled={formDisabled}
+                            >
+                              <CIcon icon={cilTrash} />
+                            </CButton>
+                          </CTableDataCell>
+                        </CTableRow>
+                      ))}
+                    </CTableBody>
+                  </CTable>
+                )}
+              </section>
+            )}
             {configError && (
               <CAlert color="warning" className="mb-4">
                 {configError.message || 'Impossibile caricare le configurazioni fattura.'}
@@ -2875,134 +2895,149 @@ const FattureDetail = () => {
               </CModalFooter>
             </CModal>
 
-            <CModal visible={paymentModalOpen} onClose={closePaymentModal} backdrop="static">
-              <CForm onSubmit={handlePaymentSubmit}>
-                <CModalHeader>
-                  <CModalTitle>
-                    {paymentForm.id_pagamento ? 'Modifica pagamento' : 'Nuovo pagamento'}
-                  </CModalTitle>
-                </CModalHeader>
-                <CModalBody>
-                  {paymentSaveError && (
-                    <CAlert color="danger" className="mb-3">
-                      {paymentSaveError.message || 'Errore durante il salvataggio del pagamento.'}
-                    </CAlert>
-                  )}
-                  <CRow className="g-3">
-                    <CCol md={6}>
-                      <CFormLabel>Data pagamento</CFormLabel>
-                      <CFormInput
-                        type="date"
-                        value={paymentForm.data_pagamento}
-                        onChange={handlePaymentFieldChange('data_pagamento')}
-                        required
+            {showPayments && (
+              <>
+                <CModal visible={paymentModalOpen} onClose={closePaymentModal} backdrop="static">
+                  <CForm onSubmit={handlePaymentSubmit}>
+                    <CModalHeader>
+                      <CModalTitle>
+                        {paymentForm.id_pagamento ? 'Modifica pagamento' : 'Nuovo pagamento'}
+                      </CModalTitle>
+                    </CModalHeader>
+                    <CModalBody>
+                      {paymentSaveError && (
+                        <CAlert color="danger" className="mb-3">
+                          {paymentSaveError.message || 'Errore durante il salvataggio del pagamento.'}
+                        </CAlert>
+                      )}
+                      <CRow className="g-3">
+                        <CCol md={6}>
+                          <CFormLabel>Data pagamento</CFormLabel>
+                          <CFormInput
+                            type="date"
+                            value={paymentForm.data_pagamento}
+                            onChange={handlePaymentFieldChange('data_pagamento')}
+                            required
+                            disabled={paymentSaving}
+                          />
+                        </CCol>
+                        <CCol md={6}>
+                          <CFormLabel>Importo</CFormLabel>
+                          <CFormInput
+                            type="number"
+                            min="0.01"
+                            step="0.01"
+                            value={paymentForm.importo}
+                            onChange={handlePaymentFieldChange('importo')}
+                            required
+                            disabled={paymentSaving}
+                          />
+                        </CCol>
+                        <CCol md={6}>
+                          <CFormLabel>Metodo (interno)</CFormLabel>
+                          <CFormSelect
+                            value={paymentForm.id_metodo}
+                            onChange={handlePaymentFieldChange('id_metodo')}
+                            disabled={paymentSaving || metodiPagamentoOptions.length === 0}
+                          >
+                            <option value="">Non specificato</option>
+                            {metodiPagamentoOptions.map((option) => (
+                              <option key={option.id_metodo} value={option.id_metodo}>
+                                {option.code ? `${option.code} - ${option.label}` : option.label}
+                              </option>
+                            ))}
+                          </CFormSelect>
+                        </CCol>
+                        <CCol md={6}>
+                          <CFormLabel>Modalità SdI</CFormLabel>
+                          <CFormSelect
+                            value={paymentForm.id_mp}
+                            onChange={handlePaymentFieldChange('id_mp')}
+                            required
+                            disabled={paymentSaving || modalitaPagamentoOptions.length === 0}
+                          >
+                            <option value="">Seleziona modalità SdI</option>
+                            {modalitaPagamentoOptions.map((option) => (
+                              <option key={option.id_modalita} value={option.id_modalita}>
+                                {option.code ? `${option.code} - ${option.label}` : option.label}
+                              </option>
+                            ))}
+                          </CFormSelect>
+                        </CCol>
+                        <CCol xs={12}>
+                          <CFormLabel>Note</CFormLabel>
+                          <CFormTextarea
+                            rows={3}
+                            value={paymentForm.note}
+                            onChange={handlePaymentFieldChange('note')}
+                            disabled={paymentSaving}
+                          />
+                        </CCol>
+                      </CRow>
+                    </CModalBody>
+                    <CModalFooter>
+                      <CButton
+                        color="secondary"
+                        variant="ghost"
+                        type="button"
+                        onClick={closePaymentModal}
                         disabled={paymentSaving}
-                      />
-                    </CCol>
-                    <CCol md={6}>
-                      <CFormLabel>Importo</CFormLabel>
-                      <CFormInput
-                        type="number"
-                        min="0.01"
-                        step="0.01"
-                        value={paymentForm.importo}
-                        onChange={handlePaymentFieldChange('importo')}
-                        required
-                        disabled={paymentSaving}
-                      />
-                    </CCol>
-                    <CCol md={6}>
-                      <CFormLabel>Metodo (interno)</CFormLabel>
-                      <CFormSelect
-                        value={paymentForm.id_metodo}
-                        onChange={handlePaymentFieldChange('id_metodo')}
-                        disabled={paymentSaving || metodiPagamentoOptions.length === 0}
                       >
-                        <option value="">Non specificato</option>
-                        {metodiPagamentoOptions.map((option) => (
-                          <option key={option.id_metodo} value={option.id_metodo}>
-                            {option.code ? `${option.code} - ${option.label}` : option.label}
-                          </option>
-                        ))}
-                      </CFormSelect>
-                    </CCol>
-                    <CCol md={6}>
-                      <CFormLabel>Modalità SdI</CFormLabel>
-                      <CFormSelect
-                        value={paymentForm.id_mp}
-                        onChange={handlePaymentFieldChange('id_mp')}
-                        required
-                        disabled={paymentSaving || modalitaPagamentoOptions.length === 0}
-                      >
-                        <option value="">Seleziona modalità SdI</option>
-                        {modalitaPagamentoOptions.map((option) => (
-                          <option key={option.id_modalita} value={option.id_modalita}>
-                            {option.code ? `${option.code} - ${option.label}` : option.label}
-                          </option>
-                        ))}
-                      </CFormSelect>
-                    </CCol>
-                    <CCol xs={12}>
-                      <CFormLabel>Note</CFormLabel>
-                      <CFormTextarea
-                        rows={3}
-                        value={paymentForm.note}
-                        onChange={handlePaymentFieldChange('note')}
-                        disabled={paymentSaving}
-                      />
-                    </CCol>
-                  </CRow>
-                </CModalBody>
-                <CModalFooter>
-                  <CButton color="secondary" variant="ghost" type="button" onClick={closePaymentModal} disabled={paymentSaving}>
-                    Annulla
-                  </CButton>
-                  <CButton color="primary" type="submit" disabled={paymentSaving}>
-                    {paymentSaving ? (
-                      <>
-                        <CSpinner size="sm" className="me-2" />
-                        Salvataggio...
-                      </>
-                    ) : (
-                      'Salva pagamento'
-                    )}
-                  </CButton>
-                </CModalFooter>
-              </CForm>
-            </CModal>
+                        Annulla
+                      </CButton>
+                      <CButton color="primary" type="submit" disabled={paymentSaving}>
+                        {paymentSaving ? (
+                          <>
+                            <CSpinner size="sm" className="me-2" />
+                            Salvataggio...
+                          </>
+                        ) : (
+                          'Salva pagamento'
+                        )}
+                      </CButton>
+                    </CModalFooter>
+                  </CForm>
+                </CModal>
 
-            <CModal visible={Boolean(paymentDeleteTarget)} onClose={closeDeletePaymentModal}>
-              <CModalHeader>
-                <CModalTitle>Elimina pagamento</CModalTitle>
-              </CModalHeader>
-              <CModalBody>
-                {paymentDeleteError && (
-                  <CAlert color="danger" className="mb-3">
-                    {paymentDeleteError.message || 'Impossibile eliminare il pagamento.'}
-                  </CAlert>
-                )}
-                <p className="mb-0">
-                  Confermi l'eliminazione del pagamento del{' '}
-                  <strong>{formatDate(paymentDeleteTarget?.data_pagamento)}</strong> da{' '}
-                  <strong>{formatCurrency(paymentDeleteTarget?.importo)}</strong>?
-                </p>
-              </CModalBody>
-              <CModalFooter>
-                <CButton color="secondary" variant="ghost" onClick={closeDeletePaymentModal} disabled={paymentDeleting}>
-                  Annulla
-                </CButton>
-                <CButton color="danger" onClick={handleDeletePayment} disabled={paymentDeleting}>
-                  {paymentDeleting ? (
-                    <>
-                      <CSpinner size="sm" className="me-2" />
-                      Eliminazione...
-                    </>
-                  ) : (
-                    'Elimina'
-                  )}
-                </CButton>
-              </CModalFooter>
-            </CModal>
+                <CModal visible={Boolean(paymentDeleteTarget)} onClose={closeDeletePaymentModal}>
+                  <CModalHeader>
+                    <CModalTitle>Elimina pagamento</CModalTitle>
+                  </CModalHeader>
+                  <CModalBody>
+                    {paymentDeleteError && (
+                      <CAlert color="danger" className="mb-3">
+                        {paymentDeleteError.message || 'Impossibile eliminare il pagamento.'}
+                      </CAlert>
+                    )}
+                    <p className="mb-0">
+                      Confermi l'eliminazione del pagamento del{' '}
+                      <strong>{formatDate(paymentDeleteTarget?.data_pagamento)}</strong> da{' '}
+                      <strong>{formatCurrency(paymentDeleteTarget?.importo)}</strong>?
+                    </p>
+                  </CModalBody>
+                  <CModalFooter>
+                    <CButton
+                      color="secondary"
+                      variant="ghost"
+                      onClick={closeDeletePaymentModal}
+                      disabled={paymentDeleting}
+                    >
+                      Annulla
+                    </CButton>
+                    <CButton color="danger" onClick={handleDeletePayment} disabled={paymentDeleting}>
+                      {paymentDeleting ? (
+                        <>
+                          <CSpinner size="sm" className="me-2" />
+                          Eliminazione...
+                        </>
+                      ) : (
+                        'Elimina'
+                      )}
+                    </CButton>
+                  </CModalFooter>
+                </CModal>
+              </>
+            )}
 
             {rows.length === 0 ? (
               <CAlert color="info">Nessuna riga presente nella fattura.</CAlert>

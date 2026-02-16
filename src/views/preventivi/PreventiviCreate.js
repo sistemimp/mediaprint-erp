@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import {
   CAlert,
   CBadge,
@@ -53,6 +53,13 @@ const formatCurrency = (value) => {
 const PreventiviCreate = () => {
   const { token, logout } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
+  const isAcquisto = location.pathname.startsWith('/acquisti')
+  const clienteLabel = isAcquisto ? 'Fornitore' : 'Cliente'
+  const clienteSearchLabel = isAcquisto
+    ? 'Cerca fornitore per ragione sociale, codice o P.IVA'
+    : 'Cerca cliente per ragione sociale, codice o P.IVA'
+  const basePath = isAcquisto ? '/acquisti/preventivi' : '/preventivi'
 
   // Sezione: Dati generali
   const [clienteSearch, setClienteSearch] = useState('')
@@ -122,6 +129,7 @@ const PreventiviCreate = () => {
           // sempre tutte (ricerca applicata in locale)
           sortBy: 'ragione_sociale',
           sortDirection: 'asc',
+          tipologie: isAcquisto ? [2, 3] : undefined,
         })
 
         let allItems = Array.isArray(first.items) ? [...first.items] : []
@@ -138,6 +146,7 @@ const PreventiviCreate = () => {
               pageSize: perPage,
               sortBy: 'ragione_sociale',
               sortDirection: 'asc',
+              tipologie: isAcquisto ? [2, 3] : undefined,
             })
             if (Array.isArray(pageItems) && pageItems.length > 0) {
               allItems = allItems.concat(pageItems)
@@ -160,6 +169,7 @@ const PreventiviCreate = () => {
               pageSize: perPage,
               sortBy: 'ragione_sociale',
               sortDirection: 'asc',
+              tipologie: isAcquisto ? [2, 3] : undefined,
             })
             if (!Array.isArray(pageItems) || pageItems.length === 0) break
             allItems = allItems.concat(pageItems)
@@ -198,7 +208,7 @@ const PreventiviCreate = () => {
     }
     load()
     return () => controller.abort()
-  }, [token])
+  }, [token, isAcquisto])
 
   useEffect(() => {
     let isMounted = true
@@ -656,12 +666,13 @@ const PreventiviCreate = () => {
         token,
         ...payload,
         send: false,
+        is_acquisto: isAcquisto,
         signal: controller.signal,
       })
       const newPreventivoId = getPreventivoIdFromResponse(result)
       if (newPreventivoId) {
         setIdPreventivo(newPreventivoId)
-        navigate(`/preventivi/dettagli?id=${newPreventivoId}`, {
+        navigate(`${basePath}/dettagli?id=${newPreventivoId}`, {
           state: { prefill: buildNavigationPrefill(), fromCreate: true },
         })
         return
@@ -681,7 +692,7 @@ const PreventiviCreate = () => {
   return (
     <CCard>
       <CCardHeader>
-        <h5 className="mb-0">Preventivi - Crea nuovo</h5>
+        <h5 className="mb-0">{isAcquisto ? 'Preventivi acquisto' : 'Preventivi'} - Crea nuovo</h5>
       </CCardHeader>
       <CCardBody>
         <CForm onSubmit={handleSalvaBozza}>
@@ -701,7 +712,7 @@ const PreventiviCreate = () => {
             <h6 className="mb-3 text-body-secondary">Dati generali</h6>
             {loadError && (
               <CAlert color="danger">
-                {loadError.message || 'Errore nel caricamento dei clienti.'}
+                {loadError.message || `Errore nel caricamento ${isAcquisto ? 'dei fornitori' : 'dei clienti'}.`}
               </CAlert>
             )}
 
@@ -1072,9 +1083,9 @@ const PreventiviCreate = () => {
             </CModal>
             <CRow className="g-3">
               <CCol md={6}>
-                <CFormLabel>Cliente</CFormLabel>
+                <CFormLabel>{clienteLabel}</CFormLabel>
                 <CAutocomplete
-                  placeholder="Cerca cliente per ragione sociale, codice o P.IVA"
+                  placeholder={clienteSearchLabel}
                   options={clientiAutocompleteOptions}
                   value={selectedClienteValue}
                   search="external"
@@ -1122,7 +1133,7 @@ const PreventiviCreate = () => {
                       </div>
                     )
                   }}
-                  searchNoResultsLabel="Nessun cliente trovato"
+                  searchNoResultsLabel={`Nessun ${clienteLabel.toLowerCase()} trovato`}
                 />
               </CCol>
               <CCol md={3}>
@@ -1140,7 +1151,7 @@ const PreventiviCreate = () => {
                 </div>
               </CCol>
               <CCol md={3}>
-                <CFormLabel>Riferimento cliente</CFormLabel>
+                <CFormLabel>Riferimento {clienteLabel.toLowerCase()}</CFormLabel>
                 <CFormInput value={rifCliente} onChange={(e) => setRifCliente(e.target.value)} />
               </CCol>
               <CCol md={6}>
@@ -1651,7 +1662,7 @@ const PreventiviCreate = () => {
             <h6 className="mb-3 text-body-secondary">Note</h6>
             <CFormTextarea
               rows={5}
-              placeholder="Note interne o per il cliente"
+              placeholder={`Note interne o per il ${clienteLabel.toLowerCase()}`}
               value={note}
               onChange={(e) => setNote(e.target.value)}
             />

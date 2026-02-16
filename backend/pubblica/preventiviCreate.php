@@ -46,18 +46,20 @@ $auth = AuthGuard::requireAuth();
         $idPreventivo = (int) $result['id_preventivo'];
         $numero = isset($result['numero_documento']) ? (int) $result['numero_documento'] : null;
         $anno = isset($result['anno_preventivo']) ? (int) $result['anno_preventivo'] : null;
-        $label = $numero ? ('Preventivo ' . $numero . ($anno ? '/' . $anno : '')) : ('Preventivo #' . $idPreventivo);
+        $isAcquisto = !empty($payload['is_acquisto']);
+        $labelBase = $numero ? ('Preventivo ' . $numero . ($anno ? '/' . $anno : '')) : ('Preventivo #' . $idPreventivo);
+        $label = $isAcquisto ? ('Preventivo acquisto ' . $labelBase) : $labelBase;
         $payloadData = [
             'entity' => 'preventivo',
             'action' => 'created',
             'id_preventivo' => $idPreventivo,
             'numero_documento' => $numero,
             'anno_preventivo' => $anno,
-            'route' => '/preventivi/dettagli?id=' . $idPreventivo,
+            'route' => ($isAcquisto ? '/acquisti/preventivi/dettagli?id=' : '/preventivi/dettagli?id=') . $idPreventivo,
         ];
         $notifications = new NotificationsService(new LavorazioniRepository($connection));
         $notifications->notifyAllOperators(
-            'Nuovo preventivo',
+            $isAcquisto ? 'Nuovo preventivo acquisto' : 'Nuovo preventivo',
             $label . ' creato.',
             $payloadData,
             AuthGuard::getAccountId($auth),

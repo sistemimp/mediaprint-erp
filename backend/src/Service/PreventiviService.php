@@ -204,6 +204,9 @@ final class PreventiviService
         if ($row === null) {
             throw new \RuntimeException('Preventivo non trovato.', 404);
         }
+        if (array_key_exists('is_acquisto', $input) && (int) ($row['is_acquisto'] ?? 0) !== (int) $input['is_acquisto']) {
+            throw new \RuntimeException('Preventivo non trovato.', 404);
+        }
         if (isset($input['allowed_anagrafiche']) && is_array($input['allowed_anagrafiche'])) {
             $allowed = array_map('intval', $input['allowed_anagrafiche']);
             if (!in_array((int) $row['id_anagrafica'], $allowed, true)) {
@@ -299,7 +302,8 @@ final class PreventiviService
             ? $input['allowed_anagrafiche']
             : null;
         $excludeDraft = !empty($input['exclude_draft']);
-        $rows = $this->repository->listLatest($limit, $allowed, $excludeDraft);
+        $isAcquisto = array_key_exists('is_acquisto', $input) ? (int) $input['is_acquisto'] : 0;
+        $rows = $this->repository->listLatest($limit, $allowed, $excludeDraft, $isAcquisto);
         foreach ($rows as &$row) {
             $statusCode = strtolower((string) ($row['stato_code'] ?? ''));
             $warning = false;
@@ -351,6 +355,9 @@ final class PreventiviService
         }
         if (!empty($input['exclude_draft'])) {
             $filters['exclude_draft'] = true;
+        }
+        if (array_key_exists('is_acquisto', $input)) {
+            $filters['is_acquisto'] = (int) $input['is_acquisto'];
         }
 
         $result = $this->repository->searchArchived($filters);
@@ -444,6 +451,7 @@ final class PreventiviService
     public function create(array $input): array
     {
         $idPrev = isset($input['id_preventivo']) ? (int) $input['id_preventivo'] : 0;
+        $isAcquisto = !empty($input['is_acquisto']) ? 1 : 0;
         $idAnagrafica = isset($input['id_anagrafica']) ? (int) $input['id_anagrafica'] : 0;
         if ($idPrev <= 0 && $idAnagrafica <= 0) {
             throw new \RuntimeException('Cliente (anagrafica) mancante o non valido.', 422);
@@ -682,6 +690,7 @@ final class PreventiviService
             'totale_sconto' => $totSconto,
             'totale_iva' => $totIva,
             'totale' => $totale,
+            'is_acquisto' => $isAcquisto,
         ]);
 
         // Imposta selezioni multi-oggetto e aggiorna testo
@@ -1479,6 +1488,7 @@ final class PreventiviService
             'totale_sconto' => isset($detail['totale_sconto']) ? (float) $detail['totale_sconto'] : 0.0,
             'totale_iva' => isset($detail['totale_iva']) ? (float) $detail['totale_iva'] : 0.0,
             'totale' => isset($detail['totale']) ? (float) $detail['totale'] : 0.0,
+            'is_acquisto' => !empty($detail['is_acquisto']) ? 1 : 0,
         ];
 
         $fattura = $fattureRepository->createFromPreventivo($payload, $lines);
@@ -1523,6 +1533,7 @@ final class PreventiviService
             'totale_sconto' => isset($arch['totale_sconto']) ? (float) $arch['totale_sconto'] : 0.0,
             'totale_iva' => isset($arch['totale_iva']) ? (float) $arch['totale_iva'] : 0.0,
             'totale' => isset($arch['totale']) ? (float) $arch['totale'] : 0.0,
+            'is_acquisto' => !empty($arch['is_acquisto']) ? 1 : 0,
         ]);
 
         // Niente testo custom da archivio

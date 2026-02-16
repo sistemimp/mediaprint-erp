@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import {
   CAlert,
   CCard,
@@ -60,6 +60,10 @@ const PERIOD_OPTIONS = [
 
 const FattureDashboard = () => {
   const { token } = useAuth()
+  const location = useLocation()
+  const isAcquisto = location.pathname.includes('/acquisti/')
+  const basePath = isAcquisto ? '/acquisti/fatture' : '/fatture'
+  const counterpartyLabel = isAcquisto ? 'Fornitore' : 'Cliente'
   const [payload, setPayload] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -73,7 +77,12 @@ const FattureDashboard = () => {
       setLoading(true)
       setError(null)
       try {
-        const data = await fetchFattureDashboard({ token, period, signal: controller.signal })
+        const data = await fetchFattureDashboard({
+          token,
+          period,
+          signal: controller.signal,
+          is_acquisto: isAcquisto ? 1 : 0,
+        })
         if (!isMounted) return
         setPayload(data)
       } catch (err) {
@@ -90,7 +99,7 @@ const FattureDashboard = () => {
       isMounted = false
       controller.abort()
     }
-  }, [token, period])
+  }, [token, period, isAcquisto])
 
   const kpi = payload?.kpi ?? {}
   const latest = payload?.latest ?? []
@@ -115,8 +124,12 @@ const FattureDashboard = () => {
     <>
       <CRow className="mb-4 align-items-end">
         <CCol>
-          <h2 className="h4 mb-1">Dashboard fatture</h2>
-          <p className="text-body-secondary mb-0">Fatturato, insoluti e clienti principali.</p>
+          <h2 className="h4 mb-1">
+            {isAcquisto ? 'Dashboard fatture acquisto' : 'Dashboard fatture'}
+          </h2>
+          <p className="text-body-secondary mb-0">
+            {isAcquisto ? 'Totali e fornitori principali.' : 'Fatturato, insoluti e clienti principali.'}
+          </p>
         </CCol>
         <CCol xs="auto">
           <CFormSelect
@@ -167,7 +180,7 @@ const FattureDashboard = () => {
                       <CTableHead>
                         <CTableRow>
                           <CTableHeaderCell>Fattura</CTableHeaderCell>
-                          <CTableHeaderCell>Cliente</CTableHeaderCell>
+                          <CTableHeaderCell>{counterpartyLabel}</CTableHeaderCell>
                           <CTableHeaderCell className="text-end">Totale</CTableHeaderCell>
                           <CTableHeaderCell className="text-end">Saldo</CTableHeaderCell>
                         </CTableRow>
@@ -180,7 +193,7 @@ const FattureDashboard = () => {
                               <CTableDataCell>
                                 {row.id_fattura ? (
                                   <Link
-                                    to={`/fatture/dettagli?id=${row.id_fattura}`}
+                                    to={`${basePath}/dettagli?id=${row.id_fattura}`}
                                     className="text-decoration-none"
                                   >
                                     {numero}
@@ -204,8 +217,12 @@ const FattureDashboard = () => {
           </CCard>
         </CCol>
         <CCol lg={5}>
-          <CCard className="h-100">
-            <CCardHeader>Top clienti per fatturato ({periodLabel.toLowerCase()})</CCardHeader>
+            <CCard className="h-100">
+            <CCardHeader>
+              {isAcquisto
+                ? `Top fornitori per importo (${periodLabel.toLowerCase()})`
+                : `Top clienti per fatturato (${periodLabel.toLowerCase()})`}
+            </CCardHeader>
             <CCardBody>
               {loading
                 ? renderTablePlaceholder('Caricamento...')
@@ -215,8 +232,10 @@ const FattureDashboard = () => {
                     <CTable data-testid="table" small hover responsive className="mb-0">
                       <CTableHead>
                         <CTableRow>
-                          <CTableHeaderCell>Cliente</CTableHeaderCell>
-                          <CTableHeaderCell className="text-end">Fatturato</CTableHeaderCell>
+                          <CTableHeaderCell>{counterpartyLabel}</CTableHeaderCell>
+                          <CTableHeaderCell className="text-end">
+                            {isAcquisto ? 'Importo' : 'Fatturato'}
+                          </CTableHeaderCell>
                         </CTableRow>
                       </CTableHead>
                       <CTableBody>

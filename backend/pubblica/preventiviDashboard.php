@@ -42,6 +42,7 @@ try {
     $auth = AuthGuard::requireAuth();
     AuthGuard::requirePermissions($auth, ['prev.read']);
     $allowed = null;
+    $isAcquisto = isset($_GET['is_acquisto']) ? (int) $_GET['is_acquisto'] : 0;
     $excludeDraftLatest = false;
     if (AuthGuard::getAccountType($auth) === 'cliente') {
         $accountsRepo = new AccountsRepository(Database::getConnection());
@@ -84,11 +85,13 @@ try {
          FROM tb_preventivi p
          LEFT JOIN cfg_stati_preventivo sp ON sp.id_stato = p.id_stato_prev
          WHERE COALESCE(p.data_preventivo, p.created_at) >= :start
-           AND COALESCE(p.data_preventivo, p.created_at) < :end'
+           AND COALESCE(p.data_preventivo, p.created_at) < :end
+           AND p.is_acquisto = :is_acquisto'
         . $allowedClause
     );
     $stmt->bindValue(':start', $range['start']->format('Y-m-d H:i:s'));
     $stmt->bindValue(':end', $range['end']->format('Y-m-d H:i:s'));
+    $stmt->bindValue(':is_acquisto', $isAcquisto, PDO::PARAM_INT);
     foreach ($allowedParams as $key => $value) {
         $stmt->bindValue($key, $value, PDO::PARAM_INT);
     }
@@ -99,7 +102,7 @@ try {
         'accepted' => (int) ($row['accepted'] ?? 0),
     ];
 
-    $series = $repo->fetchConversionSeriesLast6($allowed);
+    $series = $repo->fetchConversionSeriesLast6($allowed, $isAcquisto);
 
     $statusStmt = $pdo->prepare(
         'SELECT
@@ -112,7 +115,8 @@ try {
          LEFT JOIN tb_preventivi p
            ON p.id_stato_prev = s.id_stato
           AND COALESCE(p.data_preventivo, p.created_at) >= :start
-          AND COALESCE(p.data_preventivo, p.created_at) < :end'
+          AND COALESCE(p.data_preventivo, p.created_at) < :end
+          AND p.is_acquisto = :is_acquisto'
         . $allowedClause . '
          WHERE s.attivo = 1
          GROUP BY s.id_stato, s.code, s.label, s.ordering
@@ -120,6 +124,7 @@ try {
     );
     $statusStmt->bindValue(':start', $range['start']->format('Y-m-d H:i:s'));
     $statusStmt->bindValue(':end', $range['end']->format('Y-m-d H:i:s'));
+    $statusStmt->bindValue(':is_acquisto', $isAcquisto, PDO::PARAM_INT);
     foreach ($allowedParams as $key => $value) {
         $statusStmt->bindValue($key, $value, PDO::PARAM_INT);
     }
@@ -145,7 +150,8 @@ try {
          FROM tb_preventivi p
          LEFT JOIN tb_anagrafiche a ON a.id_anagrafica = p.id_anagrafica
          WHERE COALESCE(p.data_preventivo, p.created_at) >= :start
-           AND COALESCE(p.data_preventivo, p.created_at) < :end'
+           AND COALESCE(p.data_preventivo, p.created_at) < :end
+           AND p.is_acquisto = :is_acquisto'
         . $allowedClause . '
          GROUP BY a.id_anagrafica, a.ragione_sociale
          ORDER BY totale DESC
@@ -153,6 +159,7 @@ try {
     );
     $topStmt->bindValue(':start', $range['start']->format('Y-m-d H:i:s'));
     $topStmt->bindValue(':end', $range['end']->format('Y-m-d H:i:s'));
+    $topStmt->bindValue(':is_acquisto', $isAcquisto, PDO::PARAM_INT);
     foreach ($allowedParams as $key => $value) {
         $topStmt->bindValue($key, $value, PDO::PARAM_INT);
     }
@@ -168,7 +175,7 @@ try {
         ];
     }
 
-    $latest = $repo->listLatest(10, $allowed, $excludeDraftLatest);
+    $latest = $repo->listLatest(10, $allowed, $excludeDraftLatest, $isAcquisto);
 
     HttpResponse::json([
         'ok' => true,

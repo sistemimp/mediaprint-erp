@@ -44,6 +44,7 @@ try {
         $uploads[] = $files;
     }
 
+    $isAcquisto = isset($_GET['is_acquisto']) ? (int) $_GET['is_acquisto'] : (isset($_POST['is_acquisto']) ? (int) $_POST['is_acquisto'] : 0);
     $importer = new FatturaXmlImporter(Database::getConnection());
     $results = [];
     foreach ($uploads as $upload) {
@@ -58,7 +59,7 @@ try {
         }
 
         try {
-            $payload = $importer->import($upload);
+            $payload = $importer->import($upload, $isAcquisto === 1);
             $results[] = [
                 'file' => $label,
                 'ok' => true,

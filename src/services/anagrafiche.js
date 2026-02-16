@@ -34,6 +34,7 @@ export const fetchAnagrafiche = async ({
   pageSize,
   sortBy,
   sortDirection,
+  tipologie,
 } = {}) => {
   const payload = {}
 
@@ -55,6 +56,9 @@ export const fetchAnagrafiche = async ({
 
   if (sortDirection) {
     payload.sort_direction = sortDirection
+  }
+  if (Array.isArray(tipologie) && tipologie.length > 0) {
+    payload.tipologie = tipologie
   }
 
   const response = await apiFetch('/anagraficheList.php', {

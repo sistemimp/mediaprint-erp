@@ -43,16 +43,17 @@ $auth = AuthGuard::requireAuth();
 
     if (!empty($result['fattura']['id_fattura'])) {
         $idFattura = (int) $result['fattura']['id_fattura'];
+        $isAcquisto = !empty($result['fattura']['is_acquisto']);
         $payloadData = [
             'entity' => 'fattura',
             'action' => 'created',
             'id_fattura' => $idFattura,
-            'route' => '/fatture/dettagli?id=' . $idFattura,
+            'route' => ($isAcquisto ? '/acquisti/fatture/dettagli?id=' : '/fatture/dettagli?id=') . $idFattura,
         ];
         $notifications = new NotificationsService(new LavorazioniRepository($pdo));
         $notifications->notifyAllOperators(
-            'Nuova fattura',
-            'Fattura #' . $idFattura . ' generata.',
+            $isAcquisto ? 'Nuova fattura acquisto' : 'Nuova fattura',
+            ($isAcquisto ? 'Fattura di acquisto #' : 'Fattura #') . $idFattura . ' generata.',
             $payloadData,
             AuthGuard::getAccountId($auth),
         );

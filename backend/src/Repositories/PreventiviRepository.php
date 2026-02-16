@@ -488,12 +488,14 @@ final class PreventiviRepository
     /**
      * @return list<array<string, mixed>>
      */
-    public function listLatest(int $limit = 10, ?array $allowedAnagrafiche = null, bool $excludeDraft = false): array
+    public function listLatest(int $limit = 10, ?array $allowedAnagrafiche = null, bool $excludeDraft = false, int $isAcquisto = 0): array
     {
         $sql = <<<'SQL'
             SELECT
                 p.id_preventivo,
                 p.id_anagrafica,
+                p.is_acquisto,
+                p.is_acquisto,
                 p.anno_preventivo,
                 p.numero_documento,
                 p.data_preventivo,
@@ -535,12 +537,14 @@ final class PreventiviRepository
         if ($excludeDraft) {
             $whereParts[] = "COALESCE(sp.code, 'bozza') <> 'bozza'";
         }
+        $whereParts[] = 'p.is_acquisto = :is_acquisto';
         $where = $whereParts ? ('WHERE ' . implode(' AND ', $whereParts)) : '';
 
         $sql = str_replace('/*FILTERS*/', $where, $sql);
         $sql = str_replace('LIMIT :limit', 'LIMIT ' . (int) $effectiveLimit, $sql);
 
         $statement = $this->pdo->prepare($sql);
+        $statement->bindValue(':is_acquisto', $isAcquisto, PDO::PARAM_INT);
         if ($allowed !== null) {
             foreach ($allowed as $index => $id) {
                 $statement->bindValue($index + 1, $id, PDO::PARAM_INT);
@@ -820,7 +824,7 @@ final class PreventiviRepository
     /**
      * @return array{total:int, accepted:int}
      */
-    public function fetchConversionByRange(string $startDate, string $endDate, ?array $allowedAnagrafiche = null): array
+    public function fetchConversionByRange(string $startDate, string $endDate, ?array $allowedAnagrafiche = null, int $isAcquisto = 0): array
     {
         $allowed = null;
         if (is_array($allowedAnagrafiche)) {
@@ -838,6 +842,7 @@ final class PreventiviRepository
             LEFT JOIN cfg_stati_preventivo sp ON sp.id_stato = p.id_stato_prev
             WHERE COALESCE(p.data_preventivo, p.created_at) >= :start
               AND COALESCE(p.data_preventivo, p.created_at) < :end
+              AND p.is_acquisto = :is_acquisto
         SQL;
 
         if ($allowed !== null) {
@@ -848,6 +853,7 @@ final class PreventiviRepository
         $stmt = $this->pdo->prepare($sql);
         $stmt->bindValue(':start', $startDate);
         $stmt->bindValue(':end', $endDate);
+        $stmt->bindValue(':is_acquisto', $isAcquisto, PDO::PARAM_INT);
         if ($allowed !== null) {
             foreach ($allowed as $index => $id) {
                 $stmt->bindValue($index + 1, $id, PDO::PARAM_INT);
@@ -865,7 +871,7 @@ final class PreventiviRepository
     /**
      * @return list<array{periodo:string, totale:int, confermati:int, tasso:float}>
      */
-    public function fetchConversionSeriesLast6(?array $allowedAnagrafiche = null): array
+    public function fetchConversionSeriesLast6(?array $allowedAnagrafiche = null, int $isAcquisto = 0): array
     {
         $allowed = null;
         if (is_array($allowedAnagrafiche)) {
@@ -891,11 +897,12 @@ final class PreventiviRepository
             LEFT JOIN tb_preventivi p
               ON COALESCE(p.data_preventivo, p.created_at) >= m.ms
               AND COALESCE(p.data_preventivo, p.created_at) < DATE_ADD(m.ms, INTERVAL 1 MONTH)
+              AND p.is_acquisto = :is_acquisto
             LEFT JOIN cfg_stati_preventivo sp ON sp.id_stato = p.id_stato_prev
             GROUP BY m.ms
             ORDER BY m.ms
         SQL;
-        $params = [];
+        $params = [':is_acquisto' => $isAcquisto];
         if ($allowed !== null) {
             $placeholders = [];
             foreach ($allowed as $index => $id) {
@@ -911,17 +918,12 @@ final class PreventiviRepository
             );
         }
 
-        if ($params === []) {
-            $stmt = $this->pdo->query($sql);
-            $rows = $stmt ? ($stmt->fetchAll(PDO::FETCH_ASSOC) ?: []) : [];
-        } else {
-            $stmt = $this->pdo->prepare($sql);
-            foreach ($params as $placeholder => $value) {
-                $stmt->bindValue($placeholder, $value, PDO::PARAM_INT);
-            }
-            $stmt->execute();
-            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        $stmt = $this->pdo->prepare($sql);
+        foreach ($params as $placeholder => $value) {
+            $stmt->bindValue($placeholder, $value, PDO::PARAM_INT);
         }
+        $stmt->execute();
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
         $out = [];
         foreach ($rows as $row) {
@@ -941,7 +943,7 @@ final class PreventiviRepository
     /**
      * @return list<array{id_anagrafica:int|null, ragione_sociale:?string, totale:int, confermati:int, tasso:float}>
      */
-    public function listTopClientsByConversion(string $startDate, string $endDate, int $limit = 5): array
+    public function listTopClientsByConversion(string $startDate, string $endDate, int $limit = 5, int $isAcquisto = 0): array
     {
         $effectiveLimit = max(1, $limit);
         $sql = <<<'SQL'
@@ -959,6 +961,7 @@ final class PreventiviRepository
             LEFT JOIN cfg_stati_preventivo sp ON sp.id_stato = p.id_stato_prev
             WHERE COALESCE(p.data_preventivo, p.created_at) >= :start
               AND COALESCE(p.data_preventivo, p.created_at) < :end
+              AND p.is_acquisto = :is_acquisto
             GROUP BY a.id_anagrafica, a.ragione_sociale
             ORDER BY tasso DESC, totale DESC
             LIMIT :limit
@@ -968,6 +971,7 @@ final class PreventiviRepository
         $stmt = $this->pdo->prepare($sql);
         $stmt->bindValue(':start', $startDate);
         $stmt->bindValue(':end', $endDate);
+        $stmt->bindValue(':is_acquisto', $isAcquisto, PDO::PARAM_INT);
         $stmt->execute();
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
@@ -1172,6 +1176,7 @@ final class PreventiviRepository
             SELECT
                 pa.id_preventivo,
                 pa.id_anagrafica,
+                pa.is_acquisto,
                 pa.anno_preventivo,
                 pa.numero_documento,
                 pa.data_preventivo,
@@ -1205,6 +1210,10 @@ final class PreventiviRepository
 
         if (!empty($filters['exclude_draft'])) {
             $where[] = "COALESCE(pa.stato, 'bozza') <> 'bozza'";
+        }
+        if (array_key_exists('is_acquisto', $filters)) {
+            $where[] = 'pa.is_acquisto = :is_acquisto';
+            $params[':is_acquisto'] = (int) $filters['is_acquisto'];
         }
         if (!empty($filters['search'])) {
             $where[] = '(
@@ -1241,7 +1250,7 @@ final class PreventiviRepository
 
         $stmt = $this->pdo->prepare($sql);
         foreach ($params as $ph => $val) {
-            $stmt->bindValue($ph, $val, PDO::PARAM_STR);
+            $stmt->bindValue($ph, $val, $ph === ':is_acquisto' ? PDO::PARAM_INT : PDO::PARAM_STR);
         }
         if (isset($allowed) && $allowed !== []) {
             $offsetParam = count($params);
@@ -1261,6 +1270,9 @@ final class PreventiviRepository
         $countStmt = $this->pdo->prepare($countSql);
         if (!empty($params[':needle'])) {
             $countStmt->bindValue(':needle', $params[':needle'], PDO::PARAM_STR);
+        }
+        if (array_key_exists(':is_acquisto', $params)) {
+            $countStmt->bindValue(':is_acquisto', $params[':is_acquisto'], PDO::PARAM_INT);
         }
         if (isset($allowed) && $allowed !== []) {
             $offsetParam = !empty($params[':needle']) ? 1 : 0;
@@ -1284,7 +1296,7 @@ final class PreventiviRepository
     public function getArchivedById(int $id): ?array
     {
         $sql = <<<'SQL'
-            SELECT id_preventivo, id_anagrafica, data_preventivo, oggetto, riferimento_cliente, note,
+            SELECT id_preventivo, id_anagrafica, is_acquisto, data_preventivo, oggetto, riferimento_cliente, note,
                    totale_imponibile, totale_sconto, totale_iva, totale
             FROM tb_preventivi_archive
             WHERE id_preventivo = :id
@@ -1298,6 +1310,7 @@ final class PreventiviRepository
         return [
             'id_preventivo' => (int) $row['id_preventivo'],
             'id_anagrafica' => (int) $row['id_anagrafica'],
+            'is_acquisto' => isset($row['is_acquisto']) ? (int) $row['is_acquisto'] : 0,
             'data_preventivo' => $row['data_preventivo'] ?? null,
             'oggetto' => $row['oggetto'] ?? null,
             'riferimento_cliente' => $row['riferimento_cliente'] ?? null,
@@ -1693,20 +1706,22 @@ final class PreventiviRepository
     }
 
     /**
-     * @param array{id_anagrafica:int, data_preventivo?:string|null, note?:string|null, totale_imponibile?:float|int|null, totale_sconto?:float|int|null, totale_iva?:float|int|null, totale?:float|int|null} $data
+     * @param array{id_anagrafica:int, data_preventivo?:string|null, note?:string|null, totale_imponibile?:float|int|null, totale_sconto?:float|int|null, totale_iva?:float|int|null, totale?:float|int|null, is_acquisto?:int|bool} $data
      * @return array{id_preventivo:int}
      */
     public function insertDraft(array $data): array
     {
         $this->pdo->beginTransaction();
         try {
+            $isAcquisto = !empty($data['is_acquisto']) ? 1 : 0;
             // Anno corrente
             $yearStmt = $this->pdo->query('SELECT YEAR(CURDATE()) AS y');
             $year = (int) $yearStmt->fetchColumn();
 
             // Calcola progressivo con lock per evitare race
-            $nextStmt = $this->pdo->prepare('SELECT COALESCE(MAX(numero_documento), 0) + 1 FROM tb_preventivi WHERE anno_preventivo = :y FOR UPDATE');
+            $nextStmt = $this->pdo->prepare('SELECT COALESCE(MAX(numero_documento), 0) + 1 FROM tb_preventivi WHERE anno_preventivo = :y AND is_acquisto = :is_acquisto FOR UPDATE');
             $nextStmt->bindValue(':y', $year, PDO::PARAM_INT);
+            $nextStmt->bindValue(':is_acquisto', $isAcquisto, PDO::PARAM_INT);
             $nextStmt->execute();
             $next = (int) $nextStmt->fetchColumn();
 
@@ -1714,6 +1729,7 @@ final class PreventiviRepository
             INSERT INTO tb_preventivi (
                 id_anagrafica,
                 id_mittente,
+                    is_acquisto,
                     anno_preventivo,
                     numero_documento,
                     data_preventivo,
@@ -1730,6 +1746,7 @@ final class PreventiviRepository
                 ) VALUES (
                 :id_anagrafica,
                 :id_mittente,
+                :is_acquisto,
                 :anno,
                     :numero,
                     :data_preventivo,
@@ -1749,6 +1766,7 @@ final class PreventiviRepository
             $stmt = $this->pdo->prepare($sql);
             $stmt->bindValue(':id_anagrafica', (int) $data['id_anagrafica'], PDO::PARAM_INT);
             $stmt->bindValue(':id_mittente', isset($data['id_mittente']) && $data['id_mittente'] !== null ? (int) $data['id_mittente'] : null, PDO::PARAM_INT);
+            $stmt->bindValue(':is_acquisto', $isAcquisto, PDO::PARAM_INT);
             $stmt->bindValue(':anno', $year, PDO::PARAM_INT);
             $stmt->bindValue(':numero', $next, PDO::PARAM_INT);
             $stmt->bindValue(':data_preventivo', $data['data_preventivo'] ?? null, PDO::PARAM_STR);

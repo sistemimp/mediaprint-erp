@@ -1,9 +1,12 @@
 import { apiFetch } from './apiClient'
 
-export const fetchLatestPreventivi = async ({ token, signal, limit } = {}) => {
+export const fetchLatestPreventivi = async ({ token, signal, limit, is_acquisto } = {}) => {
   const params = {}
   if (limit) {
     params.limit = limit
+  }
+  if (is_acquisto !== undefined) {
+    params.is_acquisto = is_acquisto ? 1 : 0
   }
 
   const response = await apiFetch('/preventiviList.php', {
@@ -16,10 +19,13 @@ export const fetchLatestPreventivi = async ({ token, signal, limit } = {}) => {
   return { items }
 }
 
-export const fetchPreventiviDashboard = async ({ token, period, signal } = {}) => {
+export const fetchPreventiviDashboard = async ({ token, period, is_acquisto, signal } = {}) => {
   const params = {}
   if (period) {
     params.period = period
+  }
+  if (is_acquisto !== undefined) {
+    params.is_acquisto = is_acquisto ? 1 : 0
   }
   const payload = await apiFetch('/preventiviDashboard.php', { token, params, signal })
   if (!payload?.ok) {
@@ -28,13 +34,14 @@ export const fetchPreventiviDashboard = async ({ token, period, signal } = {}) =
   return payload
 }
 
-export const fetchPreventiviArchivio = async ({ token, signal, page, pageSize, search, sortBy, sortDirection } = {}) => {
+export const fetchPreventiviArchivio = async ({ token, signal, page, pageSize, search, sortBy, sortDirection, is_acquisto } = {}) => {
   const params = {}
   if (page) params.page = page
   if (pageSize) params.per_page = pageSize
   if (search) params.search = search
   if (sortBy) params.sort_by = sortBy
   if (sortDirection) params.sort_direction = sortDirection
+  if (is_acquisto !== undefined) params.is_acquisto = is_acquisto ? 1 : 0
 
   const response = await apiFetch('/preventiviArchiveList.php', {
     token,
@@ -71,6 +78,7 @@ export const createPreventivo = async ({
   righe,
   totals,
   send,
+  is_acquisto,
   signal,
 } = {}) => {
   const payload = {
@@ -93,6 +101,7 @@ export const createPreventivo = async ({
     totale_iva: totals?.totaleIva ?? 0,
     totale: totals?.totale ?? 0,
     send: send ? 1 : 0,
+    is_acquisto: is_acquisto !== undefined ? (is_acquisto ? 1 : 0) : undefined,
   }
 
   const response = await apiFetch('/preventiviCreate.php', {
@@ -105,10 +114,10 @@ export const createPreventivo = async ({
   return response ?? {}
 }
 
-export const fetchPreventivoDetail = async ({ token, id, signal } = {}) => {
+export const fetchPreventivoDetail = async ({ token, id, is_acquisto, signal } = {}) => {
   const response = await apiFetch('/preventiviDetail.php', {
     token,
-    params: { id },
+    params: { id, ...(is_acquisto !== undefined ? { is_acquisto: is_acquisto ? 1 : 0 } : {}) },
     signal,
   })
   const data = response?.data ?? null

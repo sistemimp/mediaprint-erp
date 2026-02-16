@@ -43,6 +43,7 @@ try {
     $auth = AuthGuard::requireAuth();
     AuthGuard::requirePermissions($auth, ['fatt.read']);
     $allowed = null;
+    $isAcquisto = isset($_GET['is_acquisto']) ? (int) $_GET['is_acquisto'] : 0;
     $excludeDraftLatest = false;
     if (AuthGuard::getAccountType($auth) === 'cliente') {
         $accountsRepo = new AccountsRepository(Database::getConnection());
@@ -83,7 +84,8 @@ try {
     $fatturatoMese = $repo->fetchRevenueByRange(
         $range['start']->format('Y-m-d H:i:s'),
         $range['end']->format('Y-m-d H:i:s'),
-        $allowed
+        $allowed,
+        $isAcquisto
     );
 
     $stmt = $pdo->prepare(
@@ -92,11 +94,13 @@ try {
          LEFT JOIN cfg_stati_fattura sf ON sf.id_stato = f.id_stato_fatt
          WHERE COALESCE(f.data_fattura, f.created_at) >= :start
            AND COALESCE(f.data_fattura, f.created_at) < :end
-           AND (sf.code IS NULL OR sf.code <> \'bozza\')'
+           AND (sf.code IS NULL OR sf.code <> \'bozza\')
+           AND f.is_acquisto = :is_acquisto'
         . $allowedClause
     );
     $stmt->bindValue(':start', $range['start']->format('Y-m-d H:i:s'));
     $stmt->bindValue(':end', $range['end']->format('Y-m-d H:i:s'));
+    $stmt->bindValue(':is_acquisto', $isAcquisto, PDO::PARAM_INT);
     foreach ($allowedParams as $key => $value) {
         $stmt->bindValue($key, $value, PDO::PARAM_INT);
     }
@@ -104,23 +108,28 @@ try {
     $fattureMese = (int) ($stmt->fetchColumn() ?: 0);
 
     if ($allowedClause === '') {
-        $stmt = $pdo->query(
+        $stmt = $pdo->prepare(
             'SELECT COUNT(*) AS total, COALESCE(SUM(saldo), 0) AS totale_saldo
              FROM tb_fatture f
              LEFT JOIN cfg_stati_fattura sf ON sf.id_stato = f.id_stato_fatt
              WHERE (sf.code IS NULL OR sf.code <> \'bozza\')
-               AND f.saldo > 0.009'
+               AND f.saldo > 0.009
+               AND f.is_acquisto = :is_acquisto'
         );
-        $row = $stmt ? ($stmt->fetch(PDO::FETCH_ASSOC) ?: []) : [];
+        $stmt->bindValue(':is_acquisto', $isAcquisto, PDO::PARAM_INT);
+        $stmt->execute();
+        $row = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
     } else {
         $stmt = $pdo->prepare(
             'SELECT COUNT(*) AS total, COALESCE(SUM(saldo), 0) AS totale_saldo
              FROM tb_fatture f
              LEFT JOIN cfg_stati_fattura sf ON sf.id_stato = f.id_stato_fatt
              WHERE (sf.code IS NULL OR sf.code <> \'bozza\')
-               AND f.saldo > 0.009'
+               AND f.saldo > 0.009
+               AND f.is_acquisto = :is_acquisto'
             . $allowedClause
         );
+        $stmt->bindValue(':is_acquisto', $isAcquisto, PDO::PARAM_INT);
         foreach ($allowedParams as $key => $value) {
             $stmt->bindValue($key, $value, PDO::PARAM_INT);
         }
@@ -138,14 +147,15 @@ try {
             'fatture_aperte' => $fattureAperte,
             'saldo_aperto' => $saldoAperto,
         ],
-        'series' => $repo->fetchMonthlyTotalsLast12($allowed),
+        'series' => $repo->fetchMonthlyTotalsLast12($allowed, $isAcquisto),
         'top_clients' => $repo->listTopClientsByRevenue(
             $range['start']->format('Y-m-d H:i:s'),
             $range['end']->format('Y-m-d H:i:s'),
             5,
-            $allowed
+            $allowed,
+            $isAcquisto
         ),
-        'latest' => $repo->listLatest(10, $allowed, $excludeDraftLatest),
+        'latest' => $repo->listLatest(10, $allowed, $excludeDraftLatest, null, null, $isAcquisto),
         'period' => $range['period'],
     ], 200);
 } catch (Throwable $exception) {
