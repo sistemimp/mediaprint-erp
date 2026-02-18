@@ -1,6 +1,6 @@
 {
   "name": "Gestionale MediaPrint",
-  "version": "2026.1.29.002",
+  "version": "2026.2.18.001",
   "description": "Portale gestionale MediaPrint per amministrare ordini, documenti e reportistica interna.",
   "homepage": ".",
   "bugs": {
@@ -14,10 +14,13 @@
   "author": "Alex Olivieri",
   "scripts": {
     "build": "vite build",
+    "dist": "vite build",
     "lint": "eslint",
     "serve": "vite preview",
     "start": "vite",
     "start:ws": "npm --prefix backend/ws start",
+    "k6:stress": "node k6/run-k6.cjs run k6/stress-api.js",
+    "k6:stress:summary": "node k6/run-k6.cjs run --summary-export=k6/results/summary.json k6/stress-api.js",
     "postinstall": "patch-package"
   },
   "dependencies": {

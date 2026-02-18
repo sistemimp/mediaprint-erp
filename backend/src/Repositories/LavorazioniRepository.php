@@ -767,6 +767,19 @@ final class LavorazioniRepository
             $params[':reparto_id'] = (int) $filters['reparto_id'];
         }
 
+        if (!empty($filters['operatore_id'])) {
+            $clauses[] = <<<SQL
+                EXISTS (
+                    SELECT 1
+                    FROM tb_lavorazioni_attivita aop
+                    INNER JOIN tb_lavorazioni_attivita_operatori lao ON lao.id_attivita = aop.id_attivita
+                    WHERE aop.id_lavorazione = l.id_lavorazione
+                      AND lao.id_account = :operatore_id
+                )
+            SQL;
+            $params[':operatore_id'] = (int) $filters['operatore_id'];
+        }
+
         if (!empty($filters['date_from'])) {
             $clauses[] = 'COALESCE(l.data_inizio_prevista, DATE(l.created_at)) >= :date_from';
             $params[':date_from'] = $filters['date_from'];

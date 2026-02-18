@@ -13,6 +13,7 @@ import {
   CFormInput,
   CFormLabel,
   CFormCheck,
+  CFormSwitch,
   CFormSelect,
   CFormTextarea,
   CInputGroup,
@@ -111,6 +112,92 @@ const formatDate = (value) => {
 }
 const SELECT_OPTION_WRAP_STYLE = { whiteSpace: 'normal', wordBreak: 'break-word' }
 const CED_QTY_DIFF_THRESHOLD = 0.0001
+
+const resolveRigaId = (row) => {
+  const raw = row?.id_riga ?? row?.id_riga_preventivo ?? row?.id ?? null
+  const id = Number(raw)
+  if (Number.isFinite(id) && id > 0) return id
+  return null
+}
+
+const resolveFatturaDisplay = (row) => {
+  const display = String(row?.fattura_display ?? row?.fatturaDisplay ?? '').trim()
+  if (display) return display
+  const numero = row?.fattura_numero ?? row?.numero_fattura ?? null
+  const anno = row?.fattura_anno ?? row?.anno_fattura ?? null
+  if (numero && anno) return `${numero}/${anno}`
+  if (numero) return String(numero)
+  const idFattura = Number(row?.id_fattura ?? row?.fattura_id ?? 0)
+  return Number.isFinite(idFattura) && idFattura > 0 ? String(idFattura) : ''
+}
+
+const isRigaFatturata = (row) => {
+  const flag = row?.fatturata ?? row?.in_fattura ?? row?.is_fatturata ?? null
+  if (flag === 1 || flag === true) return true
+  const display = resolveFatturaDisplay(row)
+  if (display) return true
+  const idFattura = Number(row?.id_fattura ?? row?.fattura_id ?? 0)
+  return Number.isFinite(idFattura) && idFattura > 0
+}
+
+const calcRigaTotale = (row) => {
+  const qty = Number(row?.quantita) || 0
+  const rawPrice = Number(row?.prezzo ?? row?.prezzo_unitario ?? 0)
+  const price = Number.isFinite(rawPrice) ? rawPrice : 0
+  const discount = Number(row?.sconto) || 0
+  const ivaPerc = Number(row?.iva ?? row?.aliquota_iva ?? 0) || 0
+  const imponibile = Math.max(0, qty * price * (1 - discount / 100))
+  const ivaAmount = ivaPerc !== 0 ? imponibile * (ivaPerc / 100) : 0
+  return {
+    imponibile,
+    iva: ivaAmount,
+    totale: imponibile + ivaAmount,
+  }
+}
+
+const isFornitoreAnagrafica = (item) => {
+  if (!item) return false
+  if (Number(item?.is_fornitore ?? item?.fornitore ?? item?.supplier ?? 0) === 1) return true
+  const idTip = Number(item?.id_tipologia ?? item?.tipologia?.id ?? item?.tipologia_id ?? null)
+  if (Number.isFinite(idTip) && [2, 3].includes(idTip)) return true
+  const label = String(item?.tipologia_label ?? item?.tipologia?.label ?? item?.tipologia ?? '').toLowerCase()
+  const code = String(item?.tipologia_code ?? item?.tipologia?.code ?? '').toLowerCase()
+  return label.includes('forn') || code.includes('forn')
+}
+
+const isPurchaseInvoiceTypeOption = (option) => {
+  if (!option) return false
+  const code = String(option.code || '').trim().toLowerCase()
+  const label = String(option.label || '').trim().toLowerCase()
+  const text = `${code} ${label}`
+  return text.includes('acquisto') || text.includes('passiv') || text.includes('fornitor')
+}
+
+const resolvePreferredInvoiceTypeId = (tipi = [], isAcquisto = false) => {
+  const list = Array.isArray(tipi) ? tipi : []
+  if (list.length === 0) return null
+
+  if (isAcquisto) {
+    const purchaseType = list.find((option) => isPurchaseInvoiceTypeOption(option))
+    const purchaseId = Number(purchaseType?.id_tipo)
+    if (Number.isFinite(purchaseId) && purchaseId > 0) {
+      return purchaseId
+    }
+  }
+
+  const immediateType = list.find((option) => {
+    const code = String(option.code || '').trim().toLowerCase()
+    const label = String(option.label || '').trim().toLowerCase()
+    return code === 'immediata' || label === 'immediata'
+  })
+  const immediateId = Number(immediateType?.id_tipo)
+  if (Number.isFinite(immediateId) && immediateId > 0) {
+    return immediateId
+  }
+
+  const firstId = Number(list[0]?.id_tipo)
+  return Number.isFinite(firstId) && firstId > 0 ? firstId : null
+}
 
 const normalizeOggettoOption = (option) => {
   if (!option) return null
@@ -385,6 +472,7 @@ const PreventiviDetail = () => {
   const [emailBody, setEmailBody] = useState('')
   const [emailError, setEmailError] = useState(null)
   const [emailSuccess, setEmailSuccess] = useState(null)
+  const [clienteSezionaleId, setClienteSezionaleId] = useState('')
   const [ddtModalVisible, setDdtModalVisible] = useState(false)
   const [ddtCausali, setDdtCausali] = useState([])
   const [ddtCausaliLoading, setDdtCausaliLoading] = useState(false)
@@ -411,6 +499,7 @@ const PreventiviDetail = () => {
   const [fatturaError, setFatturaError] = useState(null)
   const [fatturaSuccess, setFatturaSuccess] = useState(null)
   const [fatturaResult, setFatturaResult] = useState(null)
+  const [fatturaSelectedIds, setFatturaSelectedIds] = useState([])
   const [linkedDdt, setLinkedDdt] = useState([])
   const [linkedFatture, setLinkedFatture] = useState([])
   const [linkedLavorazioni, setLinkedLavorazioni] = useState([])
@@ -418,6 +507,27 @@ const PreventiviDetail = () => {
   const [lavorazioneError, setLavorazioneError] = useState(null)
   const [lavorazioneSuccess, setLavorazioneSuccess] = useState(null)
   const [refreshCounter, setRefreshCounter] = useState(0)
+
+  const sezionaleById = useMemo(() => {
+    const map = new Map()
+    if (Array.isArray(fatturaConfig?.sezionali)) {
+      fatturaConfig.sezionali.forEach((opt) => {
+        if (opt && opt.id_sezionale !== undefined && opt.id_sezionale !== null) {
+          map.set(String(opt.id_sezionale), opt)
+        }
+      })
+    }
+    return map
+  }, [fatturaConfig?.sezionali])
+
+  const resolvedSezionaleLabel = useMemo(() => {
+    const id = clienteSezionaleId || fatturaForm?.id_sezionale || ''
+    if (!id) return 'Non configurato'
+    const opt = sezionaleById.get(String(id))
+    if (!opt) return `ID ${id}`
+    if (opt.code) return `${opt.code} - ${opt.label || opt.id_sezionale}`
+    return opt.label || opt.id_sezionale || `ID ${id}`
+  }, [clienteSezionaleId, fatturaForm?.id_sezionale, sezionaleById])
   const handleRefreshData = useCallback(() => setRefreshCounter((prev) => prev + 1), [])
   // CIG / Determine
   const [cigList, setCigList] = useState([])
@@ -427,6 +537,7 @@ const PreventiviDetail = () => {
 
   // Righe
   const [righe, setRighe] = useState([])
+  const [stockAlerts, setStockAlerts] = useState([])
   // Mappa id_prodotto -> nome categoria per raggruppamento righe
   const [prodCategoryMap, setProdCategoryMap] = useState({})
   const computeCedWarning = useCallback((row) => {
@@ -670,7 +781,7 @@ const PreventiviDetail = () => {
     }
     const controller = new AbortController()
     setFatturaConfigLoading(true)
-    fetchFattureConfig({ token, signal: controller.signal })
+    fetchFattureConfig({ token, is_acquisto: isAcquisto, signal: controller.signal })
       .then((cfg) => {
         if (controller.signal.aborted) return
         setFatturaConfig({
@@ -689,24 +800,27 @@ const PreventiviDetail = () => {
         }
       })
     return () => controller.abort()
-  }, [fatturaModalVisible, token, fatturaConfig.sezionali.length, fatturaConfig.tipi.length, fatturaConfig.stati.length])
+  }, [fatturaModalVisible, token, isAcquisto, fatturaConfig.sezionali.length, fatturaConfig.tipi.length, fatturaConfig.stati.length])
 
   useEffect(() => {
     if (!fatturaModalVisible) return
     setFatturaForm((prev) => {
       const defaults = { ...prev }
-      if (!defaults.id_sezionale && fatturaConfig.sezionali.length > 0) {
-        defaults.id_sezionale = String(fatturaConfig.sezionali[0].id_sezionale)
+      if (!defaults.id_sezionale && clienteSezionaleId) {
+        defaults.id_sezionale = String(clienteSezionaleId)
       }
-      if (!defaults.id_tipo_fatt && fatturaConfig.tipi.length > 0) {
-        // Prefer the "Immediata" type when available so the modal defaults accordingly.
-        const preferredTipo = fatturaConfig.tipi.find((option) => {
-          const normalizedCode = String(option.code || '').toLowerCase()
-          const normalizedLabel = String(option.label || '').toLowerCase()
-          return normalizedCode === 'immediata' || normalizedLabel === 'immediata'
-        })
-        const preferredId = preferredTipo?.id_tipo ?? fatturaConfig.tipi[0].id_tipo
-        defaults.id_tipo_fatt = String(preferredId)
+      if (fatturaConfig.tipi.length > 0) {
+        const preferredId = resolvePreferredInvoiceTypeId(fatturaConfig.tipi, isAcquisto)
+        if (isAcquisto) {
+          const currentId = Number(defaults.id_tipo_fatt || 0)
+          const currentOption = fatturaConfig.tipi.find((option) => Number(option?.id_tipo) === currentId)
+          const currentIsPurchase = isPurchaseInvoiceTypeOption(currentOption)
+          if (!currentIsPurchase && Number.isFinite(preferredId) && preferredId > 0) {
+            defaults.id_tipo_fatt = String(preferredId)
+          }
+        } else if (!defaults.id_tipo_fatt && Number.isFinite(preferredId) && preferredId > 0) {
+          defaults.id_tipo_fatt = String(preferredId)
+        }
       }
       if (!defaults.id_stato_fatt && fatturaConfig.stati.length > 0) {
         const bozza = fatturaConfig.stati.find((s) => String(s.code || '').toLowerCase() === 'bozza')
@@ -714,7 +828,7 @@ const PreventiviDetail = () => {
       }
       return defaults
     })
-  }, [fatturaConfig, fatturaModalVisible])
+  }, [fatturaConfig, fatturaModalVisible, clienteSezionaleId, isAcquisto])
 
   const loadOggettoOptions = useCallback(
     async ({ signal, extraOptions = [] } = {}) => {
@@ -829,6 +943,7 @@ const PreventiviDetail = () => {
       setLoading(true)
       setLoadError(null)
       setRevisions([])
+      setStockAlerts([])
       try {
         setStatusError(null)
         setStatusSuccess(null)
@@ -836,6 +951,7 @@ const PreventiviDetail = () => {
           data,
           editable,
           righe: righeSrv,
+          stockAlerts: stockAlertsSrv,
           cig: cigSrv,
           determine: determineSrv,
           contatti: contattiSrv,
@@ -998,6 +1114,9 @@ const PreventiviDetail = () => {
                 id_prodotto: r.id_prodotto ?? null,
                 combo_key: r.combo_key ?? null,
                 id_sdi_natura_iva: r.id_sdi_natura_iva ?? null,
+                fattura_id: r.fattura_id ?? r.id_fattura ?? null,
+                fattura_numero: r.fattura_numero ?? r.numero_fattura ?? null,
+                fattura_anno: r.fattura_anno ?? r.anno_fattura ?? null,
                 id_categoria: idCategoria != null ? Number(idCategoria) : null,
                 categoria_nome: categoriaNome != null ? String(categoriaNome) : undefined,
                 created_by_ced: Boolean(r.created_by_ced),
@@ -1009,6 +1128,7 @@ const PreventiviDetail = () => {
         } else {
           setRighe([])
         }
+        setStockAlerts(Array.isArray(stockAlertsSrv) ? stockAlertsSrv : [])
         // CIG / Determine dal server
         setCigList(Array.isArray(cigSrv) ? cigSrv.map((c) => ({
           id_cig: c.id_cig ?? undefined,
@@ -1104,11 +1224,14 @@ const PreventiviDetail = () => {
             email: null,
           })
           setAnagraficaContactOptions([])
+          setClienteSezionaleId('')
           return
         }
         const det = await fetchAnagraficaDetail({ token, id: aid })
         const detailData = det?.anagrafica ?? det?.data ?? null
         setAnagraficaContactOptions(Array.isArray(det?.contatti) ? det.contatti : [])
+        const nextSezionale = det?.fiscale?.id_sezionale ?? ''
+        setClienteSezionaleId(nextSezionale ? String(nextSezionale) : '')
         if (detailData) {
           setClienteDisplay((prev) => ({
             id: Number(detailData.id_anagrafica ?? detailData.id ?? aid),
@@ -1200,11 +1323,14 @@ const PreventiviDetail = () => {
             mapById.set(cid, c)
           }
         }
-        const normalized = Array.from(mapById.values()).sort((a, b) => {
+        let normalized = Array.from(mapById.values()).sort((a, b) => {
           const A = String(a?.ragione_sociale ?? '').toLowerCase()
           const B = String(b?.ragione_sociale ?? '').toLowerCase()
           return A.localeCompare(B)
         })
+        if (isAcquisto) {
+          normalized = normalized.filter(isFornitoreAnagrafica)
+        }
         setAllClientiOptions(normalized)
       } catch (e) {
         if (e.name === 'AbortError') return
@@ -1724,8 +1850,8 @@ const PreventiviDetail = () => {
       note,
       oggetti: selectedOggetti.map((v) => Number(v)).filter((n) => Number.isFinite(n) && n > 0),
       riferimento_cliente: rifCliente,
-      cig: cigList.map((c) => ({ cig: c.cig, data_cig: c.data_cig || null, motivazione: c.motivazione || null })),
-      determine: determineList.map((d) => ({ determina: d.determina, data_determina: d.data_determina || null, motivazione: d.motivazione || null })),
+      cig: isAcquisto ? undefined : cigList.map((c) => ({ cig: c.cig, data_cig: c.data_cig || null, motivazione: c.motivazione || null })),
+      determine: isAcquisto ? undefined : determineList.map((d) => ({ determina: d.determina, data_determina: d.data_determina || null, motivazione: d.motivazione || null })),
       contatti: serializePreventivoContacts(preventivoContatti, Number(idAnagrafica) || null),
       righe: normalizedRighe,
       totals: {
@@ -1737,6 +1863,10 @@ const PreventiviDetail = () => {
     }
     if (!includeId) {
       delete payload.id_preventivo
+    }
+    if (isAcquisto) {
+      delete payload.cig
+      delete payload.determine
     }
     payload.note_dirty = noteDirty ? 1 : 0
     return payload
@@ -1768,13 +1898,64 @@ const PreventiviDetail = () => {
     return `Fattura generata dal preventivo ID ${id}.`
   }, [headerNumero, headerAnno, id])
   const preventivoHasRighe = useMemo(() => Array.isArray(righe) && righe.length > 0, [righe])
+  const fatturaRigheMeta = useMemo(() => {
+    const rows = Array.isArray(righe) ? righe : []
+    return rows.map((row, idx) => {
+      const id = resolveRigaId(row)
+      const display = resolveFatturaDisplay(row)
+      const inFattura = isRigaFatturata(row)
+      return { id, display, inFattura }
+    })
+  }, [righe])
+  const fatturaRigheGrouped = useMemo(() => {
+    const rows = Array.isArray(righe) ? righe : []
+    const groups = []
+    const index = new Map()
+    const resolveCategoryLabel = (row) => {
+      const explicit = row?.categoria_nome ?? row?.categoria ?? row?.nome_categoria ?? null
+      if (explicit) return String(explicit)
+      const idp = Number(row?.id_prodotto) || 0
+      if (idp > 0 && prodCategoryMap[idp]) return String(prodCategoryMap[idp])
+      return 'Senza categoria'
+    }
+    rows.forEach((row, idx) => {
+      const label = resolveCategoryLabel(row)
+      if (!index.has(label)) {
+        index.set(label, groups.length)
+        groups.push({ label, rows: [] })
+      }
+      groups[index.get(label)].rows.push({ row, idx })
+    })
+    return groups
+  }, [righe, prodCategoryMap])
+  const fatturaSelectionSummary = useMemo(() => {
+    const rows = Array.isArray(righe) ? righe : []
+    let totalAll = 0
+    let totalSelected = 0
+    let countSelected = 0
+    let countEligible = 0
+    rows.forEach((row, idx) => {
+      const totals = calcRigaTotale(row)
+      totalAll += totals.totale
+      const meta = fatturaRigheMeta[idx]
+      if (meta?.id && !meta?.inFattura) {
+        countEligible += 1
+        if (fatturaSelectedIds.includes(meta.id)) {
+          totalSelected += totals.totale
+          countSelected += 1
+        }
+      }
+    })
+    const percent = totalAll > 0 ? (totalSelected / totalAll) * 100 : 0
+    return { totalAll, totalSelected, percent, countSelected, countEligible }
+  }, [righe, fatturaRigheMeta, fatturaSelectedIds])
   const latestLinkedLavorazione = useMemo(
     () => (linkedLavorazioni.length > 0 ? linkedLavorazioni[0] : null),
     [linkedLavorazioni],
   )
   const hasLinkedLavorazione = linkedLavorazioni.length > 0
   const linkedLavorazioneId = latestLinkedLavorazione?.id ?? null
-  const canGenerateLavorazione = isConfirmed && preventivoHasRighe
+  const canGenerateLavorazione = isConfirmed && preventivoHasRighe && !hasLinkedLavorazione
   const currentUserId = user?.id_user ?? user?.id ?? null
   const currentUserName = user?.full_name ?? user?.name ?? user?.username ?? user?.nickname ?? null
 
@@ -1918,13 +2099,23 @@ const PreventiviDetail = () => {
     setFatturaResult(null)
     setFatturaForm((prev) => ({
       data_fattura: prev?.data_fattura && prev.data_fattura !== '' ? prev.data_fattura : getTodayIsoDate(),
-      id_sezionale: prev?.id_sezionale ?? '',
+      id_sezionale: clienteSezionaleId ? String(clienteSezionaleId) : (prev?.id_sezionale ?? ''),
       id_tipo_fatt: prev?.id_tipo_fatt ?? '',
       id_stato_fatt: prev?.id_stato_fatt ?? '',
       note: prev?.note && prev.note.trim() !== '' ? prev.note : defaultFatturaNote,
     }))
+    setFatturaSelectedIds(() => {
+      const rows = Array.isArray(righe) ? righe : []
+      const next = []
+      rows.forEach((row, idx) => {
+        const meta = fatturaRigheMeta[idx]
+        if (!meta?.id || meta?.inFattura) return
+        next.push(meta.id)
+      })
+      return next
+    })
     setFatturaModalVisible(true)
-  }, [defaultFatturaNote])
+  }, [defaultFatturaNote, clienteSezionaleId, righe, fatturaRigheMeta])
 
   const handleCloseFatturaModal = useCallback(() => {
     if (fatturaSubmitting) return
@@ -1937,8 +2128,16 @@ const PreventiviDetail = () => {
       setFatturaError(new Error('Il preventivo non contiene righe da trasferire nella fattura.'))
       return
     }
-    if (!fatturaForm?.id_sezionale) {
-      setFatturaError(new Error('Selezionare un sezionale valido.'))
+    const selectedIds = Array.isArray(fatturaSelectedIds)
+      ? fatturaSelectedIds.map((v) => Number(v)).filter((v) => Number.isFinite(v) && v > 0)
+      : []
+    if (selectedIds.length === 0) {
+      setFatturaError(new Error('Seleziona almeno una riga da fatturare.'))
+      return
+    }
+    const effectiveSezionale = clienteSezionaleId || fatturaForm?.id_sezionale || ''
+    if (!effectiveSezionale) {
+      setFatturaError(new Error("Sezionale non configurato nell'anagrafica."))
       return
     }
     setFatturaSubmitting(true)
@@ -1946,14 +2145,21 @@ const PreventiviDetail = () => {
     setFatturaSuccess(null)
     setFatturaResult(null)
     try {
+      const preferredTypeId = resolvePreferredInvoiceTypeId(fatturaConfig.tipi, isAcquisto)
+      const effectiveTypeId =
+        isAcquisto && Number.isFinite(preferredTypeId) && preferredTypeId > 0
+          ? preferredTypeId
+          : (fatturaForm?.id_tipo_fatt || undefined)
       const response = await emitPreventivoFattura({
         token,
         id,
         data_fattura: fatturaForm?.data_fattura || undefined,
-        id_sezionale: fatturaForm?.id_sezionale || undefined,
-        id_tipo_fatt: fatturaForm?.id_tipo_fatt || undefined,
+        id_sezionale: effectiveSezionale || undefined,
+        id_tipo_fatt: effectiveTypeId,
         id_stato_fatt: fatturaForm?.id_stato_fatt || undefined,
         note: fatturaForm?.note && fatturaForm.note.trim() !== '' ? fatturaForm.note.trim() : defaultFatturaNote,
+        righe_ids: selectedIds,
+        is_acquisto: isAcquisto,
       })
       const numero = response?.fattura?.numero_documento
       const anno = response?.fattura?.anno
@@ -1986,7 +2192,7 @@ const PreventiviDetail = () => {
     } finally {
       setFatturaSubmitting(false)
     }
-  }, [token, id, preventivoHasRighe, fatturaForm, defaultFatturaNote, logout])
+  }, [token, id, preventivoHasRighe, fatturaSelectedIds, fatturaForm, fatturaConfig.tipi, defaultFatturaNote, logout, isAcquisto, currentUserId, currentUserName])
 
 
   const handleOpenPrintPDF = useCallback(() => {
@@ -2188,6 +2394,16 @@ const PreventiviDetail = () => {
     try {
       const controller = new AbortController()
       const payload = buildPayload({ includeId: false })
+      if (Array.isArray(payload.righe)) {
+        payload.righe = payload.righe.map((row) => {
+          if (!row || typeof row !== 'object') return row
+          const nextRow = { ...row }
+          delete nextRow.id_riga
+          delete nextRow.id_riga_preventivo
+          delete nextRow.id
+          return nextRow
+        })
+      }
       const result = await createPreventivo({
         token,
         ...payload,
@@ -2304,7 +2520,7 @@ const PreventiviDetail = () => {
             <small className="text-body-secondary">
               Documento {header.anno ?? '-'} / {header.numero ?? '-'}
             </small>
-            {hasLinkedLavorazione && (
+            {!isAcquisto && hasLinkedLavorazione && (
               <div className="text-body-secondary small">
                 Lavorazioni collegate: {linkedLavorazioni.length}
                 {latestLinkedLavorazione
@@ -2366,37 +2582,50 @@ const PreventiviDetail = () => {
               disabled={loading || archiveLoading || duplicateLoading || !token}
             >
               <CIcon icon={cilCopy} className="me-2" />
-              {duplicateLoading ? 'Duplicazione...' : 'Duplica per nuove attività'}
+              {duplicateLoading ? 'Duplicazione...' : (isAcquisto ? 'Duplica' : 'Duplica per nuove attività')}
             </CButton>
-            {hasLinkedLavorazione && (
-              null
-            )}
             {isConfirmed && (
               <>
-                {canGenerateLavorazione && (
+                {!isAcquisto && hasLinkedLavorazione ? (
                   <CButton
-                    color="warning"
+                    color="success"
                     variant="outline"
                     size="sm"
                     type="button"
-                    onClick={handleGenerateLavorazione}
-                    disabled={lavorazioneGenerating || loading || !token}
+                    onClick={() => handleOpenLavorazioneDetail()}
+                    disabled={loading || !token}
                   >
-                    <CIcon icon={cilCog} className="me-2" />
-                    {lavorazioneGenerating ? 'Generazione...' : 'Genera lavorazione'}
+                    <CIcon icon={cilZoom} className="me-2" />
+                    Apri Lavorazione
+                  </CButton>
+                ) : (
+                  !isAcquisto && canGenerateLavorazione && (
+                    <CButton
+                      color="warning"
+                      variant="outline"
+                      size="sm"
+                      type="button"
+                      onClick={handleGenerateLavorazione}
+                      disabled={lavorazioneGenerating || loading || !token}
+                    >
+                      <CIcon icon={cilCog} className="me-2" />
+                      {lavorazioneGenerating ? 'Generazione...' : 'Genera lavorazione'}
+                    </CButton>
+                  )
+                )}
+                {!isAcquisto && (
+                  <CButton
+                    color="success"
+                    variant="outline"
+                    size="sm"
+                    type="button"
+                    onClick={handleOpenDdtModal}
+                    disabled={loading || !token || !preventivoHasRighe}
+                  >
+                    <CIcon icon={cilCheckCircle} className="me-2" />
+                    Emetti DDT
                   </CButton>
                 )}
-                <CButton
-                  color="success"
-                  variant="outline"
-                  size="sm"
-                  type="button"
-                  onClick={handleOpenDdtModal}
-                  disabled={loading || !token || !preventivoHasRighe}
-                >
-                  <CIcon icon={cilCheckCircle} className="me-2" />
-                  Emetti DDT
-                </CButton>
                 <CButton
                   color="secondary"
                   variant="outline"
@@ -2430,12 +2659,12 @@ const PreventiviDetail = () => {
                 {archiveError?.payload?.message || archiveError.message || 'Impossibile archiviare il preventivo.'}
               </CAlert>
             )}
-            {lavorazioneError && (
+            {!isAcquisto && lavorazioneError && (
               <CAlert color="danger" className="mb-3">
                 {lavorazioneError?.payload?.message || lavorazioneError.message || 'Impossibile generare la lavorazione.'}
               </CAlert>
             )}
-            {lavorazioneSuccess && (
+            {!isAcquisto && lavorazioneSuccess && (
               <CAlert color="success" className="mb-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
                 <span>{lavorazioneSuccess}</span>
               </CAlert>
@@ -2443,6 +2672,17 @@ const PreventiviDetail = () => {
             {anagraficaDisabled && (
               <CAlert color="warning" className="mb-3">
                 {clienteLabel} disattivato: modifiche e conferma disabilitate.
+              </CAlert>
+            )}
+            {stockAlerts.length > 0 && (
+              <CAlert color="warning" className="mb-3">
+                <strong>Alert magazzino:</strong>{' '}
+                {stockAlerts.map((item) => {
+                  const code = item?.prodotto_codice ? `${item.prodotto_codice} - ` : ''
+                  const name = item?.prodotto_nome || 'Prodotto'
+                  const level = item?.severity === 'out_of_stock' ? 'esaurito' : 'scorta bassa'
+                  return `${code}${name} (${level})`
+                }).join(' | ')}
               </CAlert>
             )}
             {submitError && (
@@ -2642,41 +2882,45 @@ const PreventiviDetail = () => {
                   )}
                 </CTabPane>
                 <CTabPane visible={statusTab === 'documenti'} role="tabpanel">
-                  <h6 className="text-body-secondary mb-3">Lavorazioni collegate</h6>
-                  {linkedLavorazioni.length === 0 ? (
-                    <CAlert color="info" className="mb-4">Nessuna lavorazione collegata al preventivo.</CAlert>
-                  ) : (
-                    <CTable data-testid="table" small responsive className="mb-4">
-                      <CTableHead className="mp-table-head">
-                        <CTableRow>
-                          <CTableHeaderCell>Codice</CTableHeaderCell>
-                          <CTableHeaderCell>Titolo</CTableHeaderCell>
-                          <CTableHeaderCell>Stato</CTableHeaderCell>
-                          <CTableHeaderCell>Creata il</CTableHeaderCell>
-                          <CTableHeaderCell className="text-center">Azioni</CTableHeaderCell>
-                        </CTableRow>
-                      </CTableHead>
-                      <CTableBody>
-                        {linkedLavorazioni.map((lavorazione) => (
-                          <CTableRow key={lavorazione.id}>
-                            <CTableDataCell>{lavorazione.codice || `ID ${lavorazione.id}`}</CTableDataCell>
-                            <CTableDataCell>{lavorazione.titolo || '-'}</CTableDataCell>
-                            <CTableDataCell>{lavorazione.stato || '-'}</CTableDataCell>
-                            <CTableDataCell>{formatDateTime(lavorazione.created_at)}</CTableDataCell>
-                            <CTableDataCell className="text-center">
-                              <CButton
-                                color="link"
-                                size="sm"
-                                className="p-0"
-                                onClick={() => handleOpenLavorazioneDetail(lavorazione.id)}
-                              >
-                                Dettagli
-                              </CButton>
-                            </CTableDataCell>
-                          </CTableRow>
-                        ))}
-                      </CTableBody>
-                    </CTable>
+                  {!isAcquisto && (
+                    <>
+                      <h6 className="text-body-secondary mb-3">Lavorazioni collegate</h6>
+                      {linkedLavorazioni.length === 0 ? (
+                        <CAlert color="info" className="mb-4">Nessuna lavorazione collegata al preventivo.</CAlert>
+                      ) : (
+                        <CTable data-testid="table" small responsive className="mb-4">
+                          <CTableHead className="mp-table-head">
+                            <CTableRow>
+                              <CTableHeaderCell>Codice</CTableHeaderCell>
+                              <CTableHeaderCell>Titolo</CTableHeaderCell>
+                              <CTableHeaderCell>Stato</CTableHeaderCell>
+                              <CTableHeaderCell>Creata il</CTableHeaderCell>
+                              <CTableHeaderCell className="text-center">Azioni</CTableHeaderCell>
+                            </CTableRow>
+                          </CTableHead>
+                          <CTableBody>
+                            {linkedLavorazioni.map((lavorazione) => (
+                              <CTableRow key={lavorazione.id}>
+                                <CTableDataCell>{lavorazione.codice || `ID ${lavorazione.id}`}</CTableDataCell>
+                                <CTableDataCell>{lavorazione.titolo || '-'}</CTableDataCell>
+                                <CTableDataCell>{lavorazione.stato || '-'}</CTableDataCell>
+                                <CTableDataCell>{formatDateTime(lavorazione.created_at)}</CTableDataCell>
+                                <CTableDataCell className="text-center">
+                                  <CButton
+                                    color="link"
+                                    size="sm"
+                                    className="p-0"
+                                    onClick={() => handleOpenLavorazioneDetail(lavorazione.id)}
+                                  >
+                                    Dettagli
+                                  </CButton>
+                                </CTableDataCell>
+                              </CTableRow>
+                            ))}
+                          </CTableBody>
+                        </CTable>
+                      )}
+                    </>
                   )}
                   <CRow className="g-4">
                     <CCol md={6}>
@@ -2849,6 +3093,7 @@ const PreventiviDetail = () => {
                     disabled={uiDisabled}
                   />
                 </CCol>
+                {!isAcquisto && (
                 <CCol md={6}>
                   <CFormLabel>CIG</CFormLabel>
                   <CTable data-testid="table" small bordered responsive>
@@ -2890,6 +3135,7 @@ const PreventiviDetail = () => {
                     </CTableBody>
                   </CTable>
                 </CCol>
+                )}
                 <CCol md={3}>
                   <CFormLabel>Data preventivo</CFormLabel>
                   <CFormInput
@@ -2907,6 +3153,7 @@ const PreventiviDetail = () => {
                     disabled={uiDisabled}
                   />
                 </CCol>
+                {!isAcquisto && (
                 <CCol md={6}>
                   <CFormLabel>Determina</CFormLabel>
                   <CTable data-testid="table" small bordered responsive>
@@ -2948,6 +3195,7 @@ const PreventiviDetail = () => {
                     </CTableBody>
                   </CTable>
                 </CCol>
+                )}
                 <CCol md={6}>
                   <CFormLabel>Attività lavorative</CFormLabel>
                   <CMultiSelect
@@ -3012,6 +3260,7 @@ const PreventiviDetail = () => {
               </CRow>
             </section>
 
+            {!isAcquisto && (
             <section className="mb-4">
               <div className="d-flex align-items-start justify-content-between mb-2">
                 <h6 className="mb-0 text-body-secondary">Mittente spedizione</h6>
@@ -3107,6 +3356,7 @@ const PreventiviDetail = () => {
                 </CCol>
               </CRow>
             </section>
+            )}
 
             <section className="mb-4">
               <h6 className="mb-3 text-body-secondary">Contatti preventivo</h6>
@@ -3716,6 +3966,10 @@ const PreventiviDetail = () => {
                         const impon = Math.max(0, q * p * (1 - s / 100))
                         const ivaVal = impon * (iva / 100)
                         const tot = impon + ivaVal
+                        const meta = fatturaRigheMeta[idx]
+                        const inFattura = meta?.inFattura
+                        const display = meta?.display
+                        const label = display ? `In fattura #${display}` : 'In fattura'
                         const showCedWarning = Boolean(riga.ced_warning)
                         const cedQtyLabel =
                           riga.quantita_ced != null && riga.quantita_ced !== ''
@@ -3747,6 +4001,11 @@ const PreventiviDetail = () => {
                                   disabled={uiDisabled}
                                   style={{ fontSize: "10pt", width: "400px" }}
                                 />
+                                {inFattura && (
+                                  <CBadge color="warning" className="mt-1">
+                                    {label}
+                                  </CBadge>
+                                )}
                               </div>
                             </CTableDataCell>
                             <CTableDataCell className="text-end">
@@ -4050,23 +4309,7 @@ const PreventiviDetail = () => {
               </CCol>
               <CCol md={4}>
                 <CFormLabel>Sezionale</CFormLabel>
-                <CFormSelect
-                  value={fatturaForm?.id_sezionale || ''}
-                  onChange={(e) =>
-                    setFatturaForm((prev) => ({
-                      ...prev,
-                      id_sezionale: e.target.value,
-                    }))
-                  }
-                  disabled={fatturaSubmitting || fatturaConfigLoading}
-                >
-                  <option value="">Seleziona sezionale</option>
-                  {fatturaConfig.sezionali.map((option) => (
-                    <option key={option.id_sezionale} value={option.id_sezionale}>
-                      {option.label || option.code}
-                    </option>
-                  ))}
-                </CFormSelect>
+                <CFormInput value={resolvedSezionaleLabel} disabled readOnly />
               </CCol>
               <CCol md={4}>
                 <CFormLabel>Tipo fattura</CFormLabel>
@@ -4126,10 +4369,22 @@ const PreventiviDetail = () => {
 
             <div className="mt-4">
               <h6 className="mb-2 text-body-secondary">Righe incluse</h6>
+              <div className="d-flex flex-wrap align-items-center gap-3 mb-2">
+                <div className="small text-body-secondary">
+                  Selezionate {fatturaSelectionSummary.countSelected} di {fatturaSelectionSummary.countEligible} righe
+                </div>
+                <CBadge color="info">
+                  Fatturazione {formatNumberValue(fatturaSelectionSummary.percent, 1)}%
+                </CBadge>
+                <div className="small">
+                  Totale selezionato: <strong>{formatCurrency(fatturaSelectionSummary.totalSelected)}</strong>
+                </div>
+              </div>
               {preventivoHasRighe ? (
                 <CTable data-testid="table" responsive hover small>
                   <CTableHead className="mp-table-head">
                     <CTableRow>
+                      <CTableHeaderCell>Importa</CTableHeaderCell>
                       <CTableHeaderCell>Descrizione</CTableHeaderCell>
                       <CTableHeaderCell className="text-end">Q.tà</CTableHeaderCell>
                       <CTableHeaderCell className="text-end">Prezzo</CTableHeaderCell>
@@ -4138,31 +4393,64 @@ const PreventiviDetail = () => {
                     </CTableRow>
                   </CTableHead>
                   <CTableBody>
-                    {righe.map((row, idx) => {
-                      const qty = Number(row.quantita) || 0
-                      const rawPrice = Number(row.prezzo ?? row.prezzo_unitario ?? 0)
-                      const price = Number.isFinite(rawPrice) ? rawPrice : 0
-                      const discount = Number(row.sconto) || 0
-                      const ivaPerc = Number(row.iva ?? 0) || 0
-                      const imponibile = Math.max(0, qty * price * (1 - discount / 100))
-                      const ivaAmount = ivaPerc !== 0 ? imponibile * (ivaPerc / 100) : 0
-                      const lineTotal = imponibile + ivaAmount
-                      return (
-                        <CTableRow key={row.id_riga ?? idx}>
-                          <CTableDataCell>
-                            <span className="d-inline-flex align-items-center">
-                              {row.descrizione}
-                            </span>
-                          </CTableDataCell>
-                          <CTableDataCell className="text-end">{qty}</CTableDataCell>
-                          <CTableDataCell className="text-end">{formatCurrency(price)}</CTableDataCell>
-                          <CTableDataCell className="text-end">
-                            {row.iva != null ? `${row.iva}%` : '-'}
-                          </CTableDataCell>
-                          <CTableDataCell className="text-end">{formatCurrency(lineTotal)}</CTableDataCell>
-                        </CTableRow>
-                      )
-                    })}
+                  {fatturaRigheGrouped.map((group) => (
+                    <React.Fragment key={`cat-${group.label}`}>
+                      <CTableRow className="table-secondary">
+                        <CTableDataCell colSpan={6} className="fw-semibold">
+                          {group.label}
+                        </CTableDataCell>
+                      </CTableRow>
+                      {group.rows.map(({ row, idx }) => {
+                        const qty = Number(row.quantita) || 0
+                        const rawPrice = Number(row.prezzo ?? row.prezzo_unitario ?? 0)
+                        const price = Number.isFinite(rawPrice) ? rawPrice : 0
+                        const totals = calcRigaTotale(row)
+                        const meta = fatturaRigheMeta[idx]
+                        const inFattura = meta?.inFattura
+                        const display = meta?.display
+                        const label = display ? `In fattura #${display}` : 'In fattura'
+                        const isSelected = meta?.id && fatturaSelectedIds.includes(meta.id)
+                        return (
+                          <CTableRow key={row.id_riga ?? idx}>
+                            <CTableDataCell>
+                              <CFormSwitch
+                                checked={Boolean(isSelected)}
+                                onChange={(e) => {
+                                  if (!meta?.id || inFattura) return
+                                  const checked = e.target.checked
+                                  setFatturaSelectedIds((prev) => {
+                                    const next = new Set(
+                                      (Array.isArray(prev) ? prev : [])
+                                        .map((v) => Number(v))
+                                        .filter((v) => Number.isFinite(v) && v > 0),
+                                    )
+                                    if (checked) next.add(meta.id)
+                                    else next.delete(meta.id)
+                                    return Array.from(next)
+                                  })
+                                }}
+                                disabled={fatturaSubmitting || !meta?.id || inFattura}
+                              />
+                            </CTableDataCell>
+                            <CTableDataCell>
+                              <span className="d-inline-flex align-items-center gap-2">
+                                {row.descrizione}
+                                {inFattura && (
+                                  <CBadge color="warning">{label}</CBadge>
+                                )}
+                              </span>
+                            </CTableDataCell>
+                            <CTableDataCell className="text-end">{qty}</CTableDataCell>
+                            <CTableDataCell className="text-end">{formatCurrency(price)}</CTableDataCell>
+                            <CTableDataCell className="text-end">
+                              {row.iva != null ? `${row.iva}%` : '-'}
+                            </CTableDataCell>
+                            <CTableDataCell className="text-end">{formatCurrency(totals.totale)}</CTableDataCell>
+                          </CTableRow>
+                        )
+                      })}
+                    </React.Fragment>
+                  ))}
                   </CTableBody>
                 </CTable>
               ) : (
@@ -4203,7 +4491,9 @@ const PreventiviDetail = () => {
             )}
           </CModalBody>
           <CModalFooter className="d-flex justify-content-between align-items-center">
-            <small className="text-body-secondary">Le righe del preventivo verranno copiate automaticamente nella fattura.</small>
+            <small className="text-body-secondary">
+              Verranno importate solo le righe selezionate. Le righe già fatturate sono bloccate.
+            </small>
             <div className="d-flex gap-2">
               <CButton color="link" onClick={handleCloseFatturaModal} disabled={fatturaSubmitting}>
                 Annulla
@@ -4211,7 +4501,7 @@ const PreventiviDetail = () => {
               <CButton
                 color="primary"
                 onClick={handleEmitFattura}
-                disabled={fatturaSubmitting || !preventivoHasRighe}
+                disabled={fatturaSubmitting || !preventivoHasRighe || fatturaSelectionSummary.countSelected === 0}
               >
                 {fatturaSubmitting ? 'Emissione...' : 'Emetti fattura'}
               </CButton>

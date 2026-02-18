@@ -27,7 +27,6 @@ import {
 } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
 import { cilArrowRight, cilSpreadsheet, cilWarning } from '@coreui/icons'
-import ExcelJS from 'exceljs'
 
 import { useAuth } from '../../context/AuthContext'
 import { fetchPagamentiLedger, fetchPagamentiList } from '../../services/pagamenti'
@@ -148,6 +147,8 @@ const PagamentiList = () => {
         row.saldo_residuo ?? 0,
         row.pending_residuo ?? 0,
       ])
+      const excelJsModule = await import('exceljs')
+      const ExcelJS = excelJsModule.default ?? excelJsModule
       const workbook = new ExcelJS.Workbook()
       const worksheet = workbook.addWorksheet('Ledger')
       worksheet.addRow(headers)

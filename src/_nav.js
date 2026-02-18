@@ -53,6 +53,29 @@ const _nav = [
   },
   {
     component: CNavGroup,
+    name: 'Magazzino',
+    icon: <CIcon icon={cilTags} customClassName="nav-icon" />,
+    permissions: ['prod.read'],
+    items: [
+      {
+        component: CNavItem,
+        name: 'Scorte e macchine',
+        to: '/magazzino',
+      },
+      {
+        component: CNavItem,
+        name: 'Movimenti magazzino',
+        to: '/magazzino/movimenti',
+      },
+      {
+        component: CNavItem,
+        name: 'Distinta consumi',
+        to: '/magazzino/consumi',
+      },
+    ],
+  },
+  {
+    component: CNavGroup,
     name: 'Pacchetti',
     icon: <CIcon icon={cilLibraryAdd} customClassName="nav-icon" />,
     permissions: ['pack.read'],
@@ -228,6 +251,11 @@ const _nav = [
     icon: <CIcon icon={cilMoney} customClassName="nav-icon" />,
     permissions: ['prev.read', 'fatt.read'],
     items: [
+      {
+        component: CNavItem,
+        name: 'Richieste acquisto',
+        to: '/acquisti/richieste/lista',
+      },
       {
         component: CNavItem,
         name: 'Preventivi acquisto',

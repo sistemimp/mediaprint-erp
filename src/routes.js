@@ -47,13 +47,19 @@ const PagamentiImport = React.lazy(() => import('./views/pagamenti/PagamentiImpo
 const LavorazioniList = React.lazy(() => import('./views/lavorazioni/LavorazioniList'))
 const LavorazioneDetail = React.lazy(() => import('./views/lavorazioni/LavorazioneDetail'))
 const LavorazioniTemplates = React.lazy(() => import('./views/lavorazioni/LavorazioniTemplates'))
+const MagazzinoPage = React.lazy(() => import('./views/magazzino/MagazzinoPage'))
+const MagazzinoMovimentiPage = React.lazy(() => import('./views/magazzino/MagazzinoMovimentiPage'))
+const MagazzinoConsumiPage = React.lazy(() => import('./views/magazzino/MagazzinoConsumiPage'))
 const InstantMessagingPage = React.lazy(() => import('./views/im/InstantMessagingPage'))
 const NotificationsList = React.lazy(() => import('./views/notifiche/NotificationsList'))
 const AccountsList = React.lazy(() => import('./views/accounts/AccountsList'))
 const AccountsDetail = React.lazy(() => import('./views/accounts/AccountsDetail'))
 const Profile = React.lazy(() => import('./views/profile/Profile'))
+const AttivitaPage = React.lazy(() => import('./views/attivita/AttivitaPage'))
 const TicketsList = React.lazy(() => import('./views/tickets/TicketsList'))
 const TicketsDetail = React.lazy(() => import('./views/tickets/TicketsDetail'))
+const AcquistiRichiesteList = React.lazy(() => import('./views/acquisti/AcquistiRichiesteList'))
+const AcquistiRichiesteDetail = React.lazy(() => import('./views/acquisti/AcquistiRichiesteDetail'))
 const ReleaseNotesTimeline = React.lazy(() => import('./views/release-notes/ReleaseNotesTimeline'))
 
 const routes = [
@@ -85,6 +91,8 @@ const routes = [
   { path: '/acquisti/fatture/crea', name: 'Fatture acquisto - Crea nuova', element: FattureCreate },
   { path: '/acquisti/fatture/lista', name: 'Fatture acquisto - Lista', element: FattureList },
   { path: '/acquisti/fatture/dettagli', name: 'Fatture acquisto - Dettagli', element: FattureDetail },
+  { path: '/acquisti/richieste/lista', name: 'Acquisti - Richieste ticket - Lista', element: AcquistiRichiesteList },
+  { path: '/acquisti/richieste/dettagli', name: 'Acquisti - Richieste ticket - Dettagli', element: AcquistiRichiesteDetail },
   { path: '/prodotti/dashboard', name: 'Prodotti - Dashboard', element: ProdottiDashboard },
   { path: '/prodotti/crea', name: 'Prodotti - Crea nuovo', element: ProdottiCreate },
   { path: '/prodotti/lista', name: 'Prodotti - Lista', element: ProdottiList },
@@ -104,11 +112,15 @@ const routes = [
   { path: '/lavorazioni/lista', name: 'Lavorazioni - Lista', element: LavorazioniList },
   { path: '/lavorazioni/dettaglio', name: 'Lavorazioni - Dettaglio', element: LavorazioneDetail },
   { path: '/lavorazioni/templates', name: 'Lavorazioni - Template attivita', element: LavorazioniTemplates },
+  { path: '/magazzino', name: 'Magazzino', element: MagazzinoPage },
+  { path: '/magazzino/movimenti', name: 'Magazzino - Movimenti', element: MagazzinoMovimentiPage },
+  { path: '/magazzino/consumi', name: 'Magazzino - Distinta consumi', element: MagazzinoConsumiPage },
   { path: '/messaggi', name: 'Messaggi', element: InstantMessagingPage },
   { path: '/notifiche', name: 'Notifiche', element: NotificationsList },
   { path: '/accounts/lista', name: 'Account - Lista', element: AccountsList },
   { path: '/accounts/dettagli', name: 'Account - Dettagli', element: AccountsDetail },
   { path: '/profilo', name: 'Profilo', element: Profile },
+  { path: '/attivita', name: 'Attivita', element: AttivitaPage },
   { path: '/tickets/lista', name: 'Ticketing - Lista', element: TicketsList },
   { path: '/tickets/dettagli', name: 'Ticketing - Dettagli', element: TicketsDetail },
   { path: '/release-notes', name: 'Note di aggiornamento', element: ReleaseNotesTimeline },

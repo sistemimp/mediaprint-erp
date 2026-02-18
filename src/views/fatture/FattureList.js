@@ -231,6 +231,7 @@ const FattureList = () => {
 
   const totalPages = Math.max(Math.ceil(sortedItems.length / ROWS_PER_PAGE), 1)
   const totalItems = sortedItems.length
+  const totalsLeadingColSpan = isAcquisto ? 4 : 5
   const totals = useMemo(() => {
     return sortedItems.reduce(
       (acc, row) => {
@@ -429,20 +430,22 @@ const FattureList = () => {
               </CFormSelect>
             </CCol>
           )}
-          <CCol xs={6} md={3} lg={3}>
-            <CFormSelect
-              value={sezionaleFilter}
-              onChange={(e) => setSezionaleFilter(e.target.value)}
-              disabled={sezionali.length === 0}
-            >
-              <option value="all">Tutti i sezionali</option>
-              {sezionali.map((option) => (
-                <option key={option.id} value={option.id}>
-                  {option.label}
-                </option>
-              ))}
-            </CFormSelect>
-          </CCol>
+          {!isAcquisto && (
+            <CCol xs={6} md={3} lg={3}>
+              <CFormSelect
+                value={sezionaleFilter}
+                onChange={(e) => setSezionaleFilter(e.target.value)}
+                disabled={sezionali.length === 0}
+              >
+                <option value="all">Tutti i sezionali</option>
+                {sezionali.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.label}
+                  </option>
+                ))}
+              </CFormSelect>
+            </CCol>
+          )}
           <CCol xs={6} md={3} lg={2}>
             <CFormLabel className="text-body-secondary small">Dal</CFormLabel>
             <CFormInput
@@ -492,12 +495,14 @@ const FattureList = () => {
                   >
                     Tipo{renderSortIndicator('tipo_label')}
                   </CTableHeaderCell>
-                  <CTableHeaderCell
-                    className="cursor-pointer"
-                    onClick={() => handleSort('sezionale_label')}
-                  >
-                    Sezionale{renderSortIndicator('sezionale_label')}
-                  </CTableHeaderCell>
+                  {!isAcquisto && (
+                    <CTableHeaderCell
+                      className="cursor-pointer"
+                      onClick={() => handleSort('sezionale_label')}
+                    >
+                      Sezionale{renderSortIndicator('sezionale_label')}
+                    </CTableHeaderCell>
+                  )}
                   <CTableHeaderCell
                     className="cursor-pointer"
                     onClick={() => handleSort('data_fattura')}
@@ -566,18 +571,20 @@ const FattureList = () => {
                         <span className="text-body-secondary">-</span>
                       )}
                     </CTableDataCell>
-                    <CTableDataCell>
-                      {row.id_sezionale || row.sezionale_code || row.sezionale_label ? (
-                        <>
-                          <div className="fw-semibold">{row.sezionale_code || row.sezionale_label || '-'}</div>
-                          {row.sezionale_label && row.sezionale_code && row.sezionale_label !== row.sezionale_code && (
-                            <small className="text-body-secondary">{row.sezionale_label}</small>
-                          )}
-                        </>
-                      ) : (
-                        <span className="text-body-secondary">-</span>
-                      )}
-                    </CTableDataCell>
+                    {!isAcquisto && (
+                      <CTableDataCell>
+                        {row.id_sezionale || row.sezionale_code || row.sezionale_label ? (
+                          <>
+                            <div className="fw-semibold">{row.sezionale_code || row.sezionale_label || '-'}</div>
+                            {row.sezionale_label && row.sezionale_code && row.sezionale_label !== row.sezionale_code && (
+                              <small className="text-body-secondary">{row.sezionale_label}</small>
+                            )}
+                          </>
+                        ) : (
+                          <span className="text-body-secondary">-</span>
+                        )}
+                      </CTableDataCell>
+                    )}
                     <CTableDataCell>{formatDate(row.data_fattura)}</CTableDataCell>
                     <CTableDataCell>{row.cliente_ragione_sociale || '-'}</CTableDataCell>
                     <CTableDataCell className="text-end">
@@ -624,7 +631,7 @@ const FattureList = () => {
               </CTableBody>
               <CTableFoot>
                 <CTableRow className="fw-semibold">
-                  <CTableDataCell colSpan={5}>Totali</CTableDataCell>
+                  <CTableDataCell colSpan={totalsLeadingColSpan}>Totali</CTableDataCell>
                   <CTableDataCell className="text-end">
                     {formatCurrency(totals.imponibile)}
                   </CTableDataCell>

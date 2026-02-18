@@ -85,6 +85,7 @@ export const emitPreventivoFattura = async ({
   id_tipo_fatt,
   id_stato_fatt,
   note,
+  righe_ids,
   is_acquisto,
   signal,
 } = {}) => {
@@ -95,6 +96,7 @@ export const emitPreventivoFattura = async ({
     id_tipo_fatt: Number(id_tipo_fatt) || undefined,
     id_stato_fatt: Number(id_stato_fatt) || undefined,
     note: typeof note === 'string' && note.trim() !== '' ? note.trim() : undefined,
+    righe_ids: Array.isArray(righe_ids) && righe_ids.length > 0 ? righe_ids : undefined,
     is_acquisto: is_acquisto !== undefined ? (is_acquisto ? 1 : 0) : undefined,
   }
 

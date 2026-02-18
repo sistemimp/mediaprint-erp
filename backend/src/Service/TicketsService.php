@@ -24,6 +24,7 @@ final class TicketsService
             'priorita' => isset($filters['priorita']) ? $this->normalizePriority((string) $filters['priorita'], false) : null,
             'assigned_to' => isset($filters['assigned_to']) ? $this->normalizeId($filters['assigned_to']) : null,
             'created_by' => isset($filters['created_by']) ? $this->normalizeId($filters['created_by']) : null,
+            'exclude_modulo' => 'acquisti',
         ];
 
         return ['items' => $this->repository->listTickets($normalized)];

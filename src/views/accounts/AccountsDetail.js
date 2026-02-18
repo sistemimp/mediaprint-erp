@@ -148,7 +148,7 @@ const AccountsDetail = () => {
         .filter((perm) => Number(perm.attivo) === 1)
         .map((perm) => [String(perm.code || ''), Number(perm.id_permesso)]),
     )
-    const modules = ['prod', 'pack', 'contr', 'anag', 'acct', 'prev', 'ddt', 'fatt', 'pay', 'job', 'msg']
+    const modules = ['prod', 'pack', 'contr', 'anag', 'acct', 'prev', 'acqu', 'ddt', 'fatt', 'pay', 'job', 'msg']
     const actions = ['read', 'write', 'create', 'delete']
     const out = []
 

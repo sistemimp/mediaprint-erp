@@ -29,6 +29,7 @@ import { cilPlus, cilTrash, cilSave } from '@coreui/icons'
 import { useAuth } from '../../context/AuthContext'
 import { fetchAnagrafiche, fetchAnagraficaDetail } from '../../services/anagrafiche'
 import { createPreventivo, createPreventivoOggettoOption } from '../../services/preventivi'
+import { linkAcquistiRichiestaPreventivo } from '../../services/acquistiRichieste'
 import {
   fetchCategorieProdotti,
   fetchProdotti,
@@ -60,6 +61,11 @@ const PreventiviCreate = () => {
     ? 'Cerca fornitore per ragione sociale, codice o P.IVA'
     : 'Cerca cliente per ragione sociale, codice o P.IVA'
   const basePath = isAcquisto ? '/acquisti/preventivi' : '/preventivi'
+  const fromTicketId = useMemo(() => {
+    const params = new URLSearchParams(location.search || '')
+    const raw = Number(params.get('from_ticket') || 0)
+    return Number.isFinite(raw) && raw > 0 ? raw : null
+  }, [location.search])
 
   // Sezione: Dati generali
   const [clienteSearch, setClienteSearch] = useState('')
@@ -671,6 +677,16 @@ const PreventiviCreate = () => {
       })
       const newPreventivoId = getPreventivoIdFromResponse(result)
       if (newPreventivoId) {
+        if (isAcquisto && fromTicketId) {
+          try {
+            await linkAcquistiRichiestaPreventivo({
+              token,
+              body: { id_ticket: fromTicketId, id_preventivo: newPreventivoId },
+            })
+          } catch (_linkError) {
+            // Il preventivo viene comunque creato: il collegamento puo essere ripetuto dalla richiesta.
+          }
+        }
         setIdPreventivo(newPreventivoId)
         navigate(`${basePath}/dettagli?id=${newPreventivoId}`, {
           state: { prefill: buildNavigationPrefill(), fromCreate: true },

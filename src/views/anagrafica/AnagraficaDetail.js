@@ -276,6 +276,7 @@ const createFiscalForm = (fiscale) => ({
   banca: fiscale?.banca ?? "",
   id_cond_pagamento: fiscale?.id_cond_pagamento ?? "",
   modalita_pagamento: fiscale?.modalita_pagamento ?? "",
+  id_sezionale: fiscale?.id_sezionale ?? "",
   altri_dati: fiscale?.altri_dati ?? "",
 })
 
@@ -342,6 +343,7 @@ const AnagraficaDetail = () => {
   const [modalitaOptions, setModalitaOptions] = useState([])
   const [modalitaLoading, setModalitaLoading] = useState(false)
   const [modalitaError, setModalitaError] = useState(null)
+  const [sezionaliOptions, setSezionaliOptions] = useState([])
   const [tipologieLookup, setTipologieLookup] = useState([])
   const [regimiLookup, setRegimiLookup] = useState([])
   const [tipologieSediLookup, setTipologieSediLookup] = useState([])
@@ -448,6 +450,17 @@ const AnagraficaDetail = () => {
         return true
       })
   }, [modalitaOptions])
+  const sezionaliMap = useMemo(() => {
+    const map = new Map()
+    if (Array.isArray(sezionaliOptions)) {
+      sezionaliOptions.forEach((item) => {
+        if (item && item.id_sezionale !== undefined && item.id_sezionale !== null) {
+          map.set(String(item.id_sezionale), item)
+        }
+      })
+    }
+    return map
+  }, [sezionaliOptions])
   const sedeAccordionItems = useMemo(() => {
     if (editingSedeId === "new") {
       return [{ id_sede: "new" }, ...sedi]
@@ -629,6 +642,7 @@ const AnagraficaDetail = () => {
       setModalitaOptions([])
       setModalitaError(null)
       setModalitaLoading(false)
+      setSezionaliOptions([])
       return
     }
 
@@ -643,7 +657,9 @@ const AnagraficaDetail = () => {
           return
         }
         const modalita = Array.isArray(data?.modalita_pagamento) ? data.modalita_pagamento : []
+        const sezionali = Array.isArray(data?.sezionali) ? data.sezionali : []
         setModalitaOptions(modalita)
+        setSezionaliOptions(sezionali)
       })
       .catch((fetchError) => {
         if (fetchError.name === "AbortError" || !isMounted) {
@@ -655,6 +671,7 @@ const AnagraficaDetail = () => {
         }
         setModalitaError(fetchError)
         setModalitaOptions([])
+        setSezionaliOptions([])
       })
       .finally(() => {
         if (isMounted) {
@@ -878,6 +895,8 @@ const AnagraficaDetail = () => {
       id_cond_pagamento:
         fiscaleForm.id_cond_pagamento === "" ? null : Number(fiscaleForm.id_cond_pagamento),
       modalita_pagamento: fiscaleForm.modalita_pagamento,
+      id_sezionale:
+        fiscaleForm.id_sezionale === "" ? null : Number(fiscaleForm.id_sezionale),
       altri_dati: fiscaleForm.altri_dati,
     }
 
@@ -1881,6 +1900,10 @@ const AnagraficaDetail = () => {
     const fiscale = detail.fiscale
     const paymentTerm =
       fiscale.id_cond_pagamento != null ? paymentTermsMap.get(String(fiscale.id_cond_pagamento)) : null
+    const sezionale = fiscale.id_sezionale != null ? sezionaliMap.get(String(fiscale.id_sezionale)) : null
+    const sezionaleLabel = sezionale
+      ? (sezionale.code ? `${sezionale.code} - ${sezionale.label}` : (sezionale.label ?? sezionale.id_sezionale))
+      : "-"
 
     return [
       { label: "PEC", value: fiscale.pec },
@@ -1888,13 +1911,14 @@ const AnagraficaDetail = () => {
       { label: "IBAN", value: fiscale.iban },
       { label: "Banca", value: fiscale.banca },
       { label: "Modalita di pagamento", value: fiscale.modalita_pagamento },
+      { label: "Sezionale fattura", value: sezionaleLabel },
       {
         label: "Condizioni di pagamento",
         value: paymentTerm?.label ?? "-",
       },
       { label: "Altri dati", value: fiscale.altri_dati, fullWidth: true },
     ]
-  }, [detail, paymentTermsMap])
+  }, [detail, paymentTermsMap, sezionaliMap])
   const anagraficaStatus = String(detail?.anagrafica?.stato || '').toLowerCase()
   const isDisabled = anagraficaStatus === 'disattiva' || Number(detail?.anagrafica?.is_active) !== 1
 
@@ -2054,20 +2078,22 @@ const AnagraficaDetail = () => {
     <>
       <CCard className={`anagrafica-detail ${isCompact ? 'compact' : ''}`}>
         <CCardHeader className={`sticky-card-header ${isDisabled ? 'anagrafica-disabled' : ''} d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-3`}>
-          <div className="d-flex flex-column">
-            <h2 className="h5 mb-1">Dettaglio anagrafica</h2>
-            <div className="d-flex flex-wrap align-items-center gap-2 text-body-secondary">
-              <span className="mb-0">
-                {recordId
-                  ? `ID ${recordId}`
-                  : "Seleziona un record valido dalla lista per visualizzare i dettagli."}
-              </span>
-              {detail?.anagrafica?.ragione_sociale && (
-                <span className="text-body fw-semibold">· {detail.anagrafica.ragione_sociale}</span>
-              )}
+          <div className="d-flex flex-column gap-1">
+            <div className="text-body-secondary text-uppercase small fw-semibold">
+              Dettaglio anagrafica
+            </div>
+            <div className="d-flex flex-wrap align-items-center gap-2">
+              <h2 className="h4 mb-0">
+                {detail?.anagrafica?.ragione_sociale || 'Anagrafica'}
+              </h2>
               {detail?.anagrafica?.stato && (
                 <span>{getStatusBadge(detail.anagrafica.stato)}</span>
               )}
+            </div>
+            <div className="text-body-secondary small">
+              {recordId
+                ? `ID ${recordId}`
+                : "Seleziona un record valido dalla lista per visualizzare i dettagli."}
             </div>
           </div>
           <div className="d-flex flex-wrap gap-2">
@@ -2656,6 +2682,24 @@ const AnagraficaDetail = () => {
                             Impossibile caricare le modalità: {modalitaError.message || "errore sconosciuto"}
                           </div>
                         )}
+                      </CCol>
+                      <CCol md={6}>
+                        <CFormLabel htmlFor="sezionaleFattura">Sezionale fattura</CFormLabel>
+                        <CFormSelect
+                          id="sezionaleFattura"
+                          value={fiscaleForm.id_sezionale ?? ""}
+                          onChange={handleFiscalFieldChange("id_sezionale")}
+                          disabled={savingFiscal || isDisabled || modalitaLoading || sezionaliOptions.length === 0}
+                        >
+                          <option value="">Seleziona sezionale</option>
+                          {sezionaliOptions.map((option) => (
+                            <option key={option.id_sezionale} value={option.id_sezionale}>
+                              {option.code
+                                ? `${option.code} - ${option.label}`
+                                : option.label || option.id_sezionale}
+                            </option>
+                          ))}
+                        </CFormSelect>
                       </CCol>
                       <CCol md={6}>
                         <CFormLabel htmlFor="idCondPagamento">Condizioni di pagamento</CFormLabel>

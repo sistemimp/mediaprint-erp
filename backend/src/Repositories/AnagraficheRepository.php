@@ -365,6 +365,7 @@ final class AnagraficheRepository
                 banca,
                 id_cond_pagamento,
                 modalita_pagamento,
+                id_sezionale,
                 giorni_pagamento,
                 altri_dati
             FROM tb_anagrafiche_fiscali
@@ -852,6 +853,7 @@ final class AnagraficheRepository
             'banca' => ['column' => 'banca', 'type' => PDO::PARAM_STR],
             'id_cond_pagamento' => ['column' => 'id_cond_pagamento', 'type' => PDO::PARAM_INT],
             'modalita_pagamento' => ['column' => 'modalita_pagamento', 'type' => PDO::PARAM_STR],
+            'id_sezionale' => ['column' => 'id_sezionale', 'type' => PDO::PARAM_INT],
             'giorni_pagamento' => ['column' => 'giorni_pagamento', 'type' => PDO::PARAM_INT],
             'altri_dati' => ['column' => 'altri_dati', 'type' => PDO::PARAM_STR],
         ];
@@ -1587,11 +1589,11 @@ final class AnagraficheRepository
         $this->pdo->prepare(
             "INSERT INTO tb_anagrafiche_fiscali_archive (
                 id_anagrafica, pec, codice_sdi, iban, banca,
-                id_cond_pagamento, modalita_pagamento, giorni_pagamento, altri_dati,
+                id_cond_pagamento, modalita_pagamento, id_sezionale, giorni_pagamento, altri_dati,
                 archived_at, archived_by, archive_batch_id, archive_note
             )
             SELECT f.id_anagrafica, f.pec, f.codice_sdi, f.iban, f.banca,
-                   f.id_cond_pagamento, f.modalita_pagamento, f.giorni_pagamento, f.altri_dati,
+                   f.id_cond_pagamento, f.modalita_pagamento, f.id_sezionale, f.giorni_pagamento, f.altri_dati,
                    NOW(), SUBSTRING_INDEX(CURRENT_USER(), '@', 1), UUID(), 'Archiviata da disattivazione'
             FROM tb_anagrafiche_fiscali f
             WHERE f.id_anagrafica = :id
@@ -1763,11 +1765,11 @@ final class AnagraficheRepository
         $sqlFisc = <<<'SQL'
             INSERT INTO tb_anagrafiche_fiscali (
                 id_anagrafica, pec, codice_sdi, iban, banca, id_cond_pagamento,
-                modalita_pagamento, giorni_pagamento, altri_dati
+                modalita_pagamento, id_sezionale, giorni_pagamento, altri_dati
             )
             SELECT
                 f.id_anagrafica, f.pec, f.codice_sdi, f.iban, f.banca, f.id_cond_pagamento,
-                f.modalita_pagamento, f.giorni_pagamento, f.altri_dati
+                f.modalita_pagamento, f.id_sezionale, f.giorni_pagamento, f.altri_dati
             FROM tb_anagrafiche_fiscali_archive f
             WHERE f.id_anagrafica = :id
               AND NOT EXISTS (

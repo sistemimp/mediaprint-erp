@@ -67,6 +67,7 @@ import {
 } from '../../services/prodotti'
 import { fetchPacchetti, fetchPacchettoDetail } from '../../services/pacchetti'
 import { fetchPaymentTerms } from '../../services/paymentTerms'
+import { fetchAnagraficaDetail } from '../../services/anagrafiche'
 
 const currencyFormatter = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' })
 
@@ -288,6 +289,7 @@ const FattureDetail = () => {
   const { setBreadcrumbActions, clearBreadcrumbActions } = useBreadcrumbActions()
 
   const [record, setRecord] = useState(null)
+  const [clienteSezionaleId, setClienteSezionaleId] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [formValues, setFormValues] = useState(createEmptyFormValues)
@@ -710,6 +712,27 @@ const FattureDetail = () => {
     return map
   }, [naturaOptions])
 
+  const sezionaleById = useMemo(() => {
+    const map = new Map()
+    if (Array.isArray(config?.sezionali)) {
+      config.sezionali.forEach((opt) => {
+        if (opt && opt.id_sezionale !== undefined && opt.id_sezionale !== null) {
+          map.set(String(opt.id_sezionale), opt)
+        }
+      })
+    }
+    return map
+  }, [config?.sezionali])
+
+  const resolvedSezionaleLabel = useMemo(() => {
+    const id = clienteSezionaleId || formValues.id_sezionale || ''
+    if (!id) return 'Non configurato'
+    const opt = sezionaleById.get(String(id))
+    if (!opt) return `ID ${id}`
+    if (opt.code) return `${opt.code} - ${opt.label || opt.id_sezionale}`
+    return opt.label || opt.id_sezionale || `ID ${id}`
+  }, [clienteSezionaleId, formValues.id_sezionale, sezionaleById])
+
   const createEditableRow = useCallback((initial = {}) => {
     rowCounterRef.current += 1
     return {
@@ -767,6 +790,7 @@ const FattureDetail = () => {
       setRows([])
       setSaveError(null)
       setSaveSuccess(null)
+      setClienteSezionaleId('')
       return
     }
     setFormValues({
@@ -794,6 +818,33 @@ const FattureDetail = () => {
     setRows(hydrateRowsFromRecord(record))
     setSaveError(null)
   }, [record, hydrateRowsFromRecord])
+
+  useEffect(() => {
+    if (!clienteSezionaleId) return
+    setFormValues((prev) => {
+      if (String(prev.id_sezionale || '') === String(clienteSezionaleId)) {
+        return prev
+      }
+      return { ...prev, id_sezionale: String(clienteSezionaleId) }
+    })
+  }, [clienteSezionaleId])
+
+  useEffect(() => {
+    const run = async () => {
+      if (!token || !record?.id_anagrafica) {
+        setClienteSezionaleId('')
+        return
+      }
+      try {
+        const det = await fetchAnagraficaDetail({ token, id: record.id_anagrafica })
+        const sez = det?.fiscale?.id_sezionale ?? ''
+        setClienteSezionaleId(sez ? String(sez) : '')
+      } catch {
+        setClienteSezionaleId('')
+      }
+    }
+    run()
+  }, [token, record?.id_anagrafica])
 
   const statiOptions = useMemo(
     () => (Array.isArray(config?.stati) ? config.stati : []),
@@ -1024,11 +1075,6 @@ const FattureDetail = () => {
       setStatusUpdating(false)
     }
   }, [logout, record, rifiutataStatusId, statiById, token, user])
-
-  const sezionaliOptions = useMemo(
-    () => (Array.isArray(config?.sezionali) ? config.sezionali : []),
-    [config],
-  )
 
   const metodiPagamentoOptions = useMemo(
     () => (Array.isArray(config?.metodi_pagamento) ? config.metodi_pagamento : []),
@@ -1590,6 +1636,7 @@ const FattureDetail = () => {
 
     const previousStatusId = showStatus && record?.id_stato_fatt ? Number(record.id_stato_fatt) : null
     const desiredStatusId = showStatus && formValues.id_stato_fatt ? Number(formValues.id_stato_fatt) : null
+    const effectiveSezionale = clienteSezionaleId || formValues.id_sezionale || ''
 
     if (showStatus) {
       const wantsRejectTransition =
@@ -1622,6 +1669,12 @@ const FattureDetail = () => {
       return
     }
 
+    if (!effectiveSezionale) {
+      setSaveError(new Error("Sezionale non configurato nell'anagrafica."))
+      setSaveSuccess(null)
+      return
+    }
+
     let saldoValue = null
     if (formValues.saldo !== '' && formValues.saldo !== null && formValues.saldo !== undefined) {
       const parsed = Number(formValues.saldo)
@@ -1644,7 +1697,9 @@ const FattureDetail = () => {
         note: formValues.note ?? '',
         id_stato_fatt:
           showStatus && formValues.id_stato_fatt ? Number(formValues.id_stato_fatt) : undefined,
-        id_sezionale: formValues.id_sezionale ? Number(formValues.id_sezionale) : undefined,
+        id_sezionale: clienteSezionaleId
+          ? Number(clienteSezionaleId)
+          : (formValues.id_sezionale ? Number(formValues.id_sezionale) : undefined),
         saldo: saldoValue,
         cliente_pec: formValues.cliente_pec,
         cliente_codice_sdi: formValues.cliente_codice_sdi,
@@ -2164,24 +2219,12 @@ const FattureDetail = () => {
                     disabled={formDisabled}
                   />
                 </CCol>
-                <CCol md={3}>
-                  <CFormLabel>Sezionale</CFormLabel>
-                  <CFormSelect
-                    value={formValues.id_sezionale}
-                    onChange={handleFormChange('id_sezionale')}
-                    disabled={formDisabled || configLoading || sezionaliOptions.length === 0}
-                    required
-                  >
-                    <option value="">Seleziona sezionale</option>
-                    {sezionaliOptions.map((option) => (
-                      <option key={option.id_sezionale} value={option.id_sezionale}>
-                        {option.code
-                          ? `${option.code} - ${option.label}`
-                          : option.label || option.id_sezionale}
-                      </option>
-                    ))}
-                  </CFormSelect>
-                </CCol>
+                {!isAcquisto && (
+                  <CCol md={3}>
+                    <CFormLabel>Sezionale</CFormLabel>
+                    <CFormInput value={resolvedSezionaleLabel} disabled readOnly />
+                  </CCol>
+                )}
                 {showStatus && (
                   <CCol md={3}>
                     <CFormLabel>Stato</CFormLabel>

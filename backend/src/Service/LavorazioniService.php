@@ -760,6 +760,20 @@ final class LavorazioniService
         }
 
         $this->repository->updateActivityAssignments($activityId, $repartoId, $operatorIds);
+
+        $lavorazioneId = isset($activity['id_lavorazione']) ? (int) $activity['id_lavorazione'] : 0;
+        if ($lavorazioneId > 0 && $operatorIds !== []) {
+            $currentJobOperators = $this->repository->getOperatorIdsForLavorazione($lavorazioneId);
+            $mergedJobOperators = array_values(array_unique(array_merge($currentJobOperators, $operatorIds)));
+            $jobDetail = $this->repository->findDetail($lavorazioneId);
+            $jobRepartoId = null;
+            if ($jobDetail !== null && isset($jobDetail['id_reparto'])) {
+                $candidate = (int) $jobDetail['id_reparto'];
+                $jobRepartoId = $candidate > 0 ? $candidate : null;
+            }
+            $this->repository->updateLavorazioneAssignments($lavorazioneId, $jobRepartoId, $mergedJobOperators);
+        }
+
         $updated = $this->repository->findActivity($activityId);
 
         return [
@@ -1307,6 +1321,7 @@ final class LavorazioniService
         $filters = [
             'stato' => $this->filterEnum($query['stato'] ?? null, ['aperta', 'pianificata', 'in_produzione', 'completata', 'annullata', 'sospesa']),
             'reparto_id' => null,
+            'operatore_id' => null,
             'date_from' => null,
             'date_to' => null,
             'search' => null,
@@ -1316,6 +1331,11 @@ final class LavorazioniService
 
         if (!empty($query['reparto'])) {
             $filters['reparto_id'] = $this->resolveRepartoId((string) $query['reparto']);
+        }
+        $operatoreRaw = $query['operatore'] ?? ($query['id_operatore'] ?? ($query['operatore_id'] ?? null));
+        if ($operatoreRaw !== null && $operatoreRaw !== '') {
+            $operatoreId = (int) $operatoreRaw;
+            $filters['operatore_id'] = $operatoreId > 0 ? $operatoreId : null;
         }
 
         $periodo = $this->resolvePeriodo($query['periodo'] ?? null);

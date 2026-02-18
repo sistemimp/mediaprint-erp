@@ -139,8 +139,20 @@ export const upsertProdottoPrezzoCombinato = async ({ token, id_prodotto, var_id
   return response
 }
 
+export const bulkUpsertProdottoPrezziCombinati = async ({ token, id_prodotto, rows, signal } = {}) => {
+  const body = { action: 'bulk_upsert', id_prodotto, rows }
+  const response = await apiFetch('/prodotti/variazioni/prezzi.php', { method: 'POST', token, body, signal })
+  return response
+}
+
 export const deleteProdottoPrezzoCombinato = async ({ token, id_prodotto, var_ids, signal } = {}) => {
   const body = { action: 'delete', id_prodotto, var_ids }
+  const response = await apiFetch('/prodotti/variazioni/prezzi.php', { method: 'POST', token, body, signal })
+  return response
+}
+
+export const bulkDeleteProdottoPrezziCombinati = async ({ token, id_prodotto, rows, signal } = {}) => {
+  const body = { action: 'bulk_delete', id_prodotto, rows }
   const response = await apiFetch('/prodotti/variazioni/prezzi.php', { method: 'POST', token, body, signal })
   return response
 }

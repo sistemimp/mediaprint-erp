@@ -19,6 +19,8 @@ final class FattureRepository
     private array $statoIdCache = [];
     private bool $statusLogTableEnsured = false;
     private bool $statusLogTableAvailable = false;
+    private bool $preventivoRigheMapEnsured = false;
+    private bool $preventivoRigheMapAvailable = false;
     /** @var array<int,string|null> */
     private array $statusLabelCache = [];
     private ?bool $comboKeySupported = null;
@@ -633,12 +635,14 @@ final class FattureRepository
                 f.totale_iva,
                 f.totale,
                 f.saldo,
+                f.is_acquisto,
                 f.created_at,
                 f.updated_at,
                 f.id_stato_fatt,
                 f.id_sdi_tipo_documento,
                 f.id_sdi_esigibilita,
                 f.id_sdi_modalita,
+                sf.code AS stato_code,
                 sf.label AS stato_label,
                 sz.code AS sezionale_code,
                 sz.descrizione AS sezionale_label,
@@ -1392,6 +1396,14 @@ final class FattureRepository
                     :posizione
                 )'
             );
+            $hasPreventivoMap = $this->ensurePreventivoRigheMapTableExists();
+            $mapStmt = null;
+            if ($hasPreventivoMap) {
+                $mapStmt = $this->pdo->prepare(
+                    'INSERT INTO appoggio_preventivo_fattura_righe (id_riga_preventivo, id_fattura, id_fattura_riga)
+                     VALUES (:id_riga_preventivo, :id_fattura, :id_fattura_riga)'
+                );
+            }
 
             $posizione = 1;
             foreach ($righe as $line) {
@@ -1437,6 +1449,18 @@ final class FattureRepository
                 $linesStmt->bindValue(':totale', $totLine, PDO::PARAM_STR);
                 $linesStmt->bindValue(':posizione', $posizione, PDO::PARAM_INT);
                 $linesStmt->execute();
+                if ($mapStmt) {
+                    $idRigaPrev = isset($line['id_riga_preventivo'])
+                        ? (int) $line['id_riga_preventivo']
+                        : (isset($line['id_riga']) ? (int) $line['id_riga'] : 0);
+                    $idFatturaRiga = (int) $this->pdo->lastInsertId();
+                    if ($idRigaPrev > 0 && $idFatturaRiga > 0) {
+                        $mapStmt->bindValue(':id_riga_preventivo', $idRigaPrev, PDO::PARAM_INT);
+                        $mapStmt->bindValue(':id_fattura', $idFattura, PDO::PARAM_INT);
+                        $mapStmt->bindValue(':id_fattura_riga', $idFatturaRiga, PDO::PARAM_INT);
+                        $mapStmt->execute();
+                    }
+                }
                 $posizione++;
             }
 
@@ -2687,6 +2711,37 @@ final class FattureRepository
 
         $this->comboKeySupported = $exists;
         return $this->comboKeySupported;
+    }
+
+    private function ensurePreventivoRigheMapTableExists(): bool
+    {
+        if ($this->preventivoRigheMapEnsured) {
+            return $this->preventivoRigheMapAvailable;
+        }
+
+        try {
+            $sql = <<<'SQL'
+                CREATE TABLE IF NOT EXISTS appoggio_preventivo_fattura_righe (
+                    id_riga_preventivo INT UNSIGNED NOT NULL,
+                    id_fattura INT UNSIGNED NOT NULL,
+                    id_fattura_riga INT UNSIGNED NOT NULL,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (id_riga_preventivo, id_fattura_riga),
+                    KEY idx_apfr_fattura (id_fattura),
+                    KEY idx_apfr_riga (id_riga_preventivo),
+                    KEY idx_apfr_fattura_riga (id_fattura_riga),
+                    CONSTRAINT fk_apfr_fattura FOREIGN KEY (id_fattura) REFERENCES tb_fatture (id_fattura) ON DELETE CASCADE,
+                    CONSTRAINT fk_apfr_fattura_riga FOREIGN KEY (id_fattura_riga) REFERENCES tb_fatture_righe (id_riga) ON DELETE CASCADE
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            SQL;
+            $this->pdo->exec($sql);
+            $this->preventivoRigheMapAvailable = true;
+        } catch (\Throwable $ignored) {
+            $this->preventivoRigheMapAvailable = false;
+        }
+
+        $this->preventivoRigheMapEnsured = true;
+        return $this->preventivoRigheMapAvailable;
     }
 
     private function logStatusHistory(int $idFattura, ?int $fromStatusId, ?int $toStatusId, ?string $actor = null): void

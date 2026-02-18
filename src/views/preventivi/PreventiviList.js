@@ -69,6 +69,13 @@ const formatDateTime = (value) => {
   return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString('it-IT')
 }
 
+const formatPercent = (value) => {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) {
+    return '-'
+  }
+  return `${Number(value).toFixed(1)}%`
+}
+
 const buildPreventivoPdfUrl = (id) => {
   const numericId = Number(id)
   if (!Number.isFinite(numericId) || numericId <= 0) return null
@@ -130,6 +137,19 @@ const formatVatLabel = (line) => {
   if (percent === null) return '-'
   const fixed = percent.toFixed(2).replace('.', ',')
   return `${fixed}%`
+}
+
+const getFatturazionePercent = (row) => {
+  const totale = Number(row?.totale)
+  if (!Number.isFinite(totale) || totale <= 0) {
+    return null
+  }
+  const fatturato = Number(row?.totale_fatturato ?? 0)
+  if (!Number.isFinite(fatturato)) {
+    return null
+  }
+  const percent = (fatturato / totale) * 100
+  return Math.min(100, Math.max(0, percent))
 }
 
   const renderLinesTable = (lines, emptyMessage) => {
@@ -860,6 +880,7 @@ const PreventiviList = () => {
                     <CTableHeaderCell role="button" onClick={(e) => toggleSort('stato', e.shiftKey)} className="text-center text-nowrap">
                       Stato{sortIndicator('stato')}
                     </CTableHeaderCell>
+                    <CTableHeaderCell className="text-center text-nowrap">Fatturazione</CTableHeaderCell>
                     <CTableHeaderCell className="text-center text-nowrap">Azioni</CTableHeaderCell>
                   </CTableRow>
                 </CTableHead>
@@ -868,7 +889,7 @@ const PreventiviList = () => {
                     if (row.type === 'group') {
                       return (
                         <CTableRow key={`g-${idx}`} className="table-secondary">
-                          <CTableDataCell colSpan={9} className="fw-semibold">
+                          <CTableDataCell colSpan={10} className="fw-semibold">
                             {row.label} — {row.count} elementi
                           </CTableDataCell>
                         </CTableRow>
@@ -884,6 +905,7 @@ const PreventiviList = () => {
                       : null
                     const showCedWarning = Boolean(r.ced_warning)
                     const isExpanded = Boolean(expandedRevisions[r.id_preventivo])
+                    const fatturazionePercent = getFatturazionePercent(r)
                     return (
                       <React.Fragment key={r.id_preventivo ?? idx}>
                         <CTableRow
@@ -935,6 +957,9 @@ const PreventiviList = () => {
                               </span>
                             )}
                           </CTableDataCell>
+                          <CTableDataCell className="text-center text-nowrap">
+                            {formatPercent(fatturazionePercent)}
+                          </CTableDataCell>
                           <CTableDataCell className="text-center">
                             <div className="d-inline-flex gap-1 flex-wrap justify-content-center">
                               <PermissionButton
@@ -975,7 +1000,7 @@ const PreventiviList = () => {
                         </CTableRow>
                     {isExpanded && rowRevisions.length > 0 && (
                       <CTableRow key={`rev-${r.id_preventivo}`} className="border-start-0 border-end-0">
-                        <CTableDataCell colSpan={9} className="pt-0 pb-2">
+                        <CTableDataCell colSpan={10} className="pt-0 pb-2">
                           <div className="d-flex flex-column gap-1 small text-body-secondary">
                             {rowRevisions.map((rev) => (
                               <div className="d-flex flex-wrap gap-3 align-items-baseline" key={rev.id_revisione}>

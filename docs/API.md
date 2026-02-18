@@ -548,6 +548,14 @@ specifiche sopra.
 - POST `/prodotti/categorie/save.php` - crea/aggiorna categoria
 - GET `/prodotti/variazioni/list.php` - lista variazioni
 - POST `/prodotti/variazioni/save.php` - crea/aggiorna variazione
+- GET `/magazzinoStockList.php` - giacenze magazzino (query: `q`, `only_alerts`)
+- POST `/magazzinoStockConfig.php` - configura gestione magazzino su prodotto
+- POST `/magazzinoMovementCreate.php` - registra movimento carico/scarico/rettifica
+
+### Macchine
+- GET `/macchineList.php` - elenco macchine (query: `tipo`, `all`)
+- GET `/macchineDetail.php` - dettaglio macchina (query: `id`)
+- POST `/macchineSave.php` - crea/aggiorna macchina
 - POST `/prodotti/variazioni/delete.php` - elimina variazione
 - GET/POST `/prodotti/variazioni/prodotto.php` - link/unlink variazioni
 - GET/POST `/prodotti/variazioni/prezzi.php` - prezzi combinati

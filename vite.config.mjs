@@ -60,6 +60,21 @@ export default defineConfig(() => {
     base: './',
     build: {
       outDir: 'build',
+      chunkSizeWarningLimit: 1000,
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (!id.includes('node_modules')) {
+              return undefined
+            }
+
+            if (id.includes('/exceljs/')) {
+              return 'vendor-exceljs'
+            }
+            return undefined
+          },
+        },
+      },
     },
     css: {
       postcss: {

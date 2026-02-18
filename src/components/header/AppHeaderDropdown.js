@@ -8,7 +8,7 @@ import {
   CDropdownMenu,
   CDropdownToggle,
 } from '@coreui/react'
-import { cilLockLocked, cilUser } from '@coreui/icons'
+import { cilList, cilLockLocked, cilUser } from '@coreui/icons'
 import CIcon from '@coreui/icons-react'
 import { useNavigate } from 'react-router-dom'
 
@@ -47,6 +47,13 @@ const AppHeaderDropdown = () => {
           onClick={() => navigate('/profilo')}
         >
           <CIcon icon={cilUser} className="me-2" /> Profilo
+        </CDropdownItem>
+        <CDropdownItem
+          as="button"
+          type="button"
+          onClick={() => navigate('/attivita')}
+        >
+          <CIcon icon={cilList} className="me-2" /> Attivita
         </CDropdownItem>
         <CDropdownDivider />
         <CDropdownItem as="button" type="button" onClick={handleLogout}>

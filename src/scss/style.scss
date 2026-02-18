@@ -151,8 +151,8 @@ body {
 
 /* Keep Anagrafica sticky header under breadcrumbs bar */
 .anagrafica-detail .sticky-card-header {
-  /* Keep below main header (4rem + 1px) and breadcrumbs (3rem) with extra spacing */
-  top: calc(4rem + 1px + 3rem + 0.5rem);
+  /* Stick to top of viewport */
+  top: 0;
 }
 
 /* Red border when anagrafica is disabled */

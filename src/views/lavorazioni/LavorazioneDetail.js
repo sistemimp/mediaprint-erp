@@ -1,6 +1,7 @@
 /* eslint-disable prettier/prettier */
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
+import './LavorazioneDetail.css'
 import {
   CAlert,
   CAccordion,
@@ -149,26 +150,6 @@ const formatPreventivoDisplay = (detail) => {
     return `${base} - ${date}`
   }
   return base !== '-' ? base : date
-}
-
-const getFirstActivityStart = (activities) => {
-  if (!Array.isArray(activities)) return null
-  let earliest = null
-  activities.forEach((task) => {
-    const value = task?.data_avvio
-    if (!value) return
-    const date = new Date(value)
-    if (Number.isNaN(date.getTime())) return
-    if (!earliest || date < earliest) {
-      earliest = date
-    }
-  })
-  return earliest ? earliest.toISOString() : null
-}
-
-const getEffectiveStart = (detail) => {
-  const firstActivityStart = getFirstActivityStart(detail?.attivita)
-  return firstActivityStart || detail?.data_avvio_reale || null
 }
 
 const toDateTimeLocal = (value) => {
@@ -414,7 +395,7 @@ const LavorazioneDetail = () => {
   const [assignmentOptions, setAssignmentOptions] = useState({ reparti: [], operatori: [] })
   const [assignmentOptionsLoading, setAssignmentOptionsLoading] = useState(false)
   const [jobAssignmentModalVisible, setJobAssignmentModalVisible] = useState(false)
-  const [jobAssignmentForm, setJobAssignmentForm] = useState({ reparto: '', operatori: [] })
+  const [jobAssignmentForm, setJobAssignmentForm] = useState({ operatori: [] })
   const [jobAssignmentSubmitting, setJobAssignmentSubmitting] = useState(false)
   const [jobAssignmentError, setJobAssignmentError] = useState(null)
   const [activityAssignmentModal, setActivityAssignmentModal] = useState({
@@ -1652,14 +1633,6 @@ const LavorazioneDetail = () => {
     }
   }
 
-  const handleJobAssignmentFieldChange = (field) => (event) => {
-    const value = event?.target ? event.target.value : event
-    setJobAssignmentForm((prev) => ({
-      ...prev,
-      [field]: value,
-    }))
-  }
-
   const handleJobAssignmentOperatorsChange = (event) => {
     const selected = event?.target
       ? Array.from(event.target.selectedOptions || []).map((option) => option.value)
@@ -1671,17 +1644,12 @@ const LavorazioneDetail = () => {
   }
 
   const handleOpenJobAssignmentModal = () => {
-    const repartoValue =
-      currentDetail?.id_reparto && Number(currentDetail.id_reparto) > 0
-        ? String(currentDetail.id_reparto)
-        : ''
     const operatorValues = Array.isArray(currentDetail?.lavorazione_operatori)
       ? currentDetail.lavorazione_operatori
           .map((item) => (item?.id_account ? String(item.id_account) : null))
           .filter(Boolean)
       : []
     setJobAssignmentForm({
-      reparto: repartoValue,
       operatori: operatorValues,
     })
     setJobAssignmentError(null)
@@ -1706,7 +1674,6 @@ const LavorazioneDetail = () => {
       await assignLavorazione({
         token,
         idLavorazione: Number(recordId),
-        repartoId: jobAssignmentForm.reparto ? Number(jobAssignmentForm.reparto) : null,
         operatori: operatorIds,
       })
       setJobAssignmentModalVisible(false)
@@ -1924,7 +1891,9 @@ const LavorazioneDetail = () => {
 
       <CRow className="mb-4">
         <CCol xs={12}>
-          <CCard className="mb-4">
+          <CRow className="g-3 mb-4 mp-detail-top-cards">
+            <CCol xs={12} xl={10} className="mp-detail-main-col">
+              <CCard className="mb-0 h-100">
             <CCardHeader className="d-flex align-items-center justify-content-between flex-wrap gap-2">
               <div>
                 <strong>Informazioni principali</strong>
@@ -2061,31 +2030,6 @@ const LavorazioneDetail = () => {
                       <CFormLabel>Preventivo collegato</CFormLabel>
                       <CFormInput value={formatPreventivoDisplay(currentDetail)} disabled />
                     </CCol>
-                    <CCol md={6}>
-                      <CFormLabel>Periodo previsto</CFormLabel>
-                      <div className="d-flex gap-2">
-                        <CFormInput
-                          type="date"
-                          value={infoDraft.data_inizio_prevista}
-                          onChange={handleInfoFieldChange('data_inizio_prevista')}
-                          disabled={!hasDetail || infoSaving}
-                        />
-                        <CFormInput
-                          type="date"
-                          value={infoDraft.data_fine_prevista}
-                          onChange={handleInfoFieldChange('data_fine_prevista')}
-                          disabled={!hasDetail || infoSaving}
-                        />
-                      </div>
-                    </CCol>
-                    <CCol md={6}>
-                      <CFormLabel>Avvio effettivo</CFormLabel>
-                      <CFormInput
-                        type="datetime-local"
-                        value={toDateTimeLocal(getEffectiveStart(currentDetail))}
-                        disabled
-                      />
-                    </CCol>
                     <CCol md={12}>
                       <CFormLabel>Note</CFormLabel>
                       <CFormTextarea
@@ -2127,16 +2071,6 @@ const LavorazioneDetail = () => {
                             '-'
                           )
                         }
-                      />
-                    </CCol>
-                    <CCol md={6}>
-                      <InfoField
-                        label="Periodo previsto"
-                        value={`${formatDate(currentDetail.data_inizio_prevista)} â†’ ${formatDate(currentDetail.data_fine_prevista)}`}
-                      />
-                      <InfoField
-                        label="Avvio effettivo"
-                        value={formatDate(getEffectiveStart(currentDetail), true)}
                       />
                     </CCol>
                   </CRow>
@@ -2448,6 +2382,55 @@ const LavorazioneDetail = () => {
               </CTabContent>
           </CCardBody>
         </CCard>
+            </CCol>
+            <CCol xs={12} xl={2} className="mp-detail-team-col">
+              <CCard className="mb-0 h-100">
+                <CCardHeader className="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                  <strong>Squadra e assegnazioni</strong>
+                  <CButton
+                    color="light"
+                    size="sm"
+                    onClick={handleOpenJobAssignmentModal}
+                    disabled={!hasDetail}
+                  >
+                    Gestisci
+                  </CButton>
+                </CCardHeader>
+                <CCardBody>
+                  {Array.isArray(currentDetail.assegnazioni) && currentDetail.assegnazioni.length > 0 ? (
+                    <CListGroup className="mb-3">
+                      {currentDetail.assegnazioni.map((ass) => (
+                        <CListGroupItem key={ass.id_account}>
+                          <div className="fw-semibold">{ass.nome}</div>
+                          {String(ass?.ruolo || '').trim().toLowerCase() !== 'owner' ? (
+                            <div className="text-body-secondary small">{ass.ruolo}</div>
+                          ) : null}
+                          <CBadge color="secondary" size="sm" className="mt-2">
+                            {ass.carico_attivita} attivita
+                          </CBadge>
+                        </CListGroupItem>
+                      ))}
+                    </CListGroup>
+                  ) : (
+                    <CAlert color="info" className="mb-3">
+                      Nessun operatore assegnato.
+                    </CAlert>
+                  )}
+                  <CButton
+                    color="primary"
+                    variant="outline"
+                    size="sm"
+                    className="w-100"
+                    onClick={() => handleOpenNotificationModal('job')}
+                    disabled={!hasDetail}
+                  >
+                    <CIcon icon={cilSend} className="me-2" />
+                    Notifica operatori
+                  </CButton>
+                </CCardBody>
+              </CCard>
+            </CCol>
+          </CRow>
 
         <CRow className="mb-4">
           <CCol xs={12}>
@@ -2601,54 +2584,6 @@ const LavorazioneDetail = () => {
             </CCard>
           </CCol>
         </CRow>
-
-          <CRow className="mb-4">
-            <CCol xs={12}>
-              <CCard className="mb-4">
-                <CCardHeader className="d-flex justify-content-between align-items-center flex-wrap gap-2">
-                  <strong>Squadra e assegnazioni</strong>
-                  <CButton
-                    color="light"
-                    size="sm"
-                    onClick={handleOpenJobAssignmentModal}
-                    disabled={!hasDetail}
-                  >
-                    Gestisci
-                  </CButton>
-                </CCardHeader>
-                <CCardBody>
-                  {Array.isArray(currentDetail.assegnazioni) && currentDetail.assegnazioni.length > 0 ? (
-                    <CListGroup className="mb-3">
-                      {currentDetail.assegnazioni.map((ass) => (
-                        <CListGroupItem key={ass.id_account}>
-                          <div className="fw-semibold">{ass.nome}</div>
-                          <div className="text-body-secondary small">{ass.ruolo}</div>
-                          <CBadge color="secondary" size="sm" className="mt-2">
-                            {ass.carico_attivita} attivita
-                          </CBadge>
-                        </CListGroupItem>
-                      ))}
-                    </CListGroup>
-                  ) : (
-                    <CAlert color="info" className="mb-3">
-                      Nessun operatore assegnato.
-                    </CAlert>
-                  )}
-                  <CButton
-                    color="primary"
-                    variant="outline"
-                    size="sm"
-                    className="w-100"
-                    onClick={() => handleOpenNotificationModal('job')}
-                    disabled={!hasDetail}
-                  >
-                    <CIcon icon={cilSend} className="me-2" />
-                    Notifica operatori
-                  </CButton>
-                </CCardBody>
-              </CCard>
-            </CCol>
-          </CRow>
 
           <CCard>
             <CCardHeader className="d-flex align-items-center justify-content-between">
@@ -3580,29 +3515,7 @@ const LavorazioneDetail = () => {
               </CAlert>
             )}
             <CRow className="g-3">
-              <CCol md={6}>
-                <CFormLabel>Reparto principale</CFormLabel>
-                <CFormSelect
-                  value={jobAssignmentForm.reparto}
-                  onChange={handleJobAssignmentFieldChange('reparto')}
-                  disabled={jobAssignmentSubmitting}
-                >
-                  <option value="">Nessun reparto</option>
-                  {assignmentOptions.reparti.map((rep, index) => {
-                    const idValue = rep?.id ? String(rep.id) : ''
-                    const keyValue = rep?.id ?? rep?.code ?? `${rep?.label || 'reparto'}-${index}`
-                    return (
-                      <option key={keyValue} value={idValue}>
-                        {rep?.label || rep?.code || idValue || 'Reparto'}
-                      </option>
-                    )
-                  })}
-                </CFormSelect>
-                {assignmentOptionsLoading ? (
-                  <small className="text-body-secondary">Caricamento reparti...</small>
-                ) : null}
-              </CCol>
-              <CCol md={6}>
+              <CCol md={12}>
                 <CFormLabel>Operatori assegnati</CFormLabel>
                 <CFormSelect
                   multiple

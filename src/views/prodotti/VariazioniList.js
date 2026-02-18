@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import {
   CAlert,
+  CBadge,
   CButton,
   CCard,
   CCardBody,
@@ -34,6 +35,7 @@ const VariazioniList = () => {
   const [name, setName] = useState('')
   const [category, setCategory] = useState('')
   const [code, setCode] = useState('')
+  const [price, setPrice] = useState('')
   const [saving, setSaving] = useState(false)
   const [formVisible, setFormVisible] = useState(false)
   const [toast, setToast] = useState({ open: false, type: 'success', message: '' })
@@ -165,9 +167,16 @@ const VariazioniList = () => {
     return () => controller.abort()
   }, [token])
 
-  const startCreate = () => { setEditRow(null); setName(''); setCategory(''); setCode(''); setFormVisible(true) }
-  const startEdit = (row) => { setEditRow(row); setName(row.nome || ''); setCategory(row.categoria || ''); setCode(row.codice || ''); setFormVisible(true) }
-  const cancel = () => { setEditRow(null); setName(''); setCategory(''); setCode(''); setFormVisible(false) }
+  const startCreate = () => { setEditRow(null); setName(''); setCategory(''); setCode(''); setPrice(''); setFormVisible(true) }
+  const startEdit = (row) => {
+    setEditRow(row)
+    setName(row.nome || '')
+    setCategory(row.categoria || '')
+    setCode(row.codice || '')
+    setPrice(row.prezzo ?? '')
+    setFormVisible(true)
+  }
+  const cancel = () => { setEditRow(null); setName(''); setCategory(''); setCode(''); setPrice(''); setFormVisible(false) }
 
   const save = async (e) => {
     e.preventDefault()
@@ -179,6 +188,7 @@ const VariazioniList = () => {
         token,
         id_variazione: editRow?.id_variazione,
         nome: cleaned,
+        prezzo: price !== '' ? Number(price) : null,
         categoria: String(category).trim() || null,
         codice: String(code).trim() || null,
       })
@@ -227,11 +237,20 @@ const VariazioniList = () => {
                   onChange={(e) => setCategory(e.target.value)}
                 />
               </CCol>
-              <CCol md={4}>
+              <CCol md={3}>
                 <CFormInput placeholder="Nome variazione" value={name} onChange={(e) => setName(e.target.value)} required />
               </CCol>
               <CCol md={2}>
                 <CFormInput placeholder="Codice variazione (unico)" value={code} onChange={(e) => setCode(e.target.value)} />
+              </CCol>
+              <CCol md={2}>
+                <CFormInput
+                  type="number"
+                  step="0.01"
+                  placeholder="Prezzo"
+                  value={price}
+                  onChange={(e) => setPrice(e.target.value)}
+                />
               </CCol>
               <CCol md="auto">
                   <PermissionButton
@@ -298,13 +317,16 @@ const VariazioniList = () => {
                 <CTableHeaderCell role="button" onClick={(e) => toggleSort('codice', e.shiftKey)} className="text-nowrap">
                   Codice{sortIndicator('codice')}
                 </CTableHeaderCell>
+                <CTableHeaderCell className="text-end text-nowrap">
+                  Prezzo
+                </CTableHeaderCell>
                 <CTableHeaderCell className="text-center">Azioni</CTableHeaderCell>
               </CTableRow>
             </CTableHead>
             <CTableBody>
               {groupedItems.length === 0 && (
                 <CTableRow>
-                  <CTableDataCell colSpan={4} className="text-center text-muted py-4">
+                  <CTableDataCell colSpan={5} className="text-center text-muted py-4">
                     Nessuna variazione trovata
                   </CTableDataCell>
                 </CTableRow>
@@ -312,7 +334,7 @@ const VariazioniList = () => {
               {groupedItems.map(([cat, list]) => (
                 <React.Fragment key={cat}>
                   <CTableRow className="mp-group-row">
-                    <CTableDataCell colSpan={4} className="fw-semibold">
+                    <CTableDataCell colSpan={5} className="fw-semibold">
                       {cat}
                     </CTableDataCell>
                   </CTableRow>
@@ -324,8 +346,16 @@ const VariazioniList = () => {
                       data-testid={`row-${r.id_variazione}`}
                     >
                       <CTableDataCell>{r.categoria || '-'}</CTableDataCell>
-                      <CTableDataCell>{r.nome}</CTableDataCell>
+                      <CTableDataCell>
+                        <div className="d-flex align-items-center gap-2">
+                          <span>{r.nome}</span>
+                          <CBadge color="info" shape="rounded-pill">
+                            {Number(r.articoli_count) || 0} articoli
+                          </CBadge>
+                        </div>
+                      </CTableDataCell>
                       <CTableDataCell>{r.codice || '-'}</CTableDataCell>
+                      <CTableDataCell className="text-end">{Number(r.prezzo) || 0}</CTableDataCell>
                       <CTableDataCell className="text-center">
                         <PermissionButton
                           size="sm"

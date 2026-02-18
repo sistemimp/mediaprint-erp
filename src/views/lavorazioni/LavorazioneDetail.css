@@ -1,0 +1,11 @@
+@media (min-width: 1200px) {
+  .mp-detail-top-cards .mp-detail-main-col {
+    flex: 0 0 80%;
+    max-width: 80%;
+  }
+
+  .mp-detail-top-cards .mp-detail-team-col {
+    flex: 0 0 20%;
+    max-width: 20%;
+  }
+}

@@ -194,9 +194,39 @@ final class ProdottiRepository
      */
     public function listVariazioni(): array
     {
-        $stmt = $this->pdo->query('SELECT id_variazione, codice, nome, categoria, prezzo FROM tb_variazioni ORDER BY nome ASC');
-        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
-        return array_map(fn($r) => [ 'id_variazione' => (int) $r['id_variazione'], 'codice' => $r['codice'] ?? null, 'nome' => (string) $r['nome'], 'categoria' => $r['categoria'] ?? null, 'prezzo' => isset($r['prezzo']) ? (float) $r['prezzo'] : 0.0 ], $rows);
+        try {
+            $stmt = $this->pdo->query(
+                'SELECT v.id_variazione, v.codice, v.nome, v.categoria, v.prezzo,
+                        COUNT(DISTINCT c.id_articolo) AS articoli_count
+                 FROM tb_variazioni v
+                 LEFT JOIN tb_prodotti_consumi_magazzino c
+                   ON c.id_variazione = v.id_variazione
+                  AND c.id_articolo IS NOT NULL
+                  AND c.attivo = 1
+                 GROUP BY v.id_variazione, v.codice, v.nome, v.categoria, v.prezzo
+                 ORDER BY v.nome ASC'
+            );
+            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+            return array_map(fn($r) => [
+                'id_variazione' => (int) $r['id_variazione'],
+                'codice' => $r['codice'] ?? null,
+                'nome' => (string) $r['nome'],
+                'categoria' => $r['categoria'] ?? null,
+                'prezzo' => isset($r['prezzo']) ? (float) $r['prezzo'] : 0.0,
+                'articoli_count' => isset($r['articoli_count']) ? (int) $r['articoli_count'] : 0,
+            ], $rows);
+        } catch (\Throwable $ignored) {
+            $stmt = $this->pdo->query('SELECT id_variazione, codice, nome, categoria, prezzo FROM tb_variazioni ORDER BY nome ASC');
+            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+            return array_map(fn($r) => [
+                'id_variazione' => (int) $r['id_variazione'],
+                'codice' => $r['codice'] ?? null,
+                'nome' => (string) $r['nome'],
+                'categoria' => $r['categoria'] ?? null,
+                'prezzo' => isset($r['prezzo']) ? (float) $r['prezzo'] : 0.0,
+                'articoli_count' => 0,
+            ], $rows);
+        }
     }
 
     /**

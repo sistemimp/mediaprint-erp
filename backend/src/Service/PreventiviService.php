@@ -39,6 +39,62 @@ final class PreventiviService
         throw new \RuntimeException('FunzionalitÃ  fatture non disponibile.', 503);
     }
 
+    /**
+     * @param array<string,mixed> $tipo
+     */
+    private function isPurchaseInvoiceType(array $tipo): bool
+    {
+        $code = strtolower(trim((string) ($tipo['code'] ?? '')));
+        $label = strtolower(trim((string) ($tipo['label'] ?? '')));
+        $text = $code . ' ' . $label;
+        return str_contains($text, 'acquisto')
+            || str_contains($text, 'passiv')
+            || str_contains($text, 'fornitor');
+    }
+
+    private function resolveInvoiceTypeId(FattureRepository $fattureRepository, bool $isAcquisto, int $requestedTypeId = 0): int
+    {
+        $tipi = $fattureRepository->listTipi();
+        if (empty($tipi)) {
+            return $requestedTypeId > 0 ? $requestedTypeId : 2;
+        }
+
+        $byId = [];
+        foreach ($tipi as $tipo) {
+            $id = isset($tipo['id_tipo']) ? (int) $tipo['id_tipo'] : 0;
+            if ($id > 0) {
+                $byId[$id] = $tipo;
+            }
+        }
+
+        if ($isAcquisto) {
+            foreach ($byId as $id => $tipo) {
+                if ($this->isPurchaseInvoiceType($tipo)) {
+                    return $id;
+                }
+            }
+        }
+
+        if ($requestedTypeId > 0 && isset($byId[$requestedTypeId])) {
+            return $requestedTypeId;
+        }
+
+        foreach ($byId as $id => $tipo) {
+            $code = strtolower(trim((string) ($tipo['code'] ?? '')));
+            $label = strtolower(trim((string) ($tipo['label'] ?? '')));
+            if ($code === 'immediata' || $label === 'immediata') {
+                return $id;
+            }
+        }
+
+        $firstId = array_key_first($byId);
+        if (is_int($firstId) && $firstId > 0) {
+            return $firstId;
+        }
+
+        return $requestedTypeId > 0 ? $requestedTypeId : 2;
+    }
+
     private function requireLavorazioniRepository(): LavorazioniRepository
     {
         if ($this->lavorazioniRepository instanceof LavorazioniRepository) {
@@ -227,6 +283,7 @@ final class PreventiviService
         $statusCode = strtolower((string) ($row['stato_code'] ?? 'bozza'));
         $editable = in_array($statusCode, ['bozza', 'revisionato_ced'], true);
         $righe = $this->repository->getLines($id);
+        $stockAlerts = $this->repository->computeStockAlertsForPreventivo($id);
         $cedMap = $this->repository->listCedQuantitiesForPreventivo($id);
         foreach ($righe as &$riga) {
             $idRiga = isset($riga['id_riga']) ? (int) $riga['id_riga'] : 0;
@@ -275,6 +332,7 @@ final class PreventiviService
         return [
             'data' => $row,
             'righe' => $righe,
+            'stock_alerts' => $stockAlerts,
             'cig' => $cig,
             'determine' => $determine,
             'contatti' => $contatti,
@@ -282,6 +340,7 @@ final class PreventiviService
             'linked_fatture' => $linkedFatture,
             'meta' => [
                 'editable' => $editable,
+                'stock_alerts_count' => count($stockAlerts),
                 'statuses' => $statuses,
                 'current_status' => $currentStatus,
                 'revisions' => $revisions,
@@ -503,6 +562,11 @@ final class PreventiviService
                 if ($comboKey === '') {
                     $comboKey = null;
                 }
+            $lineId = isset($r['id_riga']) ? (int) $r['id_riga'] : (isset($r['id_riga_preventivo']) ? (int) $r['id_riga_preventivo'] : 0);
+            if ($idPrev <= 0) {
+                // Nuovo preventivo (es. duplicazione): non riutilizzare PK esistenti delle righe.
+                $lineId = 0;
+            }
             $lines[] = [
                 'descrizione' => (string) ($r['descrizione'] ?? ''),
                 'quantita' => isset($r['quantita']) ? (float) $r['quantita'] : 1.0,
@@ -512,7 +576,7 @@ final class PreventiviService
                 'id_prodotto' => isset($r['id_prodotto']) ? (int) $r['id_prodotto'] : null,
                 'combo_key' => $comboKey,
                 'id_sdi_natura_iva' => isset($r['id_sdi_natura_iva']) ? (int) $r['id_sdi_natura_iva'] : null,
-                'id_riga' => isset($r['id_riga']) ? (int) $r['id_riga'] : (isset($r['id_riga_preventivo']) ? (int) $r['id_riga_preventivo'] : 0),
+                'id_riga' => $lineId,
             ];
         }
     }
@@ -646,11 +710,13 @@ final class PreventiviService
 
             if ($send) {
                 $numbered = $this->repository->confirmAndNumber($idPrev);
+                $stockAlerts = $this->repository->computeStockAlertsForPreventivo($idPrev);
                 return [
                     'status' => 'sent',
                     'id_preventivo' => $numbered['id_preventivo'],
                     'anno_preventivo' => $numbered['anno_preventivo'],
                     'numero_documento' => $numbered['numero_documento'],
+                    'stock_alerts' => $stockAlerts,
                 ];
             }
 
@@ -669,12 +735,14 @@ final class PreventiviService
                 $updatedFields['note'] = $note;
             }
 
+            $stockAlerts = $this->repository->computeStockAlertsForPreventivo($idPrev);
             return [
                 'status' => 'draft',
                 'id_preventivo' => $updated['id_preventivo'],
                 'anno_preventivo' => $updated['anno_preventivo'] ?? null,
                 'numero_documento' => $updated['numero_documento'] ?? null,
                 'updated_fields' => $updatedFields,
+                'stock_alerts' => $stockAlerts,
             ];
         }
 
@@ -707,19 +775,23 @@ final class PreventiviService
 
         if ($send) {
             $numbered = $this->repository->confirmAndNumber($draft['id_preventivo']);
+            $stockAlerts = $this->repository->computeStockAlertsForPreventivo($draft['id_preventivo']);
             return [
                 'status' => 'sent',
                 'id_preventivo' => $numbered['id_preventivo'],
                 'anno_preventivo' => $numbered['anno_preventivo'],
                 'numero_documento' => $numbered['numero_documento'],
+                'stock_alerts' => $stockAlerts,
             ];
         }
 
+        $stockAlerts = $this->repository->computeStockAlertsForPreventivo($draft['id_preventivo']);
         return [
             'status' => 'draft',
             'id_preventivo' => $draft['id_preventivo'],
             'anno_preventivo' => $draft['anno_preventivo'] ?? null,
             'numero_documento' => $draft['numero_documento'] ?? null,
+            'stock_alerts' => $stockAlerts,
         ];
     }
 
@@ -1283,6 +1355,11 @@ final class PreventiviService
             throw new \RuntimeException('Preventivo non trovato.', 404);
         }
 
+        $existingLink = $this->repository->getLavorazioneLink($id);
+        if (!empty($existingLink['id_lavorazione_corrente'])) {
+            throw new \RuntimeException('Il preventivo ha già una lavorazione collegata.', 422);
+        }
+
         $statusCode = strtolower((string) ($detail['stato_code'] ?? ''));
         if ($statusCode !== 'confermato') {
             throw new \RuntimeException('Ãˆ possibile generare la lavorazione solo da preventivi confermati.', 422);
@@ -1319,7 +1396,6 @@ final class PreventiviService
             'note' => $note,
             'priorita' => $this->normalizePriority($input['priorita'] ?? null),
             'stato' => 'aperta',
-            'id_reparto' => null,
             'data_inizio_prevista' => $this->sanitizeDate($detail['data_preventivo'] ?? null),
             'data_fine_prevista' => $this->sanitizeDate($input['data_fine_prevista'] ?? null),
             'percentuale_avanzamento' => 0,
@@ -1449,15 +1525,34 @@ final class PreventiviService
             throw new \RuntimeException('Il preventivo non contiene righe da trasferire nella fattura.', 422);
         }
 
+        $selectedIds = [];
+        if (isset($input['righe_ids']) && is_array($input['righe_ids'])) {
+            foreach ($input['righe_ids'] as $rawId) {
+                $lineId = (int) $rawId;
+                if ($lineId > 0) {
+                    $selectedIds[$lineId] = true;
+                }
+            }
+            if (empty($selectedIds)) {
+                throw new \RuntimeException('Selezionare almeno una riga da fatturare.', 422);
+            }
+            $lines = array_values(array_filter($lines, static function (array $line) use ($selectedIds): bool {
+                $idRiga = isset($line['id_riga']) ? (int) $line['id_riga'] : (isset($line['id_riga_preventivo']) ? (int) $line['id_riga_preventivo'] : 0);
+                return $idRiga > 0 && isset($selectedIds[$idRiga]);
+            }));
+            if (empty($lines)) {
+                throw new \RuntimeException('Nessuna riga valida selezionata per la fattura.', 422);
+            }
+        }
+
         $idSezionale = isset($input['id_sezionale']) ? (int) $input['id_sezionale'] : 0;
         if ($idSezionale <= 0) {
             throw new \RuntimeException('Selezionare un sezionale valido per la numerazione della fattura.', 422);
         }
 
-        $idTipoFatt = isset($input['id_tipo_fatt']) ? (int) $input['id_tipo_fatt'] : 2; // default: immediata
-        if ($idTipoFatt <= 0) {
-            $idTipoFatt = 2;
-        }
+        $isAcquisto = !empty($detail['is_acquisto']);
+        $requestedTipoFatt = isset($input['id_tipo_fatt']) ? (int) $input['id_tipo_fatt'] : 0;
+        $idTipoFatt = $this->resolveInvoiceTypeId($fattureRepository, $isAcquisto, $requestedTipoFatt);
         $idStatoFatt = isset($input['id_stato_fatt']) ? (int) $input['id_stato_fatt'] : 2; // default: emessa
         if ($idStatoFatt <= 0) {
             $idStatoFatt = 2;
@@ -1476,6 +1571,28 @@ final class PreventiviService
             }
         }
 
+        $totImponibile = 0.0;
+        $totSconto = 0.0;
+        $totIva = 0.0;
+        $totale = 0.0;
+        foreach ($lines as $line) {
+            $qty = isset($line['quantita']) ? (float) $line['quantita'] : 0.0;
+            $prezzo = isset($line['prezzo']) ? (float) $line['prezzo'] : (isset($line['prezzo_unitario']) ? (float) $line['prezzo_unitario'] : 0.0);
+            $sconto = isset($line['sconto']) ? (float) $line['sconto'] : 0.0;
+            $aliquota = isset($line['iva']) ? (float) $line['iva'] : (isset($line['aliquota_iva']) ? (float) $line['aliquota_iva'] : 0.0);
+            $base = max(0.0, $qty * $prezzo);
+            $imponibile = $base;
+            if ($sconto > 0) {
+                $imponibile = $imponibile * (1 - ($sconto / 100));
+            }
+            $imponibile = max(0.0, $imponibile);
+            $iva = $aliquota !== null ? $imponibile * ($aliquota / 100) : 0.0;
+            $totImponibile += $imponibile;
+            $totIva += $iva;
+            $totale += ($imponibile + $iva);
+            $totSconto += max(0.0, $base - $imponibile);
+        }
+
         $payload = [
             'id_preventivo' => $detail['id_preventivo'] ?? $id,
             'id_anagrafica' => $idAnagrafica,
@@ -1484,11 +1601,11 @@ final class PreventiviService
             'id_tipo_fatt' => $idTipoFatt,
             'id_stato_fatt' => $idStatoFatt,
             'note' => $note,
-            'totale_imponibile' => isset($detail['totale_imponibile']) ? (float) $detail['totale_imponibile'] : 0.0,
-            'totale_sconto' => isset($detail['totale_sconto']) ? (float) $detail['totale_sconto'] : 0.0,
-            'totale_iva' => isset($detail['totale_iva']) ? (float) $detail['totale_iva'] : 0.0,
-            'totale' => isset($detail['totale']) ? (float) $detail['totale'] : 0.0,
-            'is_acquisto' => !empty($detail['is_acquisto']) ? 1 : 0,
+            'totale_imponibile' => $totImponibile,
+            'totale_sconto' => $totSconto,
+            'totale_iva' => $totIva,
+            'totale' => $totale,
+            'is_acquisto' => $isAcquisto ? 1 : 0,
         ];
 
         $fattura = $fattureRepository->createFromPreventivo($payload, $lines);

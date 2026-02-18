@@ -12,6 +12,8 @@ final class PreventiviRepository
     private ?bool $comboKeyArchiveSupported = null;
     private ?bool $cedFlagSupported = null;
     private ?bool $cedFlagArchiveSupported = null;
+    private ?bool $preventivoFatturaRigheSupported = null;
+    private ?bool $productStockColumnsSupported = null;
 
     public function __construct(private PDO $pdo) {}
 
@@ -197,6 +199,72 @@ final class PreventiviRepository
 
         $this->cedFlagArchiveSupported = $exists;
         return $this->cedFlagArchiveSupported;
+    }
+
+    private function hasPreventivoFatturaRigheTable(): bool
+    {
+        if ($this->preventivoFatturaRigheSupported !== null) {
+            return $this->preventivoFatturaRigheSupported;
+        }
+        $exists = false;
+        try {
+            $stmt = $this->pdo->query("SHOW TABLES LIKE 'appoggio_preventivo_fattura_righe'");
+            $exists = $stmt && $stmt->fetchColumn() !== false;
+        } catch (\Throwable $ignored) {
+            $exists = false;
+        }
+        $this->preventivoFatturaRigheSupported = $exists;
+        return $exists;
+    }
+
+    private function ensureProductStockColumns(): bool
+    {
+        if ($this->productStockColumnsSupported !== null) {
+            return $this->productStockColumnsSupported;
+        }
+
+        $required = ['gestione_magazzino', 'giacenza_attuale', 'soglia_scorta'];
+        $missing = [];
+
+        try {
+            foreach ($required as $column) {
+                $stmt = $this->pdo->query("SHOW COLUMNS FROM tb_prodotti LIKE '{$column}'");
+                $exists = $stmt && $stmt->fetch(PDO::FETCH_ASSOC) !== false;
+                if (!$exists) {
+                    $missing[] = $column;
+                }
+            }
+
+            foreach ($missing as $column) {
+                if ($column === 'gestione_magazzino') {
+                    $this->pdo->exec("ALTER TABLE tb_prodotti ADD COLUMN gestione_magazzino TINYINT(1) NOT NULL DEFAULT 0");
+                } elseif ($column === 'giacenza_attuale') {
+                    $this->pdo->exec("ALTER TABLE tb_prodotti ADD COLUMN giacenza_attuale DECIMAL(14,3) NOT NULL DEFAULT 0");
+                } elseif ($column === 'soglia_scorta') {
+                    $this->pdo->exec("ALTER TABLE tb_prodotti ADD COLUMN soglia_scorta DECIMAL(14,3) NULL");
+                }
+            }
+        } catch (\Throwable $ignored) {
+            $this->productStockColumnsSupported = false;
+            return false;
+        }
+
+        try {
+            foreach ($required as $column) {
+                $stmt = $this->pdo->query("SHOW COLUMNS FROM tb_prodotti LIKE '{$column}'");
+                $exists = $stmt && $stmt->fetch(PDO::FETCH_ASSOC) !== false;
+                if (!$exists) {
+                    $this->productStockColumnsSupported = false;
+                    return false;
+                }
+            }
+        } catch (\Throwable $ignored) {
+            $this->productStockColumnsSupported = false;
+            return false;
+        }
+
+        $this->productStockColumnsSupported = true;
+        return true;
     }
 
     private function ensureContattiTables(): void
@@ -505,12 +573,23 @@ final class PreventiviRepository
                 p.totale_sconto,
                 p.totale_iva,
                 p.totale,
+                fatt.fatturato_totale AS totale_fatturato,
                 a.ragione_sociale AS ragione_sociale,
                 sp.code AS stato_code,
                 sp.label AS stato_label,
                 p.created_at,
                 p.updated_at
             FROM tb_preventivi p
+                LEFT JOIN (
+                    SELECT
+                        apf.id_preventivo,
+                        SUM(CASE WHEN tf.code = 'nota_credito' THEN -f.totale ELSE f.totale END) AS fatturato_totale
+                    FROM appoggio_preventivo_fattura apf
+                    INNER JOIN tb_fatture f ON f.id_fattura = apf.id_fattura
+                    LEFT JOIN cfg_stati_fattura sf ON sf.id_stato = f.id_stato_fatt
+                    LEFT JOIN cfg_tipi_fattura tf ON tf.id_tipo = f.id_tipo_fatt
+                    GROUP BY apf.id_preventivo
+                ) fatt ON fatt.id_preventivo = p.id_preventivo
             LEFT JOIN tb_anagrafiche a ON a.id_anagrafica = p.id_anagrafica
             LEFT JOIN cfg_stati_preventivo sp ON sp.id_stato = p.id_stato_prev
             /*FILTERS*/
@@ -1902,6 +1981,7 @@ final class PreventiviRepository
                 p.id_preventivo,
                 p.id_anagrafica,
                 p.id_mittente,
+                p.is_acquisto,
                 p.anno_preventivo,
                 p.numero_documento,
                 p.data_preventivo,
@@ -1949,6 +2029,7 @@ final class PreventiviRepository
             'id_preventivo' => (int) $row['id_preventivo'],
             'id_anagrafica' => (int) $row['id_anagrafica'],
             'id_mittente' => isset($row['id_mittente']) ? (int) $row['id_mittente'] : null,
+            'is_acquisto' => isset($row['is_acquisto']) ? (int) $row['is_acquisto'] : 0,
             'anno_preventivo' => isset($row['anno_preventivo']) ? (int) $row['anno_preventivo'] : null,
             'numero_documento' => isset($row['numero_documento']) ? (int) $row['numero_documento'] : null,
             'data_preventivo' => $row['data_preventivo'] ?? null,
@@ -2003,13 +2084,23 @@ final class PreventiviRepository
         $hasCedFlag = $this->ensureCedFlagColumn();
         $comboSelect = $hasComboKey ? ', combo_key' : '';
         $cedSelect = $hasCedFlag ? ', pr.created_by_ced' : '';
+        $hasFatturaMap = $this->hasPreventivoFatturaRigheTable();
+        $fatturaSelect = $hasFatturaMap ? ', pf.id_fattura AS fattura_id, f.numero_documento AS fattura_numero, f.anno AS fattura_anno' : '';
+        $fatturaJoin = $hasFatturaMap
+            ? ' LEFT JOIN (
+                    SELECT id_riga_preventivo, MAX(id_fattura) AS id_fattura
+                    FROM appoggio_preventivo_fattura_righe
+                    GROUP BY id_riga_preventivo
+                ) pf ON pf.id_riga_preventivo = pr.id_riga
+                LEFT JOIN tb_fatture f ON f.id_fattura = pf.id_fattura'
+            : '';
         $sql = 'SELECT pr.id_riga, pr.id_prodotto' . $comboSelect . $cedSelect . ', pr.descrizione, pr.quantita, pr.prezzo_unitario, pr.sconto, pr.importo_scontato,
-                   pr.iva, pr.id_sdi_natura_iva, pr.totale, pr.posizione,
+                   pr.iva, pr.id_sdi_natura_iva, pr.totale, pr.posizione' . $fatturaSelect . ',
                    p.id_categoria AS id_categoria, cat.nome AS categoria_nome,
                    p.codice AS prodotto_codice, p.nome AS prodotto_nome
             FROM tb_preventivi_righe pr
             LEFT JOIN tb_prodotti p ON p.id_prodotto = pr.id_prodotto
-            LEFT JOIN tb_categorie cat ON cat.id_categoria = p.id_categoria
+            LEFT JOIN tb_categorie cat ON cat.id_categoria = p.id_categoria' . $fatturaJoin . '
             WHERE pr.id_preventivo = :id
             ORDER BY COALESCE(pr.posizione, pr.id_riga) ASC';
 
@@ -2034,6 +2125,9 @@ final class PreventiviRepository
                 'posizione' => isset($r['posizione']) ? (int) $r['posizione'] : null,
                 'combo_key' => $hasComboKey ? ($r['combo_key'] ?? null) : null,
                 'created_by_ced' => $hasCedFlag ? (int) ($r['created_by_ced'] ?? 0) : 0,
+                'fattura_id' => isset($r['fattura_id']) ? (int) $r['fattura_id'] : null,
+                'fattura_numero' => isset($r['fattura_numero']) ? (int) $r['fattura_numero'] : null,
+                'fattura_anno' => isset($r['fattura_anno']) ? (int) $r['fattura_anno'] : null,
                 'id_categoria' => isset($r['id_categoria']) ? (int) $r['id_categoria'] : null,
                 'categoria' => isset($r['categoria_nome']) ? $r['categoria_nome'] : null,
                 'prodotto_codice' => $r['prodotto_codice'] ?? null,
@@ -2041,6 +2135,176 @@ final class PreventiviRepository
             ];
         }
         return $out;
+    }
+
+    /**
+     * @return list<array{
+     *   id_prodotto:int,
+     *   prodotto_codice:?string,
+     *   prodotto_nome:string,
+     *   quantita_richiesta:float,
+     *   giacenza_attuale:float,
+     *   soglia_scorta:?float,
+     *   severity:string,
+     *   message:string
+     * }>
+     */
+    public function computeStockAlertsForPreventivo(int $idPreventivo): array
+    {
+        // Nuovo modello: consumo materiali (articoli) tramite distinta prodotto->articolo.
+        try {
+            $sql = <<<'SQL'
+                SELECT
+                    a.id_articolo,
+                    a.codice,
+                    a.nome,
+                    COALESCE(
+                        SUM(
+                            COALESCE(pr.quantita, 0)
+                            * COALESCE(c.quantita_per_unita, 0)
+                            * (1 + (COALESCE(c.scarto_percento, 0) / 100))
+                        ),
+                        0
+                    ) AS quantita_richiesta,
+                    COALESCE(a.giacenza_attuale, 0) AS giacenza_attuale,
+                    a.soglia_scorta
+                FROM tb_preventivi_righe pr
+                INNER JOIN tb_prodotti_consumi_magazzino c
+                    ON c.id_prodotto = pr.id_prodotto
+                   AND (
+                        c.combo_key = COALESCE(pr.combo_key, '')
+                        OR (COALESCE(c.combo_key, '') = '' AND c.id_variazione IS NULL)
+                        OR FIND_IN_SET(
+                            CAST(c.id_variazione AS CHAR),
+                            REPLACE(COALESCE(pr.combo_key, ''), '+', ',')
+                        ) > 0
+                   )
+                   AND COALESCE(c.attivo, 1) = 1
+                INNER JOIN tb_magazzino_articoli a
+                    ON a.id_articolo = c.id_articolo
+                WHERE pr.id_preventivo = :id
+                  AND pr.id_prodotto IS NOT NULL
+                  AND COALESCE(a.gestione_magazzino, 1) = 1
+                  AND COALESCE(a.attivo, 1) = 1
+                GROUP BY a.id_articolo, a.codice, a.nome, a.giacenza_attuale, a.soglia_scorta
+            SQL;
+
+            $stmt = $this->pdo->prepare($sql);
+            $stmt->bindValue(':id', $idPreventivo, PDO::PARAM_INT);
+            $stmt->execute();
+            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+            $alerts = [];
+            foreach ($rows as $row) {
+                $requested = isset($row['quantita_richiesta']) ? (float) $row['quantita_richiesta'] : 0.0;
+                if ($requested <= 0) {
+                    continue;
+                }
+
+                $available = isset($row['giacenza_attuale']) ? (float) $row['giacenza_attuale'] : 0.0;
+                $threshold = array_key_exists('soglia_scorta', $row) && $row['soglia_scorta'] !== null
+                    ? (float) $row['soglia_scorta']
+                    : null;
+
+                $residual = $available - $requested;
+                $severity = null;
+                if ($residual < 0) {
+                    $severity = 'out_of_stock';
+                } elseif ($threshold !== null && $residual <= $threshold) {
+                    $severity = 'low_stock';
+                }
+                if ($severity === null) {
+                    continue;
+                }
+
+                // Compatibilita payload frontend: usiamo i campi prodotto_* anche per articoli.
+                $alerts[] = [
+                    'id_prodotto' => (int) ($row['id_articolo'] ?? 0),
+                    'id_articolo' => (int) ($row['id_articolo'] ?? 0),
+                    'prodotto_codice' => $row['codice'] ?? null,
+                    'prodotto_nome' => (string) ($row['nome'] ?? ''),
+                    'quantita_richiesta' => $requested,
+                    'giacenza_attuale' => $available,
+                    'soglia_scorta' => $threshold,
+                    'severity' => $severity,
+                    'message' => $severity === 'out_of_stock'
+                        ? 'Quantita richiesta superiore alla giacenza disponibile.'
+                        : 'Scorta residua sotto soglia minima.',
+                ];
+            }
+
+            if ($alerts !== []) {
+                return $alerts;
+            }
+        } catch (\Throwable $ignored) {
+            // fallback legacy
+        }
+
+        if (!$this->ensureProductStockColumns()) {
+            return [];
+        }
+
+        $sql = <<<'SQL'
+            SELECT
+                p.id_prodotto,
+                p.codice,
+                p.nome,
+                COALESCE(SUM(pr.quantita), 0) AS quantita_richiesta,
+                COALESCE(p.giacenza_attuale, 0) AS giacenza_attuale,
+                p.soglia_scorta
+            FROM tb_preventivi_righe pr
+            INNER JOIN tb_prodotti p ON p.id_prodotto = pr.id_prodotto
+            WHERE pr.id_preventivo = :id
+              AND pr.id_prodotto IS NOT NULL
+              AND COALESCE(p.gestione_magazzino, 0) = 1
+            GROUP BY p.id_prodotto, p.codice, p.nome, p.giacenza_attuale, p.soglia_scorta
+        SQL;
+
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->bindValue(':id', $idPreventivo, PDO::PARAM_INT);
+        $stmt->execute();
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+        $alerts = [];
+        foreach ($rows as $row) {
+            $requested = isset($row['quantita_richiesta']) ? (float) $row['quantita_richiesta'] : 0.0;
+            if ($requested <= 0) {
+                continue;
+            }
+
+            $available = isset($row['giacenza_attuale']) ? (float) $row['giacenza_attuale'] : 0.0;
+            $threshold = array_key_exists('soglia_scorta', $row) && $row['soglia_scorta'] !== null
+                ? (float) $row['soglia_scorta']
+                : null;
+
+            $residual = $available - $requested;
+            $severity = null;
+
+            if ($residual < 0) {
+                $severity = 'out_of_stock';
+            } elseif ($threshold !== null && $residual <= $threshold) {
+                $severity = 'low_stock';
+            }
+
+            if ($severity === null) {
+                continue;
+            }
+
+            $alerts[] = [
+                'id_prodotto' => (int) $row['id_prodotto'],
+                'prodotto_codice' => $row['codice'] ?? null,
+                'prodotto_nome' => (string) ($row['nome'] ?? ''),
+                'quantita_richiesta' => $requested,
+                'giacenza_attuale' => $available,
+                'soglia_scorta' => $threshold,
+                'severity' => $severity,
+                'message' => $severity === 'out_of_stock'
+                    ? 'Quantita richiesta superiore alla giacenza disponibile.'
+                    : 'Scorta residua sotto soglia minima.',
+            ];
+        }
+
+        return $alerts;
     }
 
     /**
