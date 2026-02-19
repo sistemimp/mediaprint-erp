@@ -233,6 +233,7 @@ final class AnagraficheService
      * Input accettati (tutti opzionali salvo ragione_sociale):
      * - ragione_sociale: string (obbligatorio)
      * - piva, codice_fiscale, email, telefono, indirizzo, cap, citta, provincia, nazione, note: string
+     * - categoria: string
      * - id_tipologia, id_sdi_regime_fiscale: int
      * - is_pa, is_active: int (0/1)
      * - stato: string (default 'attiva')
@@ -258,6 +259,7 @@ final class AnagraficheService
             'email' => isset($input['email']) ? (string) $input['email'] : null,
             'telefono' => isset($input['telefono']) ? (string) $input['telefono'] : null,
             'note' => isset($input['note']) ? (string) $input['note'] : null,
+            'categoria' => isset($input['categoria']) ? (string) $input['categoria'] : null,
             'id_tipologia' => isset($input['id_tipologia']) ? (int) $input['id_tipologia'] : 1,
             'id_sdi_regime_fiscale' => isset($input['id_sdi_regime_fiscale']) ? (int) $input['id_sdi_regime_fiscale'] : null,
             'is_pa' => isset($input['is_pa']) ? (int) $input['is_pa'] : 0,

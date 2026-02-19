@@ -79,6 +79,10 @@ $auth = AuthGuard::requireAuth();
     if (array_key_exists('righe', $payload)) {
         $updates['righe'] = is_array($payload['righe']) ? $payload['righe'] : [];
     }
+    $performedBy = AuthGuard::getAccountId($auth);
+    if ($performedBy > 0) {
+        $updates['performed_by'] = $performedBy;
+    }
 
     if (empty($updates)) {
         throw new RuntimeException('Nessun dato da aggiornare.', 422);

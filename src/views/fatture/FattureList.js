@@ -534,12 +534,14 @@ const FattureList = () => {
                   >
                     Totale{renderSortIndicator('totale')}
                   </CTableHeaderCell>
-                  <CTableHeaderCell
-                    className="text-end cursor-pointer"
-                    onClick={() => handleSort('saldo')}
-                  >
-                    Saldo{renderSortIndicator('saldo')}
-                  </CTableHeaderCell>
+                  {!isAcquisto && (
+                    <CTableHeaderCell
+                      className="text-end cursor-pointer"
+                      onClick={() => handleSort('saldo')}
+                    >
+                      Saldo{renderSortIndicator('saldo')}
+                    </CTableHeaderCell>
+                  )}
                   {showStatus && (
                     <CTableHeaderCell
                       className="cursor-pointer"
@@ -592,7 +594,9 @@ const FattureList = () => {
                     </CTableDataCell>
                     <CTableDataCell className="text-end">{formatCurrency(row.totale_iva)}</CTableDataCell>
                     <CTableDataCell className="text-end">{formatCurrency(row.totale)}</CTableDataCell>
-                    <CTableDataCell className="text-end">{formatCurrency(row.saldo)}</CTableDataCell>
+                    {!isAcquisto && (
+                      <CTableDataCell className="text-end">{formatCurrency(row.saldo)}</CTableDataCell>
+                    )}
                     {showStatus && (
                       <CTableDataCell>
                         {row.stato_label ? (
@@ -637,7 +641,9 @@ const FattureList = () => {
                   </CTableDataCell>
                   <CTableDataCell className="text-end">{formatCurrency(totals.iva)}</CTableDataCell>
                   <CTableDataCell className="text-end">{formatCurrency(totals.totale)}</CTableDataCell>
-                  <CTableDataCell className="text-end">{formatCurrency(totals.saldo)}</CTableDataCell>
+                  {!isAcquisto && (
+                    <CTableDataCell className="text-end">{formatCurrency(totals.saldo)}</CTableDataCell>
+                  )}
                   {showStatus && <CTableDataCell />}
                   <CTableDataCell />
                 </CTableRow>

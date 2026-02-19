@@ -104,25 +104,6 @@ const formatDateTime = (value) => {
   })}`
 }
 
-const formatInteger = (value) => {
-  if (value === undefined || value === null || Number.isNaN(Number(value))) {
-    return "-"
-  }
-  return Number(value).toLocaleString("it-IT")
-}
-
-const formatPercent = (value) => {
-  if (value === undefined || value === null || Number.isNaN(Number(value))) {
-    return "-"
-  }
-  return `${Number(value).toFixed(1)}%`
-}
-
-const toNumberOrZero = (value) => {
-  const numeric = Number(value)
-  return Number.isFinite(numeric) ? numeric : 0
-}
-
 const normalizeDocumentDate = (row, dateField, fallbackField) => {
   const raw = row?.[dateField] ?? row?.[fallbackField] ?? null
   if (!raw) {
@@ -241,12 +222,13 @@ const getTipologiaValue = (anagrafica) =>
     anagrafica?.id_tipologia,
   )
 
-const getRegimeFiscaleValue = (anagrafica) =>
-  formatLookupValue(
-    anagrafica?.regime_label,
-    anagrafica?.regime_code,
-    anagrafica?.id_sdi_regime_fiscale,
-  )
+const getCategoriaValue = (anagrafica) => {
+  const categoria = anagrafica?.categoria
+  if (typeof categoria === "string" && categoria.trim() !== "") {
+    return categoria.trim()
+  }
+  return Number(anagrafica?.is_pa) === 1 ? "Comune" : "Azienda Private"
+}
 
 const DetailField = ({ label, value, compact = false }) => (
   <div className={`detail-field bg-body-tertiary border rounded ${compact ? 'px-2 py-1' : 'px-3 py-2'} h-100`}>
@@ -262,6 +244,7 @@ const createGeneralForm = (anagrafica) => ({
   email: anagrafica?.email ?? "",
   telefono: anagrafica?.telefono ?? "",
   note: anagrafica?.note ?? "",
+  categoria: getCategoriaValue(anagrafica),
   id_tipologia: anagrafica?.id_tipologia ?? "",
   id_sdi_regime_fiscale: anagrafica?.id_sdi_regime_fiscale ?? "",
   is_pa: Number(anagrafica?.is_pa) === 1,
@@ -271,9 +254,15 @@ const createGeneralForm = (anagrafica) => ({
 
 const createFiscalForm = (fiscale) => ({
   pec: fiscale?.pec ?? "",
-  codice_sdi: fiscale?.codice_sdi ?? "",
+  codice_sdi: typeof fiscale?.codice_sdi === "string" ? fiscale.codice_sdi.toUpperCase() : "",
   iban: fiscale?.iban ?? "",
   banca: fiscale?.banca ?? "",
+  split_pay:
+    fiscale?.split_pay === 1 || fiscale?.split_pay === "1"
+      ? "1"
+      : fiscale?.split_pay === 0 || fiscale?.split_pay === "0"
+        ? "0"
+        : "",
   id_cond_pagamento: fiscale?.id_cond_pagamento ?? "",
   modalita_pagamento: fiscale?.modalita_pagamento ?? "",
   id_sezionale: fiscale?.id_sezionale ?? "",
@@ -319,12 +308,26 @@ const DEFAULT_TIPOLOGIE_SEDI = [
   { id_tipo: 3, code: "MAGAZZINO", label: "Magazzino" },
 ]
 
-const KPI_PERIOD_OPTIONS = [
-  { value: 'all', label: 'Tutti' },
-  { value: 'month', label: 'Mese' },
-  { value: 'quarter', label: 'Trimestre' },
-  { value: 'semester', label: 'Semestre' },
-  { value: 'year', label: 'Ultimo anno' },
+const CATEGORY_OPTIONS = [
+  "Comune",
+  "Scuola",
+  "Ente provinciale",
+  "Ente regionale",
+  "software house",
+  "consorzio idrico",
+  "asl",
+  "trasporto",
+  "società di riscossione",
+  "Libero professionista",
+  "Azienda Private",
+  "Consorzio",
+  "Organismo di Certificazione e Controllo",
+  "Fornitore di luce e gas",
+  "Assicurazione e Amministratore di Condominio",
+  "Cash And Carry",
+  "Ente No Profit",
+  "società di comunicazione e marketing",
+  "tipografia",
 ]
 
 const AnagraficaDetail = () => {
@@ -350,7 +353,7 @@ const AnagraficaDetail = () => {
 
   const [mutationError, setMutationError] = useState(null)
   const [toast, setToast] = useState({ open: false, type: 'success', message: '' })
-  const [kpiPeriod, setKpiPeriod] = useState('all')
+  const kpiPeriod = 'all'
 
   const showToast = (message, type = 'success') => {
     setToast({ open: true, type, message })
@@ -817,6 +820,7 @@ const AnagraficaDetail = () => {
       email: generalForm.email,
       telefono: generalForm.telefono,
       note: generalForm.note,
+      categoria: generalForm.categoria || null,
       id_tipologia: generalForm.id_tipologia === "" ? null : Number(generalForm.id_tipologia),
       id_sdi_regime_fiscale:
         generalForm.id_sdi_regime_fiscale === "" ? null : Number(generalForm.id_sdi_regime_fiscale),
@@ -833,6 +837,10 @@ const AnagraficaDetail = () => {
         payload[key] = null
       }
     })
+
+    if (typeof payload.codice_sdi === "string") {
+      payload.codice_sdi = payload.codice_sdi.toUpperCase()
+    }
 
     try {
       const response = await updateAnagraficaDetail({
@@ -871,12 +879,13 @@ const AnagraficaDetail = () => {
     setFiscaleForm(null)
   }
 
-  const handleFiscalFieldChange = (field) => (event) => {
-    setFiscaleForm((current) => ({
-      ...current,
-      [field]: event.target.value,
-    }))
-  }
+const handleFiscalFieldChange = (field) => (event) => {
+  const value = field === "codice_sdi" ? String(event.target.value || "").toUpperCase() : event.target.value
+  setFiscaleForm((current) => ({
+    ...current,
+    [field]: value,
+  }))
+}
 
   const handleFiscalSubmit = async (event) => {
     event.preventDefault()
@@ -892,6 +901,7 @@ const AnagraficaDetail = () => {
       codice_sdi: fiscaleForm.codice_sdi,
       iban: fiscaleForm.iban,
       banca: fiscaleForm.banca,
+      split_pay: fiscaleForm.split_pay === "" ? null : Number(fiscaleForm.split_pay),
       id_cond_pagamento:
         fiscaleForm.id_cond_pagamento === "" ? null : Number(fiscaleForm.id_cond_pagamento),
       modalita_pagamento: fiscaleForm.modalita_pagamento,
@@ -1383,112 +1393,6 @@ const AnagraficaDetail = () => {
     setFatturePage((prev) => Math.min(prev, Math.max(totalFatturePages - 1, 0)))
   }, [totalFatturePages])
 
-  const kpiCutoffTimestamp = useMemo(() => {
-    if (kpiPeriod === 'all') {
-      return null
-    }
-    const now = new Date()
-    if (kpiPeriod === 'month') {
-      now.setMonth(now.getMonth() - 1)
-    } else if (kpiPeriod === 'quarter') {
-      now.setMonth(now.getMonth() - 3)
-    } else if (kpiPeriod === 'semester') {
-      now.setMonth(now.getMonth() - 6)
-    } else if (kpiPeriod === 'year') {
-      now.setFullYear(now.getFullYear() - 1)
-    }
-    return now.getTime()
-  }, [kpiPeriod])
-
-  const filteredPreventivi = useMemo(() => {
-    if (!kpiCutoffTimestamp) {
-      return preventivi
-    }
-    return preventivi.filter((row) => {
-      const info = normalizeDocumentDate(row, 'data_preventivo', 'created_at')
-      return info ? info.ts >= kpiCutoffTimestamp : false
-    })
-  }, [preventivi, kpiCutoffTimestamp])
-
-  const filteredFatture = useMemo(() => {
-    if (!kpiCutoffTimestamp) {
-      return fatture
-    }
-    return fatture.filter((row) => {
-      const info = normalizeDocumentDate(row, 'data_fattura', 'created_at')
-      return info ? info.ts >= kpiCutoffTimestamp : false
-    })
-  }, [fatture, kpiCutoffTimestamp])
-
-  const filteredDdt = useMemo(() => {
-    if (!kpiCutoffTimestamp) {
-      return ddt
-    }
-    return ddt.filter((row) => {
-      const info = normalizeDocumentDate(row, 'data_ddt', 'created_at')
-      return info ? info.ts >= kpiCutoffTimestamp : false
-    })
-  }, [ddt, kpiCutoffTimestamp])
-
-  const kpiData = detail?.kpi ?? null
-  const computedFatturatoTotale = useMemo(
-    () => filteredFatture.reduce((sum, fattura) => sum + toNumberOrZero(fattura?.totale), 0),
-    [filteredFatture],
-  )
-  const computedSaldoTotale = useMemo(
-    () => filteredFatture.reduce((sum, fattura) => sum + toNumberOrZero(fattura?.saldo), 0),
-    [filteredFatture],
-  )
-  const fattureCount = kpiData?.fatture?.count ?? filteredFatture.length
-  const preventiviCount = kpiData?.preventivi?.count ?? filteredPreventivi.length
-  const ddtCount = kpiData?.ddt?.count ?? filteredDdt.length
-  const fatturatoTotale =
-    kpiData?.fatture?.totale !== undefined && kpiData?.fatture?.totale !== null
-      ? toNumberOrZero(kpiData.fatture.totale)
-      : computedFatturatoTotale
-  const saldoTotale =
-    kpiData?.fatture?.saldo !== undefined && kpiData?.fatture?.saldo !== null
-      ? toNumberOrZero(kpiData.fatture.saldo)
-      : computedSaldoTotale
-  const conversioneFatture = preventiviCount > 0 ? (fattureCount / preventiviCount) * 100 : 0
-  const lastDocument = useMemo(() => {
-    let latest = null
-    const consider = (type, row, dateField, fallbackField) => {
-      const info = normalizeDocumentDate(row, dateField, fallbackField)
-      if (!info) return
-      if (!latest || info.ts > latest.ts) {
-        latest = { type, ts: info.ts, raw: info.raw }
-      }
-    }
-
-    filteredFatture.forEach((row) => consider('Fattura', row, 'data_fattura', 'created_at'))
-    filteredDdt.forEach((row) => consider('DDT', row, 'data_ddt', 'created_at'))
-    filteredPreventivi.forEach((row) => consider('Preventivo', row, 'data_preventivo', 'created_at'))
-
-    return latest
-  }, [filteredFatture, filteredDdt, filteredPreventivi])
-
-  const kpiPeriodLabel = useMemo(
-    () => KPI_PERIOD_OPTIONS.find((option) => option.value === kpiPeriod)?.label ?? 'Tutti',
-    [kpiPeriod],
-  )
-
-  const kpiCards = useMemo(
-    () => [
-      { key: 'fatturato', label: 'Fatturato', value: formatCurrency(fatturatoTotale) },
-      { key: 'saldo', label: 'Saldo aperto', value: formatCurrency(saldoTotale) },
-      { key: 'preventivi', label: 'Preventivi', value: formatInteger(preventiviCount) },
-      { key: 'fatture', label: 'Fatture', value: formatInteger(fattureCount) },
-      { key: 'ddt', label: 'DDT', value: formatInteger(ddtCount) },
-    ],
-    [fatturatoTotale, saldoTotale, preventiviCount, fattureCount, ddtCount],
-  )
-
-  const lastDocumentLabel =
-    kpiData?.last_document?.date
-      ? `${kpiData.last_document.type || 'Documento'} (${formatDate(kpiData.last_document.date)})`
-      : (lastDocument ? `${lastDocument.type} (${formatDate(lastDocument.raw)})` : '-')
-
   const sedeOptions = useMemo(() => {
     const options = [
       { label: 'Nessuna sede', value: '' },
@@ -1884,9 +1788,7 @@ const AnagraficaDetail = () => {
       { label: "Partita IVA", value: anagrafica.piva },
       { label: "Codice fiscale", value: anagrafica.codice_fiscale },
       { label: "Tipologia", value: getTipologiaValue(anagrafica) },
-      { label: "Regime fiscale", value: getRegimeFiscaleValue(anagrafica) },
-      { label: "Pubblica amministrazione", value: Number(anagrafica.is_pa) === 1 ? "Si" : "No" },
-      { label: "Attiva", value: Number(anagrafica.is_active) === 1 ? "Si" : "No" },
+      { label: "Categoria", value: getCategoriaValue(anagrafica) },
       { label: "Creato il", value: formatDateTime(anagrafica.created_at) },
       { label: "Aggiornato il", value: formatDateTime(anagrafica.updated_at) },
     ]
@@ -1907,9 +1809,18 @@ const AnagraficaDetail = () => {
 
     return [
       { label: "PEC", value: fiscale.pec },
-      { label: "Codice SDI", value: fiscale.codice_sdi },
+      { label: "Codice SDI", value: typeof fiscale.codice_sdi === "string" ? fiscale.codice_sdi.toUpperCase() : fiscale.codice_sdi },
       { label: "IBAN", value: fiscale.iban },
       { label: "Banca", value: fiscale.banca },
+      {
+        label: "Split PAY",
+        value:
+          fiscale.split_pay === 1 || fiscale.split_pay === "1"
+            ? "Si"
+            : fiscale.split_pay === 0 || fiscale.split_pay === "0"
+              ? "No"
+              : "-",
+      },
       { label: "Modalita di pagamento", value: fiscale.modalita_pagamento },
       { label: "Sezionale fattura", value: sezionaleLabel },
       {
@@ -2145,58 +2056,35 @@ const AnagraficaDetail = () => {
 
           {recordId && !loading && !errorMessage && detail && (
             <>
-              <section className="d-flex flex-column gap-3">
-                <div className="d-flex justify-content-between align-items-start gap-3">
-                  <h3 className="h6 mb-0">KPI cliente</h3>
-                  <CFormSelect
-                    size="sm"
-                    value={kpiPeriod}
-                    onChange={(event) => setKpiPeriod(event.target.value)}
-                    aria-label="Selettore periodo KPI cliente"
-                    style={{ minWidth: 180 }}
-                  >
-                    {KPI_PERIOD_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </CFormSelect>
-                </div>
-                <div className="text-body-secondary small">Periodo: {kpiPeriodLabel}</div>
-                <CRow className="g-3">
-                  {kpiCards.map((card) => (
-                    <CCol key={card.key} sm={6} lg={3}>
-                      <CCard className="h-100 border-0 shadow-sm">
-                        <CCardBody>
-                          <div className="text-body-secondary text-uppercase small fw-semibold">{card.label}</div>
-                          <div className="fs-4 fw-semibold mt-2">{card.value}</div>
-                        </CCardBody>
-                      </CCard>
-                    </CCol>
-                  ))}
-                </CRow>
-                <CRow className="g-2">
-                  <CCol md={6}>
-                    <DetailField label="Conversione fatture/preventivi" value={formatPercent(conversioneFatture)} compact />
-                  </CCol>
-                  <CCol md={6}>
-                    <DetailField label="Ultimo documento" value={lastDocumentLabel} compact />
-                  </CCol>
-                </CRow>
-              </section>
-
-              <section className="d-flex flex-column gap-3">
+              <div className="d-flex flex-column flex-lg-row gap-3 align-items-start">
+                <CCard style={{ flex: 6 }}>
+                  <CCardBody className="d-flex flex-column gap-3">
                 <div className="d-flex justify-content-between align-items-start gap-3">
                   <h3 className="h6 mb-0">Informazioni generali</h3>
-                  {!isEditingGeneral && !isDisabled && (
-                    <CButton
-                      color="secondary"
-                      variant="outline"
-                      size="sm"
-                      onClick={startGeneralEditing}
-                    >
-                      Modifica
-                    </CButton>
+                  {!isDisabled && (
+                    !isEditingGeneral ? (
+                      <CButton
+                        color="secondary"
+                        variant="outline"
+                        size="sm"
+                        onClick={startGeneralEditing}
+                        aria-label="Modifica informazioni generali"
+                        title="Modifica"
+                      >
+                        <CIcon icon={cilSettings} />
+                      </CButton>
+                    ) : (
+                      <CButton
+                        color="primary"
+                        size="sm"
+                        onClick={handleGeneralBreadcrumbSave}
+                        disabled={savingGeneral || !generalForm}
+                        aria-label="Salva informazioni generali"
+                        title="Salva"
+                      >
+                        <CIcon icon={cilSave} />
+                      </CButton>
+                    )
                   )}
                 </div>
 
@@ -2206,8 +2094,8 @@ const AnagraficaDetail = () => {
                     className="d-flex flex-column gap-3"
                     ref={generalFormRef}
                   >
-                    <CRow className={gridGapClass}>
-                      <CCol md={6}>
+                    <CRow className="g-3">
+                      <CCol md={8}>
                         <CFormLabel htmlFor="ragioneSociale">Ragione sociale</CFormLabel>
                         <CFormInput
                           id="ragioneSociale"
@@ -2217,7 +2105,7 @@ const AnagraficaDetail = () => {
                           disabled={savingGeneral}
                         />
                       </CCol>
-                      <CCol md={3}>
+                      <CCol md={4}>
                         <CFormLabel htmlFor="piva">Partita IVA</CFormLabel>
                         <CFormInput
                           id="piva"
@@ -2226,7 +2114,7 @@ const AnagraficaDetail = () => {
                           disabled={savingGeneral}
                         />
                       </CCol>
-                      <CCol md={3}>
+                      <CCol md={4}>
                         <CFormLabel htmlFor="codiceFiscale">Codice fiscale</CFormLabel>
                         <CFormInput
                           id="codiceFiscale"
@@ -2235,7 +2123,7 @@ const AnagraficaDetail = () => {
                           disabled={savingGeneral}
                         />
                       </CCol>
-                      <CCol md={3}>
+                      <CCol md={4}>
                         <CFormLabel htmlFor="tipologia">Tipologia</CFormLabel>
                         <CFormSelect
                           id="tipologia"
@@ -2255,7 +2143,23 @@ const AnagraficaDetail = () => {
                           ))}
                         </CFormSelect>
                       </CCol>
-                      <CCol md={3}>
+                      <CCol md={4}>
+                        <CFormLabel htmlFor="categoria">Categoria</CFormLabel>
+                        <CFormSelect
+                          id="categoria"
+                          value={generalForm.categoria ?? ""}
+                          onChange={handleGeneralFieldChange("categoria")}
+                          disabled={savingGeneral}
+                        >
+                          <option value="">Seleziona categoria</option>
+                          {CATEGORY_OPTIONS.map((option) => (
+                            <option key={option} value={option}>
+                              {option}
+                            </option>
+                          ))}
+                        </CFormSelect>
+                      </CCol>
+                      <CCol md={4}>
                         <CFormLabel htmlFor="regimeFiscale">Regime fiscale</CFormLabel>
                         <CFormSelect
                           id="regimeFiscale"
@@ -2275,7 +2179,7 @@ const AnagraficaDetail = () => {
                           ))}
                         </CFormSelect>
                       </CCol>
-                      <CCol md={3}>
+                      <CCol md={4}>
                         <CFormLabel htmlFor="stato">Stato</CFormLabel>
                         <CFormSelect
                           id="stato"
@@ -2290,19 +2194,6 @@ const AnagraficaDetail = () => {
                           ))}
                         </CFormSelect>
                       </CCol>
-                      <CCol md={3} className="d-flex flex-column justify-content-end gap-2">
-                        <CFormCheck
-                          type="checkbox"
-                          id="isPa"
-                          label="Pubblica amministrazione"
-                          checked={generalForm.is_pa}
-                          onChange={handleGeneralFieldChange("is_pa")}
-                          disabled={savingGeneral}
-                        />
-                        <CButton color="danger" variant="outline" type="button" onClick={handleArchiveClick} disabled={savingGeneral}>
-                          Archivia anagrafica
-                        </CButton>
-                      </CCol>
                       <CCol xs={12}>
                         <CFormLabel htmlFor="note">Note</CFormLabel>
                         <CFormTextarea
@@ -2312,6 +2203,19 @@ const AnagraficaDetail = () => {
                           rows={4}
                           disabled={savingGeneral}
                         />
+                      </CCol>
+                    </CRow>
+                    <CRow className="g-3">
+                      <CCol lg={12} className="d-flex align-items-center justify-content-lg-end">
+                        <CButton
+                          color="danger"
+                          variant="outline"
+                          type="button"
+                          onClick={handleArchiveClick}
+                          disabled={savingGeneral}
+                        >
+                          Archivia anagrafica
+                        </CButton>
                       </CCol>
                     </CRow>
                     <div className="d-flex gap-2 justify-content-end">
@@ -2348,11 +2252,229 @@ const AnagraficaDetail = () => {
                     )}
                   </>
                 )}
-              </section>
+                  </CCardBody>
+                </CCard>
+
+                <CCard style={{ flex: 4 }}>
+                  <CCardBody className="d-flex flex-column gap-3">
+                    <div className="d-flex justify-content-between align-items-start gap-3">
+                      <h3 className="h6 mb-0">Dati fiscali</h3>
+                      {!isDisabled && (
+                        !isEditingFiscal ? (
+                          <CButton
+                            color="secondary"
+                            variant="outline"
+                            size="sm"
+                            onClick={startFiscalEditing}
+                            aria-label="Modifica dati fiscali"
+                            title="Modifica"
+                          >
+                            <CIcon icon={cilSettings} />
+                          </CButton>
+                        ) : (
+                          <CButton
+                            color="primary"
+                            size="sm"
+                            onClick={handleFiscalBreadcrumbSave}
+                            disabled={savingFiscal || !fiscaleForm}
+                            aria-label="Salva dati fiscali"
+                            title="Salva"
+                          >
+                            <CIcon icon={cilSave} />
+                          </CButton>
+                        )
+                      )}
+                    </div>
+
+                    {isEditingFiscal && fiscaleForm ? (
+                      <CForm
+                        onSubmit={handleFiscalSubmit}
+                        className="d-flex flex-column gap-3"
+                        ref={fiscalFormRef}
+                      >
+                        <CRow className="g-3">
+                          <CCol md={4}>
+                            <CFormLabel htmlFor="pec">PEC</CFormLabel>
+                            <CFormInput
+                              id="pec"
+                              type="email"
+                              value={fiscaleForm.pec}
+                              onChange={handleFiscalFieldChange("pec")}
+                              disabled={savingFiscal || isDisabled}
+                            />
+                          </CCol>
+                          <CCol md={4}>
+                            <CFormLabel htmlFor="codiceSdi">Codice SDI</CFormLabel>
+                            <CFormInput
+                              id="codiceSdi"
+                              value={fiscaleForm.codice_sdi}
+                              onChange={handleFiscalFieldChange("codice_sdi")}
+                              disabled={savingFiscal || isDisabled}
+                            />
+                          </CCol>
+                          <CCol md={4}>
+                            <CFormLabel htmlFor="iban">IBAN</CFormLabel>
+                            <CFormInput
+                              id="iban"
+                              value={fiscaleForm.iban}
+                              onChange={handleFiscalFieldChange("iban")}
+                              disabled={savingFiscal || isDisabled}
+                            />
+                          </CCol>
+                          <CCol md={6}>
+                            <CFormLabel htmlFor="banca">Banca</CFormLabel>
+                            <CFormInput
+                              id="banca"
+                              value={fiscaleForm.banca}
+                              onChange={handleFiscalFieldChange("banca")}
+                              disabled={savingFiscal || isDisabled}
+                            />
+                          </CCol>
+                          <CCol md={6}>
+                            <CFormLabel htmlFor="splitPay">Split PAY</CFormLabel>
+                            <CFormSelect
+                              id="splitPay"
+                              value={fiscaleForm.split_pay ?? ""}
+                              onChange={handleFiscalFieldChange("split_pay")}
+                              disabled={savingFiscal || isDisabled}
+                            >
+                              <option value="">Seleziona</option>
+                              <option value="1">Si</option>
+                              <option value="0">No</option>
+                            </CFormSelect>
+                          </CCol>
+                          <CCol md={6}>
+                            <CFormLabel htmlFor="modalitaPagamento">Modalita di pagamento</CFormLabel>
+                            <CFormSelect
+                              id="modalitaPagamento"
+                              value={fiscaleForm.modalita_pagamento ?? ""}
+                              onChange={handleFiscalFieldChange("modalita_pagamento")}
+                              disabled={savingFiscal || isDisabled || modalitaLoading}
+                            >
+                              <option value="">Seleziona una modalità</option>
+                              {modalitaSelectOptions.map((option) => (
+                                <option key={option.value} value={option.value}>
+                                  {option.label}
+                                </option>
+                              ))}
+                              {fiscaleForm.modalita_pagamento &&
+                                fiscaleForm.modalita_pagamento !== "" &&
+                                !modalitaSelectOptions.some((option) => option.value === fiscaleForm.modalita_pagamento) && (
+                                  <option key="external-modalita" value={fiscaleForm.modalita_pagamento}>
+                                    {fiscaleForm.modalita_pagamento}
+                                  </option>
+                                )}
+                            </CFormSelect>
+                            {modalitaLoading && (
+                              <div className="form-text text-body-secondary">Caricamento modalità.</div>
+                            )}
+                            {modalitaError && !modalitaLoading && (
+                              <div className="form-text text-danger">
+                                Impossibile caricare le modalità: {modalitaError.message || "errore sconosciuto"}
+                              </div>
+                            )}
+                          </CCol>
+                          <CCol md={6}>
+                            <CFormLabel htmlFor="sezionaleFattura">Sezionale fattura</CFormLabel>
+                            <CFormSelect
+                              id="sezionaleFattura"
+                              value={fiscaleForm.id_sezionale ?? ""}
+                              onChange={handleFiscalFieldChange("id_sezionale")}
+                              disabled={savingFiscal || isDisabled || modalitaLoading || sezionaliOptions.length === 0}
+                            >
+                              <option value="">Seleziona sezionale</option>
+                              {sezionaliOptions.map((option) => (
+                                <option key={option.id_sezionale} value={option.id_sezionale}>
+                                  {option.code
+                                    ? `${option.code} - ${option.label}`
+                                    : option.label || option.id_sezionale}
+                                </option>
+                              ))}
+                            </CFormSelect>
+                          </CCol>
+                          <CCol md={6}>
+                            <CFormLabel htmlFor="idCondPagamento">Condizioni di pagamento</CFormLabel>
+                            <CFormSelect
+                              id="idCondPagamento"
+                              value={fiscaleForm.id_cond_pagamento}
+                              onChange={handleFiscalFieldChange("id_cond_pagamento")}
+                              disabled={savingFiscal || isDisabled || paymentTermsLoading}
+                            >
+                              <option value="">Seleziona una condizione</option>
+                              {paymentTermOptions.map((option) => (
+                                <option key={option.value} value={option.value}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </CFormSelect>
+                            {paymentTermsLoading && (
+                              <div className="form-text text-body-secondary">Caricamento condizioni…</div>
+                            )}
+                            {paymentTermsError && !paymentTermsLoading && (
+                              <div className="form-text text-danger">
+                                Impossibile caricare le condizioni: {paymentTermsError.message || "errore sconosciuto"}
+                              </div>
+                            )}
+                            {currentPaymentTermSelection?.description && (
+                              <div className="form-text">{currentPaymentTermSelection.description}</div>
+                            )}
+                          </CCol>
+                          <CCol xs={12}>
+                            <CFormLabel htmlFor="altriDati">Altri dati</CFormLabel>
+                            <CFormTextarea
+                              id="altriDati"
+                              rows={4}
+                              value={fiscaleForm.altri_dati}
+                              onChange={handleFiscalFieldChange("altri_dati")}
+                              disabled={savingFiscal || isDisabled}
+                            />
+                          </CCol>
+                        </CRow>
+                        <div className="d-flex gap-2 justify-content-end">
+                          <CButton color="secondary" variant="outline" type="button" onClick={cancelFiscalEditing} disabled={savingFiscal || isDisabled}>
+                            Annulla
+                          </CButton>
+                          <CButton color="primary" type="submit" disabled={savingFiscal || isDisabled}>
+                            {savingFiscal ? "Salvataggio..." : "Salva modifiche"}
+                          </CButton>
+                        </div>
+                      </CForm>
+                    ) : (
+                      <>
+                        {fiscaleFields.length > 0 ? (
+                        <CRow className="g-3">
+                          {fiscaleFields.map((field) => {
+                            const colProps = field.fullWidth
+                              ? { xs: 12, md: 12 }
+                              : { md: 6, xl: 4 }
+                            return (
+                              <CCol key={field.label} {...colProps}>
+                                <DetailField label={field.label} value={field.value} compact={isCompact} />
+                              </CCol>
+                            )
+                          })}
+                        </CRow>
+                        ) : (
+                          <CAlert color="info" className="mb-0">
+                            Nessun dato fiscale registrato per questa anagrafica.
+                          </CAlert>
+                        )}
+                        {detail.fiscale?.altri_dati && (
+                          <CAlert color="secondary" className="mt-3 mb-0">
+                            <div className="text-body-secondary text-uppercase small fw-semibold mb-2">Altri dati</div>
+                            <div style={{ whiteSpace: "pre-wrap" }}>{detail.fiscale.altri_dati}</div>
+                          </CAlert>
+                        )}
+                      </>
+                    )}
+                  </CCardBody>
+                </CCard>
+              </div>
 
               {/* Contatti archiviati: ora visibili nel selettore della sezione Contatti */}
-
-              <section className="d-flex flex-column gap-3">
+              <div className="d-flex flex-column flex-lg-row gap-3 align-items-start">
+                <CCard style={{ flex: 1 }}>
+                  <CCardBody className="d-flex flex-column gap-3">
                 <div className="d-flex justify-content-between align-items-start gap-3">
                   <h3 className="h6 mb-0">Sedi</h3>
                   {!editingSedeId && !isDisabled && (
@@ -2597,188 +2719,10 @@ const AnagraficaDetail = () => {
                     Nessuna sede registrata per questa anagrafica.
                   </CAlert>
                 )}
-              </section>
-              <section className="d-flex flex-column gap-3">
-                <div className="d-flex justify-content-between align-items-start gap-3">
-                  <h3 className="h6 mb-0">Dati fiscali</h3>
-                  {!isEditingFiscal && !isDisabled && (
-                    <CButton color="secondary" variant="outline" size="sm" onClick={startFiscalEditing}>
-                      Modifica
-                    </CButton>
-                  )}
-                </div>
-
-                {isEditingFiscal && fiscaleForm ? (
-                  <CForm
-                    onSubmit={handleFiscalSubmit}
-                    className="d-flex flex-column gap-3"
-                    ref={fiscalFormRef}
-                  >
-                    <CRow className="g-3">
-                      <CCol md={4}>
-                        <CFormLabel htmlFor="pec">PEC</CFormLabel>
-                        <CFormInput
-                          id="pec"
-                          type="email"
-                          value={fiscaleForm.pec}
-                          onChange={handleFiscalFieldChange("pec")}
-                          disabled={savingFiscal || isDisabled}
-                        />
-                      </CCol>
-                      <CCol md={4}>
-                        <CFormLabel htmlFor="codiceSdi">Codice SDI</CFormLabel>
-                        <CFormInput
-                          id="codiceSdi"
-                          value={fiscaleForm.codice_sdi}
-                          onChange={handleFiscalFieldChange("codice_sdi")}
-                          disabled={savingFiscal || isDisabled}
-                        />
-                      </CCol>
-                      <CCol md={4}>
-                        <CFormLabel htmlFor="iban">IBAN</CFormLabel>
-                        <CFormInput
-                          id="iban"
-                          value={fiscaleForm.iban}
-                          onChange={handleFiscalFieldChange("iban")}
-                          disabled={savingFiscal || isDisabled}
-                        />
-                      </CCol>
-                      <CCol md={6}>
-                        <CFormLabel htmlFor="banca">Banca</CFormLabel>
-                        <CFormInput
-                          id="banca"
-                          value={fiscaleForm.banca}
-                          onChange={handleFiscalFieldChange("banca")}
-                          disabled={savingFiscal || isDisabled}
-                        />
-                      </CCol>
-                      <CCol md={6}>
-                        <CFormLabel htmlFor="modalitaPagamento">Modalita di pagamento</CFormLabel>
-                        <CFormSelect
-                          id="modalitaPagamento"
-                          value={fiscaleForm.modalita_pagamento ?? ""}
-                          onChange={handleFiscalFieldChange("modalita_pagamento")}
-                          disabled={savingFiscal || isDisabled || modalitaLoading}
-                        >
-                          <option value="">Seleziona una modalità</option>
-                          {modalitaSelectOptions.map((option) => (
-                            <option key={option.value} value={option.value}>
-                              {option.label}
-                            </option>
-                          ))}
-                          {fiscaleForm.modalita_pagamento &&
-                            fiscaleForm.modalita_pagamento !== "" &&
-                            !modalitaSelectOptions.some((option) => option.value === fiscaleForm.modalita_pagamento) && (
-                              <option key="external-modalita" value={fiscaleForm.modalita_pagamento}>
-                                {fiscaleForm.modalita_pagamento}
-                              </option>
-                            )}
-                        </CFormSelect>
-                        {modalitaLoading && (
-                          <div className="form-text text-body-secondary">Caricamento modalità.</div>
-                        )}
-                        {modalitaError && !modalitaLoading && (
-                          <div className="form-text text-danger">
-                            Impossibile caricare le modalità: {modalitaError.message || "errore sconosciuto"}
-                          </div>
-                        )}
-                      </CCol>
-                      <CCol md={6}>
-                        <CFormLabel htmlFor="sezionaleFattura">Sezionale fattura</CFormLabel>
-                        <CFormSelect
-                          id="sezionaleFattura"
-                          value={fiscaleForm.id_sezionale ?? ""}
-                          onChange={handleFiscalFieldChange("id_sezionale")}
-                          disabled={savingFiscal || isDisabled || modalitaLoading || sezionaliOptions.length === 0}
-                        >
-                          <option value="">Seleziona sezionale</option>
-                          {sezionaliOptions.map((option) => (
-                            <option key={option.id_sezionale} value={option.id_sezionale}>
-                              {option.code
-                                ? `${option.code} - ${option.label}`
-                                : option.label || option.id_sezionale}
-                            </option>
-                          ))}
-                        </CFormSelect>
-                      </CCol>
-                      <CCol md={6}>
-                        <CFormLabel htmlFor="idCondPagamento">Condizioni di pagamento</CFormLabel>
-                        <CFormSelect
-                          id="idCondPagamento"
-                          value={fiscaleForm.id_cond_pagamento}
-                          onChange={handleFiscalFieldChange("id_cond_pagamento")}
-                          disabled={savingFiscal || isDisabled || paymentTermsLoading}
-                        >
-                          <option value="">Seleziona una condizione</option>
-                          {paymentTermOptions.map((option) => (
-                            <option key={option.value} value={option.value}>
-                              {option.label}
-                            </option>
-                          ))}
-                        </CFormSelect>
-                        {paymentTermsLoading && (
-                          <div className="form-text text-body-secondary">Caricamento condizioni…</div>
-                        )}
-                        {paymentTermsError && !paymentTermsLoading && (
-                          <div className="form-text text-danger">
-                            Impossibile caricare le condizioni: {paymentTermsError.message || "errore sconosciuto"}
-                          </div>
-                        )}
-                        {currentPaymentTermSelection?.description && (
-                          <div className="form-text">{currentPaymentTermSelection.description}</div>
-                        )}
-                      </CCol>
-                      <CCol xs={12}>
-                        <CFormLabel htmlFor="altriDati">Altri dati</CFormLabel>
-                        <CFormTextarea
-                          id="altriDati"
-                          rows={4}
-                          value={fiscaleForm.altri_dati}
-                          onChange={handleFiscalFieldChange("altri_dati")}
-                          disabled={savingFiscal || isDisabled}
-                        />
-                      </CCol>
-                    </CRow>
-                    <div className="d-flex gap-2 justify-content-end">
-                      <CButton color="secondary" variant="outline" type="button" onClick={cancelFiscalEditing} disabled={savingFiscal || isDisabled}>
-                        Annulla
-                      </CButton>
-                      <CButton color="primary" type="submit" disabled={savingFiscal || isDisabled}>
-                        {savingFiscal ? "Salvataggio..." : "Salva modifiche"}
-                      </CButton>
-                    </div>
-                  </CForm>
-                ) : (
-                  <>
-                    {fiscaleFields.length > 0 ? (
-                    <CRow className="g-3">
-                      {fiscaleFields.map((field) => {
-                        const colProps = field.fullWidth
-                          ? { xs: 12, md: 12 }
-                          : { md: 6, xl: 4 }
-                        return (
-                          <CCol key={field.label} {...colProps}>
-                            <DetailField label={field.label} value={field.value} compact={isCompact} />
-                          </CCol>
-                        )
-                      })}
-                    </CRow>
-                    ) : (
-                      <CAlert color="info" className="mb-0">
-                        Nessun dato fiscale registrato per questa anagrafica.
-                      </CAlert>
-                    )}
-                    {detail.fiscale?.altri_dati && (
-                      <CAlert color="secondary" className="mt-3 mb-0">
-                        <div className="text-body-secondary text-uppercase small fw-semibold mb-2">Altri dati</div>
-                        <div style={{ whiteSpace: "pre-wrap" }}>{detail.fiscale.altri_dati}</div>
-                      </CAlert>
-                    )}
-                  </>
-                )}
-              </section>
-
-              <section className="d-flex flex-column gap-3">
+                  </CCardBody>
+                </CCard>
+                <CCard style={{ flex: 1 }}>
+                  <CCardBody className="d-flex flex-column gap-3">
                 <div className="d-flex justify-content-between align-items-start gap-3">
                   <h3 className="h6 mb-0">Contatti</h3>
                   <div className="d-flex gap-2 align-items-center">
@@ -2844,7 +2788,9 @@ const AnagraficaDetail = () => {
                     <CAlert color="info" className="mb-0">Nessun contatto archiviato.</CAlert>
                   )
                 )}
-              </section>
+                  </CCardBody>
+                </CCard>
+              </div>
 
               <section>
                 <div className="d-flex justify-content-between align-items-center mb-3">

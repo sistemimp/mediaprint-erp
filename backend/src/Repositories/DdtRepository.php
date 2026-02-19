@@ -371,6 +371,41 @@ final class DdtRepository
         ];
     }
 
+    private function findLinkedPreventivoId(int $idDdt): ?int
+    {
+        if ($idDdt <= 0) {
+            return null;
+        }
+
+        $stmt = $this->pdo->prepare(
+            'SELECT id_preventivo
+             FROM appoggio_preventivo_ddt
+             WHERE id_ddt = :id_ddt
+             ORDER BY id_preventivo DESC
+             LIMIT 1'
+        );
+        $stmt->bindValue(':id_ddt', $idDdt, PDO::PARAM_INT);
+        $stmt->execute();
+        $value = $stmt->fetchColumn();
+        if ($value === false || $value === null) {
+            return null;
+        }
+
+        $idPreventivo = (int) $value;
+        return $idPreventivo > 0 ? $idPreventivo : null;
+    }
+
+    private function consumeReservedStockOnEmission(int $idDdt, ?int $performedBy = null): void
+    {
+        $idPreventivo = $this->findLinkedPreventivoId($idDdt);
+        if ($idPreventivo === null || $idPreventivo <= 0) {
+            return;
+        }
+
+        $preventiviRepository = new PreventiviRepository($this->pdo);
+        $preventiviRepository->consumeReservedStockForPreventivo($idPreventivo, $idDdt, $performedBy);
+    }
+
     /**
      * @param array<string,mixed> $data
      * @return array<string,mixed>
@@ -388,10 +423,26 @@ final class DdtRepository
         $existingStatus = isset($existing['stato_documento']) ? (int) $existing['stato_documento'] : 1;
         $lockedPayloadKeys = array_filter(
             array_keys($data),
-            fn ($key) => $key !== 'stato_documento'
+            static fn ($key) => $key !== 'stato_documento' && $key !== 'performed_by'
         );
         if ($existingStatus === 2 && !empty($lockedPayloadKeys)) {
             throw new RuntimeException("Il DDT risulta emesso; torna prima allo stato bozza per modificarlo.", 409);
+        }
+
+        $requestedStatus = $existingStatus;
+        if (array_key_exists('stato_documento', $data)) {
+            $requestedStatus = (int) $data['stato_documento'] === 2 ? 2 : 1;
+        }
+        $transitionToEmesso = $existingStatus !== 2 && $requestedStatus === 2;
+        if ($transitionToEmesso && array_key_exists('righe', $data)) {
+            throw new RuntimeException('Per emettere il DDT, salva prima le righe e imposta lo stato in un passaggio separato.', 422);
+        }
+        if ($transitionToEmesso) {
+            $performedBy = isset($data['performed_by']) ? (int) $data['performed_by'] : null;
+            if ($performedBy !== null && $performedBy <= 0) {
+                $performedBy = null;
+            }
+            $this->consumeReservedStockOnEmission($id, $performedBy);
         }
 
         $setClauses = [];
@@ -554,7 +605,7 @@ final class DdtRepository
         }
 
         if (array_key_exists('stato_documento', $data)) {
-            $status = (int) $data['stato_documento'] === 2 ? 2 : 1;
+            $status = $requestedStatus;
             $setClauses[] = 'stato_documento = :stato_documento';
             $params[':stato_documento'] = $status;
             $types[':stato_documento'] = PDO::PARAM_INT;

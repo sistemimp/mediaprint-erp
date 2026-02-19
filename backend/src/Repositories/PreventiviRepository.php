@@ -14,6 +14,7 @@ final class PreventiviRepository
     private ?bool $cedFlagArchiveSupported = null;
     private ?bool $preventivoFatturaRigheSupported = null;
     private ?bool $productStockColumnsSupported = null;
+    private ?bool $stockReservationSchemaSupported = null;
 
     public function __construct(private PDO $pdo) {}
 
@@ -264,6 +265,46 @@ final class PreventiviRepository
         }
 
         $this->productStockColumnsSupported = true;
+        return true;
+    }
+
+    private function ensureStockReservationSchema(): bool
+    {
+        if ($this->stockReservationSchemaSupported !== null) {
+            return $this->stockReservationSchemaSupported;
+        }
+
+        try {
+            $this->pdo->exec(<<<'SQL'
+                CREATE TABLE IF NOT EXISTS tb_magazzino_prenotazioni (
+                    id_prenotazione INT UNSIGNED NOT NULL AUTO_INCREMENT,
+                    id_preventivo INT UNSIGNED NOT NULL,
+                    id_articolo INT UNSIGNED NOT NULL,
+                    quantita DECIMAL(14,3) NOT NULL DEFAULT 0,
+                    stato VARCHAR(16) NOT NULL DEFAULT 'prenotata',
+                    id_ddt INT UNSIGNED NULL,
+                    note VARCHAR(255) NULL,
+                    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    released_at TIMESTAMP NULL DEFAULT NULL,
+                    consumed_at TIMESTAMP NULL DEFAULT NULL,
+                    PRIMARY KEY (id_prenotazione),
+                    UNIQUE KEY uq_prev_articolo (id_preventivo, id_articolo),
+                    KEY idx_prev_stato (id_preventivo, stato),
+                    KEY idx_articolo_stato (id_articolo, stato),
+                    KEY idx_ddt (id_ddt),
+                    CONSTRAINT fk_mag_pren_prev FOREIGN KEY (id_preventivo)
+                        REFERENCES tb_preventivi (id_preventivo) ON DELETE CASCADE,
+                    CONSTRAINT fk_mag_pren_art FOREIGN KEY (id_articolo)
+                        REFERENCES tb_magazzino_articoli (id_articolo) ON DELETE CASCADE
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            SQL);
+        } catch (\Throwable $ignored) {
+            $this->stockReservationSchemaSupported = false;
+            return false;
+        }
+
+        $this->stockReservationSchemaSupported = true;
         return true;
     }
 
@@ -2135,6 +2176,352 @@ final class PreventiviRepository
             ];
         }
         return $out;
+    }
+
+    /**
+     * @return list<array{id_articolo:int,codice:?string,nome:?string,quantita:float}>
+     */
+    private function listRequiredStockArticlesForPreventivo(int $idPreventivo): array
+    {
+        if ($idPreventivo <= 0) {
+            return [];
+        }
+
+        try {
+            $sql = <<<'SQL'
+                SELECT
+                    a.id_articolo,
+                    a.codice,
+                    a.nome,
+                    COALESCE(
+                        SUM(
+                            COALESCE(pr.quantita, 0)
+                            * COALESCE(c.quantita_per_unita, 0)
+                            * (1 + (COALESCE(c.scarto_percento, 0) / 100))
+                        ),
+                        0
+                    ) AS quantita_richiesta
+                FROM tb_preventivi_righe pr
+                INNER JOIN tb_prodotti_consumi_magazzino c
+                    ON c.id_prodotto = pr.id_prodotto
+                   AND (
+                        c.combo_key = COALESCE(pr.combo_key, '')
+                        OR (COALESCE(c.combo_key, '') = '' AND c.id_variazione IS NULL)
+                        OR FIND_IN_SET(
+                            CAST(c.id_variazione AS CHAR),
+                            REPLACE(COALESCE(pr.combo_key, ''), '+', ',')
+                        ) > 0
+                   )
+                   AND COALESCE(c.attivo, 1) = 1
+                INNER JOIN tb_magazzino_articoli a
+                    ON a.id_articolo = c.id_articolo
+                WHERE pr.id_preventivo = :id
+                  AND pr.id_prodotto IS NOT NULL
+                  AND COALESCE(a.gestione_magazzino, 1) = 1
+                  AND COALESCE(a.attivo, 1) = 1
+                GROUP BY a.id_articolo, a.codice, a.nome
+            SQL;
+
+            $stmt = $this->pdo->prepare($sql);
+            $stmt->bindValue(':id', $idPreventivo, PDO::PARAM_INT);
+            $stmt->execute();
+            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        } catch (\Throwable $ignored) {
+            return [];
+        }
+
+        $requirements = [];
+        foreach ($rows as $row) {
+            $idArticolo = isset($row['id_articolo']) ? (int) $row['id_articolo'] : 0;
+            $quantita = isset($row['quantita_richiesta']) ? (float) $row['quantita_richiesta'] : 0.0;
+            if ($idArticolo <= 0 || $quantita <= 0) {
+                continue;
+            }
+            $requirements[] = [
+                'id_articolo' => $idArticolo,
+                'codice' => $row['codice'] ?? null,
+                'nome' => $row['nome'] ?? null,
+                'quantita' => $quantita,
+            ];
+        }
+
+        return $requirements;
+    }
+
+    /**
+     * Prenota la merce necessaria al preventivo.
+     *
+     * @return array{ok:bool,reserved:int,released:int}
+     */
+    public function reserveStockForPreventivo(int $idPreventivo): array
+    {
+        if ($idPreventivo <= 0 || !$this->ensureStockReservationSchema()) {
+            return ['ok' => false, 'reserved' => 0, 'released' => 0];
+        }
+
+        $requirements = $this->listRequiredStockArticlesForPreventivo($idPreventivo);
+        $reserved = 0;
+        $released = 0;
+
+        $started = false;
+        if (!$this->pdo->inTransaction()) {
+            $this->pdo->beginTransaction();
+            $started = true;
+        }
+
+        try {
+            if (!empty($requirements)) {
+                $upsert = $this->pdo->prepare(
+                    'INSERT INTO tb_magazzino_prenotazioni
+                        (id_preventivo, id_articolo, quantita, stato, id_ddt, note, released_at, consumed_at, updated_at)
+                     VALUES
+                        (:id_preventivo, :id_articolo, :quantita, :stato, NULL, :note, NULL, NULL, NOW())
+                     ON DUPLICATE KEY UPDATE
+                        quantita = VALUES(quantita),
+                        stato = VALUES(stato),
+                        id_ddt = NULL,
+                        note = VALUES(note),
+                        released_at = NULL,
+                        consumed_at = NULL,
+                        updated_at = NOW()'
+                );
+
+                foreach ($requirements as $req) {
+                    $upsert->bindValue(':id_preventivo', $idPreventivo, PDO::PARAM_INT);
+                    $upsert->bindValue(':id_articolo', (int) $req['id_articolo'], PDO::PARAM_INT);
+                    $upsert->bindValue(':quantita', (float) $req['quantita'], PDO::PARAM_STR);
+                    $upsert->bindValue(':stato', 'prenotata', PDO::PARAM_STR);
+                    $upsert->bindValue(':note', 'Prenotazione da preventivo confermato', PDO::PARAM_STR);
+                    $upsert->execute();
+                    $reserved++;
+                }
+
+                $articleIds = array_values(array_map(
+                    static fn (array $entry): int => (int) ($entry['id_articolo'] ?? 0),
+                    $requirements
+                ));
+                $articleIds = array_values(array_filter($articleIds, static fn (int $id): bool => $id > 0));
+
+                if (!empty($articleIds)) {
+                    $placeholders = [];
+                    $params = [':id_preventivo' => $idPreventivo];
+                    foreach ($articleIds as $index => $articleId) {
+                        $ph = ':aid_' . $index;
+                        $placeholders[] = $ph;
+                        $params[$ph] = $articleId;
+                    }
+
+                    $sql = 'UPDATE tb_magazzino_prenotazioni
+                            SET stato = :stato_rilasciata,
+                                released_at = NOW(),
+                                updated_at = NOW()
+                            WHERE id_preventivo = :id_preventivo
+                              AND stato = :stato_prenotata
+                              AND id_articolo NOT IN (' . implode(',', $placeholders) . ')';
+                    $stmt = $this->pdo->prepare($sql);
+                    $stmt->bindValue(':stato_rilasciata', 'rilasciata', PDO::PARAM_STR);
+                    $stmt->bindValue(':stato_prenotata', 'prenotata', PDO::PARAM_STR);
+                    foreach ($params as $placeholder => $value) {
+                        if ($placeholder === ':id_preventivo') {
+                            $stmt->bindValue($placeholder, $value, PDO::PARAM_INT);
+                            continue;
+                        }
+                        $stmt->bindValue($placeholder, $value, PDO::PARAM_INT);
+                    }
+                    $stmt->execute();
+                    $released += $stmt->rowCount();
+                }
+            } else {
+                $releaseStmt = $this->pdo->prepare(
+                    'UPDATE tb_magazzino_prenotazioni
+                     SET stato = :stato_rilasciata,
+                         released_at = NOW(),
+                         updated_at = NOW()
+                     WHERE id_preventivo = :id_preventivo
+                       AND stato = :stato_prenotata'
+                );
+                $releaseStmt->bindValue(':stato_rilasciata', 'rilasciata', PDO::PARAM_STR);
+                $releaseStmt->bindValue(':id_preventivo', $idPreventivo, PDO::PARAM_INT);
+                $releaseStmt->bindValue(':stato_prenotata', 'prenotata', PDO::PARAM_STR);
+                $releaseStmt->execute();
+                $released += $releaseStmt->rowCount();
+            }
+
+            if ($started && $this->pdo->inTransaction()) {
+                $this->pdo->commit();
+            }
+        } catch (\Throwable $exception) {
+            if ($started && $this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            throw $exception;
+        }
+
+        return ['ok' => true, 'reserved' => $reserved, 'released' => $released];
+    }
+
+    /**
+     * @return array{ok:bool,released:int}
+     */
+    public function releaseStockReservationForPreventivo(int $idPreventivo): array
+    {
+        if ($idPreventivo <= 0 || !$this->ensureStockReservationSchema()) {
+            return ['ok' => false, 'released' => 0];
+        }
+
+        $stmt = $this->pdo->prepare(
+            'UPDATE tb_magazzino_prenotazioni
+             SET stato = :stato_rilasciata,
+                 released_at = NOW(),
+                 updated_at = NOW()
+             WHERE id_preventivo = :id_preventivo
+               AND stato = :stato_prenotata'
+        );
+        $stmt->bindValue(':stato_rilasciata', 'rilasciata', PDO::PARAM_STR);
+        $stmt->bindValue(':id_preventivo', $idPreventivo, PDO::PARAM_INT);
+        $stmt->bindValue(':stato_prenotata', 'prenotata', PDO::PARAM_STR);
+        $stmt->execute();
+
+        return ['ok' => true, 'released' => $stmt->rowCount()];
+    }
+
+    /**
+     * Converte le prenotazioni del preventivo in scarichi reali al momento dell'emissione DDT.
+     *
+     * @return array{ok:bool,consumed:int}
+     */
+    public function consumeReservedStockForPreventivo(int $idPreventivo, int $idDdt, ?int $createdBy = null): array
+    {
+        if ($idPreventivo <= 0 || $idDdt <= 0 || !$this->ensureStockReservationSchema()) {
+            return ['ok' => false, 'consumed' => 0];
+        }
+
+        $started = false;
+        if (!$this->pdo->inTransaction()) {
+            $this->pdo->beginTransaction();
+            $started = true;
+        }
+
+        try {
+            $select = $this->pdo->prepare(
+                'SELECT id_articolo, quantita
+                 FROM tb_magazzino_prenotazioni
+                 WHERE id_preventivo = :id_preventivo
+                   AND stato = :stato_prenotata
+                 ORDER BY id_articolo ASC
+                 FOR UPDATE'
+            );
+            $select->bindValue(':id_preventivo', $idPreventivo, PDO::PARAM_INT);
+            $select->bindValue(':stato_prenotata', 'prenotata', PDO::PARAM_STR);
+            $select->execute();
+            $rows = $select->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+            $requirements = [];
+            if (!empty($rows)) {
+                foreach ($rows as $row) {
+                    $idArticolo = isset($row['id_articolo']) ? (int) $row['id_articolo'] : 0;
+                    $quantita = isset($row['quantita']) ? (float) $row['quantita'] : 0.0;
+                    if ($idArticolo <= 0 || $quantita <= 0) {
+                        continue;
+                    }
+                    $requirements[] = ['id_articolo' => $idArticolo, 'quantita' => $quantita];
+                }
+            } else {
+                $alreadyConsumedStmt = $this->pdo->prepare(
+                    'SELECT COUNT(*) FROM tb_magazzino_prenotazioni
+                     WHERE id_preventivo = :id_preventivo
+                       AND stato = :stato_scaricata'
+                );
+                $alreadyConsumedStmt->bindValue(':id_preventivo', $idPreventivo, PDO::PARAM_INT);
+                $alreadyConsumedStmt->bindValue(':stato_scaricata', 'scaricata', PDO::PARAM_STR);
+                $alreadyConsumedStmt->execute();
+                $alreadyConsumed = (int) ($alreadyConsumedStmt->fetchColumn() ?: 0);
+                if ($alreadyConsumed > 0) {
+                    if ($started && $this->pdo->inTransaction()) {
+                        $this->pdo->commit();
+                    }
+                    return ['ok' => true, 'consumed' => 0];
+                }
+
+                foreach ($this->listRequiredStockArticlesForPreventivo($idPreventivo) as $entry) {
+                    $requirements[] = [
+                        'id_articolo' => (int) ($entry['id_articolo'] ?? 0),
+                        'quantita' => (float) ($entry['quantita'] ?? 0),
+                    ];
+                }
+            }
+
+            if (empty($requirements)) {
+                if ($started && $this->pdo->inTransaction()) {
+                    $this->pdo->commit();
+                }
+                return ['ok' => true, 'consumed' => 0];
+            }
+
+            $magazzinoRepository = new MagazzinoRepository($this->pdo);
+            foreach ($requirements as $entry) {
+                $idArticolo = (int) $entry['id_articolo'];
+                $quantita = (float) $entry['quantita'];
+                if ($idArticolo <= 0 || $quantita <= 0) {
+                    continue;
+                }
+                $magazzinoRepository->registerMovimento(
+                    $idArticolo,
+                    'scarico',
+                    $quantita,
+                    sprintf('Scarico da prenotazione preventivo #%d su DDT #%d.', $idPreventivo, $idDdt),
+                    $createdBy
+                );
+
+                $upsert = $this->pdo->prepare(
+                    'INSERT INTO tb_magazzino_prenotazioni
+                        (id_preventivo, id_articolo, quantita, stato, id_ddt, note, consumed_at, released_at, updated_at)
+                     VALUES
+                        (:id_preventivo, :id_articolo, :quantita, :stato, :id_ddt, :note, NOW(), NULL, NOW())
+                     ON DUPLICATE KEY UPDATE
+                        quantita = VALUES(quantita),
+                        stato = VALUES(stato),
+                        id_ddt = VALUES(id_ddt),
+                        note = VALUES(note),
+                        consumed_at = NOW(),
+                        released_at = NULL,
+                        updated_at = NOW()'
+                );
+                $upsert->bindValue(':id_preventivo', $idPreventivo, PDO::PARAM_INT);
+                $upsert->bindValue(':id_articolo', $idArticolo, PDO::PARAM_INT);
+                $upsert->bindValue(':quantita', $quantita, PDO::PARAM_STR);
+                $upsert->bindValue(':stato', 'scaricata', PDO::PARAM_STR);
+                $upsert->bindValue(':id_ddt', $idDdt, PDO::PARAM_INT);
+                $upsert->bindValue(':note', 'Scaricata su emissione DDT', PDO::PARAM_STR);
+                $upsert->execute();
+            }
+
+            $markConsumed = $this->pdo->prepare(
+                'UPDATE tb_magazzino_prenotazioni
+                 SET stato = :stato_scaricata,
+                     id_ddt = :id_ddt,
+                     consumed_at = NOW(),
+                     updated_at = NOW()
+                 WHERE id_preventivo = :id_preventivo
+                   AND stato = :stato_prenotata'
+            );
+            $markConsumed->bindValue(':stato_scaricata', 'scaricata', PDO::PARAM_STR);
+            $markConsumed->bindValue(':id_ddt', $idDdt, PDO::PARAM_INT);
+            $markConsumed->bindValue(':id_preventivo', $idPreventivo, PDO::PARAM_INT);
+            $markConsumed->bindValue(':stato_prenotata', 'prenotata', PDO::PARAM_STR);
+            $markConsumed->execute();
+
+            if ($started && $this->pdo->inTransaction()) {
+                $this->pdo->commit();
+            }
+
+            return ['ok' => true, 'consumed' => count($requirements)];
+        } catch (\Throwable $exception) {
+            if ($started && $this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            throw $exception;
+        }
     }
 
     /**

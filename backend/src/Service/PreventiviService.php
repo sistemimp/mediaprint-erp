@@ -456,6 +456,7 @@ final class PreventiviService
         if ($existing === null) {
             throw new \RuntimeException('Preventivo non trovato.', 404);
         }
+        $previousStatusCode = strtolower((string) ($existing['stato_code'] ?? ''));
 
         $status = $this->repository->findStatusByCode($code);
         if ($status === null) {
@@ -463,6 +464,11 @@ final class PreventiviService
         }
 
         $this->repository->updateStatus($id, $status['id_stato']);
+        if ($code === 'confermato') {
+            $this->repository->reserveStockForPreventivo($id);
+        } elseif ($previousStatusCode === 'confermato' && $code !== 'confermato') {
+            $this->repository->releaseStockReservationForPreventivo($id);
+        }
 
         $detail = $this->repository->fetchDetail($id);
         if ($detail === null) {

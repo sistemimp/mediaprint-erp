@@ -332,6 +332,7 @@ final class AnagraficheRepository
                 rf.code AS regime_code,
                 rf.label AS regime_label,
                 a.is_pa,
+                a.categoria,
                 a.is_active,
                 a.stato,
                 a.ragione_sociale,
@@ -363,6 +364,7 @@ final class AnagraficheRepository
                 codice_sdi,
                 iban,
                 banca,
+                split_pay,
                 id_cond_pagamento,
                 modalita_pagamento,
                 id_sezionale,
@@ -799,6 +801,7 @@ final class AnagraficheRepository
             'id_tipologia' => ['column' => 'id_tipologia', 'type' => PDO::PARAM_INT],
             'id_sdi_regime_fiscale' => ['column' => 'id_sdi_regime_fiscale', 'type' => PDO::PARAM_INT],
             'is_pa' => ['column' => 'is_pa', 'type' => PDO::PARAM_INT],
+            'categoria' => ['column' => 'categoria', 'type' => PDO::PARAM_STR],
             'is_active' => ['column' => 'is_active', 'type' => PDO::PARAM_INT],
             'stato' => ['column' => 'stato', 'type' => PDO::PARAM_STR],
         ];
@@ -851,6 +854,7 @@ final class AnagraficheRepository
             'codice_sdi' => ['column' => 'codice_sdi', 'type' => PDO::PARAM_STR],
             'iban' => ['column' => 'iban', 'type' => PDO::PARAM_STR],
             'banca' => ['column' => 'banca', 'type' => PDO::PARAM_STR],
+            'split_pay' => ['column' => 'split_pay', 'type' => PDO::PARAM_INT],
             'id_cond_pagamento' => ['column' => 'id_cond_pagamento', 'type' => PDO::PARAM_INT],
             'modalita_pagamento' => ['column' => 'modalita_pagamento', 'type' => PDO::PARAM_STR],
             'id_sezionale' => ['column' => 'id_sezionale', 'type' => PDO::PARAM_INT],
@@ -1362,6 +1366,7 @@ final class AnagraficheRepository
             'id_tipologia' => ['column' => 'id_tipologia', 'type' => PDO::PARAM_INT],
             'id_sdi_regime_fiscale' => ['column' => 'id_sdi_regime_fiscale', 'type' => PDO::PARAM_INT],
             'is_pa' => ['column' => 'is_pa', 'type' => PDO::PARAM_INT],
+            'categoria' => ['column' => 'categoria', 'type' => PDO::PARAM_STR],
             'is_active' => ['column' => 'is_active', 'type' => PDO::PARAM_INT],
             'stato' => ['column' => 'stato', 'type' => PDO::PARAM_STR],
         ];
@@ -1569,12 +1574,12 @@ final class AnagraficheRepository
         // 4) Anagrafica base -> _archive
         $this->pdo->prepare(
             "INSERT INTO tb_anagrafiche_archive (
-                id_anagrafica, id_tipologia, id_sdi_regime_fiscale, is_pa,
+                id_anagrafica, id_tipologia, id_sdi_regime_fiscale, is_pa, categoria,
                 ragione_sociale, piva, codice_fiscale, note,
                 created_at, updated_at, archived_at, archived_by, archive_batch_id,
                 inactive_since, last_document_date, archive_note
             )
-            SELECT a.id_anagrafica, a.id_tipologia, a.id_sdi_regime_fiscale, a.is_pa,
+            SELECT a.id_anagrafica, a.id_tipologia, a.id_sdi_regime_fiscale, a.is_pa, a.categoria,
                    a.ragione_sociale, a.piva, a.codice_fiscale, a.note,
                    a.created_at, a.updated_at, NOW(), SUBSTRING_INDEX(CURRENT_USER(), '@', 1), UUID(),
                    CURDATE(), NULL, 'Archiviata da disattivazione'
@@ -1589,11 +1594,11 @@ final class AnagraficheRepository
         $this->pdo->prepare(
             "INSERT INTO tb_anagrafiche_fiscali_archive (
                 id_anagrafica, pec, codice_sdi, iban, banca,
-                id_cond_pagamento, modalita_pagamento, id_sezionale, giorni_pagamento, altri_dati,
+                split_pay, id_cond_pagamento, modalita_pagamento, id_sezionale, giorni_pagamento, altri_dati,
                 archived_at, archived_by, archive_batch_id, archive_note
             )
             SELECT f.id_anagrafica, f.pec, f.codice_sdi, f.iban, f.banca,
-                   f.id_cond_pagamento, f.modalita_pagamento, f.id_sezionale, f.giorni_pagamento, f.altri_dati,
+                   f.split_pay, f.id_cond_pagamento, f.modalita_pagamento, f.id_sezionale, f.giorni_pagamento, f.altri_dati,
                    NOW(), SUBSTRING_INDEX(CURRENT_USER(), '@', 1), UUID(), 'Archiviata da disattivazione'
             FROM tb_anagrafiche_fiscali f
             WHERE f.id_anagrafica = :id
@@ -1745,11 +1750,11 @@ final class AnagraficheRepository
         // 1) Ripristina tb_anagrafiche (usa stesso id)
         $sqlAnag = <<<'SQL'
             INSERT INTO tb_anagrafiche (
-                id_anagrafica, id_tipologia, id_sdi_regime_fiscale, is_pa, is_active, stato,
+                id_anagrafica, id_tipologia, id_sdi_regime_fiscale, is_pa, categoria, is_active, stato,
                 ragione_sociale, piva, codice_fiscale, note, created_at, updated_at
             )
             SELECT
-                a.id_anagrafica, a.id_tipologia, a.id_sdi_regime_fiscale, a.is_pa, 1, 'attiva',
+                a.id_anagrafica, a.id_tipologia, a.id_sdi_regime_fiscale, a.is_pa, a.categoria, 1, 'attiva',
                 a.ragione_sociale, a.piva, a.codice_fiscale, a.note, a.created_at, NOW()
             FROM tb_anagrafiche_archive a
             WHERE a.id_anagrafica = :id
@@ -1765,11 +1770,11 @@ final class AnagraficheRepository
         $sqlFisc = <<<'SQL'
             INSERT INTO tb_anagrafiche_fiscali (
                 id_anagrafica, pec, codice_sdi, iban, banca, id_cond_pagamento,
-                modalita_pagamento, id_sezionale, giorni_pagamento, altri_dati
+                split_pay, modalita_pagamento, id_sezionale, giorni_pagamento, altri_dati
             )
             SELECT
                 f.id_anagrafica, f.pec, f.codice_sdi, f.iban, f.banca, f.id_cond_pagamento,
-                f.modalita_pagamento, f.id_sezionale, f.giorni_pagamento, f.altri_dati
+                f.split_pay, f.modalita_pagamento, f.id_sezionale, f.giorni_pagamento, f.altri_dati
             FROM tb_anagrafiche_fiscali_archive f
             WHERE f.id_anagrafica = :id
               AND NOT EXISTS (

@@ -1676,7 +1676,7 @@ const FattureDetail = () => {
     }
 
     let saldoValue = null
-    if (formValues.saldo !== '' && formValues.saldo !== null && formValues.saldo !== undefined) {
+    if (!isAcquisto && formValues.saldo !== '' && formValues.saldo !== null && formValues.saldo !== undefined) {
       const parsed = Number(formValues.saldo)
       if (!Number.isFinite(parsed)) {
         setSaveError(new Error('Inserire un saldo numerico valido.'))
@@ -1867,19 +1867,21 @@ const FattureDetail = () => {
               <CIcon icon={cilPrint} className="me-2" />
               Stampa PDF
             </CButton>
-            <CButton color="primary" onClick={handleExportXml} disabled={!record || exportingXml}>
-              {exportingXml ? (
-                <>
-                  <CSpinner size="sm" className="me-2" />
-                  Esportazione...
-                </>
-              ) : (
-                <>
-                  <CIcon icon={cilCloudDownload} className="me-2" />
-                  Esporta XML SdI
-                </>
-              )}
-            </CButton>
+            {!isAcquisto && (
+              <CButton color="primary" onClick={handleExportXml} disabled={!record || exportingXml}>
+                {exportingXml ? (
+                  <>
+                    <CSpinner size="sm" className="me-2" />
+                    Esportazione...
+                  </>
+                ) : (
+                  <>
+                    <CIcon icon={cilCloudDownload} className="me-2" />
+                    Esporta XML SdI
+                  </>
+                )}
+              </CButton>
+            )}
             <CButton color="secondary" variant="outline" onClick={() => navigate(-1)}>
               <CIcon icon={cilArrowLeft} className="me-2" />
               Indietro
@@ -2242,33 +2244,35 @@ const FattureDetail = () => {
                     </CFormSelect>
                   </CCol>
                 )}
-                <CCol md={3}>
-                  <CFormLabel>Saldo residuo</CFormLabel>
-                  <div className="d-flex gap-2 align-items-start">
-                    <CFormInput
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      value={formValues.saldo}
-                      onChange={handleFormChange('saldo')}
-                      disabled={formDisabled}
-                      className="flex-grow-1"
-                    />
-                    <CButton
-                      color="secondary"
-                      variant="outline"
-                      type="button"
-                      size="sm"
-                      onClick={handleAlignSaldo}
-                      disabled={formDisabled}
-                    >
-                      Allinea
-                    </CButton>
-                  </div>
-                  <small className="text-body-secondary d-block mt-1">
-                    Residuo calcolato: {formatCurrency(paymentsStats.saldo_residuo)}
-                  </small>
-                </CCol>
+                {!isAcquisto && (
+                  <CCol md={3}>
+                    <CFormLabel>Saldo residuo</CFormLabel>
+                    <div className="d-flex gap-2 align-items-start">
+                      <CFormInput
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={formValues.saldo}
+                        onChange={handleFormChange('saldo')}
+                        disabled={formDisabled}
+                        className="flex-grow-1"
+                      />
+                      <CButton
+                        color="secondary"
+                        variant="outline"
+                        type="button"
+                        size="sm"
+                        onClick={handleAlignSaldo}
+                        disabled={formDisabled}
+                      >
+                        Allinea
+                      </CButton>
+                    </div>
+                    <small className="text-body-secondary d-block mt-1">
+                      Residuo calcolato: {formatCurrency(paymentsStats.saldo_residuo)}
+                    </small>
+                  </CCol>
+                )}
                 <CCol xs={12}>
                   <CFormLabel>Note</CFormLabel>
                   <CFormTextarea

@@ -884,17 +884,17 @@ CREATE TABLE `auth_mfa_passkey_challenges` (
 LOCK TABLES `auth_mfa_passkey_challenges` WRITE;
 /*!40000 ALTER TABLE `auth_mfa_passkey_challenges` DISABLE KEYS */;
 INSERT INTO `auth_mfa_passkey_challenges` VALUES
-(1,1,'—EþUOgl3	Z\"åEë	§dà®îz¿gñ\ZÉo¡e','attestation','2026-01-29 11:58:45','2026-01-29 11:57:46','Ç§	ÏÝXOÎq_¶¤L&õo\nßô»Öý¿Fó¦Õ ñ'),
-(2,1,'èx}PK\0>åŒ>\0õ+útÖ²´rl€b˜…X“tÎ‰»','attestation','2026-01-29 12:06:20','2026-01-29 12:05:20','\0{iuVþF)Ö{vïIÆJÚ‚‡§Ê+@§@EÖ;'),
-(3,1,'©±)ü*Šµw3p®¡ÇF°ûGÎ›ùÊF‚Vú','attestation','2026-01-29 12:06:27','2026-01-29 12:05:27','X£Ð°F(}Ð@€ßïvOySºÕ&kú(y9ß™.´¯L¸'),
-(4,1,'¦§6çXÓv	4 ›UÀæéJî³¿£i*ÌŠ/*mƒÝ','attestation','2026-01-29 12:06:56','2026-01-29 12:05:56','­Ú.¸µÞ m‰}ÈuÙ’.å¡™\Zr÷àù`:'),
-(5,1,'¾KË£\'{¸Áó‹SPp)=¢î t¢?·Z Ž A ','attestation','2026-01-29 12:11:29','2026-01-29 12:10:29','JK\0dø\n›‚xJ‚.û,Ž×Œä[B·óÃ¾UÉ\Zlþ'),
-(6,1,'Pÿ0¬æãF#¨…»_Åû¸n%…Qx5t)NGóÀô','attestation','2026-01-29 12:13:19','2026-01-29 12:12:19','$N±Vˆ‘`6e×‘¤4´!Š,l¸¦†¼‚¾fc\"'),
-(7,1,'SÒËZ‰]H¿à¡Û‘WŽ?,(8ù2Roü·§ÿ‹ø­','attestation','2026-01-29 12:13:35','2026-01-29 12:12:35','×1a˜}oFìŸ:‘½2)?üÎ<t·Xh”è'),
-(8,1,'Í›äR-¹…À}+òî‡ù×2˜í˜Dž½ô\0#t±','attestation','2026-01-29 13:35:20','2026-01-29 13:34:20','Ç\\Õ¦S^=)W`ïœêmEŠE@ÒJuQ)×P“Æ'),
-(9,1,'MTT=*õ4’\\{HwÚD°W´^Û¡=Ûm:ª\"¹','attestation','2026-01-29 13:40:52','2026-01-29 13:39:52','ýQ:Óh¸‡FRkÓÈà$\'¡úäÂF|·Õ¸þ[¤Â» ®'),
-(10,1,'ø·½ƒa¤7*§Á¨fb1qtOR˜¥î?HGHKá','attestation','2026-01-29 13:43:33','2026-01-29 13:42:33','³Rh,—åäò^æC²;dÙXö£z\\\r†º¤à§`Áö'),
-(11,1,'G`ñx17îÙ)ðÖtº—€‡šÅ0.dÍG!Õâœÿ','attestation','2026-01-29 13:44:36','2026-01-29 13:43:36','â‘nßaÒ\\¡[q¬â&Ðp—m@fï6€q±…´ö');
+(1,1,'ï¿½Eï¿½UOgl3	Z\"ï¿½Eï¿½	ï¿½dï¿½ï¿½zï¿½gï¿½\Zï¿½oï¿½e','attestation','2026-01-29 11:58:45','2026-01-29 11:57:46','ï¿½ï¿½	ï¿½ï¿½XOï¿½q_ï¿½ï¿½L&ï¿½o\nï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Fï¿½ï¿½ ï¿½'),
+(2,1,'ï¿½x}PK\0>ï¿½>\0ï¿½+ï¿½tÖ²ï¿½rlï¿½bï¿½ï¿½Xï¿½tÎ‰ï¿½','attestation','2026-01-29 12:06:20','2026-01-29 12:05:20','\0{iuVï¿½F)ï¿½{vï¿½Iï¿½JÚï¿½ï¿½ï¿½ï¿½+@ï¿½@Eï¿½;'),
+(3,1,'ï¿½ï¿½)ï¿½ï¿½*ï¿½ï¿½w3pï¿½ï¿½ï¿½Fï¿½ï¿½GÎ›ï¿½ï¿½Fï¿½Vï¿½','attestation','2026-01-29 12:06:27','2026-01-29 12:05:27','Xï¿½Ð°F(}ï¿½@ï¿½ï¿½ï¿½vOySï¿½ï¿½&kï¿½(y9ß™.ï¿½ï¿½Lï¿½'),
+(4,1,'ï¿½ï¿½6ï¿½Xï¿½v	4ï¿½ï¿½Uï¿½ï¿½ï¿½Jî³¿ï¿½i*ÌŠ/*mï¿½ï¿½','attestation','2026-01-29 12:06:56','2026-01-29 12:05:56','ï¿½ï¿½.ï¿½ï¿½ï¿½ï¿½ï¿½mï¿½}ï¿½uï¿½Ù’.å¡™\Zrï¿½ï¿½ï¿½`:'),
+(5,1,'ï¿½KË£\'{ï¿½ï¿½ï¿½SPpï¿½)=ï¿½ï¿½ tï¿½?ï¿½Zï¿½ï¿½ A ','attestation','2026-01-29 12:11:29','2026-01-29 12:10:29','JK\0dï¿½\nï¿½ï¿½xJï¿½.ï¿½,ï¿½×Œï¿½[Bï¿½ï¿½Ã¾Uï¿½\Zlï¿½'),
+(6,1,'Pï¿½0ï¿½ï¿½ï¿½F#ï¿½ï¿½ï¿½_ï¿½ï¿½ï¿½n%ï¿½Qx5t)NGï¿½ï¿½ï¿½','attestation','2026-01-29 12:13:19','2026-01-29 12:12:19','$Nï¿½Vï¿½ï¿½`6ï¿½ï¿½e×‘ï¿½4ï¿½!ï¿½,lï¿½ï¿½ï¿½ï¿½ï¿½ï¿½fc\"'),
+(7,1,'Sï¿½ï¿½Zï¿½]Hï¿½ï¿½Û‘Wï¿½?,(8ï¿½2Roï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½','attestation','2026-01-29 12:13:35','2026-01-29 12:12:35','ï¿½1aï¿½}oFï¿½:ï¿½ï¿½2ï¿½)?ï¿½ï¿½<tï¿½Xhï¿½ï¿½'),
+(8,1,'Í›ï¿½R-ï¿½ï¿½ï¿½}+ï¿½ï¿½ï¿½ï¿½2ï¿½ï¿½Dï¿½ï¿½ï¿½\0#tï¿½','attestation','2026-01-29 13:35:20','2026-01-29 13:34:20','ï¿½ï¿½\\Õ¦S^=)W`ï¿½ï¿½mEï¿½E@ï¿½JuQ)ï¿½Pï¿½ï¿½'),
+(9,1,'MTT=*ï¿½4ï¿½\\{Hwï¿½Dï¿½Wï¿½^Û¡=ï¿½m:ï¿½ï¿½\"ï¿½ï¿½','attestation','2026-01-29 13:40:52','2026-01-29 13:39:52','ï¿½Q:ï¿½hï¿½ï¿½FRkï¿½ï¿½ï¿½$\'ï¿½ï¿½ï¿½ï¿½F|ï¿½Õ¸ï¿½[ï¿½Â» ï¿½'),
+(10,1,'ï¿½ï¿½ï¿½ï¿½aï¿½7*ï¿½ï¿½ï¿½fb1qtORï¿½ï¿½ï¿½?HGHKï¿½','attestation','2026-01-29 13:43:33','2026-01-29 13:42:33','ï¿½Rh,ï¿½ï¿½ï¿½ï¿½^ï¿½Cï¿½;dï¿½Xï¿½ï¿½z\\\rï¿½ï¿½ï¿½ï¿½`ï¿½ï¿½'),
+(11,1,'G`ï¿½x17ï¿½ï¿½)ï¿½ï¿½tï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½0.dï¿½G!ï¿½ï¿½ï¿½','attestation','2026-01-29 13:44:36','2026-01-29 13:43:36','ï¿½nï¿½aï¿½\\ï¿½[qï¿½ï¿½&ï¿½pï¿½m@ï¿½fï¿½6ï¿½qï¿½ï¿½ï¿½ï¿½');
 /*!40000 ALTER TABLE `auth_mfa_passkey_challenges` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -2850,6 +2850,7 @@ CREATE TABLE `tb_anagrafiche_fiscali` (
   `codice_sdi` char(7) DEFAULT NULL,
   `iban` varchar(34) DEFAULT NULL,
   `banca` varchar(120) DEFAULT NULL,
+  `split_pay` tinyint(1) DEFAULT NULL,
   `id_cond_pagamento` int(11) unsigned DEFAULT NULL,
   `modalita_pagamento` varchar(10) DEFAULT NULL,
   `id_sezionale` int(10) unsigned DEFAULT NULL,
@@ -2869,9 +2870,9 @@ CREATE TABLE `tb_anagrafiche_fiscali` (
 LOCK TABLES `tb_anagrafiche_fiscali` WRITE;
 /*!40000 ALTER TABLE `tb_anagrafiche_fiscali` DISABLE KEYS */;
 INSERT INTO `tb_anagrafiche_fiscali` VALUES
-(1,'mediaprint@pec.it','fads','IT08I0200824404000102986727','popolare',12,'Bonifico',NULL,30,NULL),
-(137,NULL,NULL,NULL,NULL,NULL,NULL,1,NULL,NULL),
-(138,'comune.colonnella@pec.it','UF4HOB',NULL,NULL,1,'Bonifico',NULL,NULL,NULL);
+(1,'mediaprint@pec.it','fads','IT08I0200824404000102986727','popolare',NULL,12,'Bonifico',NULL,30,NULL),
+(137,NULL,NULL,NULL,NULL,NULL,NULL,NULL,1,NULL,NULL),
+(138,'comune.colonnella@pec.it','UF4HOB',NULL,NULL,NULL,1,'Bonifico',NULL,NULL,NULL);
 /*!40000 ALTER TABLE `tb_anagrafiche_fiscali` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -2888,6 +2889,7 @@ CREATE TABLE `tb_anagrafiche_fiscali_archive` (
   `codice_sdi` char(7) DEFAULT NULL,
   `iban` varchar(34) DEFAULT NULL,
   `banca` varchar(120) DEFAULT NULL,
+  `split_pay` tinyint(1) DEFAULT NULL,
   `id_cond_pagamento` int(11) unsigned DEFAULT NULL,
   `modalita_pagamento` varchar(10) DEFAULT NULL,
   `id_sezionale` int(10) unsigned DEFAULT NULL,
@@ -8519,7 +8521,7 @@ BEGIN
     INSERT INTO tb_anagrafiche_fiscali
     SELECT
       f.id_anagrafica, f.pec, f.codice_sdi, f.iban, f.banca,
-      f.id_cond_pagamento, f.modalita_pagamento, f.giorni_pagamento,
+      f.split_pay, f.id_cond_pagamento, f.modalita_pagamento, f.giorni_pagamento,
       f.altri_dati, f.created_at, f.updated_at
     FROM tb_anagrafiche_fiscali_archive f
     LEFT JOIN tb_anagrafiche_fiscali lf USING (id_anagrafica)
@@ -8534,6 +8536,7 @@ BEGIN
           lf.codice_sdi        = f.codice_sdi,
           lf.iban              = f.iban,
           lf.banca             = f.banca,
+          lf.split_pay         = f.split_pay,
           lf.id_cond_pagamento = f.id_cond_pagamento,
           lf.modalita_pagamento= f.modalita_pagamento,
           lf.giorni_pagamento  = f.giorni_pagamento,
