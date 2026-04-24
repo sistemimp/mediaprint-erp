@@ -3,9 +3,11 @@ import React, { useEffect, useMemo, useRef } from 'react'
 import { CChartLine } from '@coreui/react-chartjs'
 import { getStyle } from '@coreui/utils'
 
+// Grafico lineare principale dashboard (serie fatture totali/pagate).
 const MainChart = ({ stats }) => {
   const chartRef = useRef(null)
 
+  // Sincronizza i colori del grafico quando cambia il tema CoreUI.
   useEffect(() => {
     document.documentElement.addEventListener('ColorSchemeChange', () => {
       if (chartRef.current) {
@@ -28,6 +30,7 @@ const MainChart = ({ stats }) => {
 
   const random = () => Math.round(Math.random() * 100)
 
+  // Usa serie reali se disponibili, altrimenti fallback demo.
   const chartData = useMemo(() => {
     const series = stats?.fatture_series
     if (Array.isArray(series) && series.length > 0) {

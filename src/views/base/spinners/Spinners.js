@@ -2,6 +2,7 @@ import React from 'react'
 import { CButton, CCard, CCardBody, CCardHeader, CCol, CSpinner, CRow } from '@coreui/react'
 import { DocsComponents, DocsExample } from 'src/components'
 
+// Vista Spinners: componente UI del modulo.
 const Spinners = () => {
   return (
     <CRow>

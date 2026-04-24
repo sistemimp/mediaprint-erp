@@ -12,6 +12,7 @@ import {
   CCardHeader,
   CCol,
   CForm,
+  CFormLabel,
   CFormInput,
   CFormSelect,
   CRow,
@@ -32,6 +33,7 @@ import {
 import BottomToast from '../../components/BottomToast'
 import PermissionButton from '../../components/PermissionButton'
 
+// Gestione variazioni prodotto con articoli magazzino per combinazione prodotto/variazione.
 const VariazioniList = () => {
   const { token, logout } = useAuth()
 
@@ -64,6 +66,7 @@ const VariazioniList = () => {
   const [variationProductOptionsById, setVariationProductOptionsById] = useState({})
   const [variationSelectedProductById, setVariationSelectedProductById] = useState({})
 
+  // Elenco categorie disponibili estratto dinamicamente dalle variazioni caricate.
   const categoryOptions = React.useMemo(() => {
     const list = items.map((i) => String(i.categoria || '').trim()).filter(Boolean)
     return Array.from(new Set(list)).sort((a, b) =>
@@ -71,12 +74,14 @@ const VariazioniList = () => {
     )
   }, [items])
 
+  // Mostra un toast temporaneo per feedback operazioni.
   const showToast = (message, type = 'success') => {
     setToast({ open: true, type, message })
     window.clearTimeout(showToast._t)
     showToast._t = window.setTimeout(() => setToast((t) => ({ ...t, open: false })), 3000)
   }
 
+  // Carica tutte le variazioni dal backend.
   const load = useCallback(
     async (signal) => {
       setLoading(true)
@@ -98,6 +103,7 @@ const VariazioniList = () => {
     [token, logout],
   )
 
+  // Ordina lato client secondo la configurazione multi-colonna corrente.
   const sortedItems = React.useMemo(() => {
     const arr = [...items]
     const getter = (row, field) => {
@@ -118,6 +124,7 @@ const VariazioniList = () => {
     return arr
   }, [items, sorts])
 
+  // Applica filtri testo/categoria sulle variazioni ordinate.
   const filteredItems = React.useMemo(() => {
     const q = String(search || '')
       .trim()
@@ -139,6 +146,7 @@ const VariazioniList = () => {
     })
   }, [sortedItems, search, filterCategory])
 
+  // Raggruppa le variazioni filtrate per categoria.
   const groupedItems = React.useMemo(() => {
     const map = new Map()
     for (const v of filteredItems) {
@@ -149,6 +157,7 @@ const VariazioniList = () => {
     return Array.from(map.entries()).sort((a, b) => String(a[0]).localeCompare(String(b[0])))
   }, [filteredItems])
 
+  // Aggiorna la configurazione sort (singola colonna o multi con Shift).
   const toggleSort = (field, shiftKey = false) => {
     setSorts((prev) => {
       if (!shiftKey) {
@@ -188,6 +197,7 @@ const VariazioniList = () => {
     }
   }
 
+  // Caricamento iniziale variazioni.
   useEffect(() => {
     if (!token) return
     const controller = new AbortController()
@@ -258,6 +268,7 @@ const VariazioniList = () => {
     return mapped.length > 0 ? mapped : [createEmptyConsumptionRow()]
   }
 
+  // Assicura la presenza dello stato locale per l'editing inline della variazione.
   const ensureVariationInlineEdit = (variation) => {
     const idVariazione = Number(variation?.id_variazione || 0)
     if (!idVariazione) return
@@ -280,6 +291,7 @@ const VariazioniList = () => {
     })
   }
 
+  // Carica articoli/consumi per la variazione e prodotto collegato selezionato.
   const loadVariationConsumptions = async (variation) => {
     const idVariazione = Number(variation?.id_variazione || 0)
     if (!idVariazione || variationConsumptionLoadingById[idVariazione]) return
@@ -359,6 +371,7 @@ const VariazioniList = () => {
     }))
   }
 
+  // Salva i campi inline della variazione (nome/codice/categoria/prezzo).
   const saveVariationInline = async (variation) => {
     const idVariazione = Number(variation?.id_variazione || 0)
     if (!idVariazione) return
@@ -437,6 +450,7 @@ const VariazioniList = () => {
     })
   }
 
+  // Salva le righe articoli di consumo per il prodotto collegato alla variazione.
   const saveVariationConsumptions = async (variation) => {
     const idVariazione = Number(variation?.id_variazione || 0)
     const idProdotto = Number(variationSelectedProductById[idVariazione] || 0)

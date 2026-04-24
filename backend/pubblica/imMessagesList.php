@@ -29,6 +29,7 @@ try {
         HttpResponse::error('Thread non valido.', 422);
     }
     $limit = isset($_GET['limit']) ? (int) $_GET['limit'] : 200;
+    // before_id abilita paginazione "a ritroso" senza offset.
     $beforeId = isset($_GET['before_id']) ? (int) $_GET['before_id'] : null;
 
     $service = new InstantMessagingService(new InstantMessagingRepository(Database::getConnection()));

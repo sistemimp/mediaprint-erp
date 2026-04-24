@@ -10,6 +10,7 @@ import {
 } from '@coreui/react-chartjs'
 import { DocsLink } from 'src/components'
 
+// Vista Charts: componente UI del modulo.
 const Charts = () => {
   const random = () => Math.round(Math.random() * 100)
 

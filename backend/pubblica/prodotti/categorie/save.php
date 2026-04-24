@@ -26,6 +26,7 @@ try {
 
     $input = json_decode(file_get_contents('php://input') ?: 'null', true) ?: [];
     $id = isset($input['id_categoria']) ? (int) $input['id_categoria'] : null;
+    // Upsert contract: 0/null => create, id>0 => update.
     if ($id === 0) { $id = null; }
     $nome = isset($input['nome']) ? trim((string) $input['nome']) : '';
     if ($nome === '') {

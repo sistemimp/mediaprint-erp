@@ -44,6 +44,7 @@ import { useNavigate } from 'react-router-dom'
 import { CStepper } from '@coreui/react-pro'
 import PermissionButton from '../../components/PermissionButton'
 
+// Formatter valuta per riepilogo importi.
 const currencyFormatter = new Intl.NumberFormat('it-IT', {
   style: 'currency',
   currency: 'EUR',
@@ -51,11 +52,13 @@ const currencyFormatter = new Intl.NumberFormat('it-IT', {
   maximumFractionDigits: 3,
  })
 
+// Formatta importi in euro.
 const formatCurrency = (value) => {
   const n = Number(value)
   return Number.isFinite(n) ? currencyFormatter.format(n) : '-'
 }
 
+// Creazione pacchetto con righe prodotto e selettore guidato.
 const PacchettiCreate = () => {
   const navigate = useNavigate()
   const { token, logout } = useAuth()
@@ -91,6 +94,7 @@ const PacchettiCreate = () => {
   const [selIva, setSelIva] = useState('')
   const [selNatura, setSelNatura] = useState('')
 
+  // Carica lookup nature IVA e categorie prodotto.
   useEffect(() => {
     if (!token) return
     const controller = new AbortController()
@@ -108,7 +112,7 @@ const PacchettiCreate = () => {
     return () => controller.abort()
   }, [token])
 
-  // Carica prodotti quando cambio categoria/ricerca
+  // Carica i prodotti filtrati quando lo stepper e aperto e cambiano categoria/ricerca.
   useEffect(() => {
     if (!token) return
     if (!stepperOpen) return
@@ -126,7 +130,7 @@ const PacchettiCreate = () => {
     return () => controller.abort()
   }, [token, selCat, prodSearch, stepperOpen])
 
-  // Carica variazioni e prezzi combinati quando scelgo il prodotto
+  // Carica variazioni e prezzi combinati appena viene selezionato un prodotto.
   useEffect(() => {
     setProdVarOptions([])
     setSelectedVarIds([])
@@ -161,7 +165,7 @@ const PacchettiCreate = () => {
     return () => controller.abort()
   }, [token, selProd, stepperOpen])
 
-  // Calcolo prezzo suggerito
+  // Calcola il prezzo suggerito (combo se disponibile, altrimenti listino base).
   useEffect(() => {
     const prod = prodOptions.find((p) => String(p.id_prodotto) === String(selProd))
     const base = Number(prod?.prezzo_listino) || 0
@@ -170,6 +174,7 @@ const PacchettiCreate = () => {
     setModalPrice(suggested)
   }, [selProd, prodOptions, selectedComboKey, prodComboMap])
 
+  // Reset stato del modal selettore prodotti.
   const resetProductModal = () => {
     setProdStep(1)
     setSelCat('')
@@ -182,16 +187,20 @@ const PacchettiCreate = () => {
     setModalPrice(0)
   }
 
+  // Aggiunge una nuova riga pacchetto.
   const handleAddRiga = () => {
     setRighe((rows) => rows.concat({ descrizione: '', quantita: 1, prezzo: 0, iva: 22, sconto: 0, combo_key: null }))
   }
+  // Rimuove una riga pacchetto.
   const handleRemoveRiga = (index) => {
     setRighe((rows) => rows.filter((_, i) => i !== index))
   }
+  // Aggiorna una riga pacchetto.
   const updateRiga = (index, patch) => {
     setRighe((rows) => rows.map((r, i) => (i === index ? { ...r, ...patch } : r)))
   }
 
+  // Calcola imponibile/IVA/totale del pacchetto.
   const totals = useMemo(() => {
     let imponibile = 0
     let totaleIva = 0
@@ -209,6 +218,7 @@ const PacchettiCreate = () => {
     return { imponibile, totaleIva, totale }
   }, [righe])
 
+  // Invia i dati al backend per creare il pacchetto e naviga sul dettaglio creato.
   const handleSubmit = async (e) => {
     e.preventDefault()
     setSubmitting(true)
@@ -271,7 +281,7 @@ const PacchettiCreate = () => {
             </CRow>
           </section>
 
-          {/* Modal selezione prodotto (stepper) */}
+          {/* Modal guidata per scegliere categoria, prodotto, combinazione e dati riga. */}
           <CModal visible={stepperOpen} onClose={() => setStepperOpen(false)} size="lg" backdrop="static">
             <CModalHeader>
               <CModalTitle>Selettore prodotto</CModalTitle>
@@ -344,8 +354,7 @@ const PacchettiCreate = () => {
                         setSelectedComboKey(key)
                         const opt = prodComboList.find((r) => String(r.combo_key) === String(key))
                         if (opt && Array.isArray(opt.var_ids)) {
-                          // mantieni anche gli id selezionati per coerenza
-                          // (non mostrati, ma utili per eventuali calcoli futuri)
+                          // Mantiene gli id variazione selezionati per coerenza dello stato interno.
                           // eslint-disable-next-line no-unused-expressions
                           setSelectedVarIds && setSelectedVarIds(opt.var_ids.map(Number))
                         }
@@ -354,7 +363,7 @@ const PacchettiCreate = () => {
                       <option value="">Seleziona una combinazione…</option>
                       {prodComboList.map((r) => {
                         const ids = Array.isArray(r.var_ids) ? r.var_ids : String(r.combo_key).split('+').map((x) => Number(x) || 0)
-                        // Raggruppa per categoria: "Categoria: nome1, nome2; Categoria2: ..."
+                        // Costruisce una label leggibile della combinazione raggruppando per categoria.
                         const groups = {}
                         ids.forEach((idv) => {
                           const vv = prodVarOptions.find((x) => Number(x.id_variazione) === Number(idv))

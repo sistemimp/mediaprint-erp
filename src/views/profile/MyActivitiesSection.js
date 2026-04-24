@@ -39,6 +39,7 @@ const WORKDAY_START_MINUTES = 8 * 60 + 30
 const WORKDAY_END_MINUTES = 18 * 60 + 30
 const GANTT_LABEL_WIDTH = 340
 
+// Effettua il parsing di una data/ora restituendo null in caso di valore non valido.
 const parseDateTime = (value) => {
   if (!value) {
     return null
@@ -50,18 +51,21 @@ const parseDateTime = (value) => {
   return parsed
 }
 
+// Riporta una data all'inizio della giornata (00:00:00).
 const startOfDay = (value) => {
   const date = value instanceof Date ? new Date(value) : new Date()
   date.setHours(0, 0, 0, 0)
   return date
 }
 
+// Restituisce una nuova data spostata di N giorni.
 const addDays = (value, amount) => {
   const date = new Date(value)
   date.setDate(date.getDate() + amount)
   return date
 }
 
+// Calcola il primo giorno della settimana (lunedi) a partire da una data.
 const getWeekStart = (value) => {
   const date = startOfDay(value)
   const day = date.getDay()
@@ -69,6 +73,7 @@ const getWeekStart = (value) => {
   return addDays(date, diff)
 }
 
+// Formatta una data in formato corto italiano.
 const formatDate = (value) => {
   if (!value) {
     return '-'
@@ -80,6 +85,7 @@ const formatDate = (value) => {
   return parsed.toLocaleDateString('it-IT')
 }
 
+// Formatta una data/ora con giorno+ora leggibile per UI.
 const formatDateTime = (value) => {
   if (!value) {
     return '-'
@@ -97,6 +103,7 @@ const formatDateTime = (value) => {
   })
 }
 
+// Restituisce etichetta sintetica giorno (es. lun 26/02).
 const formatShortDay = (value) =>
   value.toLocaleDateString('it-IT', {
     weekday: 'short',
@@ -104,6 +111,7 @@ const formatShortDay = (value) =>
     month: '2-digit',
   })
 
+// Converte minuti assoluti in etichetta HH:mm per intestazioni timeline.
 const formatMinutesLabel = (minutes) => {
   const hours = Math.floor(minutes / 60)
   const mins = minutes % 60
@@ -118,6 +126,7 @@ const statusColorMap = {
   completed: 'success',
 }
 
+// Mappa i vari stati backend in un set ridotto per la vista kanban.
 const normalizeActivityStatus = (value) => {
   const normalized = String(value || '').toLowerCase()
   if (normalized === 'todo') {
@@ -132,6 +141,7 @@ const normalizeActivityStatus = (value) => {
   return 'other'
 }
 
+// Costruisce intervallo visibile (giorno/settimana/mese) e metadati utili alla UI.
 const buildRange = (anchorDate, period) => {
   if (period === 'day') {
     const start = startOfDay(anchorDate)
@@ -174,6 +184,7 @@ const buildRange = (anchorDate, period) => {
 
 const toTimestamp = (value) => (value instanceof Date ? value.getTime() : null)
 
+// Verifica se un'attivita interseca il periodo visualizzato.
 const overlapRange = (start, end, rangeStart, rangeEnd) => {
   const startTs = toTimestamp(start)
   const endTs = toTimestamp(end)
@@ -187,6 +198,7 @@ const overlapRange = (start, end, rangeStart, rangeEnd) => {
   return startTs < rangeEndTs && endTs > rangeStartTs
 }
 
+// Determina lo step di navigazione temporale in base alla granularita selezionata.
 const resolveStepDays = (period) => {
   if (period === 'day') {
     return 1
@@ -197,6 +209,7 @@ const resolveStepDays = (period) => {
   return 7
 }
 
+// Sposta l'ancora temporale indietro rispetto al periodo corrente.
 const previousAnchor = (anchorDate, period) => {
   if (period === 'month') {
     return new Date(anchorDate.getFullYear(), anchorDate.getMonth() - 1, 1)
@@ -204,6 +217,7 @@ const previousAnchor = (anchorDate, period) => {
   return addDays(anchorDate, -resolveStepDays(period))
 }
 
+// Sposta l'ancora temporale avanti rispetto al periodo corrente.
 const nextAnchor = (anchorDate, period) => {
   if (period === 'month') {
     return new Date(anchorDate.getFullYear(), anchorDate.getMonth() + 1, 1)
@@ -211,6 +225,7 @@ const nextAnchor = (anchorDate, period) => {
   return addDays(anchorDate, resolveStepDays(period))
 }
 
+// Normalizza l'elenco assegnatari in array numerico consistente.
 const normalizeAssigneeIds = (activity) => {
   if (Array.isArray(activity?.assegnatari_ids)) {
     return activity.assegnatari_ids.map((value) => Number(value)).filter((value) => Number.isFinite(value) && value > 0)
@@ -235,6 +250,7 @@ const MyActivitiesSection = ({ token, userId }) => {
 
   const range = useMemo(() => buildRange(anchorDate, period), [anchorDate, period])
 
+  // Carica lavorazioni dell'utente, apre il dettaglio e appiattisce le attivita assegnate.
   useEffect(() => {
     let active = true
     const controller = new AbortController()
@@ -348,16 +364,19 @@ const MyActivitiesSection = ({ token, userId }) => {
     }
   }, [token, userId])
 
+  // Filtra le attivita che intersecano il range visibile.
   const visibleActivities = useMemo(
     () => activities.filter((activity) => overlapRange(activity.start, activity.end, range.start, range.end)),
     [activities, range],
   )
 
+  // Conta le attivita prive di pianificazione completa (inizio/fine).
   const unscheduledCount = useMemo(
     () => activities.filter((activity) => !activity.start || !activity.end).length,
     [activities],
   )
 
+  // Raggruppa le attivita per colonna kanban.
   const kanbanColumns = useMemo(() => {
     const columns = {
       todo: [],
@@ -371,6 +390,7 @@ const MyActivitiesSection = ({ token, userId }) => {
     return columns
   }, [visibleActivities])
 
+  // Indicizza le attivita per giorno per la vista calendario.
   const calendarMap = useMemo(() => {
     const map = new Map()
     range.days.forEach((day) => {
@@ -399,6 +419,7 @@ const MyActivitiesSection = ({ token, userId }) => {
     return map
   }, [range.days, visibleActivities])
 
+  // Costruisce le colonne della timeline Gantt (slot orari o giorni).
   const ganttColumns = useMemo(() => {
     if (period === 'day') {
       const minutes = []
@@ -415,11 +436,13 @@ const MyActivitiesSection = ({ token, userId }) => {
     }))
   }, [period, range.days])
 
+  // Nel Gantt mostra solo attivita con inizio e fine definite.
   const ganttRows = useMemo(
     () => visibleActivities.filter((activity) => activity.start && activity.end),
     [visibleActivities],
   )
 
+  // Larghezza minima della timeline per preservare leggibilita con molte colonne.
   const timelineMinWidth = Math.max(1, ganttColumns.length) * (period === 'day' ? 66 : 128)
 
   return (

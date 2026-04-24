@@ -1,4 +1,4 @@
-﻿import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import {
   CAlert,
@@ -18,6 +18,7 @@ import { cilLockLocked, cilUser } from '@coreui/icons'
 
 import { useAuth } from '../../../context/AuthContext'
 
+// Vista Login: componente UI del modulo.
 const base64UrlToBuffer = (value) => {
   const padding = '='.repeat((4 - (value.length % 4)) % 4)
   const base64 = value.replace(/-/g, '+').replace(/_/g, '/') + padding

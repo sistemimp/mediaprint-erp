@@ -1,5 +1,6 @@
 import { apiFetch } from './apiClient'
 
+// Recupera KPI e serie principali dashboard vendite con filtri opzionali.
 export const fetchDashboardSales = async ({ token, signal, onlyActive, period } = {}) => {
   const params = {}
   if (onlyActive != null) {
@@ -22,10 +23,12 @@ export const fetchDashboardSales = async ({ token, signal, onlyActive, period } 
   return payload // { ok, kpi, series, sales }
 }
 
+// Alias retrocompatibile verso l'endpoint dashboard vendite.
 export const fetchAnagraficheDash = async (options = {}) => {
   return fetchDashboardSales(options)
 }
 
+// Recupera l'elenco nuovi clienti da mostrare nel widget dashboard.
 export const fetchNewClientsList = async ({ token, limit = 20, signal, period } = {}) => {
   const params = { limit: Math.max(1, Math.min(limit, 100)) }
   if (period) {

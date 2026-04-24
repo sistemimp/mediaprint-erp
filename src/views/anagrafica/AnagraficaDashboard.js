@@ -20,6 +20,7 @@ import {
 import { fetchAnagraficheDashboard } from '../../services/anagrafiche'
 import { useAuth } from '../../context/AuthContext'
 
+// Formatta interi con separatori locali.
 const formatInteger = (value) => {
   if (value === null || value === undefined || Number.isNaN(Number(value))) {
     return '-'
@@ -27,6 +28,7 @@ const formatInteger = (value) => {
   return Number(value).toLocaleString('it-IT')
 }
 
+// Formatta percentuale con una cifra decimale.
 const formatPercent = (value) => {
   if (value === null || value === undefined || Number.isNaN(Number(value))) {
     return '-'
@@ -34,6 +36,7 @@ const formatPercent = (value) => {
   return `${Number(value).toFixed(1)}%`
 }
 
+// Placeholder comune per tabella vuota/loading.
 const renderTablePlaceholder = (text) => (
   <div className="text-center text-body-secondary small py-3">{text}</div>
 )
@@ -52,6 +55,7 @@ const AnagraficaDashboard = () => {
   const [error, setError] = useState(null)
   const [period, setPeriod] = useState('monthly')
 
+  // Carica KPI dashboard anagrafiche per periodo selezionato.
   useEffect(() => {
     const controller = new AbortController()
     let isMounted = true
@@ -88,6 +92,7 @@ const AnagraficaDashboard = () => {
     [period],
   )
 
+  // Prepara card riepilogo con label dipendenti dal periodo.
   const summaryCards = useMemo(
     () => [
       { key: 'totale_generale', label: 'Totale anagrafiche', value: kpi.totale_generale },

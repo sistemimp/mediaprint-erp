@@ -24,6 +24,7 @@ try {
     $auth = AuthGuard::requireAuth();
     AuthGuard::requirePermissions($auth, ['msg.read']);
     $accountId = AuthGuard::getAccountId($auth);
+    // Il service applica le regole di visibilita' tra ruoli (admin/operatore/cliente).
     $service = new InstantMessagingService(new InstantMessagingRepository(Database::getConnection()));
 
     $items = $service->listAccounts($accountId);

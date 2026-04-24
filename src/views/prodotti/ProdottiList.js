@@ -26,6 +26,7 @@ import { useAuth } from '../../context/AuthContext'
 import { fetchCategorieProdotti, fetchProdotti, deleteProdotto } from '../../services/prodotti'
 import PermissionButton from '../../components/PermissionButton'
 
+// Lista prodotti con filtri, ordinamento multiplo e azioni rapide.
 const ProdottiList = () => {
   const navigate = useNavigate()
   const { token, logout } = useAuth()
@@ -39,6 +40,7 @@ const ProdottiList = () => {
   const [deletingId, setDeletingId] = useState(null)
   const [sorts, setSorts] = useState([{ field: 'codice', dir: 'asc' }])
 
+  // Carica categorie e prodotti all'apertura pagina.
   useEffect(() => {
     if (!token) return
     const controller = new AbortController()
@@ -66,12 +68,14 @@ const ProdottiList = () => {
     return () => controller.abort()
   }, [token, logout])
 
+  // Nasconde automaticamente i messaggi feedback dopo pochi secondi.
   useEffect(() => {
     if (!feedback) return undefined
     const timer = window.setTimeout(() => setFeedback(null), 3000)
     return () => window.clearTimeout(timer)
   }, [feedback])
 
+  // Applica i filtri client-side per categoria e testo.
   const filtered = useMemo(() => {
     let out = items
     if (filters.id_categoria) {
@@ -84,12 +88,14 @@ const ProdottiList = () => {
     return out
   }, [items, filters])
 
+  // Costruisce mappa id_categoria -> nome per lookup veloce.
   const categoryMap = useMemo(() => {
     const m = {}
     categories.forEach((c) => { m[String(c.id_categoria)] = c.nome })
     return m
   }, [categories])
 
+  // Arricchisce ogni prodotto con il nome categoria per rendering/sort.
   const withCategoryName = useMemo(() => (
     filtered.map((p) => ({
       ...p,
@@ -97,6 +103,7 @@ const ProdottiList = () => {
     }))
   ), [filtered, categoryMap])
 
+  // Ordina l'elenco con supporto multi-colonna.
   const sorted = useMemo(() => {
     const out = [...withCategoryName]
     const getterByField = (row, field) => {
@@ -116,6 +123,7 @@ const ProdottiList = () => {
     return out
   }, [withCategoryName, sorts])
 
+  // Raggruppa i prodotti per categoria per la tabella.
   const grouped = useMemo(() => {
     const map = new Map()
     for (const row of sorted) {
@@ -126,6 +134,7 @@ const ProdottiList = () => {
     return Array.from(map.entries())
   }, [sorted])
 
+  // Gestisce il toggle asc/desc e la composizione multi-sort con Shift.
   const toggleSort = (field, shiftKey = false) => {
     setSorts((prev) => {
       if (!shiftKey) {
@@ -143,6 +152,7 @@ const ProdottiList = () => {
     })
   }
 
+  // Restituisce indicatore visuale dello stato ordinamento colonna.
   const sortIndicator = (field) => {
     const idx = sorts.findIndex((s) => s.field === field)
     if (idx === -1) return ''
@@ -150,11 +160,13 @@ const ProdottiList = () => {
     return ` ${dir}(${idx + 1})`
   }
 
+  // Naviga al dettaglio del prodotto selezionato.
   const handleView = (id) => {
     if (!id) return
     navigate(`/prodotti/dettagli?id=${id}`)
   }
 
+  // Elimina (soft/hide) un prodotto e aggiorna la lista locale.
   const handleDelete = async (id) => {
     if (!id) return
     const confirmed = window.confirm('Sei sicuro di voler eliminare questo prodotto? Verrà nascosto dalla lista.')
@@ -174,6 +186,7 @@ const ProdottiList = () => {
     }
   }
 
+  // Aggiorna i filtri dal form.
   const onChangeFilter = (e) => {
     const { name, value } = e.target
     setFilters((prev) => ({ ...prev, [name]: value }))

@@ -27,6 +27,7 @@ import {
 import { fetchProdottiFatturazione } from '../../services/prodotti'
 import { useAuth } from '../../context/AuthContext'
 
+// Formatta valori interi con locale italiano.
 const formatInteger = (value) => {
   if (value === null || value === undefined || Number.isNaN(Number(value))) {
     return '-'
@@ -34,6 +35,7 @@ const formatInteger = (value) => {
   return Number(value).toLocaleString('it-IT')
 }
 
+// Formatta importi monetari in euro.
 const formatCurrency = (value) => {
   const amount = typeof value === 'number' ? value : Number(value)
   if (Number.isNaN(amount)) {
@@ -42,10 +44,12 @@ const formatCurrency = (value) => {
   return amount.toLocaleString('it-IT', { style: 'currency', currency: 'EUR' })
 }
 
+// Placeholder uniforme per stati loading/empty.
 const renderTablePlaceholder = (text) => (
   <div className="text-center text-body-secondary small py-3">{text}</div>
 )
 
+// Determina se la combo_key rappresenta la combinazione "base" senza variazioni.
 const isDefaultCombo = (comboKey) => {
   const ids = String(comboKey ?? '')
     .split('+')
@@ -61,6 +65,7 @@ const PERIOD_OPTIONS = [
   { value: 'yearly', label: 'Annuale' },
 ]
 
+// Report fatturazione prodotti con filtro periodo, ricerca e dettaglio combinazioni.
 const ProdottiFatturazione = () => {
   const { token } = useAuth()
   const [payload, setPayload] = useState(null)
@@ -70,6 +75,7 @@ const ProdottiFatturazione = () => {
   const [search, setSearch] = useState('')
   const [onlyBilled, setOnlyBilled] = useState(false)
 
+  // Carica il dataset fatturazione in base al periodo selezionato.
   useEffect(() => {
     const controller = new AbortController()
     let isMounted = true
@@ -100,6 +106,7 @@ const ProdottiFatturazione = () => {
   const items = payload?.items ?? []
   const kpi = payload?.kpi ?? {}
 
+  // Applica filtri client-side su nome/codice e flag "solo fatturati".
   const filteredItems = useMemo(() => {
     const query = search.trim().toLowerCase()
     return items.filter((item) => {
@@ -115,6 +122,7 @@ const ProdottiFatturazione = () => {
     })
   }, [items, search, onlyBilled])
 
+  // Arricchisce ogni riga con metadati utili al rendering accordion.
   const enrichedItems = useMemo(
     () =>
       filteredItems.map((row) => {

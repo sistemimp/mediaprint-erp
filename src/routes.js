@@ -61,6 +61,13 @@ const TicketsDetail = React.lazy(() => import('./views/tickets/TicketsDetail'))
 const AcquistiRichiesteList = React.lazy(() => import('./views/acquisti/AcquistiRichiesteList'))
 const AcquistiRichiesteDetail = React.lazy(() => import('./views/acquisti/AcquistiRichiesteDetail'))
 const ReleaseNotesTimeline = React.lazy(() => import('./views/release-notes/ReleaseNotesTimeline'))
+const CrmPlusDashboard = React.lazy(() => import('./views/crm/CrmPlusDashboard'))
+const CrmPlusComunicazioni = React.lazy(() => import('./views/crm/CrmPlusComunicazioni'))
+const CrmPlusConversazioni = React.lazy(() => import('./views/crm/CrmPlusConversazioni'))
+const CrmPlusEmailArchivio = React.lazy(() => import('./views/crm/CrmPlusEmailArchivio'))
+const CrmPlusEmailDetail = React.lazy(() => import('./views/crm/CrmPlusEmailDetail'))
+const CrmPlusRegistri = React.lazy(() => import('./views/crm/CrmPlusRegistri'))
+const CrmPlusStatiLavorazione = React.lazy(() => import('./views/crm/CrmPlusStatiLavorazione'))
 
 const routes = [
   { path: '/', exact: true, name: 'Home' },
@@ -75,10 +82,26 @@ const routes = [
   { path: '/preventivi/crea', name: 'Preventivi - Crea nuovo', element: PreventiviCreate },
   { path: '/preventivi/lista', name: 'Preventivi - Lista', element: PreventiviList },
   { path: '/preventivi/dettagli', name: 'Preventivi - Dettagli', element: PreventiviDetail },
-  { path: '/acquisti/preventivi/dashboard', name: 'Preventivi acquisto - Dashboard', element: PreventiviDashboard },
-  { path: '/acquisti/preventivi/crea', name: 'Preventivi acquisto - Crea nuovo', element: PreventiviCreate },
-  { path: '/acquisti/preventivi/lista', name: 'Preventivi acquisto - Lista', element: PreventiviList },
-  { path: '/acquisti/preventivi/dettagli', name: 'Preventivi acquisto - Dettagli', element: PreventiviDetail },
+  {
+    path: '/acquisti/preventivi/dashboard',
+    name: 'Preventivi acquisto - Dashboard',
+    element: PreventiviDashboard,
+  },
+  {
+    path: '/acquisti/preventivi/crea',
+    name: 'Preventivi acquisto - Crea nuovo',
+    element: PreventiviCreate,
+  },
+  {
+    path: '/acquisti/preventivi/lista',
+    name: 'Preventivi acquisto - Lista',
+    element: PreventiviList,
+  },
+  {
+    path: '/acquisti/preventivi/dettagli',
+    name: 'Preventivi acquisto - Dettagli',
+    element: PreventiviDetail,
+  },
   { path: '/ddt/dashboard', name: 'DDT - Dashboard', element: DdtDashboard },
   { path: '/ddt/crea', name: 'DDT - Crea nuovo', element: DdtCreate },
   { path: '/ddt/lista', name: 'DDT - Lista', element: DdtList },
@@ -87,12 +110,28 @@ const routes = [
   { path: '/fatture/crea', name: 'Fatture - Crea nuova', element: FattureCreate },
   { path: '/fatture/lista', name: 'Fatture - Lista', element: FattureList },
   { path: '/fatture/dettagli', name: 'Fatture - Dettagli', element: FattureDetail },
-  { path: '/acquisti/fatture/dashboard', name: 'Fatture acquisto - Dashboard', element: FattureDashboard },
+  {
+    path: '/acquisti/fatture/dashboard',
+    name: 'Fatture acquisto - Dashboard',
+    element: FattureDashboard,
+  },
   { path: '/acquisti/fatture/crea', name: 'Fatture acquisto - Crea nuova', element: FattureCreate },
   { path: '/acquisti/fatture/lista', name: 'Fatture acquisto - Lista', element: FattureList },
-  { path: '/acquisti/fatture/dettagli', name: 'Fatture acquisto - Dettagli', element: FattureDetail },
-  { path: '/acquisti/richieste/lista', name: 'Acquisti - Richieste ticket - Lista', element: AcquistiRichiesteList },
-  { path: '/acquisti/richieste/dettagli', name: 'Acquisti - Richieste ticket - Dettagli', element: AcquistiRichiesteDetail },
+  {
+    path: '/acquisti/fatture/dettagli',
+    name: 'Fatture acquisto - Dettagli',
+    element: FattureDetail,
+  },
+  {
+    path: '/acquisti/richieste/lista',
+    name: 'Acquisti - Richieste ticket - Lista',
+    element: AcquistiRichiesteList,
+  },
+  {
+    path: '/acquisti/richieste/dettagli',
+    name: 'Acquisti - Richieste ticket - Dettagli',
+    element: AcquistiRichiesteDetail,
+  },
   { path: '/prodotti/dashboard', name: 'Prodotti - Dashboard', element: ProdottiDashboard },
   { path: '/prodotti/crea', name: 'Prodotti - Crea nuovo', element: ProdottiCreate },
   { path: '/prodotti/lista', name: 'Prodotti - Lista', element: ProdottiList },
@@ -111,10 +150,18 @@ const routes = [
   { path: '/pagamenti/import', name: 'Pagamenti - Import', element: PagamentiImport },
   { path: '/lavorazioni/lista', name: 'Lavorazioni - Lista', element: LavorazioniList },
   { path: '/lavorazioni/dettaglio', name: 'Lavorazioni - Dettaglio', element: LavorazioneDetail },
-  { path: '/lavorazioni/templates', name: 'Lavorazioni - Template attivita', element: LavorazioniTemplates },
+  {
+    path: '/lavorazioni/templates',
+    name: 'Lavorazioni - Template attivita',
+    element: LavorazioniTemplates,
+  },
   { path: '/magazzino', name: 'Magazzino', element: MagazzinoPage },
   { path: '/magazzino/movimenti', name: 'Magazzino - Movimenti', element: MagazzinoMovimentiPage },
-  { path: '/magazzino/consumi', name: 'Magazzino - Distinta consumi', element: MagazzinoConsumiPage },
+  {
+    path: '/magazzino/consumi',
+    name: 'Magazzino - Distinta consumi',
+    element: MagazzinoConsumiPage,
+  },
   { path: '/messaggi', name: 'Messaggi', element: InstantMessagingPage },
   { path: '/notifiche', name: 'Notifiche', element: NotificationsList },
   { path: '/accounts/lista', name: 'Account - Lista', element: AccountsList },
@@ -124,6 +171,44 @@ const routes = [
   { path: '/tickets/lista', name: 'Ticketing - Lista', element: TicketsList },
   { path: '/tickets/dettagli', name: 'Ticketing - Dettagli', element: TicketsDetail },
   { path: '/release-notes', name: 'Note di aggiornamento', element: ReleaseNotesTimeline },
+  { path: '/crm/dashboard', name: 'CRM - Dashboard', element: CrmPlusDashboard },
+  { path: '/crm/comunicazioni', name: 'CRM - Comunicazioni', element: CrmPlusComunicazioni },
+  { path: '/crm/conversazioni', name: 'CRM - Tutte conversazioni', element: CrmPlusConversazioni },
+  { path: '/crm/email-archivio', name: 'CRM - Archivio Email', element: CrmPlusEmailArchivio },
+  { path: '/crm/email-dettaglio', name: 'CRM - Dettaglio Email', element: CrmPlusEmailDetail },
+  { path: '/crm/registri', name: 'CRM - Registri', element: CrmPlusRegistri },
+  {
+    path: '/crm/stati-lavorazione',
+    name: 'CRM - Stati lavorazione',
+    element: CrmPlusStatiLavorazione,
+  },
+  { path: '/crm-plus/dashboard', name: 'CRM - Dashboard (legacy)', element: CrmPlusDashboard },
+  {
+    path: '/crm-plus/comunicazioni',
+    name: 'CRM - Comunicazioni (legacy)',
+    element: CrmPlusComunicazioni,
+  },
+  {
+    path: '/crm-plus/conversazioni',
+    name: 'CRM - Tutte conversazioni (legacy)',
+    element: CrmPlusConversazioni,
+  },
+  {
+    path: '/crm-plus/email-archivio',
+    name: 'CRM - Archivio Email (legacy)',
+    element: CrmPlusEmailArchivio,
+  },
+  {
+    path: '/crm-plus/email-dettaglio',
+    name: 'CRM - Dettaglio Email (legacy)',
+    element: CrmPlusEmailDetail,
+  },
+  { path: '/crm-plus/registri', name: 'CRM - Registri (legacy)', element: CrmPlusRegistri },
+  {
+    path: '/crm-plus/stati-lavorazione',
+    name: 'CRM - Stati lavorazione (legacy)',
+    element: CrmPlusStatiLavorazione,
+  },
 ]
 
 export default routes

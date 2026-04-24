@@ -39,33 +39,40 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { CStepper } from '@coreui/react-pro'
 import PermissionButton from '../../components/PermissionButton'
 
+// Formatter valuta per riepilogo righe pacchetto.
 const currencyFormatter = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' })
+// Formatta importi in euro.
 const formatCurrency = (value) => {
   const n = Number(value)
   return Number.isFinite(n) ? currencyFormatter.format(n) : '-'
 }
 
+// Helper querystring per leggere id pacchetto dalla route.
 const useQuery = () => {
   const { search } = useLocation()
   return React.useMemo(() => new URLSearchParams(search), [search])
 }
 
+// Dettaglio pacchetto con editing righe e selettore prodotti.
 const PacchettiDetail = () => {
   const navigate = useNavigate()
   const query = useQuery()
   const { token, logout } = useAuth()
 
   const id = Number(query.get('id') || 0)
+  // Se manca ID valido torna alla lista pacchetti.
   useEffect(() => {
     if (!id) {
       navigate('/pacchetti/lista', { replace: true })
     }
   }, [id, navigate])
+  // Legge il tema CoreUI attivo per mantenere leggibile la tabella in dark/light mode.
   const getActiveTheme = () => {
     if (typeof document === 'undefined') return 'light'
     return document.documentElement.dataset.coreuiTheme || 'light'
   }
   const [activeTheme, setActiveTheme] = useState(getActiveTheme)
+  // Sincronizza tema tabella con tema CoreUI corrente.
   useEffect(() => {
     if (typeof window === 'undefined') return undefined
     const handler = () => setActiveTheme(getActiveTheme())
@@ -109,6 +116,7 @@ const PacchettiDetail = () => {
   const [selIva, setSelIva] = useState('')
   const [selNatura, setSelNatura] = useState('')
 
+  // Carica dettaglio pacchetto e lookup necessari.
   useEffect(() => {
     if (!token || !id) return
     const controller = new AbortController()
@@ -151,7 +159,7 @@ const PacchettiDetail = () => {
     return () => controller.abort()
   }, [token, id, logout])
 
-  // Auto-size description textarea for readability
+  // Ridimensiona automaticamente il textarea descrizione in base al contenuto.
   useEffect(() => {
     const el = descrRef.current
     if (!el) return
@@ -159,11 +167,12 @@ const PacchettiDetail = () => {
     el.style.height = `${el.scrollHeight}px`
   }, [descrizione])
 
+  // Aggiunge una nuova riga pacchetto.
   const handleAddRiga = () => {
     setRighe((rows) => rows.concat({ descrizione: '', quantita: 1, prezzo: 0, iva: 22, sconto: 0 }))
   }
 
-  // Carica prodotti quando apro lo stepper o cambio filtro
+  // Carica i prodotti filtrati quando lo stepper e aperto e cambiano categoria/ricerca.
   useEffect(() => {
     if (!token) return
     if (!stepperOpen) return
@@ -181,7 +190,7 @@ const PacchettiDetail = () => {
     return () => controller.abort()
   }, [token, selCat, prodSearch, stepperOpen])
 
-  // Carica variazioni e prezzi quando seleziono prodotto
+  // Carica variazioni e prezzi combinati quando viene selezionato un prodotto.
   useEffect(() => {
     setProdVarOptions([])
     setSelectedVarIds([])
@@ -216,7 +225,7 @@ const PacchettiDetail = () => {
     return () => controller.abort()
   }, [token, selProd, stepperOpen])
 
-  // Calcolo prezzo suggerito
+  // Calcola il prezzo suggerito (prezzo combinazione se presente, altrimenti listino base).
   useEffect(() => {
     const prod = prodOptions.find((p) => String(p.id_prodotto) === String(selProd))
     const base = Number(prod?.prezzo_listino) || 0
@@ -225,6 +234,7 @@ const PacchettiDetail = () => {
     setModalPrice(suggested)
   }, [selProd, prodOptions, selectedComboKey, prodComboMap])
 
+  // Reset stato del modal selettore prodotti.
   const resetProductModal = () => {
     setProdStep(1)
     setSelCat('')
@@ -236,13 +246,16 @@ const PacchettiDetail = () => {
     setModalQty(1)
     setModalPrice(0)
   }
+  // Rimuove una riga pacchetto.
   const handleRemoveRiga = (index) => {
     setRighe((rows) => rows.filter((_, i) => i !== index))
   }
+  // Aggiorna una riga pacchetto.
   const updateRiga = (index, patch) => {
     setRighe((rows) => rows.map((r, i) => (i === index ? { ...r, ...patch } : r)))
   }
 
+  // Calcola imponibile/IVA/totale del pacchetto.
   const totals = useMemo(() => {
     let imponibile = 0
     let totaleIva = 0
@@ -260,6 +273,7 @@ const PacchettiDetail = () => {
     return { imponibile, totaleIva, totale }
   }, [righe])
 
+  // Raggruppa righe per categoria/prodotto per la tabella.
   const groupedRows = useMemo(() => {
     if (!righe || righe.length === 0) return []
     const normalized = righe.map((riga, idx) => {
@@ -302,6 +316,7 @@ const PacchettiDetail = () => {
   }
   const productRowStyle = { backgroundColor: 'var(--cui-body-bg)' }
 
+  // Salva modifiche del pacchetto.
   const handleSave = async (e) => {
     e.preventDefault()
     setSubmitting(true)
@@ -327,6 +342,7 @@ const PacchettiDetail = () => {
     }
   }
 
+  // Elimina il pacchetto corrente.
   const handleDelete = async () => {
     if (!window.confirm('Sei sicuro di voler eliminare questo pacchetto?')) return
     try {
@@ -390,7 +406,7 @@ const PacchettiDetail = () => {
               </CRow>
             </section>
 
-            {/* Modal selezione prodotto (stepper) */}
+            {/* Modal guidata per scegliere categoria, prodotto, combinazione e dati riga. */}
             <CModal visible={stepperOpen} onClose={() => setStepperOpen(false)} size="lg" backdrop="static">
               <CModalHeader>
                 <CModalTitle>Selettore prodotto</CModalTitle>
@@ -472,7 +488,7 @@ const PacchettiDetail = () => {
                         <option value="">Seleziona una combinazione…</option>
                         {prodComboList.map((r) => {
                           const ids = Array.isArray(r.var_ids) ? r.var_ids : String(r.combo_key).split('+').map((x) => Number(x) || 0)
-                          // Raggruppa per categoria: "Categoria: nome1, nome2; Categoria2: ..."
+                          // Costruisce una label leggibile della combinazione raggruppando per categoria.
                           const groups = {}
                           ids.forEach((idv) => {
                             const vv = prodVarOptions.find((x) => Number(x.id_variazione) === Number(idv))
@@ -607,7 +623,7 @@ const PacchettiDetail = () => {
                           id_prodotto: prod.id_prodotto,
                           combo_key: selectedComboKey || null,
                         }
-                        // Aggiungi categoria del prodotto per futuri raggruppamenti o usi
+                        // Salva anche categoria prodotto per facilitare raggruppamenti lato UI.
                         if (prod.id_categoria != null) {
                           const catId = Number(prod.id_categoria)
                           if (Number.isFinite(catId) && catId > 0) {

@@ -1,5 +1,6 @@
 import { apiFetch, buildApiUrl, getStoredToken } from './apiClient'
 
+// Recupera il ledger clienti (totali fatturato/pagato/residuo).
 export const fetchPagamentiLedger = async ({ token, q, limit, signal } = {}) => {
   const response = await apiFetch('/pagamentiLedger.php', {
     token,
@@ -15,6 +16,7 @@ export const fetchPagamentiLedger = async ({ token, q, limit, signal } = {}) => 
   }
 }
 
+// Recupera i KPI dashboard pagamenti per periodo.
 export const fetchPagamentiDashboard = async ({ token, period, signal } = {}) => {
   const params = {}
   if (period) {
@@ -27,6 +29,7 @@ export const fetchPagamentiDashboard = async ({ token, period, signal } = {}) =>
   return payload
 }
 
+// Recupera la lista movimenti pagamento con filtri opzionali.
 export const fetchPagamentiList = async ({ token, filters = {}, signal } = {}) => {
   const params = {}
   if (filters.q) params.q = filters.q
@@ -48,6 +51,7 @@ export const fetchPagamentiList = async ({ token, filters = {}, signal } = {}) =
   }
 }
 
+// Recupera il dettaglio di un singolo pagamento.
 export const fetchPagamentoDetail = async ({ token, id, signal } = {}) => {
   const response = await apiFetch('/pagamentiDetail.php', {
     token,
@@ -58,6 +62,7 @@ export const fetchPagamentoDetail = async ({ token, id, signal } = {}) => {
   return response?.data ?? null
 }
 
+// Cerca fatture aperte da associare ai pagamenti.
 export const searchPagamentiFatture = async ({ token, q, id_anagrafica, limit, onlyOpen = true, signal } = {}) => {
   const params = {}
   if (q) params.q = q
@@ -76,6 +81,7 @@ export const searchPagamentiFatture = async ({ token, q, id_anagrafica, limit, o
   }
 }
 
+// Assegna o riassegna un pagamento a una anagrafica cliente.
 export const assignPagamentoToAnagrafica = async ({ token, id_pagamento, id_anagrafica, signal } = {}) => {
   const payload = {}
   const pagamentoId = Number(id_pagamento ?? 0)
@@ -100,6 +106,7 @@ export const assignPagamentoToAnagrafica = async ({ token, id_pagamento, id_anag
   return response?.data ?? null
 }
 
+// Carica file Excel/CSV pagamenti e restituisce righe normalizzate lato backend.
 export const uploadPagamentiExcel = async ({ token, file, signal } = {}) => {
   if (!file) {
     throw new Error('Selezionare un file da caricare.')
@@ -138,6 +145,7 @@ export const uploadPagamentiExcel = async ({ token, file, signal } = {}) => {
   }
 }
 
+// Conferma l'import e registra i pagamenti elaborati dal wizard.
 export const confirmPagamentiImport = async ({ token, items, signal } = {}) => {
   const response = await apiFetch('/pagamentiImportConfirm.php', {
     method: 'POST',

@@ -20,6 +20,7 @@ import {
 import { fetchDdtDashboard } from '../../services/ddt'
 import { useAuth } from '../../context/AuthContext'
 
+// Formatta interi con separatori locali.
 const formatInteger = (value) => {
   if (value === null || value === undefined || Number.isNaN(Number(value))) {
     return '-'
@@ -27,10 +28,12 @@ const formatInteger = (value) => {
   return Number(value).toLocaleString('it-IT')
 }
 
+// Placeholder riutilizzabile per stati loading/empty delle tabelle.
 const renderTablePlaceholder = (text) => (
   <div className="text-center text-body-secondary small py-3">{text}</div>
 )
 
+// Renderizza link cliente al dettaglio anagrafica quando disponibile.
 const renderClientLink = (name, id) => {
   const label = name || '-'
   if (!id) {
@@ -50,6 +53,7 @@ const PERIOD_OPTIONS = [
   { value: 'yearly', label: 'Annuale' },
 ]
 
+// Dashboard DDT con KPI, top causali e ultimi documenti.
 const DdtDashboard = () => {
   const { token } = useAuth()
   const [payload, setPayload] = useState(null)
@@ -57,6 +61,7 @@ const DdtDashboard = () => {
   const [error, setError] = useState(null)
   const [period, setPeriod] = useState('monthly')
 
+  // Carica i dati dashboard in base al periodo selezionato.
   useEffect(() => {
     const controller = new AbortController()
     let isMounted = true
@@ -88,11 +93,13 @@ const DdtDashboard = () => {
   const topCausali = payload?.top_causali ?? []
   const latest = payload?.latest ?? []
 
+  // Etichetta testuale del periodo corrente.
   const periodLabel = useMemo(
     () => PERIOD_OPTIONS.find((option) => option.value === period)?.label ?? 'Mensile',
     [period],
   )
 
+  // Costruisce le card KPI mostrate in testata.
   const summaryCards = useMemo(
     () => [
       { key: 'totale', label: 'Totale DDT', value: kpi.totale },

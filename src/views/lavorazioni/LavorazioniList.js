@@ -126,6 +126,7 @@ const GANTT_BAR_HEIGHT = 26
 const GANTT_BAR_ROW_STEP = 32
 const GANTT_BAR_TOP_OFFSET = 6
 
+// Utility date/time per viste calendario e gantt.
 const startOfDay = (value) => {
   const date = value instanceof Date ? new Date(value) : new Date()
   date.setHours(0, 0, 0, 0)
@@ -259,6 +260,7 @@ const formatPercent = (value) => {
 const MS_PER_DAY = 1000 * 60 * 60 * 24
 const HIDE_ANNULLED_DAYS = 15
 
+// Nasconde in kanban annullate/completate troppo vecchie.
 const shouldShowKanbanJob = (job) => {
   const state = (job?.stato || '').toLowerCase()
   if (!['annullata', 'completata'].includes(state)) {
@@ -418,10 +420,12 @@ const LavorazioniList = () => {
     ]
   }, [stats?.reparti])
 
+  // Reset pagina quando cambiano i filtri principali server-side.
   useEffect(() => {
     setPage(1)
   }, [filters.stato, filters.reparto, filters.periodo])
 
+  // Caricamento principale dashboard + lista lavorazioni.
   useEffect(() => {
     if (!token) {
       return
@@ -487,6 +491,7 @@ const LavorazioniList = () => {
     return () => controller.abort()
   }, [token, filters.periodo, filters.reparto, filters.search, filters.stato, page, pageSize, refreshIndex])
 
+  // Reset cache attività espanse dopo refresh generale.
   useEffect(() => {
     setExpandedJobs([])
     setActivitiesByJob({})
@@ -524,6 +529,7 @@ const LavorazioniList = () => {
     return items.filter((job) => shouldShowKanbanJob(job))
   }, [items])
 
+  // Configurazione colonne kanban (incluse eventuali "altre").
   const kanbanConfig = useMemo(() => {
     const base = statoOptions
       .filter((option) => option.value)
@@ -535,6 +541,7 @@ const LavorazioniList = () => {
     return hasOtherStates ? [...base, { key: 'altre', label: 'Altre lavorazioni' }] : base
   }, [kanbanItems])
 
+  // Raggruppa le lavorazioni per colonna kanban.
   const kanbanGroups = useMemo(() => {
     const groups = {}
     kanbanConfig.forEach((column) => {
@@ -599,6 +606,7 @@ const LavorazioniList = () => {
     return slots
   }, [])
 
+  // Carica le attività di dettaglio per una singola lavorazione.
   const loadJobActivities = useCallback(
     async (jobId) => {
       if (!token) {
@@ -620,6 +628,7 @@ const LavorazioniList = () => {
     [token],
   )
 
+  // Precarica attività quando la vista richiede scheduling (calendario/gantt).
   useEffect(() => {
     if (!['calendario', 'gantt'].includes(viewMode) || !token) {
       return
@@ -634,6 +643,7 @@ const LavorazioniList = () => {
     })
   }, [viewMode, token, items, activitiesByJob, activitiesLoading, loadJobActivities])
 
+  // Normalizza le attività in eventi visualizzabili nel calendario operativo.
   const calendarActivities = useMemo(() => {
     if (daysRange.length === 0) {
       return []
@@ -796,6 +806,7 @@ const LavorazioniList = () => {
     [items, activitiesByJob],
   )
 
+  // Definisce l'intervallo temporale mostrato in gantt.
   const ganttRange = useMemo(() => {
     const anchor = calendarDate instanceof Date && !Number.isNaN(calendarDate.getTime()) ? calendarDate : new Date()
     if (ganttPeriod === 'day') {
@@ -824,6 +835,7 @@ const LavorazioniList = () => {
     }
   }, [calendarDate, ganttPeriod])
 
+  // Costruisce modello timeline + barre per rendering gantt.
   const ganttModel = useMemo(() => {
     const rangeStart = startOfDay(ganttRange.start)
     const rangeEnd = startOfDay(ganttRange.end)
@@ -1011,11 +1023,13 @@ const LavorazioniList = () => {
     }))
   }
 
+  // Applica ricerca testuale riportando la paginazione alla prima pagina.
   const handleSearchSubmit = (event) => {
     event.preventDefault()
     setRefreshIndex((value) => value + 1)
   }
 
+  // Trigger manuale refresh dati.
   const handleRefreshClick = () => {
     setRefreshIndex((value) => value + 1)
   }
@@ -1166,6 +1180,7 @@ const LavorazioniList = () => {
     }
   }
 
+  // Espande/collassa il pannello attività di una lavorazione.
   const handleToggleJobActivities = (jobId) => {
     const resolvedId = Number(jobId)
     if (!Number.isFinite(resolvedId) || resolvedId <= 0) {
@@ -1407,6 +1422,7 @@ const LavorazioniList = () => {
     return index
   }
 
+  // Avvia resize orizzontale di una barra attività in gantt.
   const handleResizeStart = (entry) => (event) => {
     event.preventDefault()
     event.stopPropagation()
@@ -1423,6 +1439,7 @@ const LavorazioniList = () => {
     })
   }
 
+  // Gestisce resize gantt globale (mousemove/mouseup) con persistenza server.
   useEffect(() => {
     if (!resizeState) {
       return undefined

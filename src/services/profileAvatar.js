@@ -1,5 +1,6 @@
 import { buildApiUrl, getStoredToken } from './apiClient'
 
+// Costruisce gli header di autenticazione supportando i diversi nomi richiesti dal backend.
 const buildAuthHeaders = (token) => {
   const headers = {}
   const resolvedToken = token || getStoredToken()
@@ -11,6 +12,7 @@ const buildAuthHeaders = (token) => {
   return headers
 }
 
+// Recupera l'avatar dell'utente corrente; se non presente restituisce null.
 export const fetchProfileAvatar = async ({ token, signal } = {}) => {
   const url = buildApiUrl('/profileAvatar.php')
   const response = await fetch(url.toString(), {
@@ -40,6 +42,7 @@ export const fetchProfileAvatar = async ({ token, signal } = {}) => {
   return response.blob()
 }
 
+// Carica un nuovo avatar tramite multipart/form-data e restituisce il payload JSON di risposta.
 export const uploadProfileAvatar = async ({ token, file, signal } = {}) => {
   if (!file) {
     throw new Error('File mancante')

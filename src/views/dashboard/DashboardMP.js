@@ -54,6 +54,7 @@ import WidgetsBrand from '../widgets/WidgetsBrand'
 import WidgetsDropdown from '../widgets/WidgetsDropdown'
 import MainChart from './MainChart'
 
+// Dashboard demo/template CoreUI usata come riferimento UI.
 const DashboardMP = () => {
   const progressExample = [
     { title: 'Visits', value: '29.703 Users', percent: 40, color: 'success' },

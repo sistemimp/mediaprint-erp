@@ -13,6 +13,7 @@ import {
 } from '@coreui/react'
 import { DocsComponents, DocsExample } from 'src/components'
 
+// Vista Tabs: componente UI del modulo.
 const Navs = () => {
   return (
     <CRow>

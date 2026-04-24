@@ -54,6 +54,7 @@ import WidgetsBrand from '../widgets/WidgetsBrand'
 import WidgetsDropdown from '../widgets/WidgetsDropdown'
 import MainChart from './MainChart'
 
+// Variante dashboard demo CoreUI con contenuti statici.
 const DashboardREW = () => {
   const progressExample = [
     { title: 'Visits', value: '29.703 Users', percent: 40, color: 'success' },

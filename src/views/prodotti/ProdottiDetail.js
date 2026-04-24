@@ -50,8 +50,10 @@ import {
   saveMagazzinoProductConsumptions,
 } from '../../services/magazzino'
 
+// Helper per leggere querystring del dettaglio prodotto.
 const useQuery = () => new URLSearchParams(useLocation().search)
 
+// Dettaglio prodotto: anagrafica base, variazioni, combinazioni prezzo e consumi.
 const ProdottiDetail = () => {
   const navigate = useNavigate()
   const { token, logout } = useAuth()
@@ -63,7 +65,7 @@ const ProdottiDetail = () => {
     return Number.isNaN(value) ? null : value
   }, [query])
 
-  // Se l'ID non è presente/valido reindirizza alla lista (salvo la creazione)
+  // Se l'ID non è presente/valido reindirizza alla lista (salvo la creazione).
   useEffect(() => {
     if (isCreating) return
     if (!id) {
@@ -123,6 +125,7 @@ const ProdottiDetail = () => {
   ])
   const [toast, setToast] = useState({ open: false, type: 'success', message: '' })
 
+  // In modalità "new" resetta completamente lo stato del form e delle sezioni correlate.
   useEffect(() => {
     if (!isCreating) return
     setForm({
@@ -158,12 +161,14 @@ const ProdottiDetail = () => {
     setGroupCat2('')
   }, [isCreating])
 
+  // Mostra un toast temporaneo per feedback operazioni.
   const showToast = (message, type = 'success') => {
     setToast({ open: true, type, message })
     window.clearTimeout(showToast._t)
     showToast._t = window.setTimeout(() => setToast((t) => ({ ...t, open: false })), 3000)
   }
 
+  // Normalizza una combinazione variazioni in chiave "id+id+id" ordinata.
   const normalizeComboKeyString = (value) => {
     const parts = String(value || '')
       .split('+')
@@ -173,6 +178,7 @@ const ProdottiDetail = () => {
     return parts.join('+')
   }
 
+  // Conta quanti articoli di consumo sono associati a ogni combinazione.
   const buildConsumptionCountMap = (items) => {
     const map = {}
     for (const item of Array.isArray(items) ? items : []) {
@@ -186,6 +192,7 @@ const ProdottiDetail = () => {
     return map
   }
 
+  // Conta quanti articoli di consumo sono associati a ogni singola variazione.
   const buildVariationConsumptionCountMap = (items) => {
     const map = {}
     for (const item of Array.isArray(items) ? items : []) {
@@ -198,6 +205,7 @@ const ProdottiDetail = () => {
     return map
   }
 
+  // Ricarica i riepiloghi consumi da magazzino dopo salvataggi/mutazioni.
   const refreshConsumptionSummaries = async () => {
     const { items, articoli } = await fetchMagazzinoProductConsumptions({
       token,
@@ -210,6 +218,7 @@ const ProdottiDetail = () => {
     setVariationConsumptionCountById(buildVariationConsumptionCountMap(items))
   }
 
+  // Carica dataset iniziali (prodotto, categorie, variazioni, combinazioni, IVA/nature).
   useEffect(() => {
     if (!token) return
     if (!isCreating && !id) return
@@ -280,6 +289,7 @@ const ProdottiDetail = () => {
     return () => controller.abort()
   }, [token, id, isCreating, logout])
 
+  // Carica metadati consumi prodotto per badge/contatori nel dettaglio.
   useEffect(() => {
     if (!token || isCreating || !id) return
     let mounted = true
@@ -303,11 +313,13 @@ const ProdottiDetail = () => {
     }
   }, [token, isCreating, id])
 
+  // Aggiorna i campi base del form prodotto.
   const onChange = (e) => {
     const { name, value } = e.target
     setForm((prev) => ({ ...prev, [name]: value }))
   }
 
+  // Salva creazione/modifica anagrafica prodotto.
   const handleSave = async (e) => {
     e.preventDefault()
     setSaving(true)
@@ -345,6 +357,7 @@ const ProdottiDetail = () => {
     }
   }
 
+  // Collega una variazione esistente al prodotto corrente.
   const handleLink = async () => {
     if (!selectedVar) return
     try {
@@ -360,6 +373,7 @@ const ProdottiDetail = () => {
     }
   }
 
+  // Importa in massa le variazioni della stessa categoria della variazione selezionata.
   const handleImportCategory = async () => {
     if (!selectedVar) return
     const selected = variazioniByCodice.find((v) => Number(v.id_variazione) === Number(selectedVar))
@@ -409,6 +423,7 @@ const ProdottiDetail = () => {
     }
   }
 
+  // Scollega una variazione dal prodotto.
   const handleUnlink = async (id_variazione) => {
     try {
       await unlinkProdottoVariazione({ token, id_prodotto: id, id_variazione })
@@ -422,6 +437,7 @@ const ProdottiDetail = () => {
 
   // Delta prezzo rimosso: gestione centralizzata su Prezzi combinati
 
+  // Crea/aggiorna una combinazione prezzo dalle variazioni selezionate.
   const handleComboAdd = async () => {
     if (!Array.isArray(comboSelIds) || comboSelIds.length === 0) return
     try {
@@ -441,6 +457,7 @@ const ProdottiDetail = () => {
     }
   }
 
+  // Elimina una singola combinazione prezzo.
   const handleComboDelete = async (varIds) => {
     const key = buildComboKey(varIds)
     try {
@@ -465,6 +482,7 @@ const ProdottiDetail = () => {
     }
   }
 
+  // Elimina tutte le combinazioni prezzo del prodotto.
   const handleComboDeleteAll = async () => {
     if (!Array.isArray(comboPrezzi) || comboPrezzi.length === 0) return
     const confirmed = window.confirm('Confermi la rimozione di tutte le combinazioni prezzo?')
@@ -506,6 +524,7 @@ const ProdottiDetail = () => {
     setComboInlinePriceVal('')
   }
 
+  // Salva la modifica inline del prezzo di combinazione.
   const handleComboInlineSave = async (row) => {
     const key = buildComboKey(row?.var_ids)
     if (!key) return
@@ -989,6 +1008,7 @@ const ProdottiDetail = () => {
     return Math.abs(na - nb) > 0.0001
   }
 
+  // Genera automaticamente tutte le combinazioni mancanti tra categorie selezionate.
   const handleGenerateAllCombos = async () => {
     if (comboGenerating) return
     const cats = Object.keys(comboOptionsByCategory).sort((a, b) =>

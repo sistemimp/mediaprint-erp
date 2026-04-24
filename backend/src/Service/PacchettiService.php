@@ -23,6 +23,7 @@ final class PacchettiService
                 $onlyActive = filter_var($val, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
             }
         }
+        // only_active nullo = nessun filtro esplicito sullo stato.
         $rows = $this->repository->listPacchetti($q, $onlyActive);
         return ['items' => $rows];
     }
@@ -65,6 +66,7 @@ final class PacchettiService
 
         $lines = [];
         $hasLinesPayload = array_key_exists('righe', $input);
+        // Se "righe" non e' presente, in update lasciamo inalterate le righe esistenti.
         if ($hasLinesPayload && is_array($input['righe'])) {
             foreach ($input['righe'] as $r) {
                 if (!is_array($r)) continue;
@@ -95,6 +97,7 @@ final class PacchettiService
         if ($id > 0) {
             $this->repository->update($id, $data);
             if ($hasLinesPayload) {
+                // replace totale voluto: evita divergenze tra frontend e DB su ordinamento/contenuto.
                 $this->repository->replaceLines($id, $lines);
             }
             return ['id_pacchetto' => $id];

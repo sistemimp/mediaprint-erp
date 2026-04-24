@@ -11,6 +11,7 @@ import {
 } from '@coreui/react'
 import { DocsComponents, DocsExample } from 'src/components'
 
+// Vista Alerts: componente UI del modulo.
 const Alerts = () => {
   return (
     <CRow>

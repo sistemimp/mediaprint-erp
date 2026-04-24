@@ -1,6 +1,7 @@
 import React from 'react'
 import { CCard, CCardBody, CCardHeader } from '@coreui/react'
 
+// Vista SectionPlaceholder: componente UI del modulo.
 const SectionPlaceholder = ({ title, subtitle }) => {
   return (
     <CCard>

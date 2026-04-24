@@ -6,6 +6,7 @@ import CIcon from '@coreui/icons-react'
 import { cilCalendar } from '@coreui/icons'
 import { fetchAnagraficheDash } from '../../services/dashboard'
 
+// Vista WidgetsBrand: componente UI del modulo.
 const WidgetsBrand = (props) => {
   const [stats, setStats] = useState(null)
 

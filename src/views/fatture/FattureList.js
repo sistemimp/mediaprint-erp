@@ -31,12 +31,14 @@ import PermissionButton from '../../components/PermissionButton'
 
 const currencyFormatter = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' })
 
+// Formatta data in locale italiano.
 const formatDate = (value) => {
   if (!value) return '-'
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleDateString('it-IT')
 }
 
+// Formatta importi in EUR con fallback testuale.
 const formatCurrency = (value) => {
   const numeric = Number(value)
   if (!Number.isFinite(numeric)) {
@@ -76,6 +78,7 @@ const FattureList = () => {
   const [importMessage, setImportMessage] = useState(null)
   const [importResults, setImportResults] = useState([])
 
+  // Carica l'elenco fatture dal backend con filtri data e contesto acquisto/vendita.
   useEffect(() => {
     if (!token) return
     const controller = new AbortController()
@@ -110,6 +113,7 @@ const FattureList = () => {
     return () => controller.abort()
   }, [token, logout, refreshIndex, dateFrom, dateTo, isAcquisto])
 
+  // Reset pagina quando cambiano i filtri principali.
   useEffect(() => {
     setCurrentPage(0)
   }, [search, yearFilter, statusFilter, sezionaleFilter, dateFrom, dateTo])
@@ -182,6 +186,7 @@ const FattureList = () => {
     return 0
   }
 
+  // Filtra lato client per testo, anno, stato e sezionale.
   const filteredItems = useMemo(() => {
     const term = search.trim().toLowerCase()
     return items.filter((row) => {
@@ -220,6 +225,7 @@ const FattureList = () => {
     })
   }, [items, search, yearFilter, statusFilter, sezionaleFilter, showStatus])
 
+  // Applica ordinamento lato client.
   const sortedItems = useMemo(() => {
     const copy = [...filteredItems]
     copy.sort((a, b) => {
@@ -251,6 +257,7 @@ const FattureList = () => {
   const startIndex = totalItems === 0 ? 0 : currentPage * ROWS_PER_PAGE + 1
   const endIndex = Math.min(totalItems, (currentPage + 1) * ROWS_PER_PAGE)
 
+  // Mantiene pagina valida se il totale cambia.
   useEffect(() => {
     setCurrentPage(0)
   }, [search, yearFilter, statusFilter, sezionaleFilter, dateFrom, dateTo])
@@ -261,6 +268,7 @@ const FattureList = () => {
     }
   }, [currentPage, totalPages])
 
+  // Gestisce ordinamento click sulle intestazioni tabella.
   const handleSort = (key) => {
     if (sortKey === key) {
       setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')
@@ -284,6 +292,7 @@ const FattureList = () => {
     navigate(`${basePath}/dettagli?id=${id}`)
   }
 
+  // Apre PDF fattura in nuova scheda.
   const handlePrintPdf = (id) => {
     if (typeof window === 'undefined') return
     const url = buildFatturaPdfUrl(id)
@@ -291,10 +300,12 @@ const FattureList = () => {
     window.open(url, '_blank', 'noopener')
   }
 
+  // Apre file picker per import XML.
   const handleImportClick = () => {
     importInputRef.current?.click()
   }
 
+  // Importa XML SdI e aggiorna la lista fatture.
   const handleImportChange = async (event) => {
     const fileList = event.target?.files
     if (!fileList || fileList.length === 0) {

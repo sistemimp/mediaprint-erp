@@ -1,5 +1,6 @@
 import { apiFetch } from './apiClient'
 
+// Recupera giacenze di magazzino con filtri opzionali.
 export const fetchMagazzinoStock = async ({
   token,
   q,
@@ -21,6 +22,7 @@ export const fetchMagazzinoStock = async ({
   return { items, unitaMisuraOptions }
 }
 
+// Salva la configurazione magazzino del prodotto (soglia/unita/gestione).
 export const updateMagazzinoStockConfig = async ({ token, body, signal } = {}) => {
   return apiFetch('/magazzinoStockConfig.php', {
     method: 'POST',
@@ -30,6 +32,7 @@ export const updateMagazzinoStockConfig = async ({ token, body, signal } = {}) =
   })
 }
 
+// Registra un movimento di magazzino (carico/scarico/rettifica).
 export const createMagazzinoMovement = async ({ token, body, signal } = {}) => {
   const response = await apiFetch('/magazzinoMovementCreate.php', {
     method: 'POST',
@@ -60,6 +63,7 @@ export const createMagazzinoMovement = async ({ token, body, signal } = {}) => {
   return response
 }
 
+// Recupera storico movimenti di magazzino con filtri.
 export const fetchMagazzinoMovements = async ({
   token,
   q,
@@ -84,6 +88,7 @@ export const fetchMagazzinoMovements = async ({
   return { items }
 }
 
+// Recupera consumi articoli per prodotto/combinazione/variazione.
 export const fetchMagazzinoProductConsumptions = async ({
   token,
   id_prodotto,
@@ -107,6 +112,7 @@ export const fetchMagazzinoProductConsumptions = async ({
   return { items, prodotti, productVariations, articoli }
 }
 
+// Salva i consumi articoli associati a prodotto/combinazione.
 export const saveMagazzinoProductConsumptions = async ({ token, body, signal } = {}) => {
   return apiFetch('/magazzinoProductConsumptionSave.php', {
     method: 'POST',
@@ -116,6 +122,7 @@ export const saveMagazzinoProductConsumptions = async ({ token, body, signal } =
   })
 }
 
+// Crea un nuovo articolo di magazzino e lo collega ai prodotti indicati.
 export const createMagazzinoArticleWithProducts = async ({ token, body, signal } = {}) => {
   return apiFetch('/magazzinoArticleCreate.php', {
     method: 'POST',
@@ -125,6 +132,7 @@ export const createMagazzinoArticleWithProducts = async ({ token, body, signal }
   })
 }
 
+// Recupera la lista macchine produttive.
 export const fetchMacchine = async ({ token, tipo, all, signal } = {}) => {
   const params = {}
   if (tipo) params.tipo = tipo
@@ -134,6 +142,7 @@ export const fetchMacchine = async ({ token, tipo, all, signal } = {}) => {
   return { items }
 }
 
+// Recupera il dettaglio di una singola macchina.
 export const fetchMacchinaDetail = async ({ token, id, signal } = {}) => {
   const response = await apiFetch('/macchineDetail.php', {
     token,
@@ -143,6 +152,7 @@ export const fetchMacchinaDetail = async ({ token, id, signal } = {}) => {
   return { item: response?.item ?? null }
 }
 
+// Crea/aggiorna una macchina.
 export const saveMacchina = async ({ token, body, signal } = {}) => {
   return apiFetch('/macchineSave.php', {
     method: 'POST',

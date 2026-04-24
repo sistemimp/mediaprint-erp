@@ -13,6 +13,7 @@ import ProgressBar from './ProgressBar'
 import Tabs from './Tabs'
 import Tooltips from './Tooltips'
 
+// Vista index: componente UI del modulo.
 export {
   Breadcrumbs,
   Cards,

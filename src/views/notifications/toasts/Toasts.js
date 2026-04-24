@@ -14,6 +14,7 @@ import {
 } from '@coreui/react'
 import { DocsComponents, DocsExample } from 'src/components'
 
+// Vista Toasts: componente UI del modulo.
 const ExampleToast = () => {
   const [toast, addToast] = useState(0)
   const toaster = useRef()

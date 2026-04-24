@@ -51,6 +51,7 @@ import AnagraficaAutocomplete from '../../components/AnagraficaAutocomplete'
 import HtmlEditor from '../../components/HtmlEditor'
 import PermissionButton from '../../components/PermissionButton'
 
+// Factory riga vuota per linee contratto.
 const createEmptyLine = () => ({
   id_prodotto: '',
   combo_key: '',
@@ -62,6 +63,7 @@ const createEmptyLine = () => ({
   sconti: [],
 })
 
+// Formatta data/ora in locale italiano.
 const formatDateTime = (value) => {
   if (!value) return '-'
   const date = new Date(value)
@@ -69,6 +71,7 @@ const formatDateTime = (value) => {
   return date.toLocaleString('it-IT')
 }
 
+// Formatta dimensione file in unità leggibili.
 const formatFileSize = (value) => {
   const bytes = Number(value) || 0
   if (bytes <= 0) {
@@ -85,6 +88,7 @@ const formatFileSize = (value) => {
   return `${formatted} ${units[index]}`
 }
 
+// Dettaglio contratto: editing, workflow stato, revisioni, file e invio email.
 const ContrattiDetail = () => {
   const navigate = useNavigate()
   const location = useLocation()
@@ -174,12 +178,14 @@ const ContrattiDetail = () => {
   const [pkgOnlyActive, setPkgOnlyActive] = useState(true)
   const canUploadContrattoFiles = has('contr.write')
 
+  // Se manca ID valido torna alla lista contratti.
   useEffect(() => {
     if (!id) {
       navigate('/contratti/lista', { replace: true })
     }
   }, [id, navigate])
 
+  // Carica dettaglio contratto e metadati di stato/revisioni.
   useEffect(() => {
     if (!token || !id) return
     const controller = new AbortController()
@@ -254,6 +260,7 @@ const ContrattiDetail = () => {
     return () => controller.abort()
   }, [token, id, logout, refreshCounter])
 
+  // Carica lookup prodotti, nature IVA e categorie.
   useEffect(() => {
     if (!token) return
     const controller = new AbortController()
@@ -359,6 +366,7 @@ const ContrattiDetail = () => {
     return () => controller.abort()
   }, [token, pkgOpen, pkgSearch, pkgOnlyActive])
 
+  // Carica l'anteprima delle righe del pacchetto selezionato nel modal.
   useEffect(() => {
     if (!token || !pkgOpen) return
     const controller = new AbortController()
@@ -376,6 +384,7 @@ const ContrattiDetail = () => {
     return () => controller.abort()
   }, [token, pkgOpen, selPacchetto])
 
+  // Ricarica i file firmati associati al contratto quando cambia la versione locale.
   useEffect(() => {
     if (!token || !id) return
     const controller = new AbortController()
@@ -403,6 +412,7 @@ const ContrattiDetail = () => {
     return () => controller.abort()
   }, [token, id, filesVersion, refreshCounter])
 
+  // Ricerca clienti per autocomplete anagrafica.
   const loadAnagrafiche = async (query) => {
     if (!token) return
     if (searchAbortRef.current) {
@@ -432,18 +442,22 @@ const ContrattiDetail = () => {
     }
   }
 
+  // Aggiorna una riga contratto.
   const updateLine = (index, patch) => {
     setRighe((rows) => rows.map((row, i) => (i === index ? { ...row, ...patch } : row)))
   }
 
+  // Aggiunge una nuova riga contratto.
   const handleAddLine = () => {
     setRighe((rows) => rows.concat(createEmptyLine()))
   }
 
+  // Rimuove una riga contratto.
   const handleRemoveLine = (index) => {
     setRighe((rows) => rows.filter((_, i) => i !== index))
   }
 
+  // Aggiorna lo stato workflow del contratto.
   const handleStatusChange = useCallback(async (nextCode) => {
     const safeCode = typeof nextCode === 'string' ? nextCode.trim().toLowerCase() : String(nextCode || '').trim().toLowerCase()
     if (!safeCode || !token || !id || statusUpdating) return
@@ -486,6 +500,7 @@ const ContrattiDetail = () => {
     }
   }, [token, id, statusUpdating, logout, statusOptions, user])
 
+  // Apre modal dettaglio revisione selezionata.
   const handleOpenRevisionDetail = async (revisionId) => {
     const numericId = Number(revisionId)
     if (!Number.isFinite(numericId) || numericId <= 0) return
@@ -507,23 +522,27 @@ const ContrattiDetail = () => {
     }
   }
 
+  // Chiude modal revisione.
   const handleCloseRevisionModal = () => {
     setRevisionModalVisible(false)
     setRevisionModalError(null)
     setRevisionModalData(null)
   }
 
+  // Oggetto email predefinito per invio contratto.
   const defaultEmailSubject = useMemo(() => {
     if (titolo && titolo.trim() !== '') return `Contratto ${titolo}`
     return id ? `Contratto ${id}` : 'Contratto'
   }, [titolo, id])
 
+  // Corpo email predefinito per invio contratto.
   const defaultEmailBody = useMemo(() => {
     const cliente = ragioneSociale && ragioneSociale.trim() !== '' ? ragioneSociale : 'Cliente'
     const contractTitle = titolo && titolo.trim() !== '' ? titolo : (id ? `Contratto ${id}` : 'contratto')
     return `<p>Gentile ${cliente},</p><p>in allegato trova il contratto <strong>${contractTitle}</strong>.</p><p>Restiamo a disposizione per ulteriori informazioni.</p><p>Cordiali saluti,<br />MediaPrint ERP</p>`
   }, [ragioneSociale, titolo, id])
 
+  // Apre modal invio email compilando valori di default.
   const handleOpenEmailModal = useCallback(() => {
     setEmailError(null)
     setEmailSuccess(null)
@@ -533,11 +552,13 @@ const ContrattiDetail = () => {
     setEmailBody((prev) => (prev && prev.trim() !== '' ? prev : defaultEmailBody))
   }, [defaultEmailSubject, defaultEmailBody])
 
+  // Chiude modal invio email.
   const handleCloseEmailModal = useCallback(() => {
     if (emailSending) return
     setEmailModalVisible(false)
   }, [emailSending])
 
+  // Invia email contratto e crea revisione correlata.
   const handleSendContrattoEmail = useCallback(async () => {
     if (!token || !id) return
     const sanitizedTo = String(emailTo || '').trim()
@@ -579,6 +600,7 @@ const ContrattiDetail = () => {
   }, [token, id, emailTo, emailCc, emailSubject, emailBody, logout, user])
 
 
+  // Aggiorna file selezionato per upload.
   const handleFileInputChange = (event) => {
     const file = event?.target?.files?.[0] ?? null
     setFileForm({ file })
@@ -586,6 +608,7 @@ const ContrattiDetail = () => {
     setFileUploadSuccess(null)
   }
 
+  // Carica un nuovo file firmato associato al contratto.
   const handleFileUpload = async (event) => {
     if (event?.preventDefault) {
       event.preventDefault()
@@ -614,6 +637,7 @@ const ContrattiDetail = () => {
     }
   }
 
+  // Scarica il file selezionato.
   const handleFileDownload = async (file) => {
     if (!file?.id_file) {
       return
@@ -656,6 +680,7 @@ const ContrattiDetail = () => {
     }
   }
 
+  // Elimina il riferimento file dal database.
   const handleFileDelete = async (file) => {
     if (!file?.id_file || !token) {
       return
@@ -681,6 +706,7 @@ const ContrattiDetail = () => {
   }
 
 
+  // Imposta data inizio e mantiene la logica automatica data fine.
   const syncDataFine = (value) => {
     const raw = String(value || '').trim()
     setDataInizio(raw)
@@ -699,12 +725,14 @@ const ContrattiDetail = () => {
     setDataFine(next)
   }, [dataInizio, dataFineManual])
 
+  // Imposta data fine manuale disattivando l'autocalcolo.
   const handleDataFineChange = (value) => {
     const raw = String(value || '').trim()
     setDataFine(raw)
     setDataFineManual(raw !== '')
   }
 
+  // Reset stato del modal selettore prodotti.
   const resetProductModal = () => {
     setProdStep(1)
     setSelCat('')
@@ -716,6 +744,7 @@ const ContrattiDetail = () => {
     setModalPrice(0)
   }
 
+  // Reset stato del modal pacchetti.
   const resetPkgModal = () => {
     setPkgSearch('')
     setSelPacchetto('')
@@ -724,6 +753,7 @@ const ContrattiDetail = () => {
     setPkgOnlyActive(true)
   }
 
+  // Normalizza le righe nel formato richiesto dal backend.
   const normalizeLines = (rows) => {
     const out = []
     rows.forEach((row) => {
@@ -752,6 +782,7 @@ const ContrattiDetail = () => {
     return out
   }
 
+  // Salva le modifiche del contratto.
   const handleSubmit = async (e) => {
     e.preventDefault()
     setSaving(true)
@@ -784,6 +815,7 @@ const ContrattiDetail = () => {
     }
   }
 
+  // Elimina definitivamente il contratto.
   const handleDelete = async () => {
     if (!window.confirm('Confermi l\'eliminazione definitiva del contratto?')) return
     setDeleting(true)
@@ -801,18 +833,23 @@ const ContrattiDetail = () => {
     }
   }
 
+  // Indicizza i prodotti per id per velocizzare i lookup nelle righe.
   const productsMap = useMemo(() => {
     const map = new Map()
     prodOptions.forEach((p) => map.set(Number(p.id_prodotto), p))
     return map
   }, [prodOptions])
 
+  // Disabilita l'editing quando il contratto non e' modificabile o durante il salvataggio.
   const uiDisabled = !editable || saving
+  // Identifica gli stati finali del workflow.
   const isFinalCode = useCallback((code) => {
     const s = String(code || '').toLowerCase()
     return s === 'confermato' || s === 'rifiutato' || s === 'annullato'
   }, [])
+  // Definisce gli step visuali mostrati nella timeline di stato.
   const visualStatusSteps = useMemo(() => ['Bozza', 'Inviato', 'Finale'], [])
+  // Calcola lo step attivo della timeline in base allo stato corrente.
   const activeVisualStatusStep = useMemo(() => {
     const code = String(currentStatus?.code || '').toLowerCase()
     if (code === 'bozza') return 1
@@ -820,6 +857,7 @@ const ContrattiDetail = () => {
     if (isFinalCode(code)) return 3
     return 1
   }, [currentStatus, isFinalCode])
+  // Isola gli stati finali selezionabili (escludendo bozza/inviato).
   const finalStatusOptions = useMemo(() => {
     const all = Array.isArray(statusOptions) ? statusOptions : []
     return all.filter((s) => {
@@ -828,6 +866,7 @@ const ContrattiDetail = () => {
     })
   }, [statusOptions])
   const currentStatusLabel = currentStatus?.label ?? currentStatus?.code ?? '-'
+  // Deriva header e righe della revisione aperta nel modal dettaglio.
   const revisionDetail = revisionModalData?.payload?.detail ?? null
   const revisionHeader = revisionDetail?.contratto ?? {}
   const revisionLines = Array.isArray(revisionDetail?.righe) ? revisionDetail.righe : []

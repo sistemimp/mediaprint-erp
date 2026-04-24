@@ -13,6 +13,7 @@ header('Content-Type: application/json');
  */
 function resolveDashboardPeriod(?string $periodRaw): array
 {
+    // Valori non previsti non devono rompere la dashboard: fallback a monthly.
     $period = strtolower(trim((string) $periodRaw));
     $allowed = ['monthly', 'quarterly', 'semiannual', 'yearly'];
     if (!in_array($period, $allowed, true)) {
@@ -40,6 +41,7 @@ function resolveDashboardPeriod(?string $periodRaw): array
  */
 function buildComboLabel(string $comboKey, array $variations): string
 {
+    // combo_key e' persistita come "id+id": qui viene tradotta in etichetta per il frontend.
     $ids = array_values(array_filter(array_map('intval', explode('+', (string) $comboKey)), static fn (int $id): bool => $id > 0));
     if ($ids === []) {
         return '';
@@ -68,6 +70,7 @@ try {
     AuthGuard::requirePermissions($auth, ['prod.read']);
 
     if (AuthGuard::getAccountType($auth) === 'cliente') {
+        // Il cliente non deve vedere metriche globali di catalogo/fatturato.
         HttpResponse::json([
             'ok' => true,
             'kpi' => [
@@ -88,6 +91,7 @@ try {
     $periodStart = $range['start']->format('Y-m-d H:i:s');
     $periodEnd = $range['end']->format('Y-m-d H:i:s');
 
+    // Le bozze sono escluse: KPI coerenti con documenti fiscalmente "effettivi".
     $productStmt = $pdo->prepare(
         'SELECT
             p.id_prodotto,
@@ -123,6 +127,7 @@ try {
     $productRows = $productStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
     $comboPricing = [];
+    // Seed dal listino: cosi una combinazione resta visibile anche con venduto = 0.
     $comboStmt = $pdo->query(
         'SELECT id_prodotto, combo_key, prezzo
          FROM tb_prezzi_variazioni
@@ -150,6 +155,7 @@ try {
 
     $comboStatsSupported = false;
     try {
+        // Feature detection runtime: evita errori SQL su database non migrati.
         $checkStmt = $pdo->query("SHOW COLUMNS FROM tb_fatture_righe LIKE 'combo_key'");
         $comboStatsSupported = $checkStmt && $checkStmt->fetch(PDO::FETCH_ASSOC) !== false;
     } catch (Throwable) {
@@ -157,6 +163,7 @@ try {
     }
 
     if ($comboStatsSupported) {
+        // Sovrascrive solo le metriche, mantenendo prezzo_listino preso dal listino.
         $comboStatsStmt = $pdo->prepare(
             'SELECT
                 r.id_prodotto,
@@ -206,6 +213,7 @@ try {
     }
 
     $comboKeys = [];
+    // Raccolta ID unica per evitare query N+1 durante la costruzione delle label.
     foreach ($comboPricing as $prodCombos) {
         foreach ($prodCombos as $comboKey => $combo) {
             $ids = array_values(array_filter(array_map('intval', explode('+', (string) $comboKey)), static fn (int $id): bool => $id > 0));
@@ -246,6 +254,7 @@ try {
     $quantitaTotale = 0.0;
     $prodottiFatturati = 0;
     foreach ($productRows as $row) {
+        // "prodotti_fatturati" conta solo prodotti con fatturato > 0 nel periodo.
         $prodId = (int) ($row['id_prodotto'] ?? 0);
         $fatturato = isset($row['fatturato']) ? (float) $row['fatturato'] : 0.0;
         $quantita = isset($row['quantita']) ? (float) $row['quantita'] : 0.0;
@@ -269,6 +278,7 @@ try {
                     'fatture' => $combo['fatture'],
                 ];
             }
+            // Ordinamento stabile: prima valore economico, poi chiave per risultati ripetibili.
             usort($comboList, static function (array $a, array $b): int {
                 $byRevenue = ($b['fatturato'] ?? 0) <=> ($a['fatturato'] ?? 0);
                 if ($byRevenue !== 0) {

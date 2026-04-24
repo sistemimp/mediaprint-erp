@@ -20,6 +20,7 @@ import { cilLockLocked } from '@coreui/icons'
 import { changePassword } from '../../../services/passwordReset'
 import { useAuth } from '../../../context/AuthContext'
 
+// Vista ChangePassword: componente UI del modulo.
 const ChangePassword = () => {
   const navigate = useNavigate()
   const { token, updateUserSnapshot } = useAuth()

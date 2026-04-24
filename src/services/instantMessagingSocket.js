@@ -5,6 +5,7 @@ import { getStoredToken } from './apiClient'
 const DEFAULT_IM_WS_URL = 'wss://wss.mediaprint.it/ws/im'
 const DEFAULT_IM_WS_PATH = ''
 
+// Risolve configurazione websocket da variabili ambiente con fallback default.
 const resolveSocketConfig = () => {
   const proxyUrl = import.meta.env.VITE_IM_WS_PROXY_URL
   const configuredUrl = (proxyUrl && proxyUrl.trim()) || import.meta.env.VITE_IM_WS_URL
@@ -17,6 +18,7 @@ const resolveSocketConfig = () => {
   }
 }
 
+// Converte URL ws/wss in formato http/https compatibile con socket.io client.
 const normalizeSocketUrl = (rawUrl) => {
   if (!rawUrl) {
     return null
@@ -35,6 +37,7 @@ const normalizeSocketUrl = (rawUrl) => {
   }
 }
 
+// Normalizza il path socket assicurando lo slash iniziale.
 const normalizeSocketPath = (rawPath) => {
   if (!rawPath) {
     return null
@@ -47,6 +50,7 @@ const normalizeSocketPath = (rawPath) => {
 }
 
 
+// Hook realtime IM: gestisce connessione socket, reconnessioni ed eventi applicativi.
 export const useInstantMessagingSocket = ({
   url,
   path,
@@ -201,6 +205,7 @@ export const useInstantMessagingSocket = ({
     }
   }, [url, resolvedUrl, path, resolvedPath, resolvedToken, onMessage, onThreadCreated, onError, enabled, transportOverride])
 
+  // Invia un evento generico sul socket attivo.
   const sendEvent = useCallback((event, payload) => {
     const socket = socketRef.current
     if (!socket || !socket.connected) {
@@ -209,6 +214,7 @@ export const useInstantMessagingSocket = ({
     socket.emit(event, payload)
   }, [])
 
+  // Shortcut per invio messaggio chat su thread specifico.
   const sendMessage = useCallback(
     ({ threadId, body }) => {
       sendEvent('im.message', { threadId, body })
@@ -216,6 +222,7 @@ export const useInstantMessagingSocket = ({
     [sendEvent],
   )
 
+  // Shortcut per notificare creazione thread agli account destinatari.
   const notifyThreadCreated = useCallback(
     ({ threadId, targetAccountId, targetAccountIds }) => {
       sendEvent('im.thread.created', {
@@ -227,6 +234,7 @@ export const useInstantMessagingSocket = ({
     [sendEvent],
   )
 
+  // Shortcut per notificare lettura thread (best-effort).
   const notifyThreadRead = useCallback(
     ({ threadId }) => {
       const socket = socketRef.current

@@ -5,6 +5,7 @@ import { CRow, CCol, CCard, CCardHeader, CCardBody } from '@coreui/react'
 import { rgbToHex } from '@coreui/utils'
 import { DocsLink } from 'src/components'
 
+// Vista Colors: componente UI del modulo.
 const ThemeView = () => {
   const [color, setColor] = useState('rgb(255, 255, 255)')
   const ref = createRef()

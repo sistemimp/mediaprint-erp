@@ -20,6 +20,7 @@ import {
 import { fetchFattureDashboard } from '../../services/fatture'
 import { useAuth } from '../../context/AuthContext'
 
+// Formatta interi con separatori locali.
 const formatInteger = (value) => {
   if (value === null || value === undefined || Number.isNaN(Number(value))) {
     return '-'
@@ -27,6 +28,7 @@ const formatInteger = (value) => {
   return Number(value).toLocaleString('it-IT')
 }
 
+// Formatta importi in EUR.
 const formatCurrency = (value) => {
   const amount = typeof value === 'number' ? value : Number(value)
   if (Number.isNaN(amount)) {
@@ -35,10 +37,12 @@ const formatCurrency = (value) => {
   return amount.toLocaleString('it-IT', { style: 'currency', currency: 'EUR' })
 }
 
+// Placeholder standard per blocchi tabellari vuoti/loading.
 const renderTablePlaceholder = (text) => (
   <div className="text-center text-body-secondary small py-3">{text}</div>
 )
 
+// Rende il nome controparte come link se disponibile id anagrafica.
 const renderClientLink = (name, id) => {
   const label = name || '-'
   if (!id) {
@@ -69,6 +73,7 @@ const FattureDashboard = () => {
   const [error, setError] = useState(null)
   const [period, setPeriod] = useState('monthly')
 
+  // Carica KPI dashboard fatture in base al periodo selezionato.
   useEffect(() => {
     const controller = new AbortController()
     let isMounted = true
@@ -110,6 +115,7 @@ const FattureDashboard = () => {
     [period],
   )
 
+  // Prepara le card riepilogo con etichette dipendenti dal periodo.
   const summaryCards = useMemo(
     () => [
       { key: 'fatturato_mese', label: `Fatturato ${periodLabel.toLowerCase()}`, value: formatCurrency(kpi.fatturato_mese) },

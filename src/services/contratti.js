@@ -1,5 +1,6 @@
 import { apiFetch, buildApiUrl, getStoredToken } from './apiClient'
 
+// Recupera elenco contratti con filtri opzionali.
 export const fetchContratti = async ({ token, q, id_anagrafica, onlyActive, signal } = {}) => {
   const params = {}
   if (q) params.q = q
@@ -10,6 +11,7 @@ export const fetchContratti = async ({ token, q, id_anagrafica, onlyActive, sign
   return { items: Array.isArray(response?.items) ? response.items : [] }
 }
 
+// Recupera dettaglio completo di un contratto.
 export const fetchContrattoDetail = async ({ token, id, signal } = {}) => {
   const numericId = Number(id)
   if (!Number.isFinite(numericId) || numericId <= 0) {
@@ -23,6 +25,7 @@ export const fetchContrattoDetail = async ({ token, id, signal } = {}) => {
   return response ?? {}
 }
 
+// Recupera il contratto attivo per anagrafica/data.
 export const fetchContrattoAttivo = async ({ token, id_anagrafica, date, signal } = {}) => {
   const params = {}
   if (id_anagrafica) params.id_anagrafica = id_anagrafica
@@ -31,6 +34,7 @@ export const fetchContrattoAttivo = async ({ token, id_anagrafica, date, signal 
   return response ?? { contratto: null, righe: [] }
 }
 
+// Crea o aggiorna un contratto.
 export const saveContratto = async ({ token, body, signal } = {}) => {
   const response = await apiFetch('/contrattiSave.php', {
     method: 'POST',
@@ -41,6 +45,7 @@ export const saveContratto = async ({ token, body, signal } = {}) => {
   return response
 }
 
+// Elimina definitivamente un contratto.
 export const deleteContratto = async ({ token, id, signal } = {}) => {
   const numericId = Number(id)
   if (!Number.isFinite(numericId) || numericId <= 0) {
@@ -55,6 +60,7 @@ export const deleteContratto = async ({ token, id, signal } = {}) => {
   return response ?? { ok: true }
 }
 
+// Invia il contratto via email e registra la revisione.
 export const sendContrattoEmail = async ({ token, id, to, cc, subject, message, revisionNote, revisionOperator, signal } = {}) => {
   const numericId = Number(id)
   if (!Number.isFinite(numericId) || numericId <= 0) {
@@ -81,6 +87,7 @@ export const sendContrattoEmail = async ({ token, id, to, cc, subject, message, 
   return response ?? {}
 }
 
+// Aggiorna lo stato workflow del contratto.
 export const updateContrattoStatus = async ({ token, id, statusCode, operatorName, note, signal } = {}) => {
   const numericId = Number(id)
   const payload = {
@@ -115,6 +122,7 @@ export const updateContrattoStatus = async ({ token, id, statusCode, operatorNam
   return { data, statuses, currentStatus, editable, revisions }
 }
 
+// Recupera il dettaglio di una revisione contratto.
 export const fetchContrattoRevisionDetail = async ({ token, id, signal } = {}) => {
   const numericId = Number(id)
   if (!Number.isFinite(numericId) || numericId <= 0) {
@@ -128,6 +136,7 @@ export const fetchContrattoRevisionDetail = async ({ token, id, signal } = {}) =
   return response ?? {}
 }
 
+// Elenca i file associati al contratto.
 export const fetchContrattoFiles = async ({ token, id, signal } = {}) => {
   const numericId = Number(id)
   if (!Number.isFinite(numericId) || numericId <= 0) {
@@ -141,6 +150,7 @@ export const fetchContrattoFiles = async ({ token, id, signal } = {}) => {
   return Array.isArray(payload?.items) ? payload.items : []
 }
 
+// Carica un file e lo collega al contratto.
 export const uploadContrattoFile = async ({ token, id, file, createdBy, signal } = {}) => {
   const numericId = Number(id)
   if (!Number.isFinite(numericId) || numericId <= 0) {
@@ -191,6 +201,7 @@ export const uploadContrattoFile = async ({ token, id, file, createdBy, signal }
   return payload ?? {}
 }
 
+// Rimuove il record file associato al contratto.
 export const deleteContrattoFile = async ({ token, id, signal } = {}) => {
   const numericId = Number(id)
   if (!Number.isFinite(numericId) || numericId <= 0) {

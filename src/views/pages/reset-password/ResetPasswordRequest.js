@@ -19,6 +19,7 @@ import { cilEnvelopeClosed } from '@coreui/icons'
 
 import { requestPasswordReset } from '../../../services/passwordReset'
 
+// Vista ResetPasswordRequest: componente UI del modulo.
 const ResetPasswordRequest = () => {
   const [identifier, setIdentifier] = useState('')
   const [loading, setLoading] = useState(false)

@@ -26,6 +26,7 @@ import { fetchPermissions } from '../../services/permissions'
 import { uploadProfileAvatar } from '../../services/profileAvatar'
 import avatarPlaceholder from '../../assets/images/avatars/8.jpg'
 
+// Normalizza una data in formato locale italiano, con fallback robusto.
 const formatDateTime = (value) => {
   if (!value) {
     return 'N/D'
@@ -37,6 +38,7 @@ const formatDateTime = (value) => {
   return parsed.toLocaleString('it-IT')
 }
 
+// Converte una stringa base64url in byte array per le API WebAuthn.
 const base64UrlToBuffer = (value) => {
   const padding = '='.repeat((4 - (value.length % 4)) % 4)
   const base64 = value.replace(/-/g, '+').replace(/_/g, '/') + padding
@@ -48,6 +50,7 @@ const base64UrlToBuffer = (value) => {
   return buffer
 }
 
+// Converte un buffer binario in base64url per serializzare challenge e risposte WebAuthn.
 const bufferToBase64Url = (buffer) => {
   const bytes = new Uint8Array(buffer)
   let binary = ''
@@ -111,6 +114,7 @@ const Profile = () => {
     [roles],
   )
 
+  // Carica il catalogo completo dei permessi da mostrare in sola lettura nel profilo.
   useEffect(() => {
     const controller = new AbortController()
     let active = true
@@ -139,6 +143,7 @@ const Profile = () => {
     }
   }, [logout, token])
 
+  // Genera/revoca la preview locale del nuovo avatar selezionato.
   useEffect(() => {
     if (!selectedAvatar) {
       setAvatarPreview(null)
@@ -149,6 +154,7 @@ const Profile = () => {
     return () => URL.revokeObjectURL(preview)
   }, [selectedAvatar])
 
+  // Aggiorna il file avatar scelto dall'utente e resetta gli alert precedenti.
   const handleAvatarChange = (event) => {
     const file = event.target.files?.[0] || null
     setAvatarError(null)
@@ -156,6 +162,7 @@ const Profile = () => {
     setSelectedAvatar(file)
   }
 
+  // Invia il nuovo avatar al backend e ricarica l'immagine profilo in sessione.
   const handleAvatarUpload = async () => {
     if (!selectedAvatar || avatarUploading) {
       return
@@ -175,6 +182,7 @@ const Profile = () => {
     }
   }
 
+  // Recupera l'elenco passkey registrate per l'account corrente.
   const loadPasskeys = useCallback(async () => {
     if (!token) {
       setPasskeys([])
@@ -195,10 +203,12 @@ const Profile = () => {
     }
   }, [token])
 
+  // Esegue il caricamento iniziale delle passkey all'apertura pagina.
   useEffect(() => {
     loadPasskeys()
   }, [loadPasskeys])
 
+  // Rimuove una passkey esistente e aggiorna la lista locale.
   const handleRemovePasskey = useCallback(
     async (credentialId) => {
       if (!token || !credentialId) {
@@ -224,6 +234,7 @@ const Profile = () => {
     [loadPasskeys, token],
   )
 
+  // Disattiva MFA lato server e riallinea lo snapshot utente nel contesto auth.
   const disableMfa = useCallback(async () => {
     if (!token) {
       return
@@ -251,6 +262,7 @@ const Profile = () => {
     }
   }, [token, user, updateUserSnapshot])
 
+  // Registra una nuova passkey usando challenge WebAuthn e conferma backend.
   const handleRegisterPasskey = useCallback(async () => {
     if (!token) {
       return
@@ -325,6 +337,7 @@ const Profile = () => {
     }
   }, [loadPasskeys, passkeyLabel, token, updateUserSnapshot, user])
 
+  // Esegue una challenge di verifica passkey per validare il dispositivo corrente.
   const handleVerifyPasskey = useCallback(async () => {
     if (!token) {
       return
@@ -385,6 +398,7 @@ const Profile = () => {
 
   const isOtpActive = Boolean(user?.hasMfa && ['otp', 'both'].includes(user?.mfa_method))
 
+  // Richiede al backend i dati OTP (secret/uri) per configurare una nuova app autenticatore.
   const startOtpSetup = useCallback(async () => {
     if (!token) {
       return
@@ -402,6 +416,7 @@ const Profile = () => {
     }
   }, [token])
 
+  // Gestisce il toggle OTP: se attiva la disabilita, altrimenti avvia setup.
   const handleOtpToggle = useCallback(async () => {
     if (!token) {
       return
@@ -413,6 +428,7 @@ const Profile = () => {
     await startOtpSetup()
   }, [disableMfa, isOtpActive, startOtpSetup, token])
 
+  // Valida i requisiti minimi di complessita della nuova password.
   const validatePasswordComplexity = useCallback((value) => {
     if (value.length < 8) {
       return 'La nuova password deve contenere almeno 8 caratteri.'
@@ -429,6 +445,7 @@ const Profile = () => {
     return null
   }, [])
 
+  // Effettua il cambio password con validazioni client-side prima della chiamata API.
   const handlePasswordChange = useCallback(async () => {
     if (!token) {
       return

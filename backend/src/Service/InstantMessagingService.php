@@ -93,6 +93,7 @@ final class InstantMessagingService
 
         $pairKey = count($allIds) === 2
             ? $this->buildPairKey($allIds[0], $allIds[1])
+            // Per gruppi la chiave include tutti gli ID ordinati per rendere il thread univoco.
             : $this->buildGroupKey($allIds);
 
         $existing = $this->repository->findThreadByPairKey($pairKey);
@@ -235,6 +236,7 @@ final class InstantMessagingService
         $isOwn = $viewerAccountId !== null && $senderId === $viewerAccountId;
         $isRead = false;
         if ($isOwn && $otherReadAt) {
+            // "letto" su messaggi propri richiede che tutti gli altri partecipanti abbiano letto oltre quel timestamp.
             $messageTime = strtotime((string) ($row['created_at'] ?? ''));
             $readTime = strtotime($otherReadAt);
             if ($messageTime !== false && $readTime !== false) {
@@ -292,6 +294,7 @@ final class InstantMessagingService
 
     private function isAllowedPair(string $leftCategory, string $rightCategory): bool
     {
+        // Admin bypassa i vincoli; altrimenti sono consentite solo coppie con almeno un operatore.
         if ($leftCategory === 'admin' || $rightCategory === 'admin') {
             return true;
         }

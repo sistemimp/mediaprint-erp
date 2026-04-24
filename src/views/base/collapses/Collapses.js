@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { CButton, CCard, CCardBody, CCardHeader, CCol, CCollapse, CRow } from '@coreui/react'
 import { DocsComponents, DocsExample } from 'src/components'
 
+// Vista Collapses: componente UI del modulo.
 const Collapses = () => {
   const [visible, setVisible] = useState(false)
   const [visibleHorizontal, setVisibleHorizontal] = useState(false)

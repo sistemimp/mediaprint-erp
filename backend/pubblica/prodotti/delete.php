@@ -34,6 +34,7 @@ try {
     }
 
     $repo = new ProdottiRepository(Database::getConnection());
+    // Soft delete: il prodotto resta storicizzato ma non piu' selezionabile.
     $repo->deactivateProdotto($id);
     HttpResponse::json(['status' => 'ok'], 200);
 } catch (RuntimeException $exception) {

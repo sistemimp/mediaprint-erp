@@ -20,6 +20,7 @@ import {
 } from '@coreui/react'
 import { DocsComponents, DocsExample } from 'src/components'
 
+// Vista ButtonGroups: componente UI del modulo.
 const ButtonGroups = () => {
   return (
     <CRow>

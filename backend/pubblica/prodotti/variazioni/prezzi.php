@@ -35,6 +35,7 @@ try {
         $input = json_decode(file_get_contents('php://input') ?: 'null', true) ?: [];
         $idProdotto = isset($input['id_prodotto']) ? (int) $input['id_prodotto'] : 0;
         if ($idProdotto <= 0) { throw new RuntimeException('ID prodotto non valido', 422); }
+        // Normalizzazione unica usata da upsert/delete singoli e bulk per produrre combo_key canonica.
         $normalizeVarIds = static function (array $ids): array {
             $filtered = array_values(array_filter(array_map(
                 static fn ($value): int => (int) $value,
@@ -57,6 +58,7 @@ try {
                 HttpResponse::json(['ok' => true, 'processed' => 0, 'seeded_articles' => 0], 200);
                 return;
             }
+            // Guardia applicativa per evitare richieste massive in un'unica transazione.
             if (count($rows) > 2000) {
                 throw new RuntimeException('Troppe combinazioni in una singola richiesta.', 422);
             }
@@ -80,6 +82,7 @@ try {
                     }
                     $prezzo = isset($row['prezzo']) ? (float) $row['prezzo'] : 0.0;
                     $repo->upsertPrezzoCombinato($idProdotto, $normalizedVarIds, $prezzo);
+                    // Sincronizza automaticamente i consumi magazzino in base alle variazioni selezionate.
                     $seededTotal += $magazzinoRepo->seedComboConsumptionsFromVariations($idProdotto, $normalizedVarIds);
                     $processed++;
                 }
@@ -114,6 +117,7 @@ try {
                 HttpResponse::json(['ok' => true, 'deleted' => 0], 200);
                 return;
             }
+            // Stessa soglia del bulk_upsert per tempi/lock prevedibili.
             if (count($rows) > 2000) {
                 throw new RuntimeException('Troppe combinazioni in una singola richiesta.', 422);
             }

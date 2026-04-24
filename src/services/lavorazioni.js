@@ -1,5 +1,6 @@
 import { apiFetch, buildApiUrl, getStoredToken } from './apiClient'
 
+// Rimuove parametri null/vuoti prima di inviarli come query string.
 const sanitizeParams = (params = {}) => {
   const clean = {}
   Object.entries(params).forEach(([key, value]) => {
@@ -21,6 +22,7 @@ const defaultPagination = {
   total_pages: 1,
 }
 
+// Recupera KPI dashboard lavorazioni.
 export const fetchLavorazioniDashboard = async ({
   token,
   periodo,
@@ -43,6 +45,7 @@ export const fetchLavorazioniDashboard = async ({
   return payload ?? {}
 }
 
+// Recupera lista lavorazioni con filtri, paginazione e summary.
 export const fetchLavorazioniList = async ({
   token,
   page = 1,
@@ -80,6 +83,7 @@ export const fetchLavorazioniList = async ({
   }
 }
 
+// Recupera il dettaglio completo di una lavorazione.
 export const fetchLavorazioneDetail = async ({ token, id, signal } = {}) => {
   if (!id) {
     throw new Error('ID lavorazione mancante')
@@ -94,6 +98,7 @@ export const fetchLavorazioneDetail = async ({ token, id, signal } = {}) => {
   return payload ?? null
 }
 
+// Aggiorna lo stato della lavorazione.
 export const updateLavorazioneStatus = async ({ token, id, stato, signal } = {}) => {
   if (!id) {
     throw new Error('ID lavorazione mancante')
@@ -117,6 +122,7 @@ export const updateLavorazioneStatus = async ({ token, id, stato, signal } = {})
   return payload ?? { ok: true }
 }
 
+// Recupera i template attivita disponibili.
 export const fetchLavorazioneActivityTemplates = async ({ token, all = false, signal } = {}) => {
   const payload = await apiFetch('/lavorazioniActivityTemplates.php', {
     token,
@@ -131,6 +137,7 @@ export const fetchLavorazioneActivityTemplates = async ({ token, all = false, si
   return Array.isArray(payload?.items) ? payload.items : []
 }
 
+// Crea o aggiorna un template attivita lavorazione.
 export const saveLavorazioneActivityTemplate = async ({
   token,
   idTemplate,
@@ -163,6 +170,7 @@ export const saveLavorazioneActivityTemplate = async ({
   return payload ?? {}
 }
 
+// Crea una nuova attivita su una lavorazione.
 export const createLavorazioneActivity = async ({
   token,
   idLavorazione,
@@ -201,6 +209,7 @@ export const createLavorazioneActivity = async ({
   return payload ?? {}
 }
 
+// Recupera configurazioni assegnazione reparti/operatori.
 export const fetchLavorazioniAssignmentsConfig = async ({ token, signal } = {}) => {
   const payload = await apiFetch('/lavorazioniAssignmentsConfig.php', {
     token,
@@ -213,6 +222,7 @@ export const fetchLavorazioniAssignmentsConfig = async ({ token, signal } = {}) 
   }
 }
 
+// Assegna reparto/operatori alla lavorazione.
 export const assignLavorazione = async ({ token, idLavorazione, repartoId, operatori, signal } = {}) => {
   if (!idLavorazione) {
     throw new Error('ID lavorazione mancante')
@@ -238,6 +248,7 @@ export const assignLavorazione = async ({ token, idLavorazione, repartoId, opera
   })
 }
 
+// Assegna reparto/operatori a una singola attivita.
 export const assignLavorazioneActivity = async ({
   token,
   idAttivita,
@@ -269,6 +280,7 @@ export const assignLavorazioneActivity = async ({
   })
 }
 
+// Aggiorna informazioni generali della lavorazione (titolo, date, note, ecc.).
 export const updateLavorazioneInfo = async ({
   token,
   idLavorazione,
@@ -329,6 +341,7 @@ export const updateLavorazioneInfo = async ({
   return payload ?? {}
 }
 
+// Invia notifica operatori su lavorazione o attivita.
 export const notifyLavorazioneOperators = async ({
   token,
   idLavorazione,
@@ -365,6 +378,7 @@ export const notifyLavorazioneOperators = async ({
   })
 }
 
+// Aggiorna lo stato di una attivita.
 export const updateLavorazioneActivityStatus = async ({
   token,
   idAttivita,
@@ -401,6 +415,7 @@ export const updateLavorazioneActivityStatus = async ({
   return payload ?? {}
 }
 
+// Salva il report operativo di una attivita.
 export const updateLavorazioneActivityReport = async ({
   token,
   idAttivita,
@@ -432,6 +447,7 @@ export const updateLavorazioneActivityReport = async ({
   return payload ?? {}
 }
 
+// Salva quantita CED associate all'attivita.
 export const saveLavorazioneActivityCedQuantities = async ({
   token,
   idAttivita,
@@ -457,6 +473,7 @@ export const saveLavorazioneActivityCedQuantities = async ({
   return payload ?? { ok: true }
 }
 
+// Elimina una attivita dalla lavorazione.
 export const deleteLavorazioneActivity = async ({ token, idAttivita, signal } = {}) => {
   if (!idAttivita) {
     throw new Error('ID attività mancante')
@@ -476,6 +493,7 @@ export const deleteLavorazioneActivity = async ({ token, idAttivita, signal } = 
   return payload ?? {}
 }
 
+// Crea una riga preventivo a partire dai dati CED.
 export const addPreventivoLineFromCed = async ({
   token,
   idPreventivo,
@@ -516,6 +534,7 @@ export const addPreventivoLineFromCed = async ({
   return payload ?? { ok: true }
 }
 
+// Elimina una riga preventivo generata da CED.
 export const deletePreventivoLineFromCed = async ({
   token,
   idPreventivo,
@@ -544,6 +563,7 @@ export const deletePreventivoLineFromCed = async ({
   return payload ?? { ok: true }
 }
 
+// Aggiorna i campi editabili di una attivita.
 export const updateLavorazioneActivity = async ({
   token,
   idAttivita,
@@ -596,6 +616,7 @@ export const updateLavorazioneActivity = async ({
   return payload ?? {}
 }
 
+// Recupera notifiche lavorazione/attivita per utente.
 export const fetchLavorazioneNotifications = async ({
   token,
   accountId,
@@ -620,6 +641,7 @@ export const fetchLavorazioneNotifications = async ({
   })
 }
 
+// Marca come lette le notifiche selezionate.
 export const markLavorazioneNotificationsRead = async ({ token, accountId, notificationIds, signal } = {}) => {
   if (!accountId) {
     throw new Error('ID account mancante')
@@ -641,6 +663,7 @@ export const markLavorazioneNotificationsRead = async ({ token, accountId, notif
   })
 }
 
+// Recupera documenti collegati alla lavorazione.
 export const fetchLavorazioneDocuments = async ({ token, idLavorazione, signal } = {}) => {
   if (!idLavorazione) {
     throw new Error('ID lavorazione mancante')
@@ -653,6 +676,7 @@ export const fetchLavorazioneDocuments = async ({ token, idLavorazione, signal }
   return payload ?? {}
 }
 
+// Recupera file allegati alla lavorazione.
 export const fetchLavorazioneFiles = async ({ token, idLavorazione, signal } = {}) => {
   if (!idLavorazione) {
     throw new Error('ID lavorazione mancante')
@@ -665,6 +689,7 @@ export const fetchLavorazioneFiles = async ({ token, idLavorazione, signal } = {
   return Array.isArray(payload?.items) ? payload.items : []
 }
 
+// Carica un file e lo collega alla lavorazione.
 export const uploadLavorazioneFile = async ({
   token,
   idLavorazione,

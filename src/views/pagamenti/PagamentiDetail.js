@@ -34,6 +34,7 @@ import { assignPagamentoToAnagrafica, fetchPagamentoDetail, searchPagamentiFattu
 import { deleteFatturaPagamento, saveFatturaPagamento } from '../../services/fatture'
 
 const currencyFormatter = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' })
+// Normalizza un valore numerico o restituisce null.
 const toNumberOrNull = (value) => {
   if (value === null || value === undefined) {
     return null
@@ -41,6 +42,7 @@ const toNumberOrNull = (value) => {
   const numeric = Number(value)
   return Number.isFinite(numeric) ? numeric : null
 }
+// Arrotonda a due decimali un importo valuta.
 const roundCurrencyValue = (value) => {
   const numeric = toNumberOrNull(value)
   if (numeric === null) {
@@ -48,6 +50,7 @@ const roundCurrencyValue = (value) => {
   }
   return Math.round(numeric * 100) / 100
 }
+// Estrae un possibile nome cliente dal riferimento pagamento importato.
 const extractCustomerHintFromReference = (reference, fallbackName) => {
   const fallback = typeof fallbackName === 'string' ? fallbackName.trim() : ''
   if (typeof reference !== 'string') {
@@ -83,6 +86,7 @@ const extractCustomerHintFromReference = (reference, fallbackName) => {
   return candidate.length > 120 ? candidate.slice(0, 120).trim() : candidate
 }
 
+// Dettaglio pagamento con assegnazione cliente e collegamento a fatture.
 const PagamentiDetail = () => {
   const { token, logout } = useAuth()
   const navigate = useNavigate()
@@ -91,6 +95,7 @@ const PagamentiDetail = () => {
   const parsedId = Number(query.get('id'))
   const id = Number.isFinite(parsedId) && parsedId > 0 ? parsedId : 0
 
+  // Se manca l'id valido torna alla lista pagamenti.
   useEffect(() => {
     if (!id) {
       navigate('/pagamenti/lista', { replace: true })
@@ -122,6 +127,7 @@ const PagamentiDetail = () => {
   const [assignCustomerSaving, setAssignCustomerSaving] = useState(false)
   const [assignCustomerSubmitError, setAssignCustomerSubmitError] = useState(null)
 
+  // Carica i dati completi del pagamento corrente.
   const loadDetail = useCallback(
     async (abortSignal) => {
       if (!token || !id) return
@@ -151,6 +157,7 @@ const PagamentiDetail = () => {
     [token, id, logout],
   )
 
+  // Trigger iniziale/ricalcolo per il caricamento dettaglio.
   useEffect(() => {
     if (!token || !id) return
     const controller = new AbortController()
@@ -158,6 +165,7 @@ const PagamentiDetail = () => {
     return () => controller.abort()
   }, [token, id, loadDetail])
 
+  // Ricarica il dettaglio dopo operazioni di mutazione.
   const refreshRecord = useCallback(async () => {
     await loadDetail()
   }, [loadDetail])
@@ -225,6 +233,7 @@ const PagamentiDetail = () => {
   const canAssignMore = Boolean(record)
   const deleteDisabled = deleting || !record
 
+  // Elimina il pagamento corrente.
   const handleDelete = async () => {
     if (!record || !token || !id) return
     if (!window.confirm('Confermi la cancellazione del pagamento?')) return
@@ -248,6 +257,7 @@ const PagamentiDetail = () => {
     }
   }
 
+  // Rimuove una singola assegnazione pagamento-fattura.
   const handleRemoveAssignment = async (assignment) => {
     if (!assignment?.id_pagamento || !assignment?.id_fattura || !token) return
     if (!window.confirm('Confermi la rimozione dell\'assegnazione selezionata?')) return
@@ -275,6 +285,7 @@ const PagamentiDetail = () => {
     }
   }
 
+  // Cerca fatture aperte per il modal di assegnazione.
   const performAssignmentSearch = async (overrideQuery) => {
     if (!token) return
     const queryValue = overrideQuery ?? assignmentSearch
@@ -315,6 +326,7 @@ const PagamentiDetail = () => {
     }
   }
 
+  // Apre il modal per assegnare il residuo a una fattura.
   const openAssignmentModal = () => {
     if (!record) return
     const defaultAmount = residuoDisponibile != null ? Number(residuoDisponibile) : null
@@ -330,6 +342,7 @@ const PagamentiDetail = () => {
     }
   }
 
+  // Chiude e resetta lo stato del modal assegnazione fattura.
   const closeAssignmentModal = () => {
     setAssignmentModalOpen(false)
     setAssignmentResults([])
@@ -339,6 +352,7 @@ const PagamentiDetail = () => {
     setAssignmentSubmitError(null)
   }
 
+  // Seleziona la fattura target e propone un importo suggerito.
   const handleSelectAssignmentInvoice = (invoice) => {
     if (!invoice) return
     setAssignmentSelected(invoice)
@@ -354,6 +368,7 @@ const PagamentiDetail = () => {
     }
   }
 
+  // Conferma assegnazione importo pagamento a fattura selezionata.
   const handleAssignmentSubmit = async (event) => {
     event?.preventDefault?.()
     if (!record || !token) return
@@ -405,6 +420,7 @@ const PagamentiDetail = () => {
     }
   }
 
+  // Carica elenco clienti per il modal "assegna cliente".
   useEffect(() => {
     if (!assignCustomerModalOpen || !token) return
     const controller = new AbortController()
@@ -441,6 +457,7 @@ const PagamentiDetail = () => {
     return () => controller.abort()
   }, [assignCustomerModalOpen, assignCustomerSearchTerm, token, logout])
 
+  // Apre il modal per assegnare/aggiornare il cliente del pagamento.
   const openAssignCustomerModal = () => {
     if (!record) return
     const initialSearch =
@@ -461,6 +478,7 @@ const PagamentiDetail = () => {
     setAssignCustomerSubmitError(null)
   }
 
+  // Chiude e resetta lo stato del modal cliente.
   const closeAssignCustomerModal = () => {
     setAssignCustomerModalOpen(false)
     setAssignCustomerSearchTerm('')
@@ -471,6 +489,7 @@ const PagamentiDetail = () => {
     setAssignCustomerSubmitError(null)
   }
 
+  // Salva l'associazione del pagamento alla anagrafica selezionata.
   const handleAssignCustomerSubmit = async (event) => {
     event?.preventDefault?.()
     if (!record || !token) return

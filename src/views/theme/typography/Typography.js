@@ -2,6 +2,7 @@ import React from 'react'
 import { CCard, CCardHeader, CCardBody } from '@coreui/react'
 import { DocsLink } from 'src/components'
 
+// Vista Typography: componente UI del modulo.
 const Typography = () => {
   return (
     <>

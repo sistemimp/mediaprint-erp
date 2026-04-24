@@ -18,6 +18,7 @@ import { useAuth } from '../../context/AuthContext'
 import { createProdotto, fetchCategorieProdotti } from '../../services/prodotti'
 import PermissionButton from '../../components/PermissionButton'
 
+// Form creazione prodotto con selezione categoria e prezzo base.
 const ProdottiCreate = () => {
   const navigate = useNavigate()
   const { token, logout } = useAuth()
@@ -28,6 +29,7 @@ const ProdottiCreate = () => {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
 
+  // Carica le categorie disponibili per la select del form.
   useEffect(() => {
     if (!token) return
     const controller = new AbortController()
@@ -46,11 +48,13 @@ const ProdottiCreate = () => {
     return () => controller.abort()
   }, [token, logout])
 
+  // Aggiorna il draft form al cambio campo.
   const onChange = (e) => {
     const { name, value } = e.target
     setForm((prev) => ({ ...prev, [name]: value }))
   }
 
+  // Invia la richiesta di creazione e apre il dettaglio nuovo record.
   const onSubmit = async (e) => {
     e.preventDefault()
     setSaving(true)

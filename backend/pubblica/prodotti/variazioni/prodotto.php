@@ -38,6 +38,7 @@ try {
         if ($idProdotto <= 0 || $idVariazione <= 0) { throw new RuntimeException('Parametri non validi', 422); }
 
         if ($action === 'link') {
+            // Operazione idempotente lato DB grazie a ON DUPLICATE KEY UPDATE nel repository.
             $repo->linkVariazioneToProdotto($idProdotto, $idVariazione);
             HttpResponse::json(['ok' => true], 200);
         } elseif ($action === 'unlink') {

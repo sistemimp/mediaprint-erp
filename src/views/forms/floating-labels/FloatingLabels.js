@@ -13,6 +13,7 @@ import {
 } from '@coreui/react'
 import { DocsComponents, DocsExample } from 'src/components'
 
+// Vista FloatingLabels: componente UI del modulo.
 const FloatingLabels = () => {
   return (
     <CRow>

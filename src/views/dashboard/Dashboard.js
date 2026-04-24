@@ -23,6 +23,7 @@ import { CChartBar } from '@coreui/react-chartjs'
 
 import { fetchDashboardSales, fetchNewClientsList } from '../../services/dashboard'
 
+// Formatta importi monetari in euro con locale italiano.
 const formatCurrency = (value) => {
   const amount = typeof value === 'number' ? value : Number(value)
   if (Number.isNaN(amount)) {
@@ -31,6 +32,7 @@ const formatCurrency = (value) => {
   return amount.toLocaleString('it-IT', { style: 'currency', currency: 'EUR' })
 }
 
+// Formatta un valore percentuale con una cifra decimale.
 const formatPercent = (value) => {
   if (value === null || value === undefined || Number.isNaN(Number(value))) {
     return '-'
@@ -38,6 +40,7 @@ const formatPercent = (value) => {
   return `${Number(value).toFixed(1)}%`
 }
 
+// Formatta numeri interi con separatori locali.
 const formatInteger = (value) => {
   if (value === null || value === undefined || Number.isNaN(Number(value))) {
     return '-'
@@ -54,6 +57,7 @@ const barOptions = {
   },
 }
 
+// Costruisce il dataset dei mini grafici bar a partire da una serie sorgente.
 const formatBarSeries = ({ source, labelKey, valueKey, limit = 6, color }) => {
   if (!Array.isArray(source) || source.length === 0) {
     return null
@@ -85,6 +89,7 @@ const PERIOD_OPTIONS = [
 ]
 const NEW_CLIENTS_PAGE_SIZE = 5
 
+// Estrae anno/mese da etichette periodo nel formato YYYY-MM o YYYY/MM.
 const parsePeriodLabel = (label) => {
   const match = String(label || '').match(/^(\d{4})[-/](\d{1,2})/)
   if (!match) {
@@ -98,6 +103,7 @@ const parsePeriodLabel = (label) => {
   return { year, month }
 }
 
+// Converte etichette mensili in gruppi coerenti con la periodicita selezionata.
 const resolveGroupLabel = (label, period) => {
   const parsed = parsePeriodLabel(label)
   if (!parsed) {
@@ -119,6 +125,7 @@ const resolveGroupLabel = (label, period) => {
   return { key: `${year}-${paddedMonth}`, label: `${year}-${paddedMonth}` }
 }
 
+// Aggrega una serie numerica (fatturato/clienti) per periodo visualizzato.
 const aggregateNumericSeries = (source, labelKey, valueKey, period) => {
   if (!Array.isArray(source) || source.length === 0) {
     return []
@@ -146,6 +153,7 @@ const aggregateNumericSeries = (source, labelKey, valueKey, period) => {
   return order.map((key) => grouped.get(key))
 }
 
+// Aggrega il tasso di conversione con media pesata sui volumi quando disponibili.
 const aggregateConversionSeries = (source, period) => {
   if (!Array.isArray(source) || source.length === 0) {
     return []
@@ -217,6 +225,7 @@ const aggregateConversionSeries = (source, period) => {
   })
 }
 
+// Genera una paginazione "smart" con ellissi per liste lunghe.
 const getSmartPaginationItems = (totalPages, currentPage, neighbors = 2) => {
   if (!Number.isFinite(totalPages) || totalPages <= 0) {
     return []
@@ -250,6 +259,7 @@ const getSmartPaginationItems = (totalPages, currentPage, neighbors = 2) => {
   return result
 }
 
+// Calcola trend semplice confrontando ultimo punto serie con il precedente.
 const getTrendFromSeries = (series, key) => {
   if (!Array.isArray(series) || series.length < 2) {
     return null
@@ -282,6 +292,7 @@ const Dashboard = () => {
   const [newClientsPage, setNewClientsPage] = useState(0)
   const [period, setPeriod] = useState('monthly')
 
+  // Carica KPI e serie principali ogni volta che cambia il periodo.
   useEffect(() => {
     const controller = new AbortController()
     let isMounted = true
@@ -319,6 +330,7 @@ const Dashboard = () => {
     }
   }, [period])
 
+  // Carica la lista nuovi clienti per il periodo corrente.
   useEffect(() => {
     const controller = new AbortController()
     let isMounted = true
@@ -356,6 +368,7 @@ const Dashboard = () => {
     }
   }, [period])
 
+  // Serie aggregate per i grafici in base alla periodicita scelta.
   const aggregatedRevenueSeries = useMemo(
     () => aggregateNumericSeries(revenueSeries, 'mese', 'totale', period),
     [revenueSeries, period],
@@ -439,6 +452,7 @@ const Dashboard = () => {
     [period],
   )
 
+  // Quando cambia il dataset resetta la paginazione alla prima pagina.
   useEffect(() => {
     setNewClientsPage(0)
   }, [newClients.length])
@@ -454,6 +468,7 @@ const Dashboard = () => {
     [newClientsPageCount, newClientsPageIndex],
   )
 
+  // Render helper per visualizzare il valore insieme alla freccia trend.
   const renderValueWithTrend = (value, trend) => (
     <span className="d-inline-flex align-items-center gap-2">
       <span>{value}</span>
@@ -461,6 +476,7 @@ const Dashboard = () => {
     </span>
   )
 
+  // Render helper: collega il cliente all'anagrafica se disponibile id.
   const renderClientLink = (name, id) => {
     const label = name || '-'
     if (!id) {
@@ -473,6 +489,7 @@ const Dashboard = () => {
     )
   }
 
+  // Placeholder uniforme per stati loading/empty/error nelle card tabellari.
   const renderTablePlaceholder = (text) => (
     <div className="text-center text-body-secondary small py-3">{text}</div>
   )

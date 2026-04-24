@@ -44,6 +44,7 @@ const PRIORITY_OPTIONS = [
   { value: 'critica', label: 'Critica' },
 ]
 
+// Mappa lo stato ticket acquisti in colore badge.
 const statusColor = (status) => {
   if (status === 'aperto') return 'warning'
   if (status === 'in_lavorazione') return 'info'
@@ -52,6 +53,7 @@ const statusColor = (status) => {
   return 'primary'
 }
 
+// Mappa la priorita in colore badge.
 const priorityColor = (priority) => {
   if (priority === 'bassa') return 'success'
   if (priority === 'media') return 'warning'
@@ -59,6 +61,7 @@ const priorityColor = (priority) => {
   return 'secondary'
 }
 
+// Formatta data/ora in locale italiano.
 const formatDate = (value) => {
   if (!value) return '-'
   const date = new Date(value)
@@ -81,6 +84,7 @@ const AcquistiRichiesteList = () => {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
 
+  // Carica la lista richieste acquisto in base ai filtri correnti.
   const loadItems = useCallback(async () => {
     if (!token) return
     setLoading(true)
@@ -105,6 +109,7 @@ const AcquistiRichiesteList = () => {
     }
   }, [filters, logout, token])
 
+  // Carica account operatori per filtro assegnatario.
   useEffect(() => {
     if (!token) return
     const controller = new AbortController()
@@ -126,24 +131,29 @@ const AcquistiRichiesteList = () => {
     return () => controller.abort()
   }, [token])
 
+  // Primo caricamento e refresh quando cambia la callback di fetch.
   useEffect(() => {
     loadItems()
   }, [loadItems])
 
+  // Aggiorna filtro locale quando cambia un input.
   const handleChange = (event) => {
     const { name, value } = event.target
     setFilters((prev) => ({ ...prev, [name]: value }))
   }
 
+  // Applica filtri senza refresh pagina.
   const handleSearch = (event) => {
     event.preventDefault()
     loadItems()
   }
 
+  // Ripristina filtri default.
   const handleReset = () => {
     setFilters({ q: '', stato: '', priorita: '', assigned_to: '' })
   }
 
+  // Costruisce option del select "assegnato a".
   const accountOptions = useMemo(() => {
     if (!Array.isArray(accounts)) return []
     return accounts.map((acc) => ({

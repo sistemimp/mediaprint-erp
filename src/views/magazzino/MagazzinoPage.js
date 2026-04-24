@@ -42,6 +42,7 @@ import {
   updateMagazzinoStockConfig,
 } from '../../services/magazzino'
 
+// Tipi macchina disponibili per filtro/form.
 const MACHINE_TYPES = [
   { value: '', label: 'Tutti i tipi' },
   { value: 'stampante', label: 'Stampante' },
@@ -49,6 +50,7 @@ const MACHINE_TYPES = [
   { value: 'cellophanatrice', label: 'Cellophanatrice' },
 ]
 
+// Stati macchina disponibili.
 const MACHINE_STATES = [
   { value: 'attiva', label: 'Attiva' },
   { value: 'ferma', label: 'Ferma' },
@@ -56,6 +58,7 @@ const MACHINE_STATES = [
   { value: 'dismessa', label: 'Dismessa' },
 ]
 
+// Metadati UI per stato scorta.
 const STOCK_STATUS_UI = {
   ok: { color: 'success', label: 'OK' },
   basso: { color: 'warning', label: 'Scorta bassa' },
@@ -63,6 +66,7 @@ const STOCK_STATUS_UI = {
   non_gestito: { color: 'secondary', label: 'Non gestito' },
 }
 
+// Valori iniziali form macchina.
 const emptyMachineForm = {
   id_macchina: null,
   codice: '',
@@ -81,6 +85,7 @@ const emptyMachineForm = {
   attiva: 1,
 }
 
+// Dashboard operativa magazzino: scorte, movimenti rapidi e macchine.
 const MagazzinoPage = () => {
   const { token, logout } = useAuth()
   const [activeTab, setActiveTab] = useState('scorte')
@@ -122,12 +127,14 @@ const MagazzinoPage = () => {
   const [feedback, setFeedback] = useState(null)
   const stockRequestRef = useRef(0)
 
+  // Auto-hide dei messaggi feedback.
   useEffect(() => {
     if (!feedback) return undefined
     const timer = window.setTimeout(() => setFeedback(null), 3500)
     return () => window.clearTimeout(timer)
   }, [feedback])
 
+  // Carica scorte prodotto con filtri correnti.
   const loadStock = useCallback(async () => {
     if (!token) return
     const requestId = stockRequestRef.current + 1
@@ -192,6 +199,7 @@ const MagazzinoPage = () => {
     stockCategoryOptions,
   ])
 
+  // Carica categorie prodotto per filtro scorte.
   useEffect(() => {
     if (!token) return
     const loadCategories = async () => {
@@ -207,6 +215,7 @@ const MagazzinoPage = () => {
     loadCategories()
   }, [token, logout])
 
+  // Carica elenco macchine in base ai filtri selezionati.
   const loadMachines = useCallback(async () => {
     if (!token) return
     setMachineLoading(true)
@@ -229,14 +238,17 @@ const MagazzinoPage = () => {
     }
   }, [token, logout, machineFilters.tipo, machineFilters.showInactive])
 
+  // Trigger iniziale/refresh scorte.
   useEffect(() => {
     loadStock()
   }, [loadStock])
 
+  // Trigger iniziale/refresh macchine.
   useEffect(() => {
     loadMachines()
   }, [loadMachines])
 
+  // Riepilogo contatori scorte per stato.
   const stockSummary = useMemo(() => {
     const summary = { total: stockItems.length, ok: 0, basso: 0, esaurito: 0, non_gestito: 0 }
     stockItems.forEach((item) => {
@@ -249,6 +261,7 @@ const MagazzinoPage = () => {
     return summary
   }, [stockItems])
 
+  // Raggruppa scorte per categoria per rendering tabella.
   const stockGroupedByCategory = useMemo(() => {
     const sorted = [...stockItems].sort((a, b) => {
       const catA = String(a?.categoria || 'Senza categoria').toLocaleLowerCase()
@@ -272,6 +285,7 @@ const MagazzinoPage = () => {
     return Array.from(map.entries())
   }, [stockItems])
 
+  // Apre il modal configurazione scorta del prodotto.
   const openConfigModal = (item) => {
     setStockConfigTarget(item)
     setStockConfigForm({
@@ -282,6 +296,7 @@ const MagazzinoPage = () => {
     setStockConfigModalOpen(true)
   }
 
+  // Salva configurazione magazzino del prodotto.
   const submitStockConfig = async (event) => {
     event.preventDefault()
     if (!stockConfigTarget?.id_prodotto) return
@@ -313,12 +328,14 @@ const MagazzinoPage = () => {
     }
   }
 
+  // Apre modal inserimento movimento per prodotto.
   const openMovementModal = (item) => {
     setMovementTarget(item)
     setMovementForm({ tipo: 'carico', quantita: '', note: '' })
     setMovementModalOpen(true)
   }
 
+  // Registra movimento (carico/scarico/rettifica).
   const submitMovement = async (event) => {
     event.preventDefault()
     if (!movementTarget?.id_prodotto) return
@@ -350,11 +367,13 @@ const MagazzinoPage = () => {
     }
   }
 
+  // Apre modal creazione macchina.
   const openMachineCreate = () => {
     setMachineForm(emptyMachineForm)
     setMachineModalOpen(true)
   }
 
+  // Apre modal modifica macchina esistente.
   const openMachineEdit = (item) => {
     setMachineForm({
       ...emptyMachineForm,
@@ -368,6 +387,7 @@ const MagazzinoPage = () => {
     setMachineModalOpen(true)
   }
 
+  // Salva creazione/aggiornamento macchina.
   const submitMachine = async (event) => {
     event.preventDefault()
     setMachineSaving(true)

@@ -21,6 +21,7 @@ try {
     $auth = AuthGuard::requireAuth();
     AuthGuard::requirePermissions($auth, ['prod.read']);
     if (AuthGuard::getAccountType($auth) === 'cliente') {
+        // Per account cliente la lista catalogo interna non e' esposta.
         HttpResponse::json(['items' => []], 200);
         return;
     }
@@ -29,6 +30,7 @@ try {
     $idCategoria = null;
     if (isset($_GET['id_categoria'])) {
         $tmp = (int) $_GET['id_categoria'];
+        // id_categoria=0 viene trattato come filtro assente.
         if ($tmp > 0) { $idCategoria = $tmp; }
     }
     $search = isset($_GET['q']) ? (string) $_GET['q'] : null;

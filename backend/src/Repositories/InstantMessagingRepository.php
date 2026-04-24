@@ -111,6 +111,7 @@ final class InstantMessagingRepository
                 last_msg.body AS last_message_body,
                 last_msg.created_at AS last_message_created_at,
                 (
+                    -- Unread lato utente corrente: solo messaggi altrui successivi all'ultimo read.
                     SELECT COUNT(*)
                     FROM im_messages unread
                     WHERE unread.id_thread = t.id_thread
@@ -199,6 +200,7 @@ final class InstantMessagingRepository
      */
     public function listMessages(int $threadId, int $limit = 200, ?int $beforeId = null): array
     {
+        // Cap lato backend per evitare payload eccessivi da query parametrica.
         $limit = max(1, min($limit, 500));
         $sql = <<<SQL
             SELECT
@@ -246,6 +248,7 @@ final class InstantMessagingRepository
         $stmt->execute();
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
         $missing = isset($row['missing']) ? (int) $row['missing'] : 0;
+        // Se anche un partecipante non ha letto nulla, il messaggio non puo' essere considerato "letto da tutti".
         if ($missing > 0) {
             return null;
         }

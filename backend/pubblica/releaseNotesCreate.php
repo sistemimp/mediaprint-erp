@@ -23,6 +23,7 @@ if ($method !== 'POST') {
 
 try {
     $auth = AuthGuard::requireAuth();
+    // Creazione limitata ad admin per evitare pubblicazioni non controllate.
     AuthGuard::requireAdmin($auth);
 
     $payload = json_decode(file_get_contents('php://input') ?: 'null', true);

@@ -93,17 +93,20 @@ import { fetchPacchetti, fetchPacchettoDetail } from '../../services/pacchetti'
 import HtmlEditor from '../../components/HtmlEditor'
 
 const currencyFormatter = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' })
+// Formatta importi in valuta EUR.
 const formatCurrency = (value) => {
   const n = Number(value)
   return Number.isFinite(n) ? currencyFormatter.format(n) : '-'
 }
 
+// Formatta numeri con decimali opzionali.
 const formatNumberValue = (value, decimals = 0) => {
   const n = Number(value)
   if (!Number.isFinite(n)) return '-'
   return decimals > 0 ? n.toFixed(decimals) : String(n)
 }
 
+// Formatta data in locale italiano.
 const formatDate = (value) => {
   if (!value) return '-'
   const date = new Date(value)
@@ -113,6 +116,7 @@ const formatDate = (value) => {
 const SELECT_OPTION_WRAP_STYLE = { whiteSpace: 'normal', wordBreak: 'break-word' }
 const CED_QTY_DIFF_THRESHOLD = 0.0001
 
+// Risolve l'ID riga normalizzando i diversi alias backend.
 const resolveRigaId = (row) => {
   const raw = row?.id_riga ?? row?.id_riga_preventivo ?? row?.id ?? null
   const id = Number(raw)
@@ -120,6 +124,7 @@ const resolveRigaId = (row) => {
   return null
 }
 
+// Costruisce un'etichetta fattura leggibile partendo dai campi disponibili.
 const resolveFatturaDisplay = (row) => {
   const display = String(row?.fattura_display ?? row?.fatturaDisplay ?? '').trim()
   if (display) return display
@@ -131,6 +136,7 @@ const resolveFatturaDisplay = (row) => {
   return Number.isFinite(idFattura) && idFattura > 0 ? String(idFattura) : ''
 }
 
+// Determina se la riga risulta gia fatturata.
 const isRigaFatturata = (row) => {
   const flag = row?.fatturata ?? row?.in_fattura ?? row?.is_fatturata ?? null
   if (flag === 1 || flag === true) return true
@@ -140,6 +146,7 @@ const isRigaFatturata = (row) => {
   return Number.isFinite(idFattura) && idFattura > 0
 }
 
+// Calcola imponibile/IVA/totale della riga.
 const calcRigaTotale = (row) => {
   const qty = Number(row?.quantita) || 0
   const rawPrice = Number(row?.prezzo ?? row?.prezzo_unitario ?? 0)
@@ -155,6 +162,7 @@ const calcRigaTotale = (row) => {
   }
 }
 
+// Verifica se l'anagrafica e classificata come fornitore.
 const isFornitoreAnagrafica = (item) => {
   if (!item) return false
   if (Number(item?.is_fornitore ?? item?.fornitore ?? item?.supplier ?? 0) === 1) return true
@@ -165,6 +173,7 @@ const isFornitoreAnagrafica = (item) => {
   return label.includes('forn') || code.includes('forn')
 }
 
+// Riconosce un'opzione tipo fattura relativa agli acquisti/passivo.
 const isPurchaseInvoiceTypeOption = (option) => {
   if (!option) return false
   const code = String(option.code || '').trim().toLowerCase()
@@ -173,6 +182,7 @@ const isPurchaseInvoiceTypeOption = (option) => {
   return text.includes('acquisto') || text.includes('passiv') || text.includes('fornitor')
 }
 
+// Sceglie il tipo fattura preferito in base al contesto (acquisto/vendita).
 const resolvePreferredInvoiceTypeId = (tipi = [], isAcquisto = false) => {
   const list = Array.isArray(tipi) ? tipi : []
   if (list.length === 0) return null
@@ -199,6 +209,7 @@ const resolvePreferredInvoiceTypeId = (tipi = [], isAcquisto = false) => {
   return Number.isFinite(firstId) && firstId > 0 ? firstId : null
 }
 
+// Normalizza un'opzione "oggetto preventivo" in formato consistente.
 const normalizeOggettoOption = (option) => {
   if (!option) return null
   const rawValue =
@@ -225,6 +236,7 @@ const normalizeOggettoOption = (option) => {
   }
 }
 
+// Unisce e deduplica due liste opzioni oggetto preventivo.
 const mergeOggettoOptionLists = (base = [], extra = []) => {
   const merged = []
   const indexById = new Map()
@@ -262,6 +274,7 @@ const mergeOggettoOptionLists = (base = [], extra = []) => {
   return merged
 }
 
+// Normalizza una lavorazione collegata in struttura uniforme.
 const normalizeLavorazioneItem = (item) => {
   if (!item) return null
   const rawId =
@@ -283,6 +296,7 @@ const normalizeLavorazioneItem = (item) => {
   }
 }
 
+// Costruisce e filtra le opzioni anagrafica mantenendo l'elemento corrente.
 const buildAnagraficaOptions = ({
   baseList,
   currentId,
@@ -369,6 +383,7 @@ const getTodayIsoDate = () => {
   return `${year}-${month}-${day}`
 }
 
+// Helper querystring per dettaglio preventivo.
 const useQuery = () => new URLSearchParams(useLocation().search)
 
 const PreventiviDetail = () => {
@@ -904,6 +919,7 @@ const PreventiviDetail = () => {
     [token, oggettiOptions, loadOggettoOptions, adjustPendingOggettoCreate],
   )
 
+  // Gestisce selezione oggetti esistenti e creazione on-the-fly di nuove opzioni.
   const handleOggettiChange = useCallback(
     (vals) => {
       const incoming = Array.isArray(vals) ? vals : []
@@ -1737,6 +1753,7 @@ const PreventiviDetail = () => {
     return () => controller.abort()
   }, [token, pkgOpen, selPacchetto])
 
+  // Aggiorna lo stato documento e registra il cambio nel log storico.
   const handleStatusChange = useCallback(async (nextCode) => {
     const safeCode = typeof nextCode === 'string' ? nextCode.trim().toLowerCase() : String(nextCode || '').trim().toLowerCase()
     if (!safeCode) return
@@ -1959,6 +1976,7 @@ const PreventiviDetail = () => {
   const currentUserId = user?.id_user ?? user?.id ?? null
   const currentUserName = user?.full_name ?? user?.name ?? user?.username ?? user?.nickname ?? null
 
+  // Apre il dettaglio della lavorazione collegata.
   const handleOpenLavorazioneDetail = useCallback(
     (targetId) => {
       const resolvedId = Number(targetId ?? linkedLavorazioneId)
@@ -1968,6 +1986,7 @@ const PreventiviDetail = () => {
     [navigate, linkedLavorazioneId],
   )
 
+  // Genera una lavorazione dal preventivo corrente e aggiorna i link.
   const handleGenerateLavorazione = useCallback(async () => {
     if (!token || !id) return
     setLavorazioneGenerating(true)
@@ -2025,6 +2044,7 @@ const PreventiviDetail = () => {
     }
   }, [token, id, computedOggettoText, oggetto, note, headerNumero, logout])
 
+  // Apre il modal emissione DDT con reset stato esito.
   const handleOpenDdtModal = useCallback(() => {
     setDdtError(null)
     setDdtSuccess(null)
@@ -2037,11 +2057,13 @@ const PreventiviDetail = () => {
     setDdtModalVisible(true)
   }, [defaultDdtNote])
 
+  // Chiude il modal DDT.
   const handleCloseDdtModal = useCallback(() => {
     if (ddtSubmitting) return
     setDdtModalVisible(false)
   }, [ddtSubmitting])
 
+  // Emette DDT dal preventivo usando i parametri scelti nel modal.
   const handleEmitDdt = useCallback(async () => {
     if (!token || !id) return
     if (!preventivoHasRighe) {
@@ -2093,6 +2115,7 @@ const PreventiviDetail = () => {
     }
   }, [token, id, preventivoHasRighe, ddtForm, defaultDdtNote, logout])
 
+  // Apre il modal emissione fattura e inizializza la selezione righe.
   const handleOpenFatturaModal = useCallback(() => {
     setFatturaError(null)
     setFatturaSuccess(null)
@@ -2117,11 +2140,13 @@ const PreventiviDetail = () => {
     setFatturaModalVisible(true)
   }, [defaultFatturaNote, clienteSezionaleId, righe, fatturaRigheMeta])
 
+  // Chiude il modal fattura.
   const handleCloseFatturaModal = useCallback(() => {
     if (fatturaSubmitting) return
     setFatturaModalVisible(false)
   }, [fatturaSubmitting])
 
+  // Emette fattura importando solo le righe selezionate.
   const handleEmitFattura = useCallback(async () => {
     if (!token || !id) return
     if (!preventivoHasRighe) {
@@ -2195,6 +2220,7 @@ const PreventiviDetail = () => {
   }, [token, id, preventivoHasRighe, fatturaSelectedIds, fatturaForm, fatturaConfig.tipi, defaultFatturaNote, logout, isAcquisto, currentUserId, currentUserName])
 
 
+  // Apre la stampa PDF del preventivo.
   const handleOpenPrintPDF = useCallback(() => {
     if (typeof window === 'undefined') return
     const idPreventivo = Number(id)
@@ -2206,6 +2232,7 @@ const PreventiviDetail = () => {
     )
   }, [id])
 
+  // Apre modal email precompilando destinatari e contenuto base.
   const handleOpenEmailModal = useCallback(() => {
     setEmailError(null)
     setEmailSuccess(null)
@@ -2215,11 +2242,13 @@ const PreventiviDetail = () => {
     setEmailBody((prev) => (prev && prev.trim() !== '' ? prev : defaultEmailBody))
   }, [defaultEmailToValue, defaultEmailSubject, defaultEmailBody, id])
 
+  // Chiude modal email e resetta feedback.
   const handleCloseEmailModal = useCallback(() => {
     if (emailSending) return
     setEmailModalVisible(false)
   }, [emailSending])
 
+  // Invia il preventivo via email dal dettaglio documento.
   const handleSendPreventivoEmail = useCallback(async () => {
     if (!token || !id) return
     const sanitizedTo = String(emailTo || '').trim()
@@ -2270,6 +2299,7 @@ const PreventiviDetail = () => {
     }
   }, [token, id, emailTo, emailCc, emailSubject, emailBody, logout, user])
 
+  // Apre il dettaglio di una revisione storica del preventivo.
   const handleOpenRevisionDetail = useCallback(
     async (revisionId) => {
       const numericId = Number(revisionId)
@@ -2290,6 +2320,7 @@ const PreventiviDetail = () => {
     [token],
   )
 
+  // Salva in bozza il preventivo (create/update) con tutti i dati correnti.
   const saveDraft = useCallback(
     async ({ silent = false } = {}) => {
       if (!editable || pendingOggettoCreate) {
@@ -2352,6 +2383,7 @@ const PreventiviDetail = () => {
     ],
   )
 
+  // Handler submit esplicito per salvataggio bozza da UI.
   const handleSalvaBozza = async (e) => {
     if (e?.preventDefault) {
       e.preventDefault()
@@ -2367,6 +2399,7 @@ const PreventiviDetail = () => {
 
   bozzaSaveHandlerRef.current = handleSalvaBozza
 
+  // Archivia il preventivo corrente.
   const handleArchivePreventivo = useCallback(async () => {
     if (!token || !id) return
     const confirmed = window.confirm('Confermi l\'archiviazione di questo preventivo?')
@@ -2387,6 +2420,7 @@ const PreventiviDetail = () => {
     }
   }, [token, id, navigate, logout])
 
+  // Duplica il preventivo corrente creando una nuova bozza.
   const handleDuplicatePreventivo = useCallback(async () => {
     if (!token) return
     setDuplicateError(null)

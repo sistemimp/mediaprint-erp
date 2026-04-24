@@ -37,6 +37,7 @@ const priorityOptions = [
   { value: 'critical', label: 'Critica' },
 ]
 
+// Costruisce lo stato iniziale del form partendo da una riga esistente o vuota.
 const buildForm = (row) => ({
   titolo: row?.titolo ?? '',
   descrizione: row?.descrizione ?? '',
@@ -50,6 +51,7 @@ const buildForm = (row) => ({
   ordering: row?.ordering !== null && row?.ordering !== undefined ? String(row.ordering) : '100',
 })
 
+// Gestione template attivita lavorazioni (creazione/modifica e lista).
 const LavorazioniTemplates = () => {
   const { token, logout } = useAuth()
   const [items, setItems] = useState([])
@@ -62,6 +64,7 @@ const LavorazioniTemplates = () => {
   const [form, setForm] = useState(buildForm(null))
   const [toast, setToast] = useState({ open: false, type: 'success', message: '' })
 
+  // Mappa id reparto -> label per rendering tabella.
   const repartoMap = useMemo(() => {
     const map = {}
     reparti.forEach((rep) => {
@@ -71,12 +74,14 @@ const LavorazioniTemplates = () => {
     return map
   }, [reparti])
 
+  // Mostra un toast temporaneo in basso.
   const showToast = (message, type = 'success') => {
     setToast({ open: true, type, message })
     window.clearTimeout(showToast._t)
     showToast._t = window.setTimeout(() => setToast((t) => ({ ...t, open: false })), 3000)
   }
 
+  // Carica l'elenco template dal backend.
   const load = async (signal) => {
     setLoading(true)
     setError(null)
@@ -95,6 +100,7 @@ const LavorazioniTemplates = () => {
     }
   }
 
+  // Caricamento iniziale template.
   useEffect(() => {
     if (!token) return
     const controller = new AbortController()
@@ -102,6 +108,7 @@ const LavorazioniTemplates = () => {
     return () => controller.abort()
   }, [token])
 
+  // Carica configurazione reparti per il select del form.
   useEffect(() => {
     if (!token) return
     const controller = new AbortController()
@@ -117,34 +124,40 @@ const LavorazioniTemplates = () => {
     return () => controller.abort()
   }, [token])
 
+  // Inizializza il form in modalita creazione.
   const startCreate = () => {
     setEditRow(null)
     setForm(buildForm(null))
     setFormVisible(true)
   }
 
+  // Inizializza il form con i dati riga in modalita modifica.
   const startEdit = (row) => {
     setEditRow(row)
     setForm(buildForm(row))
     setFormVisible(true)
   }
 
+  // Chiude il form e resetta stato locale.
   const cancel = () => {
     setEditRow(null)
     setForm(buildForm(null))
     setFormVisible(false)
   }
 
+  // Aggiorna un campo testuale/numero del form.
   const handleFieldChange = (field) => (event) => {
     const value = event?.target ? event.target.value : event
     setForm((prev) => ({ ...prev, [field]: value }))
   }
 
+  // Aggiorna il flag attivo del template.
   const handleToggle = (event) => {
     const checked = event?.target ? event.target.checked : Boolean(event)
     setForm((prev) => ({ ...prev, attivo: checked }))
   }
 
+  // Salva il template (create/update), ricarica lista e mostra feedback.
   const save = async (event) => {
     event.preventDefault()
     if (!token) return

@@ -48,6 +48,7 @@ import {
 import PermissionButton from '../../components/PermissionButton'
 import avatarFallback from './../../assets/images/avatars/8.jpg'
 
+// Valori iniziali form create/edit account.
 const emptyForm = {
   id_account: null,
   username: '',
@@ -60,6 +61,7 @@ const emptyForm = {
   password: '',
 }
 
+// Formatta data/ora in locale italiano.
 const formatDateTime = (value) => {
   if (!value) return '-'
   const parsed = new Date(value)
@@ -67,6 +69,7 @@ const formatDateTime = (value) => {
   return parsed.toLocaleString('it-IT')
 }
 
+// Risolve base URL upload avatar (config o fallback API).
 const resolveUploadsBase = () => {
   const configured = import.meta.env.VITE_UPLOADS_BASE_URL
   if (configured && configured.trim() !== '') {
@@ -81,6 +84,7 @@ const resolveUploadsBase = () => {
   }
 }
 
+// Restituisce URL assoluto avatar o null se non disponibile.
 const resolveAvatarUrl = (avatarPath) => {
   if (!avatarPath || String(avatarPath).trim() === '') {
     return null
@@ -96,6 +100,7 @@ const resolveAvatarUrl = (avatarPath) => {
   return new URL(cleanPath, baseUrl).toString()
 }
 
+// Lista account con filtri, CRUD e azioni operative.
 const AccountsList = () => {
   const { token, logout } = useAuth()
   const navigate = useNavigate()
@@ -124,12 +129,14 @@ const AccountsList = () => {
   const [anagraficaWarning, setAnagraficaWarning] = useState(null)
   const [sendingWelcomeId, setSendingWelcomeId] = useState(null)
 
+  // Ruolo default (preferisce id_ruolo=3 se presente).
   const defaultRoleId = useMemo(() => {
     if (!roles.length) return ''
     const preferred = roles.find((r) => Number(r.id_ruolo) === 3)
     return preferred ? String(preferred.id_ruolo) : String(roles[0].id_ruolo)
   }, [roles])
 
+  // Mappa anagrafica id -> label per lookup rapido.
   const anagraficheMap = useMemo(() => {
     const map = {}
     anagraficheOptions.forEach((item) => {
@@ -138,6 +145,7 @@ const AccountsList = () => {
     return map
   }, [anagraficheOptions])
 
+  // Filtra anagrafiche nel modal in base alla ricerca locale.
   const filteredAnagrafiche = useMemo(() => {
     if (!anagraficaSearch || anagraficaSearch.trim() === '') {
       return anagraficheOptions
@@ -152,11 +160,13 @@ const AccountsList = () => {
   const anagraficaPageSize = 5
   const anagraficaTotalPages = Math.max(1, Math.ceil(filteredAnagrafiche.length / anagraficaPageSize))
   const anagraficaPageIndex = Math.min(anagraficaPage, anagraficaTotalPages - 1)
+  // Applica paginazione locale alle anagrafiche filtrate.
   const pagedAnagrafiche = useMemo(() => {
     const start = anagraficaPageIndex * anagraficaPageSize
     return filteredAnagrafiche.slice(start, start + anagraficaPageSize)
   }, [filteredAnagrafiche, anagraficaPageIndex, anagraficaPageSize])
 
+  // Costruisce paginazione smart con ellissi per anagrafiche.
   const anagraficaPaginationItems = useMemo(() => {
     const totalPages = anagraficaTotalPages
     const currentPage = anagraficaPageIndex
@@ -180,6 +190,7 @@ const AccountsList = () => {
     return out
   }, [anagraficaTotalPages, anagraficaPageIndex])
 
+  // Carica ruoli account disponibili.
   const loadRoles = useCallback(async (signal) => {
     try {
       const list = await fetchAccountRoles({ token, signal })
@@ -194,6 +205,7 @@ const AccountsList = () => {
     }
   }, [token, logout])
 
+  // Carica elenco account con filtri attivi.
   const loadAccounts = useCallback(async (signal) => {
     if (!token) return
     setLoading(true)
@@ -220,6 +232,7 @@ const AccountsList = () => {
     }
   }, [token, filters, logout])
 
+  // Carica anagrafiche associabili all'account cliente.
   const loadAnagraficheOptions = useCallback(async (signal, accountId) => {
     if (!token) return
     try {
@@ -251,6 +264,7 @@ const AccountsList = () => {
     }
   }, [token, logout])
 
+  // Carica contatti associabili alle anagrafiche selezionate.
   const loadContattiOptions = useCallback(async (signal, anagrafiche) => {
     if (!token) return
     try {
@@ -285,6 +299,7 @@ const AccountsList = () => {
     }
   }, [token, logout, formData.id_account])
 
+  // Caricamento iniziale ruoli.
   useEffect(() => {
     if (!token) return undefined
     const controller = new AbortController()
@@ -292,6 +307,7 @@ const AccountsList = () => {
     return () => controller.abort()
   }, [token, loadRoles])
 
+  // Caricamento lista account.
   useEffect(() => {
     if (!token) return undefined
     const controller = new AbortController()
@@ -299,6 +315,7 @@ const AccountsList = () => {
     return () => controller.abort()
   }, [token, loadAccounts])
 
+  // Quando il modal cliente è aperto carica anagrafiche disponibili.
   useEffect(() => {
     if (!modalOpen || formData.account_type !== 'cliente') return undefined
     const controller = new AbortController()
@@ -306,6 +323,7 @@ const AccountsList = () => {
     return () => controller.abort()
   }, [modalOpen, formData.account_type, formData.id_account, loadAnagraficheOptions])
 
+  // Quando cambiano anagrafiche selezionate carica i contatti relativi.
   useEffect(() => {
     if (!modalOpen || formData.account_type !== 'cliente') return undefined
     const controller = new AbortController()
@@ -313,12 +331,14 @@ const AccountsList = () => {
     return () => controller.abort()
   }, [modalOpen, formData.account_type, selectedAnagrafiche, loadContattiOptions])
 
+  // Auto-hide feedback temporanei.
   useEffect(() => {
     if (!feedback || feedback.persist) return undefined
     const timer = window.setTimeout(() => setFeedback(null), 4000)
     return () => window.clearTimeout(timer)
   }, [feedback])
 
+  // Apre modal in modalità creazione account.
   const openCreateModal = () => {
     setFormData({
       ...emptyForm,
@@ -338,6 +358,7 @@ const AccountsList = () => {
     setModalOpen(true)
   }
 
+  // Apre modal in modalità modifica account.
   const openEditModal = (account) => {
     setFormData({
       id_account: account.id_account,
@@ -364,17 +385,20 @@ const AccountsList = () => {
     setModalOpen(true)
   }
 
+  // Chiude modal e resetta stato transient.
   const closeModal = () => {
     if (saving) return
     setModalOpen(false)
     setFormData(emptyForm)
   }
 
+  // Aggiorna filtri lista account.
   const handleFilterChange = (e) => {
     const { name, value } = e.target
     setFilters((prev) => ({ ...prev, [name]: value }))
   }
 
+  // Aggiorna campi form create/edit account.
   const handleFormChange = (e) => {
     const { name, value, type, checked } = e.target
     if (type === 'checkbox') {
@@ -392,6 +416,7 @@ const AccountsList = () => {
     }
   }
 
+  // Seleziona/deseleziona anagrafica associata all'account cliente.
   const toggleAnagrafica = (id) => {
     const stringId = String(id)
     setSelectedAnagrafiche((prev) => {
@@ -413,6 +438,7 @@ const AccountsList = () => {
     })
   }
 
+  // Seleziona/deseleziona contatto associato.
   const toggleContatto = (id) => {
     const stringId = String(id)
     setSelectedContatti((prev) => {
@@ -474,6 +500,7 @@ const AccountsList = () => {
     return out
   }, [contattiTotalPages, contattiPageIndex])
 
+  // Salva create/update account e associazioni correlate.
   const handleSave = async (e) => {
     e.preventDefault()
     setSaving(true)
@@ -548,6 +575,7 @@ const AccountsList = () => {
     }
   }
 
+  // Disattiva/elimina account selezionato.
   const handleDelete = async (accountId) => {
     const confirmed = window.confirm('Vuoi disattivare questo account?')
     if (!confirmed) return
@@ -568,6 +596,7 @@ const AccountsList = () => {
     }
   }
 
+  // Riattiva un account precedentemente disattivo.
   const handleReactivate = async (accountId) => {
     const confirmed = window.confirm('Vuoi riattivare questo account?')
     if (!confirmed) return
@@ -588,6 +617,7 @@ const AccountsList = () => {
     }
   }
 
+  // Avvia reset password account.
   const handleResetPassword = async (accountId) => {
     const confirmed = window.confirm('Vuoi resettare la password di questo account?')
     if (!confirmed) return
@@ -611,6 +641,7 @@ const AccountsList = () => {
     }
   }
 
+  // Invia email di benvenuto all'account selezionato.
   const handleSendWelcome = async (account) => {
     if (!account?.email) {
       setError(new Error('Email account non valida.'))

@@ -2,6 +2,7 @@ import React from 'react'
 import { useLocation } from 'react-router-dom'
 import SectionPlaceholder from '../shared/SectionPlaceholder'
 
+// Placeholder temporaneo: cambia titolo/sottotitolo in base al contesto acquisto.
 const FattureCreate = () => {
   const location = useLocation()
   const isAcquisto = location.pathname.includes('/acquisti/')

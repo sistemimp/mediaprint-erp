@@ -2,6 +2,7 @@ import React from 'react'
 import { CCard, CCardBody, CCardHeader, CCol, CFormLabel, CFormRange, CRow } from '@coreui/react'
 import { DocsComponents, DocsExample } from 'src/components'
 
+// Vista Range: componente UI del modulo.
 const Range = () => {
   return (
     <CRow>

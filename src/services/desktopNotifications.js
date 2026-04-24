@@ -1,5 +1,6 @@
 const DESKTOP_NOTIFICATIONS_KEY = 'im.desktopNotifications.enabled'
 
+// Restituisce localStorage se disponibile (safe per ambienti senza window).
 const getLocalStorage = () => {
   if (typeof window === 'undefined') {
     return null
@@ -11,9 +12,11 @@ const getLocalStorage = () => {
   }
 }
 
+// Verifica supporto API Notification nel browser corrente.
 export const isDesktopNotificationSupported = () =>
   typeof window !== 'undefined' && 'Notification' in window
 
+// Legge preferenza utente per notifiche desktop da localStorage.
 export const getDesktopNotificationsEnabled = () => {
   const storage = getLocalStorage()
   if (!storage) {
@@ -22,6 +25,7 @@ export const getDesktopNotificationsEnabled = () => {
   return storage.getItem(DESKTOP_NOTIFICATIONS_KEY) === 'true'
 }
 
+// Persistenza preferenza utente notifiche desktop.
 export const setDesktopNotificationsEnabled = (value) => {
   const storage = getLocalStorage()
   if (!storage) {
@@ -30,6 +34,7 @@ export const setDesktopNotificationsEnabled = (value) => {
   storage.setItem(DESKTOP_NOTIFICATIONS_KEY, value ? 'true' : 'false')
 }
 
+// Restituisce stato permesso Notification corrente.
 export const getDesktopNotificationPermission = () => {
   if (!isDesktopNotificationSupported()) {
     return 'unsupported'
@@ -37,6 +42,7 @@ export const getDesktopNotificationPermission = () => {
   return Notification.permission
 }
 
+// Richiede il permesso browser per notifiche desktop.
 export const requestDesktopNotificationPermission = async () => {
   if (!isDesktopNotificationSupported()) {
     return 'unsupported'
@@ -53,6 +59,7 @@ export const requestDesktopNotificationPermission = async () => {
 
 const alwaysShowDesktopNotifications = (import.meta.env.VITE_DESKTOP_NOTIFICATIONS_ALWAYS_SHOW || '').toLowerCase() === 'true'
 
+// Determina se una notifica desktop va mostrata nel contesto corrente.
 const shouldShowDesktopNotification = () => {
   if (!isDesktopNotificationSupported()) {
     return false

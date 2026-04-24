@@ -15,6 +15,7 @@ import {
 } from '@coreui/react'
 import { DocsComponents, DocsExample } from 'src/components'
 
+// Vista Tables: componente UI del modulo.
 const Tables = () => {
   return (
     <CRow>

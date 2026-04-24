@@ -31,6 +31,7 @@ try {
     $payload = json_decode(file_get_contents('php://input') ?: 'null', true);
     if (!is_array($payload)) { $payload = []; }
 
+    // Unico endpoint per create/update: discriminazione gestita dal service su id_pacchetto.
     $service = new PacchettiService(new PacchettiRepository(Database::getConnection()));
     $result = $service->save($payload);
     HttpResponse::json($result, 201);

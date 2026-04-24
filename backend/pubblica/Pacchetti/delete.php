@@ -30,6 +30,7 @@ try {
 
     $payload = json_decode(file_get_contents('php://input') ?: 'null', true);
     if (!is_array($payload)) { $payload = []; }
+    // Delete fisico di testata + righe, eseguito in transazione nel repository.
     $service = new PacchettiService(new PacchettiRepository(Database::getConnection()));
     $result = $service->delete($payload);
     HttpResponse::json($result, 200);

@@ -4,6 +4,7 @@ import CIcon from '@coreui/icons-react'
 import { cilBell } from '@coreui/icons'
 import { DocsComponents, DocsExample } from 'src/components'
 
+// Vista Buttons: componente UI del modulo.
 const Buttons = () => {
   return (
     <CRow>

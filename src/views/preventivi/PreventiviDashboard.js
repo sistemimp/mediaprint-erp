@@ -20,6 +20,7 @@ import {
 import { fetchPreventiviDashboard } from '../../services/preventivi'
 import { useAuth } from '../../context/AuthContext'
 
+// Vista PreventiviDashboard: componente UI del modulo.
 const formatInteger = (value) => {
   if (value === null || value === undefined || Number.isNaN(Number(value))) {
     return '-'

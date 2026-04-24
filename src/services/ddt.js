@@ -1,5 +1,6 @@
 import { apiFetch } from './apiClient'
 
+// Recupera l'elenco DDT con limite opzionale.
 export const fetchDdtList = async ({ token, limit, signal } = {}) => {
   const params = {}
   if (limit) {
@@ -21,6 +22,7 @@ export const fetchDdtList = async ({ token, limit, signal } = {}) => {
   return { items }
 }
 
+// Recupera KPI dashboard DDT per periodo.
 export const fetchDdtDashboard = async ({ token, period, signal } = {}) => {
   const params = {}
   if (period) {
@@ -33,6 +35,7 @@ export const fetchDdtDashboard = async ({ token, period, signal } = {}) => {
   return payload
 }
 
+// Recupera la lista causali disponibili per i documenti DDT.
 export const fetchDdtCausali = async ({ token, signal } = {}) => {
   const response = await apiFetch('/ddtCausaliList.php', {
     token,
@@ -61,6 +64,7 @@ export const fetchDdtCausali = async ({ token, signal } = {}) => {
     .filter(Boolean)
 }
 
+// Recupera le destinazioni predefinite configurate per DDT.
 export const fetchDdtDestinazioni = async ({ token, signal } = {}) => {
   const response = await apiFetch('/ddtDestinazioni.php', {
     token,
@@ -76,6 +80,7 @@ export const fetchDdtDestinazioni = async ({ token, signal } = {}) => {
   return items
 }
 
+// Emette un nuovo DDT a partire da un preventivo.
 export const emitPreventivoDdt = async ({
   token,
   id,
@@ -109,6 +114,7 @@ export const emitPreventivoDdt = async ({
   return response ?? {}
 }
 
+// Recupera il dettaglio completo di un DDT.
 export const fetchDdtDetail = async ({ token, id, signal } = {}) => {
   const response = await apiFetch('/ddtDetail.php', {
     token,
@@ -121,6 +127,7 @@ export const fetchDdtDetail = async ({ token, id, signal } = {}) => {
   }
 }
 
+// Aggiorna i dati principali e le righe del DDT.
 export const updateDdtDetail = async ({
   token,
   id,

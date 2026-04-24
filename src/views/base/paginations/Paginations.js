@@ -10,6 +10,7 @@ import {
 } from '@coreui/react'
 import { DocsComponents, DocsExample } from 'src/components'
 
+// Vista Paginations: componente UI del modulo.
 const Paginations = () => {
   return (
     <CRow>

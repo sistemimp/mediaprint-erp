@@ -26,12 +26,14 @@ try {
 
     $input = json_decode(file_get_contents('php://input') ?: 'null', true) ?: [];
     $id = isset($input['id_variazione']) ? (int) $input['id_variazione'] : null;
+    // Upsert contract: 0/null => nuova variazione.
     if ($id === 0) { $id = null; }
     $nome = isset($input['nome']) ? trim((string) $input['nome']) : '';
     if ($nome === '') {
         throw new RuntimeException('Nome variazione obbligatorio', 422);
     }
     $prezzo = null;
+    // Campo opzionale: stringa vuota/null non devono diventare 0.0 implicito.
     if (array_key_exists('prezzo', $input) && $input['prezzo'] !== null && $input['prezzo'] !== '') {
         $prezzo = (float) $input['prezzo'];
     }

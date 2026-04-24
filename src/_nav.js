@@ -153,6 +153,50 @@ const _nav = [
   },
   {
     component: CNavGroup,
+    name: 'CRM',
+    icon: <CIcon icon={cilPeople} customClassName="nav-icon" />,
+    permissions: ['anag.read', 'prev.read', 'fatt.read', 'job.read', 'msg.read', 'bug.read'],
+    items: [
+      {
+        component: CNavItem,
+        name: 'Dashboard',
+        to: '/crm/dashboard',
+        permissions: ['anag.read', 'prev.read', 'fatt.read'],
+      },
+      {
+        component: CNavItem,
+        name: 'Comunicazioni',
+        to: '/crm/comunicazioni',
+        permission: 'msg.read',
+      },
+      {
+        component: CNavItem,
+        name: 'Tutte conversazioni',
+        to: '/crm/conversazioni',
+        permission: 'msg.read',
+      },
+      {
+        component: CNavItem,
+        name: 'Archivio email',
+        to: '/crm/email-archivio',
+        permission: 'msg.read',
+      },
+      {
+        component: CNavItem,
+        name: 'Registri',
+        to: '/crm/registri',
+        permissions: ['prev.read', 'fatt.read', 'job.read'],
+      },
+      {
+        component: CNavItem,
+        name: 'Stati lavorazione',
+        to: '/crm/stati-lavorazione',
+        permission: 'job.read',
+      },
+    ],
+  },
+  {
+    component: CNavGroup,
     name: 'Account',
     icon: <CIcon icon={cilPeople} customClassName="nav-icon" />,
     permissions: ['acct.read'],

@@ -22,6 +22,7 @@ final class PacchettiRepository
             $stmt = $this->pdo->query("SHOW COLUMNS FROM tb_pacchetti_righe LIKE 'combo_key'");
             $exists = $stmt && $stmt->fetch(PDO::FETCH_ASSOC) !== false;
             if (!$exists) {
+                // Auto-heal schema su installazioni vecchie: aggiunge colonna se manca.
                 $this->pdo->exec("ALTER TABLE tb_pacchetti_righe ADD COLUMN combo_key VARCHAR(255) NULL AFTER id_prodotto");
                 $stmt = $this->pdo->query("SHOW COLUMNS FROM tb_pacchetti_righe LIKE 'combo_key'");
                 $exists = $stmt && $stmt->fetch(PDO::FETCH_ASSOC) !== false;
@@ -95,6 +96,7 @@ final class PacchettiRepository
     public function getLines(int $idPacchetto): array
     {
         $hasComboKey = $this->ensureComboKeyColumn();
+        // Query adattiva: include combo_key solo quando la colonna e' disponibile.
         $comboSelect = $hasComboKey ? ', combo_key' : '';
         $sql = 'SELECT id_riga, id_prodotto' . $comboSelect . ', id_categoria, categoria_nome, descrizione, quantita, prezzo_unitario, sconto, iva, id_sdi_natura_iva, posizione FROM tb_pacchetti_righe WHERE id_pacchetto = :id ORDER BY COALESCE(posizione, id_riga) ASC';
         $stmt = $this->pdo->prepare($sql);
@@ -159,6 +161,7 @@ final class PacchettiRepository
      */
     public function replaceLines(int $idPacchetto, array $lines): void
     {
+        // Operazione atomica: delete+insert righe nello stesso commit.
         $this->pdo->beginTransaction();
         try {
             $del = $this->pdo->prepare('DELETE FROM tb_pacchetti_righe WHERE id_pacchetto = :id');
@@ -180,6 +183,7 @@ final class PacchettiRepository
                 $pos = 1;
                 foreach ($lines as $line) {
                     $descr = trim((string) ($line['descrizione'] ?? ''));
+                    // Righe senza descrizione sono considerate placeholder e scartate.
                     if ($descr === '') { continue; }
                     $q = (float) ($line['quantita'] ?? 1);
                     $pu = (float) ($line['prezzo'] ?? $line['prezzo_unitario'] ?? 0);

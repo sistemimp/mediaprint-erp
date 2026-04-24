@@ -24,6 +24,7 @@ import { useAuth } from '../../context/AuthContext'
 import { fetchCategorieProdotti } from '../../services/prodotti'
 import { fetchMagazzinoMovements } from '../../services/magazzino'
 
+// Tipologie movimento disponibili nel filtro.
 const MOVEMENT_TYPES = [
   { value: '', label: 'Tutti i tipi' },
   { value: 'carico', label: 'Carico' },
@@ -31,12 +32,14 @@ const MOVEMENT_TYPES = [
   { value: 'rettifica', label: 'Rettifica' },
 ]
 
+// Mappa colore badge per tipo movimento.
 const TYPE_COLORS = {
   carico: 'success',
   scarico: 'danger',
   rettifica: 'warning',
 }
 
+// Formatta data/ora in locale italiano.
 const formatDateTime = (value) => {
   if (!value) return '-'
   const date = new Date(value)
@@ -47,12 +50,14 @@ const formatDateTime = (value) => {
   })}`
 }
 
+// Formatta quantità con massimo 3 decimali.
 const formatQty = (value) => {
   const n = Number(value)
   if (!Number.isFinite(n)) return '-'
   return n.toLocaleString('it-IT', { minimumFractionDigits: 0, maximumFractionDigits: 3 })
 }
 
+// Pagina storico movimenti di magazzino.
 const MagazzinoMovimentiPage = () => {
   const { token, logout } = useAuth()
   const [items, setItems] = useState([])
@@ -68,6 +73,7 @@ const MagazzinoMovimentiPage = () => {
     limit: 200,
   })
 
+  // Carica movimenti applicando i filtri correnti.
   const loadItems = useCallback(async () => {
     if (!token) return
     setLoading(true)
@@ -94,6 +100,7 @@ const MagazzinoMovimentiPage = () => {
     }
   }, [token, logout, filters.q, filters.id_categoria, filters.tipo_movimento, filters.date_from, filters.date_to, filters.limit])
 
+  // Carica categorie prodotti per filtro categoria.
   useEffect(() => {
     if (!token) return
     const loadCategories = async () => {
@@ -109,6 +116,7 @@ const MagazzinoMovimentiPage = () => {
     loadCategories()
   }, [token, logout])
 
+  // Trigger caricamento movimenti.
   useEffect(() => {
     loadItems()
   }, [loadItems])

@@ -21,6 +21,7 @@ try {
     $auth = AuthGuard::requireAuth();
     AuthGuard::requirePermissions($auth, ['prod.read']);
     if (AuthGuard::getAccountType($auth) === 'cliente') {
+        // Mantiene shape risposta coerente senza esporre dettaglio prodotto.
         HttpResponse::json(['item' => null], 200);
         return;
     }

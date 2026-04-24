@@ -49,6 +49,7 @@ const currencyFormatter = new Intl.NumberFormat('it-IT', {
   currency: 'EUR',
 })
 
+// Formatta importi monetari in EUR con fallback testuale.
 const formatCurrency = (value) => {
   if (value === undefined || value === null || value === '') {
     return '-'
@@ -57,18 +58,21 @@ const formatCurrency = (value) => {
   return Number.isFinite(numeric) ? currencyFormatter.format(numeric) : String(value)
 }
 
+// Formatta una data nel formato locale italiano.
 const formatDate = (value) => {
   if (!value) return '-'
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleDateString('it-IT')
 }
 
+// Formatta data e ora in locale italiano.
 const formatDateTime = (value) => {
   if (!value) return '-'
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString('it-IT')
 }
 
+// Formatta percentuale numerica con una cifra decimale.
 const formatPercent = (value) => {
   if (value === null || value === undefined || Number.isNaN(Number(value))) {
     return '-'
@@ -76,12 +80,14 @@ const formatPercent = (value) => {
   return `${Number(value).toFixed(1)}%`
 }
 
+// Costruisce URL PDF Jasper del preventivo.
 const buildPreventivoPdfUrl = (id) => {
   const numericId = Number(id)
   if (!Number.isFinite(numericId) || numericId <= 0) return null
   return `https://jaspersoft.mediaprint.it/jasperserver/rest_v2/reports/Mediaprint/GestionaleMP/Preventivi.pdf?id_preventivo=${numericId}&j_username=gestionaleMp&j_password=gestionaleMp`
 }
 
+// Estrae il primo valore disponibile da un set di alias campo.
 const pickLineValue = (line, keys = []) => {
   if (!line || !keys.length) return undefined
   for (const key of keys) {
@@ -93,6 +99,7 @@ const pickLineValue = (line, keys = []) => {
   return undefined
 }
 
+// Helper normalizzati per lettura righe revisione/documento.
 const getLineQuantity = (line) => {
   const raw = pickLineValue(line, ['quantita', 'quantità', 'qta', 'qty', 'quantity'])
   const numeric = Number(raw)
@@ -152,6 +159,7 @@ const getFatturazionePercent = (row) => {
   return Math.min(100, Math.max(0, percent))
 }
 
+// Render tabellare riusabile per confronto righe revisione/corrente.
   const renderLinesTable = (lines, emptyMessage) => {
     const normalized = Array.isArray(lines) ? lines : []
     if (normalized.length === 0) {
@@ -262,6 +270,7 @@ const PreventiviList = () => {
     ? formatDateTime(currentPreventivoDetail.updated_at)
     : 'Data non disponibile'
   const [revisionSummaries, setRevisionSummaries] = useState({})
+  // Apre il dettaglio revisione e carica anche la versione corrente per confronto.
   const handleOpenRevisionDetail = useCallback(
     async (revisionId, preventivoId) => {
       if (!token) return
@@ -310,6 +319,7 @@ const PreventiviList = () => {
     setExpandedRevisions((prev) => ({ ...prev, [id]: !prev[id] }))
   }, [])
 
+  // Click riga: espande/collassa revisioni senza interferire con pulsanti/link interni.
   const handleRowClick = useCallback(
     (id, event) => {
       if (!id) return
@@ -322,6 +332,7 @@ const PreventiviList = () => {
     [toggleRevisionRows],
   )
 
+  // Chiude il modal revisione e resetta stati temporanei.
   const handleCloseRevisionModal = useCallback(() => {
     setRevisionDetailModalVisible(false)
     setRevisionDetailModalError(null)
@@ -399,6 +410,7 @@ const PreventiviList = () => {
   const total = items.length
   const totalPages = Math.max(Math.ceil(total / rowsPerPage), 1)
 
+  // Applica ordinamento multi-colonna lato client.
   const sortedItems = useMemo(() => {
     const out = [...items]
     const getter = (row, field) => {
@@ -424,6 +436,7 @@ const PreventiviList = () => {
     return out
   }, [items, sorts])
 
+  // Costruisce vista appiattita con eventuali header gruppo.
   const groupedFlat = useMemo(() => {
     if (groupBy === 'none') return sortedItems.map((it) => ({ type: 'item', data: it }))
 
@@ -479,6 +492,7 @@ const PreventiviList = () => {
     return flat
   }, [sortedItems, groupBy])
 
+  // Estrae gli elementi della pagina corrente.
   const pageItems = useMemo(() => {
     const start = page * rowsPerPage
     return groupedFlat.slice(start, start + rowsPerPage)
@@ -574,6 +588,7 @@ const PreventiviList = () => {
     navigate(`${basePath}/dettagli?mode=create`, { state: { createMode: true } })
   }, [navigate])
 
+  // Ripristina un preventivo archiviato.
   const handleRestore = async (id) => {
     if (!id || !token) return
     const confirmed = window.confirm(`Confermi il ripristino del preventivo archiviato ${id}?\nVerrà assegnata una nuova numerazione.`)
@@ -596,6 +611,7 @@ const PreventiviList = () => {
     }
   }
 
+  // Archivia un preventivo attivo.
   const handleArchive = async (id) => {
     if (!id || !token) return
     const confirmed = window.confirm(`Confermi l'archiviazione del preventivo ${id}?`)
@@ -612,6 +628,7 @@ const PreventiviList = () => {
     }
   }
 
+  // Apre il PDF preventivo in una nuova scheda.
   const handlePrintPDF = (preventivoId) => {
     if (typeof window === 'undefined') return
     const url = buildPreventivoPdfUrl(preventivoId)
@@ -619,6 +636,7 @@ const PreventiviList = () => {
     window.open(url, '_blank', 'noopener')
   }
 
+  // Apre il modal email precompilando i campi dal dettaglio preventivo.
   const handleOpenEmailModal = useCallback(
     async (row) => {
       if (!token) return
@@ -713,6 +731,7 @@ const PreventiviList = () => {
     [token, logout, user],
   )
 
+  // Chiude il modal email e resetta lo stato locale.
   const handleCloseEmailModal = () => {
     if (emailSending) return
     setEmailModalVisible(false)
@@ -728,6 +747,7 @@ const PreventiviList = () => {
     setEmailForm((prev) => ({ ...prev, [field]: value }))
   }
 
+  // Invia il preventivo via email usando i campi del modal.
   const handleSendPreventivoEmail = async (event) => {
     event?.preventDefault?.()
     if (!token || !emailTarget?.id) return

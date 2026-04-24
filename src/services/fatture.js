@@ -1,5 +1,6 @@
 import { apiFetch, buildApiUrl, getStoredToken, uploadToApi } from './apiClient'
 
+// Recupera l'elenco fatture con filtri opzionali.
 export const fetchFattureList = async ({ token, limit, date_from, date_to, is_acquisto, signal } = {}) => {
   const params = {}
   if (limit !== undefined && limit !== null) {
@@ -30,6 +31,7 @@ export const fetchFattureList = async ({ token, limit, date_from, date_to, is_ac
   return { items }
 }
 
+// Recupera KPI dashboard fatture.
 export const fetchFattureDashboard = async ({ token, period, is_acquisto, signal } = {}) => {
   const params = {}
   if (period) {
@@ -45,6 +47,7 @@ export const fetchFattureDashboard = async ({ token, period, is_acquisto, signal
   return payload
 }
 
+// Recupera il dettaglio singola fattura.
 export const fetchFatturaDetail = async ({ token, id, is_acquisto, signal } = {}) => {
   const response = await apiFetch('/fattureDetail.php', {
     token,
@@ -57,6 +60,7 @@ export const fetchFatturaDetail = async ({ token, id, is_acquisto, signal } = {}
   }
 }
 
+// Recupera configurazioni utili alla gestione fatture (stati, sezionali, metodi).
 export const fetchFattureConfig = async ({ token, is_acquisto, signal } = {}) => {
   const params = {}
   if (is_acquisto !== undefined) {
@@ -77,6 +81,7 @@ export const fetchFattureConfig = async ({ token, is_acquisto, signal } = {}) =>
   }
 }
 
+// Emette una fattura partendo da un preventivo.
 export const emitPreventivoFattura = async ({
   token,
   id,
@@ -116,6 +121,7 @@ export const emitPreventivoFattura = async ({
   return response ?? {}
 }
 
+// Aggiorna testata e righe della fattura.
 export const updateFatturaDetail = async ({
   token,
   id,
@@ -222,6 +228,7 @@ export const updateFatturaDetail = async ({
   return response?.data ?? null
 }
 
+// Recupera i pagamenti collegati alla fattura e i totali calcolati.
 export const fetchFatturaPagamenti = async ({ token, id, signal } = {}) => {
   const response = await apiFetch('/fatturePagamentiList.php', {
     token,
@@ -238,6 +245,7 @@ export const fetchFatturaPagamenti = async ({ token, id, signal } = {}) => {
   }
 }
 
+// Recupera il log cambi stato della fattura con paginazione.
 export const fetchFatturaStatusLog = async ({ token, id, limit, offset, signal } = {}) => {
   const params = { id }
   if (limit !== undefined) {
@@ -264,6 +272,7 @@ export const fetchFatturaStatusLog = async ({ token, id, limit, offset, signal }
   return { items: [] }
 }
 
+// Registra o aggiorna un pagamento associato alla fattura.
 export const saveFatturaPagamento = async ({
   token,
   id_fattura,
@@ -312,6 +321,7 @@ export const saveFatturaPagamento = async ({
   return response?.data ?? null
 }
 
+// Elimina un pagamento collegato alla fattura.
 export const deleteFatturaPagamento = async ({
   token,
   id_fattura,
@@ -337,6 +347,7 @@ export const deleteFatturaPagamento = async ({
   })
 }
 
+// Esporta la fattura in XML (tracciato SDI) restituendo blob e filename.
 export const exportFatturaXml = async ({ token, id, signal } = {}) => {
   const fatturaId = Number(id) || 0
   if (!fatturaId) {
@@ -386,6 +397,7 @@ export const exportFatturaXml = async ({ token, id, signal } = {}) => {
   return { blob, filename }
 }
 
+// Importa una o piu fatture da file XML.
 export const importFatturaXml = async ({ token, files, is_acquisto, signal } = {}) => {
   const normalized = files
     ? Array.isArray(files)
@@ -410,6 +422,7 @@ export const importFatturaXml = async ({ token, files, is_acquisto, signal } = {
   return payload ?? {}
 }
 
+// Costruisce la URL download del PDF fattura.
 export const buildFatturaPdfUrl = (id) => {
   const numericId = Number(id)
   if (!Number.isFinite(numericId) || numericId <= 0) {

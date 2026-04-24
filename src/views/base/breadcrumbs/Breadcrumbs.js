@@ -11,6 +11,7 @@ import {
 } from '@coreui/react'
 import { DocsComponents, DocsExample } from 'src/components'
 
+// Vista Breadcrumbs: componente UI del modulo.
 const Breadcrumbs = () => {
   return (
     <CRow>

@@ -40,7 +40,9 @@ import {
   saveMagazzinoProductConsumptions,
 } from '../../services/magazzino'
 
+// Riga vuota per consumi articolo.
 const emptyRow = { id_articolo: '', quantita_per_unita: '1', scarto_percento: '0', attivo: 1 }
+// Riga vuota per collegamento prodotto/variazione ad articolo esistente.
 const emptyProductLinkRow = {
   id_prodotto: '',
   id_variazione: '',
@@ -53,6 +55,7 @@ const emptyExistingLinkForm = {
   rows: [emptyProductLinkRow],
 }
 
+// Gestione consumi articoli per prodotti, varianti e combinazioni.
 const MagazzinoConsumiPage = () => {
   const { token, logout } = useAuth()
   const [loading, setLoading] = useState(false)
@@ -92,12 +95,14 @@ const MagazzinoConsumiPage = () => {
     note: '',
   })
 
+  // Auto-hide dei messaggi feedback.
   useEffect(() => {
     if (!feedback) return undefined
     const timer = window.setTimeout(() => setFeedback(null), 3500)
     return () => window.clearTimeout(timer)
   }, [feedback])
 
+  // Carica consumi e metadati in base allo scope prodotto selezionato.
   const loadData = useCallback(
     async (scopeKey) => {
       if (!token) return
@@ -142,6 +147,7 @@ const MagazzinoConsumiPage = () => {
     [logout, token],
   )
 
+  // Carica categorie prodotti e unità di misura disponibili.
   const loadMeta = useCallback(async () => {
     if (!token) return
     try {
@@ -158,16 +164,19 @@ const MagazzinoConsumiPage = () => {
     }
   }, [logout, token])
 
+  // Load iniziale pagina.
   useEffect(() => {
     loadData(null)
     loadMeta()
   }, [loadData, loadMeta])
 
+  // Ricarica dati quando cambia lo scope selezionato.
   useEffect(() => {
     if (!selectedProductScope) return
     loadData(selectedProductScope)
   }, [selectedProductScope, loadData])
 
+  // Etichetta prodotto/scope mostrata in testata.
   const productLabel = useMemo(() => {
     if (!selectedProductScope) return ''
     const [idProdottoRaw, comboKeyRaw = ''] = String(selectedProductScope).split(':')
@@ -182,6 +191,7 @@ const MagazzinoConsumiPage = () => {
     return `${p.codice || '-'} - ${p.nome || ''} | ${comboLabel}`
   }, [prodotti, selectedProductScope, comboLabelsByProduct])
 
+  // Apre wizard selezione prodotto + combinazione.
   const openProductSelector = () => {
     const [idProdottoRaw, comboKeyRaw = ''] = String(selectedProductScope || '').split(':')
     setSelectorProd(idProdottoRaw || '')
@@ -190,6 +200,7 @@ const MagazzinoConsumiPage = () => {
     setSelectorOpen(true)
   }
 
+  // Carica opzioni prodotti per wizard selector.
   useEffect(() => {
     if (!selectorOpen || !token) return undefined
     const controller = new AbortController()
@@ -210,6 +221,7 @@ const MagazzinoConsumiPage = () => {
     return () => controller.abort()
   }, [selectorOpen, token, selectorCat, selectorSearch])
 
+  // Carica combinazioni e variazioni del prodotto selezionato.
   useEffect(() => {
     if (!selectorOpen || !token || !selectorProd) {
       setSelectorComboOptions([])
@@ -267,12 +279,15 @@ const MagazzinoConsumiPage = () => {
     return () => controller.abort()
   }, [selectorOpen, selectorProd, token])
 
+  // Aggiorna campo di una riga consumi.
   const updateRow = (index, field, value) => {
     setRows((prev) => prev.map((row, i) => (i === index ? { ...row, [field]: value } : row)))
   }
 
+  // Aggiunge una nuova riga consumi.
   const addRow = () => setRows((prev) => [...prev, emptyRow])
 
+  // Rimuove una riga consumi.
   const removeRow = (index) => {
     setRows((prev) => {
       const out = prev.filter((_, i) => i !== index)
@@ -280,6 +295,7 @@ const MagazzinoConsumiPage = () => {
     })
   }
 
+  // Apre modal creazione nuovo articolo magazzino.
   const openCreateArticleModal = () => {
     setArticleForm({
       codice: '',
@@ -294,11 +310,13 @@ const MagazzinoConsumiPage = () => {
     setArticleModalOpen(true)
   }
 
+  // Apre modal collegamento articolo esistente a prodotto/variazione.
   const openExistingLinkModal = () => {
     setExistingLinkForm(emptyExistingLinkForm)
     setExistingLinkModalOpen(true)
   }
 
+  // Aggiorna una riga del form collegamenti esistenti.
   const updateExistingLinkRow = (index, field, value) => {
     setExistingLinkForm((prev) => ({
       ...prev,
@@ -306,10 +324,12 @@ const MagazzinoConsumiPage = () => {
     }))
   }
 
+  // Aggiunge riga collegamento nel modal articolo esistente.
   const addExistingLinkRow = () => {
     setExistingLinkForm((prev) => ({ ...prev, rows: [...prev.rows, emptyProductLinkRow] }))
   }
 
+  // Rimuove riga collegamento nel modal articolo esistente.
   const removeExistingLinkRow = (index) => {
     setExistingLinkForm((prev) => {
       const out = prev.rows.filter((_, i) => i !== index)
@@ -317,6 +337,7 @@ const MagazzinoConsumiPage = () => {
     })
   }
 
+  // Restituisce variazioni disponibili per un prodotto.
   const getVariationOptionsForProduct = useCallback(
     (idProdotto) =>
       productVariations.filter(
@@ -325,13 +346,16 @@ const MagazzinoConsumiPage = () => {
     [productVariations],
   )
 
+  // Indica se il prodotto selezionato ha variazioni.
   const productHasVariations = useCallback(
     (idProdotto) => getVariationOptionsForProduct(idProdotto).length > 0,
     [getVariationOptionsForProduct],
   )
 
+  // Indica se per il prodotto ci sono combinazioni configurate.
   const selectorHasCombos = useMemo(() => selectorComboOptions.length > 0, [selectorComboOptions])
 
+  // Conferma selezione scope prodotto/combinazione.
   const applySelectorChoice = () => {
     const idProdotto = Number(selectorProd) || 0
     if (idProdotto <= 0) return
@@ -346,6 +370,7 @@ const MagazzinoConsumiPage = () => {
     setSelectorOpen(false)
   }
 
+  // Salva consumi articoli per lo scope selezionato.
   const handleSave = async () => {
     if (!selectedProductScope) {
       setFeedback({ color: 'warning', message: 'Seleziona prima un prodotto.' })
@@ -383,6 +408,7 @@ const MagazzinoConsumiPage = () => {
     }
   }
 
+  // Crea un nuovo articolo magazzino dal modal dedicato.
   const handleCreateArticle = async (event) => {
     event.preventDefault()
     if (!articleForm.nome || String(articleForm.nome).trim() === '') {
@@ -427,6 +453,7 @@ const MagazzinoConsumiPage = () => {
     }
   }
 
+  // Collega un articolo esistente a uno o più prodotti/variazioni.
   const handleLinkExistingArticle = async (event) => {
     event.preventDefault()
     const idArticolo = Number(existingLinkForm.id_articolo) || 0

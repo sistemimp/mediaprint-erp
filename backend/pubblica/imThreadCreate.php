@@ -33,6 +33,7 @@ try {
     if (isset($payload['id_accounts']) && is_array($payload['id_accounts'])) {
         $targetIds = $payload['id_accounts'];
     } elseif (isset($payload['id_account'])) {
+        // Compatibilita' col payload legacy 1:1.
         $targetIds = [(int) $payload['id_account']];
     }
     $hasValidTarget = false;
@@ -47,6 +48,7 @@ try {
     }
 
     $service = new InstantMessagingService(new InstantMessagingRepository(Database::getConnection()));
+    // Se esiste gia' stessa coppia/gruppo, ritorna thread esistente invece di duplicare.
     $thread = $service->createThread($accountId, $targetIds);
     HttpResponse::json(['data' => $thread], 200);
 } catch (RuntimeException $exception) {

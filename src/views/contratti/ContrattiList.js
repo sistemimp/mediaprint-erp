@@ -24,6 +24,7 @@ import { useAuth } from '../../context/AuthContext'
 import { fetchContratti } from '../../services/contratti'
 import PermissionButton from '../../components/PermissionButton'
 
+// Formatta data nel formato locale italiano.
 const formatDate = (value) => {
   if (!value) return '-'
   const date = new Date(value)
@@ -31,6 +32,7 @@ const formatDate = (value) => {
   return date.toLocaleDateString('it-IT')
 }
 
+// Lista contratti con ricerca e filtro "solo attivi".
 const ContrattiList = () => {
   const navigate = useNavigate()
   const { token, logout } = useAuth()
@@ -41,6 +43,7 @@ const ContrattiList = () => {
   const [search, setSearch] = useState('')
   const [onlyActive, setOnlyActive] = useState(true)
 
+  // Carica contratti applicando i filtri correnti.
   const load = async () => {
     setLoading(true)
     setError(null)
@@ -63,6 +66,7 @@ const ContrattiList = () => {
     }
   }
 
+  // Caricamento iniziale e ricarica quando cambia il filtro attivi.
   useEffect(() => {
     if (!token) return
     load()

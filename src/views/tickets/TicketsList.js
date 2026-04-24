@@ -44,6 +44,7 @@ const PRIORITY_OPTIONS = [
   { value: 'critica', label: 'Critica' },
 ]
 
+// Mappa lo stato ticket sul colore badge in tabella.
 const statusColor = (status) => {
   if (status === 'aperto') return 'warning'
   if (status === 'in_lavorazione') return 'info'
@@ -52,6 +53,7 @@ const statusColor = (status) => {
   return 'primary'
 }
 
+// Mappa la priorita ticket sul colore badge in tabella.
 const priorityColor = (priority) => {
   if (priority === 'bassa') return 'success'
   if (priority === 'media') return 'warning'
@@ -60,6 +62,7 @@ const priorityColor = (priority) => {
   return 'secondary'
 }
 
+// Formatta una data in locale italiano con fallback al valore originale.
 const formatDate = (value) => {
   if (!value) return '-'
   const date = new Date(value)
@@ -67,6 +70,7 @@ const formatDate = (value) => {
   return date.toLocaleString('it-IT')
 }
 
+// Lista ticket con filtri operativi (stato/priorita/assegnatario) e accesso rapido al dettaglio.
 const TicketsList = () => {
   const navigate = useNavigate()
   const { token, logout } = useAuth()
@@ -82,6 +86,7 @@ const TicketsList = () => {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
 
+  // Carica la lista ticket usando i filtri correnti.
   const loadTickets = useCallback(async () => {
     if (!token) return
     setLoading(true)
@@ -106,6 +111,7 @@ const TicketsList = () => {
     }
   }, [filters, logout, token])
 
+  // Carica la lista operatori per il filtro "assegnato a".
   useEffect(() => {
     if (!token) return
     const controller = new AbortController()
@@ -127,24 +133,29 @@ const TicketsList = () => {
     return () => controller.abort()
   }, [token])
 
+  // Primo caricamento pagina e refresh quando cambia loadTickets.
   useEffect(() => {
     loadTickets()
   }, [loadTickets])
 
+  // Aggiorna il singolo filtro al cambio input/select.
   const handleChange = (event) => {
     const { name, value } = event.target
     setFilters((prev) => ({ ...prev, [name]: value }))
   }
 
+  // Submit filtri: ricarica ticket senza refresh browser.
   const handleSearch = (event) => {
     event.preventDefault()
     loadTickets()
   }
 
+  // Ripristina i filtri ai valori iniziali.
   const handleReset = () => {
     setFilters({ q: '', stato: '', priorita: '', assigned_to: '' })
   }
 
+  // Costruisce le option del filtro operatori dalla lista account.
   const accountOptions = useMemo(() => {
     if (!Array.isArray(accounts)) return []
     return accounts.map((acc) => ({

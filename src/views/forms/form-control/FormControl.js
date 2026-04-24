@@ -13,6 +13,7 @@ import {
 } from '@coreui/react'
 import { DocsComponents, DocsExample } from 'src/components'
 
+// Vista FormControl: componente UI del modulo.
 const FormControl = () => {
   return (
     <CRow>

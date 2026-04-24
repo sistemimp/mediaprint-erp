@@ -38,6 +38,7 @@ import {
 
 const currencyFormatter = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' })
 
+// Wizard import pagamenti: upload file, mapping fatture, conferma finale.
 const PagamentiImport = () => {
   const { token, logout } = useAuth()
 
@@ -63,6 +64,7 @@ const PagamentiImport = () => {
     error: null,
   })
 
+  // Carica opzioni metodi/modalita pagamento dalla configurazione fatture.
   useEffect(() => {
     if (!token) return
     const controller = new AbortController()
@@ -91,9 +93,11 @@ const PagamentiImport = () => {
     return () => controller.abort()
   }, [token, logout])
 
+  // Lookup opzioni select per metodi e modalita.
   const metodiOptions = useMemo(() => config.metodi_pagamento || [], [config])
   const modalitaOptions = useMemo(() => config.modalita_pagamento || [], [config])
 
+  // Upload file e normalizzazione righe importate per il mapping manuale.
   const handleFileChange = async (event) => {
     const file = event?.target?.files?.[0]
     if (!file || !token) return
@@ -162,6 +166,7 @@ const PagamentiImport = () => {
     }
   }
 
+  // Aggiorna i campi editabili di una riga pagamento.
   const handleRowFieldChange = (rowId, field) => (event) => {
     const value = event?.target?.value ?? ''
     setRows((prev) =>
@@ -180,6 +185,7 @@ const PagamentiImport = () => {
     setSubmitSuccess(null)
   }
 
+  // Aggiorna l'importo di una singola allocazione fattura.
   const handleAllocationAmountChange = (rowId, allocId) => (event) => {
     const value = event?.target?.value ?? ''
     setRows((prev) =>
@@ -199,6 +205,7 @@ const PagamentiImport = () => {
     )
   }
 
+  // Rimuove un collegamento fattura da una riga pagamento.
   const handleRemoveAllocation = (rowId, allocId) => {
     setRows((prev) =>
       prev.map((row) => {
@@ -211,6 +218,7 @@ const PagamentiImport = () => {
     )
   }
 
+  // Aggiunge una nuova allocazione vuota alla riga pagamento.
   const handleAddAllocation = (rowId) => {
     setRows((prev) =>
       prev.map((row) => {
@@ -230,6 +238,7 @@ const PagamentiImport = () => {
     )
   }
 
+  // Elimina una riga intera dal wizard import.
   const handleRemoveRow = (rowId) => {
     setRows((prev) => prev.filter((row) => row.tempId !== rowId))
     setSubmitError(null)
@@ -240,6 +249,7 @@ const PagamentiImport = () => {
     })
   }
 
+  // Apre modal ricerca fatture per una specifica allocazione.
   const openInvoiceModal = (rowId, allocId) => {
     setInvoiceModal({
       open: true,
@@ -252,10 +262,12 @@ const PagamentiImport = () => {
     })
   }
 
+  // Chiude modal ricerca fatture e pulisce risultati.
   const closeInvoiceModal = () => {
     setInvoiceModal((prev) => ({ ...prev, open: false, results: [], search: '', error: null }))
   }
 
+  // Esegue la ricerca fatture aperte da associare alla riga selezionata.
   const performInvoiceSearch = async () => {
     if (!invoiceModal.open || !invoiceModal.rowId) return
     const row = rows.find((item) => item.tempId === invoiceModal.rowId)
@@ -279,6 +291,7 @@ const PagamentiImport = () => {
     }
   }
 
+  // Applica la fattura scelta all'allocazione corrente.
   const handleSelectInvoice = (invoice) => {
     if (!invoiceModal.rowId || !invoiceModal.allocId) return
     setRows((prev) =>
@@ -303,6 +316,7 @@ const PagamentiImport = () => {
     closeInvoiceModal()
   }
 
+  // Calcola totali allocati/differenze per validazione e UI.
   const rowsWithTotals = useMemo(() => {
     return rows.map((row) => {
       const targetTotal = Number(row.importo_originale ?? row.importo) || 0
@@ -320,6 +334,7 @@ const PagamentiImport = () => {
     })
   }, [rows])
 
+  // Conferma import: valida righe e invia payload definitivo al backend.
   const handleSubmit = async (event) => {
     event.preventDefault()
     if (!token) return
@@ -426,6 +441,7 @@ const PagamentiImport = () => {
     }
   }
 
+  // Riporta il wizard allo stato iniziale di upload.
   const resetWizard = () => {
     setRows([])
     setStage('upload')
@@ -813,6 +829,7 @@ const PagamentiImport = () => {
   )
 }
 
+// Genera un identificativo temporaneo stabile per righe/allocazioni lato client.
 const cryptoRandom = () => {
   if (typeof window !== 'undefined' && window.crypto?.randomUUID) {
     return window.crypto.randomUUID()

@@ -18,6 +18,7 @@ import {
 } from '@coreui/react'
 import { DocsComponents, DocsExample } from 'src/components'
 
+// Vista Validation: componente UI del modulo.
 const CustomStyles = () => {
   const [validated, setValidated] = useState(false)
   const handleSubmit = (event) => {

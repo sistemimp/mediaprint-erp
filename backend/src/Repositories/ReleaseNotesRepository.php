@@ -27,6 +27,7 @@ final class ReleaseNotesRepository
         ORDER BY n.created_at DESC, n.id_note DESC
         LIMIT 200
         SQL;
+        // Limite difensivo per mantenere leggera la timeline iniziale.
 
         $stmt = $this->pdo->query($sql);
         return $stmt ? ($stmt->fetchAll(PDO::FETCH_ASSOC) ?: []) : [];

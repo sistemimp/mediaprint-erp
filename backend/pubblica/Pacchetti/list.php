@@ -25,6 +25,7 @@ try {
     $auth = AuthGuard::requireAuth();
     AuthGuard::requirePermissions($auth, ['pack.read']);
     if (AuthGuard::getAccountType($auth) === 'cliente') {
+        // Pacchetti non esposti a utenti cliente.
         HttpResponse::json(['items' => []], 200);
         return;
     }

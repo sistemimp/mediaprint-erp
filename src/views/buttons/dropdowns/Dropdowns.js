@@ -15,6 +15,7 @@ import {
 } from '@coreui/react'
 import { DocsComponents, DocsExample } from 'src/components'
 
+// Vista Dropdowns: componente UI del modulo.
 const Dropdowns = () => {
   return (
     <CRow>

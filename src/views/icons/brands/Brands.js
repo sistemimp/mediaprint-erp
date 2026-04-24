@@ -4,6 +4,7 @@ import CIcon from '@coreui/icons-react'
 import { brandSet } from '@coreui/icons'
 import { DocsIcons } from 'src/components'
 
+// Vista Brands: componente UI del modulo.
 const toKebabCase = (str) => {
   return str.replace(/([a-z0-9]|(?=[A-Z]))([A-Z])/g, '$1-$2').toLowerCase()
 }

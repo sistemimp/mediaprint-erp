@@ -25,11 +25,13 @@ try {
     $auth = AuthGuard::requireAuth();
     AuthGuard::requirePermissions($auth, ['pack.read']);
     if (AuthGuard::getAccountType($auth) === 'cliente') {
+        // Risposta vuota ma shape invariata per evitare branch speciali nel frontend.
         HttpResponse::json(['data' => null, 'righe' => []], 200);
         return;
     }
 
     $id = isset($_GET['id']) ? (int) $_GET['id'] : (isset($_GET['id_pacchetto']) ? (int) $_GET['id_pacchetto'] : 0);
+    // Supporta sia parametro nuovo (id) sia alias storico (id_pacchetto).
     $service = new PacchettiService(new PacchettiRepository(Database::getConnection()));
     $result = $service->detail(['id' => $id]);
     HttpResponse::json($result, 200);

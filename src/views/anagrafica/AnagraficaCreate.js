@@ -17,6 +17,7 @@ import { useAuth } from '../../context/AuthContext'
 import { createAnagrafica } from '../../services/anagrafiche'
 import BottomToast from '../../components/BottomToast'
 
+// Form creazione anagrafica minima con feedback toast.
 const AnagraficaCreate = () => {
   const navigate = useNavigate()
   const { token, logout } = useAuth()
@@ -30,17 +31,20 @@ const AnagraficaCreate = () => {
   const [error, setError] = useState(null)
   const [toast, setToast] = useState({ open: false, type: 'success', message: '' })
 
+  // Mostra toast temporaneo per esiti operazione.
   const showToast = (message, type = 'success') => {
     setToast({ open: true, type, message })
     window.clearTimeout(showToast._t)
     showToast._t = window.setTimeout(() => setToast((t) => ({ ...t, open: false })), 3000)
   }
 
+  // Aggiorna il campo form modificato.
   const onChange = (e) => {
     const { name, value } = e.target
     setForm((prev) => ({ ...prev, [name]: value }))
   }
 
+  // Invia richiesta creazione e reindirizza al dettaglio.
   const onSubmit = async (e) => {
     e.preventDefault()
     if (!token) return

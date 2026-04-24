@@ -3,6 +3,7 @@ import { CRow, CCol } from '@coreui/react'
 import { useAuth } from '../../context/AuthContext'
 import MyActivitiesSection from '../profile/MyActivitiesSection'
 
+// Pagina "Attivita": riusa il widget profilo per mostrare le attivita assegnate all'utente.
 const AttivitaPage = () => {
   const { token, user } = useAuth()
 

@@ -62,6 +62,7 @@ final class ProdottiRepository
         if (!empty($cond)) {
             $sql .= ' AND ' . implode(' AND ', $cond);
         }
+        // Limite difensivo per endpoint di ricerca live lato UI.
         $sql .= ' ORDER BY p.nome ASC LIMIT 200';
 
         $stmt = $this->pdo->prepare($sql);
@@ -159,6 +160,7 @@ final class ProdottiRepository
 
     public function deactivateProdotto(int $id): void
     {
+        // Verifica esplicita per distinguere "non trovato" da update senza righe modificate.
         $check = $this->pdo->prepare('SELECT 1 FROM tb_prodotti WHERE id_prodotto = :id LIMIT 1');
         $check->bindValue(':id', $id, PDO::PARAM_INT);
         $check->execute();
@@ -176,6 +178,7 @@ final class ProdottiRepository
      */
     public function upsertCategoria(?int $idCategoria, string $nome): int
     {
+        // Semantica upsert guidata dal chiamante: id presente => update, altrimenti insert.
         if ($idCategoria !== null && $idCategoria > 0) {
             $stmt = $this->pdo->prepare('UPDATE tb_categorie SET nome = :nome WHERE id_categoria = :id');
             $stmt->bindValue(':id', $idCategoria, PDO::PARAM_INT);
@@ -195,6 +198,7 @@ final class ProdottiRepository
     public function listVariazioni(): array
     {
         try {
+            // Conteggio articoli collegati per mostrare subito l'impatto di ogni variazione.
             $stmt = $this->pdo->query(
                 'SELECT v.id_variazione, v.codice, v.nome, v.categoria, v.prezzo,
                         COUNT(DISTINCT c.id_articolo) AS articoli_count
@@ -216,6 +220,7 @@ final class ProdottiRepository
                 'articoli_count' => isset($r['articoli_count']) ? (int) $r['articoli_count'] : 0,
             ], $rows);
         } catch (\Throwable $ignored) {
+            // Fallback compatibile con database meno aggiornati (senza join/colonne attese).
             $stmt = $this->pdo->query('SELECT id_variazione, codice, nome, categoria, prezzo FROM tb_variazioni ORDER BY nome ASC');
             $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
             return array_map(fn($r) => [
@@ -296,6 +301,7 @@ final class ProdottiRepository
 
     public function linkVariazioneToProdotto(int $idProdotto, int $idVariazione): void
     {
+        // Idempotente: evita errore duplicati se il legame esiste gia'.
         $stmt = $this->pdo->prepare('INSERT INTO appoggio_prodotto_variazione (id_prodotto, id_variazione) VALUES (:p, :v)
             ON DUPLICATE KEY UPDATE id_variazione = VALUES(id_variazione)');
         $stmt->bindValue(':p', $idProdotto, PDO::PARAM_INT);
@@ -357,6 +363,7 @@ final class ProdottiRepository
      */
     public function upsertPrezzoCombinato(int $idProdotto, array $varIds, float $prezzo): int
     {
+        // Canonicalizzazione: rimuove ID invalidi e ordina per ottenere una chiave deterministica.
         $filtered = array_values(array_filter(array_map(fn($v) => (int) $v, $varIds), fn($v) => $v > 0));
         sort($filtered, SORT_NUMERIC);
         if (empty($filtered)) { throw new \RuntimeException('Nessuna variazione valida', 422); }
@@ -369,6 +376,7 @@ final class ProdottiRepository
         $stmt->bindValue(':z', $prezzo);
         $stmt->execute();
 
+        // Recupera sempre l'ID reale dopo upsert, indipendentemente dal ramo insert/update.
         $sel = $this->pdo->prepare('SELECT id FROM tb_prezzi_variazioni WHERE id_prodotto = :p AND combo_key = :k LIMIT 1');
         $sel->bindValue(':p', $idProdotto, PDO::PARAM_INT);
         $sel->bindValue(':k', $comboKey, PDO::PARAM_STR);

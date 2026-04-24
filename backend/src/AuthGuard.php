@@ -51,7 +51,11 @@ final class AuthGuard
         }
 
         $secret = getenv('JWT_SECRET') ?: '04fb222b0c3ba451e9f1b7f72f756f33bc7dc5d9db127275ac40080819c114d63dc2f29de59075a285cd753e9454ed53';
-        $payload = JWT::decode($token, new Key($secret, 'HS256'));
+        try {
+            $payload = JWT::decode($token, new Key($secret, 'HS256'));
+        } catch (\Throwable $exception) {
+            throw new RuntimeException('Token non valido o scaduto.', 401);
+        }
         $data = json_decode(json_encode($payload), true);
         if (!is_array($data)) {
             throw new RuntimeException('Token non valido.', 401);

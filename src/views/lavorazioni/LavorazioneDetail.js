@@ -120,6 +120,7 @@ const jobStateOptions = [
   { value: 'annullata', label: 'Annullata' },
 ]
 
+// Formatter e mapper visuali condivisi nel dettaglio lavorazione.
 const formatDate = (value, withTime = false) => {
   if (!value) return '-'
   const date = new Date(value)
@@ -245,6 +246,7 @@ const normalizeCategoryName = (value) =>
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '')
 
+// Utility dominio CED/produzione per riconoscimento attività e categorie.
 const isStampaCategoryName = (value) => {
   const normalized = normalizeCategoryName(value)
   if (!normalized) return false
@@ -349,6 +351,7 @@ const buildDestinationTotals = (rows, variationMap) => {
   return { totalQty, totals }
 }
 
+// Componente presentazionale per coppie etichetta/valore.
 const InfoField = ({ label, value }) => (
   <div className="mb-3">
     <div className="text-body-secondary text-uppercase small fw-semibold">{label}</div>
@@ -497,6 +500,7 @@ const LavorazioneDetail = () => {
   const [cedProducts, setCedProducts] = useState([])
   const [activityDeleting, setActivityDeleting] = useState({})
   const [postaliVariationMap, setPostaliVariationMap] = useState({})
+  // Caricamento principale del dettaglio lavorazione.
   useEffect(() => {
     if (!token || !recordId) {
       return
@@ -529,6 +533,7 @@ const LavorazioneDetail = () => {
     return () => controller.abort()
   }, [token, recordId, refreshIndex])
 
+  // Lazy-load documenti correlati quando si apre il tab Documenti.
   useEffect(() => {
     if (!token || !recordId) {
       return
@@ -567,6 +572,7 @@ const LavorazioneDetail = () => {
     return () => controller.abort()
   }, [token, recordId, infoTab, docsLoaded])
 
+  // Lazy-load file allegati quando si apre il tab File.
   useEffect(() => {
     if (!token || !recordId) {
       return
@@ -600,6 +606,7 @@ const LavorazioneDetail = () => {
     return () => controller.abort()
   }, [token, recordId, infoTab, filesLoaded])
 
+  // Carica template attività quando si apre il modal creazione.
   useEffect(() => {
     if (!token || !activityModalVisible) {
       return
@@ -889,6 +896,7 @@ const LavorazioneDetail = () => {
       }
     })
   }, [postaActivityId, postaliRows])
+  // Aggiorna localmente la quantita CED per riga attività.
   const handleCedQuantityChange = (activityId, rowId) => (event) => {
     const value = event?.target ? event.target.value : event
     setCedQuantities((prev) => ({
@@ -899,6 +907,7 @@ const LavorazioneDetail = () => {
       },
     }))
   }
+  // Salva le quantita CED modificate per una attività.
   const handleSaveCedQuantities = useCallback(
     async (activityId, rows) => {
       if (!token || !activityId) {
@@ -946,6 +955,7 @@ const LavorazioneDetail = () => {
     },
     [cedQuantities, token],
   )
+  // Elimina una riga CED/preventivo collegata all'attività.
   const handleDeleteCedLine = useCallback(
     async (activityId, row) => {
       if (!token) {
@@ -1008,16 +1018,19 @@ const LavorazioneDetail = () => {
     setCedModalQty(1)
     setCedModalPrice(0)
   }
+  // Apre lo stepper CED per inserimento nuova riga.
   const handleOpenCedLineModal = () => {
     resetCedProductModal()
     setCedLineError(null)
     setCedStepperOpen(true)
   }
+  // Chiude e resetta il modal CED.
   const handleCloseCedLineModal = () => {
     setCedStepperOpen(false)
     resetCedProductModal()
     setCedLineError(null)
   }
+  // Inserisce una nuova riga da CED nel preventivo collegato.
   const handleSubmitCedLine = async () => {
     if (!token) {
       return
@@ -1099,6 +1112,7 @@ const LavorazioneDetail = () => {
     : currentDetail.percentuale_avanzamento >= 100
       ? 'success'
       : 'primary'
+  // Aggiorna i campi del draft informazioni lavorazione.
   const handleInfoFieldChange = (field) => (event) => {
     const value = event?.target ? event.target.value : event
     setInfoDraft((prev) => ({
@@ -1109,6 +1123,7 @@ const LavorazioneDetail = () => {
     setInfoSuccess(null)
   }
 
+  // Entra in modalità modifica info lavorazione.
   const handleInfoEdit = () => {
     if (!hasDetail) return
     setInfoDraft(buildInfoDraft(currentDetail))
@@ -1117,6 +1132,7 @@ const LavorazioneDetail = () => {
     setInfoSuccess(null)
   }
 
+  // Annulla le modifiche info e ripristina i valori correnti.
   const handleInfoCancel = () => {
     setInfoDraft(buildInfoDraft(currentDetail))
     setInfoEditing(false)
@@ -1124,6 +1140,7 @@ const LavorazioneDetail = () => {
     setInfoSuccess(null)
   }
 
+  // Salva le informazioni principali della lavorazione.
   const handleInfoSave = async (event) => {
     if (event?.preventDefault) {
       event.preventDefault()
@@ -1182,6 +1199,7 @@ const LavorazioneDetail = () => {
     })
   }
 
+  // Cambia stato attività e aggiorna avanzamento/report correlato.
   const handleActivityStatusChange = async (activityId, targetStatus, percentOverride, activity = null) => {
     if (!token || !activityId) return
     setActivityStatusError(null)
@@ -1226,6 +1244,7 @@ const LavorazioneDetail = () => {
     }
   }
 
+  // Gestione campi form upload file.
   const handleFileFieldChange = (field) => (event) => {
     const value = event?.target ? event.target.value : event
     setFileForm((prev) => ({
@@ -1236,6 +1255,7 @@ const LavorazioneDetail = () => {
     setFileUploadSuccess(null)
   }
 
+  // Selezione file da input.
   const handleFileInputChange = (event) => {
     const file = event?.target?.files?.[0] ?? null
     setFileForm((prev) => ({
@@ -1246,6 +1266,7 @@ const LavorazioneDetail = () => {
     setFileUploadSuccess(null)
   }
 
+  // Gestione drag&drop file nel dropzone.
   const handleFileDrop = (event) => {
     event.preventDefault()
     setFileDragOver(false)
@@ -1268,6 +1289,7 @@ const LavorazioneDetail = () => {
     setFileDragOver(false)
   }
 
+  // Upload file allegato e refresh elenco file.
   const handleFileUpload = async (event) => {
     if (event?.preventDefault) {
       event.preventDefault()
@@ -1304,6 +1326,7 @@ const LavorazioneDetail = () => {
     }
   }
 
+  // Download file allegato tramite endpoint autenticato.
   const handleFileDownload = async (file) => {
     if (!token || !file?.id_file) {
       return
@@ -1349,6 +1372,7 @@ const LavorazioneDetail = () => {
     }
   }
 
+  // Elimina un'attività e aggiorna il dettaglio.
   const handleDeleteActivity = async (activityId) => {
     if (!token || !activityId) return
     if (!window.confirm('Sei sicuro di rimuovere questa attivitÃ ?')) {
@@ -1372,6 +1396,7 @@ const LavorazioneDetail = () => {
     }
   }
 
+  // Apre modal report attività precompilato.
   const handleOpenActivityReportModal = (task) => {
     setActivityReportError(null)
     setActivityReportSuccess(null)
@@ -1387,6 +1412,7 @@ const LavorazioneDetail = () => {
     })
   }
 
+  // Apre modal modifica attività.
   const handleOpenActivityEditModal = (task) => {
     setActivityEditError(null)
     setActivityEditModal({
@@ -1418,6 +1444,7 @@ const LavorazioneDetail = () => {
     }))
   }
 
+  // Salva modifiche anagrafiche dell'attività.
   const handleActivityEditSubmit = async (event) => {
     if (event?.preventDefault) {
       event.preventDefault()
@@ -1447,6 +1474,7 @@ const LavorazioneDetail = () => {
     }
   }
 
+  // Chiude modal report attività e resetta feedback.
   const handleCloseActivityReportModal = () => {
     if (activityReportSubmitting) return
     setActivityReportModal((prev) => ({
@@ -1472,6 +1500,7 @@ const LavorazioneDetail = () => {
     }))
   }
 
+  // Salva report operativo (avvio/fine/operatore/note).
   const handleActivityReportSubmit = async (event) => {
     if (event?.preventDefault) {
       event.preventDefault()
@@ -1525,6 +1554,7 @@ const LavorazioneDetail = () => {
     return Array.from(ids)
   }, [currentDetail])
 
+  // Apre modal creazione nuova attività.
   const handleOpenActivityModal = () => {
     setActivityError(null)
     setActivityForm((prev) => ({
@@ -1543,12 +1573,14 @@ const LavorazioneDetail = () => {
     setActivityModalVisible(true)
   }
 
+  // Chiude modal creazione attività.
   const handleCloseActivityModal = () => {
     if (activitySubmitting) return
     setActivityModalVisible(false)
     setActivityError(null)
   }
 
+  // Applica il template selezionato sul form attività.
   const handleActivityTemplateChange = (event) => {
     const value = event.target.value
     setActivityForm((prev) => ({
@@ -1589,6 +1621,7 @@ const LavorazioneDetail = () => {
     }))
   }
 
+  // Crea una nuova attività sulla lavorazione.
   const handleActivitySubmit = async (event) => {
     event.preventDefault()
     if (!token || !recordId) return
@@ -1643,6 +1676,7 @@ const LavorazioneDetail = () => {
     }))
   }
 
+  // Apre modal assegnazione operatori di lavorazione.
   const handleOpenJobAssignmentModal = () => {
     const operatorValues = Array.isArray(currentDetail?.lavorazione_operatori)
       ? currentDetail.lavorazione_operatori
@@ -1656,12 +1690,14 @@ const LavorazioneDetail = () => {
     setJobAssignmentModalVisible(true)
   }
 
+  // Chiude modal assegnazione lavorazione.
   const handleCloseJobAssignmentModal = () => {
     if (jobAssignmentSubmitting) return
     setJobAssignmentModalVisible(false)
     setJobAssignmentError(null)
   }
 
+  // Salva assegnazione operatori lavorazione.
   const handleJobAssignmentSubmit = async (event) => {
     event.preventDefault()
     if (!token || !recordId) return
@@ -1704,6 +1740,7 @@ const LavorazioneDetail = () => {
     }))
   }
 
+  // Apre modal assegnazione reparto/operatori attività.
   const handleOpenActivityAssignmentModal = (task) => {
     if (!task) return
     const repartoValue =
@@ -1721,6 +1758,7 @@ const LavorazioneDetail = () => {
     setActivityAssignmentError(null)
   }
 
+  // Chiude modal assegnazione attività.
   const handleCloseActivityAssignmentModal = () => {
     if (activityAssignmentSubmitting) return
     setActivityAssignmentModal({
@@ -1733,6 +1771,7 @@ const LavorazioneDetail = () => {
     setActivityAssignmentError(null)
   }
 
+  // Salva assegnazione attività.
   const handleActivityAssignmentSubmit = async (event) => {
     event.preventDefault()
     if (!token || !activityAssignmentModal.id) return
@@ -1764,6 +1803,7 @@ const LavorazioneDetail = () => {
     }
   }
 
+  // Apre modal invio notifica (ambito lavorazione o attività).
   const handleOpenNotificationModal = (scope = 'job', context = null) => {
     const defaultOperators =
       scope === 'activity'
@@ -1792,6 +1832,7 @@ const LavorazioneDetail = () => {
     setNotificationSuccess(null)
   }
 
+  // Chiude modal notifica e pulisce eventuali errori.
   const handleCloseNotificationModal = () => {
     if (notificationSubmitting) return
     setNotificationModal((prev) => ({
@@ -1819,6 +1860,7 @@ const LavorazioneDetail = () => {
     }))
   }
 
+  // Invia notifica agli operatori selezionati.
   const handleNotificationSubmit = async (event) => {
     event.preventDefault()
     if (!token || !recordId) return

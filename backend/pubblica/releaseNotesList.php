@@ -24,6 +24,7 @@ if ($method !== 'GET') {
 try {
     AuthGuard::requireAuth();
 
+    // Endpoint leggibile da qualunque utente autenticato (timeline interna condivisa).
     $service = new ReleaseNotesService(new ReleaseNotesRepository(Database::getConnection()));
     $result = $service->list();
     HttpResponse::json($result, 200);

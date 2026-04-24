@@ -16,6 +16,7 @@ import {
   markLavorazioneNotificationsRead,
 } from '../../services/lavorazioni'
 
+// Formatta timestamp notifica in data+ora locale.
 const formatDateTime = (value) => {
   if (!value) {
     return ''
@@ -30,6 +31,7 @@ const formatDateTime = (value) => {
   })}`
 }
 
+// Converte payload JSON serializzato in oggetto, con fallback null.
 const parsePayload = (value) => {
   if (!value) {
     return null
@@ -59,6 +61,7 @@ const NotificationsList = () => {
 
   const isAuthenticated = Boolean(token && accountId)
 
+  // Carica notifiche utente corrente con limite progressivo.
   const loadNotifications = useCallback(
     async (nextLimit = limit) => {
       if (!isAuthenticated) {
@@ -84,15 +87,18 @@ const NotificationsList = () => {
     [token, accountId, isAuthenticated, limit],
   )
 
+  // Ricarica elenco quando cambia limite o contesto autenticazione.
   useEffect(() => {
     loadNotifications(limit)
   }, [loadNotifications, limit])
 
+  // Deriva l'elenco notifiche non lette per badge e azioni massive.
   const unreadItems = useMemo(
     () => notifications.filter((item) => String(item?.stato).toLowerCase() !== 'read'),
     [notifications],
   )
 
+  // Marca come lette le notifiche indicate e aggiorna lo stato locale.
   const markNotifications = useCallback(
     async (ids) => {
       if (!isAuthenticated || !Array.isArray(ids) || ids.length === 0) {
@@ -122,6 +128,7 @@ const NotificationsList = () => {
     [token, accountId, isAuthenticated],
   )
 
+  // Segna tutte le notifiche non lette.
   const handleMarkAll = () => {
     if (unreadItems.length === 0) {
       return
@@ -132,6 +139,7 @@ const NotificationsList = () => {
     markNotifications(ids)
   }
 
+  // Apre la notifica: la marca letta e naviga alla destinazione piu pertinente.
   const handleItemClick = async (item) => {
     if (!item) return
     const notificationId = Number(item.id_notifica)
@@ -158,6 +166,7 @@ const NotificationsList = () => {
     }
   }
 
+  // Incrementa il limite per paginazione "load more".
   const handleLoadMore = () => {
     setLimit((prev) => prev + 50)
   }

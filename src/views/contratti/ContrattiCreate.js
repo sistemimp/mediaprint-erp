@@ -38,6 +38,7 @@ import AnagraficaAutocomplete from '../../components/AnagraficaAutocomplete'
 import HtmlEditor from '../../components/HtmlEditor'
 import PermissionButton from '../../components/PermissionButton'
 
+// Factory di riga prodotto vuota per il contratto.
 const createEmptyLine = () => ({
   id_prodotto: '',
   combo_key: '',
@@ -49,6 +50,7 @@ const createEmptyLine = () => ({
   sconti: [],
 })
 
+// Pagina creazione contratto con righe prodotto e supporto pacchetti.
 const ContrattiCreate = () => {
   const navigate = useNavigate()
   const location = useLocation()
@@ -98,6 +100,7 @@ const ContrattiCreate = () => {
   const [saveError, setSaveError] = useState(null)
   const [saveSuccess, setSaveSuccess] = useState(null)
 
+  // Carica lookup iniziali (prodotti, nature IVA e categorie) usati da form e selettori.
   useEffect(() => {
     if (!token) return
     const controller = new AbortController()
@@ -203,6 +206,7 @@ const ContrattiCreate = () => {
     return () => controller.abort()
   }, [token, pkgOpen, pkgSearch, pkgOnlyActive])
 
+  // Mostra l'anteprima righe del pacchetto selezionato prima dell'inserimento.
   useEffect(() => {
     if (!token || !pkgOpen) return
     const controller = new AbortController()
@@ -220,6 +224,7 @@ const ContrattiCreate = () => {
     return () => controller.abort()
   }, [token, pkgOpen, selPacchetto])
 
+  // Applica eventuale precompilazione ricevuta via routing (cliente gia' selezionato).
   useEffect(() => {
     if (!prefill) return
     if (prefill.id_anagrafica != null) {
@@ -242,6 +247,7 @@ const ContrattiCreate = () => {
     }
   }, [prefill])
 
+  // Ricerca clienti per autocomplete anagrafica.
   const loadAnagrafiche = async (query) => {
     if (!token) return
     if (searchAbortRef.current) {
@@ -275,15 +281,18 @@ const ContrattiCreate = () => {
     loadAnagrafiche('')
   }, [token])
 
+  // Aggiunge una riga al contratto.
   const handleAddLine = () => {
     setRighe((rows) => rows.concat(createEmptyLine()))
   }
 
+  // Rimuove una riga dal contratto.
   const handleRemoveLine = (index) => {
     setRighe((rows) => rows.filter((_, i) => i !== index))
   }
 
 
+  // Imposta data inizio mantenendo la logica automatica per data fine.
   const syncDataFine = (value) => {
     const raw = String(value || '').trim()
     setDataInizio(raw)
@@ -302,12 +311,14 @@ const ContrattiCreate = () => {
     setDataFine(next)
   }, [dataInizio, dataFineManual])
 
+  // Gestisce la data fine manuale e disattiva l'autocalcolo quando compilata.
   const handleDataFineChange = (value) => {
     const raw = String(value || '').trim()
     setDataFine(raw)
     setDataFineManual(raw !== '')
   }
 
+  // Reset campi del modal selettore prodotti.
   const resetProductModal = () => {
     setProdStep(1)
     setSelCat('')
@@ -319,6 +330,7 @@ const ContrattiCreate = () => {
     setModalPrice(0)
   }
 
+  // Reset campi del modal pacchetti.
   const resetPkgModal = () => {
     setPkgSearch('')
     setSelPacchetto('')
@@ -327,10 +339,12 @@ const ContrattiCreate = () => {
     setPkgOnlyActive(true)
   }
 
+  // Aggiorna una riga prodotto del contratto.
   const updateLine = (index, patch) => {
     setRighe((rows) => rows.map((row, i) => (i === index ? { ...row, ...patch } : row)))
   }
 
+  // Aggiunge una nuova soglia di sconto quantita' alla riga indicata.
   const addTier = (lineIndex) => {
     setRighe((rows) =>
       rows.map((row, i) =>
@@ -341,6 +355,7 @@ const ContrattiCreate = () => {
     )
   }
 
+  // Aggiorna una specifica soglia di sconto della riga.
   const updateTier = (lineIndex, tierIndex, patch) => {
     setRighe((rows) =>
       rows.map((row, i) => {
@@ -354,6 +369,7 @@ const ContrattiCreate = () => {
     )
   }
 
+  // Rimuove una soglia di sconto quantita' dalla riga.
   const removeTier = (lineIndex, tierIndex) => {
     setRighe((rows) =>
       rows.map((row, i) => {
@@ -364,6 +380,7 @@ const ContrattiCreate = () => {
     )
   }
 
+  // Normalizza le righe nel formato atteso dal backend.
   const normalizeLines = (rows) => {
     const out = []
     rows.forEach((row) => {
@@ -392,6 +409,7 @@ const ContrattiCreate = () => {
     return out
   }
 
+  // Salva il contratto e reindirizza al dettaglio appena creato.
   const handleSubmit = async (e) => {
     e.preventDefault()
     setSaving(true)
@@ -428,6 +446,7 @@ const ContrattiCreate = () => {
     }
   }
 
+  // Mappa prodotti per id per semplificare lookup/render delle righe.
   const productsMap = useMemo(() => {
     const map = new Map()
     prodOptions.forEach((p) => map.set(Number(p.id_prodotto), p))

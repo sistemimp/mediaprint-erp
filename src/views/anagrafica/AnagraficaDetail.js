@@ -62,6 +62,7 @@ const currencyFormatter = new Intl.NumberFormat("it-IT", {
   currency: "EUR",
 })
 
+// Formatter condivisi per valori economici e date nel dettaglio anagrafica.
 const formatCurrency = (value) => {
   if (value === undefined || value === null || value === "") {
     return "-"
@@ -124,6 +125,7 @@ const getDocumentTimestamp = (row, dateField, fallbackField) => {
 const sortRowsByDocumentDateDesc = (rows, dateField, fallbackField) =>
   [...rows].sort((a, b) => getDocumentTimestamp(b, dateField, fallbackField) - getDocumentTimestamp(a, dateField, fallbackField))
 
+// Costruisce stringa indirizzo sede leggibile.
 const formatSedeAddress = (sede) => {
   if (!sede) {
     return "-"
@@ -155,6 +157,7 @@ const getStatusBadge = (value) => {
   )
 }
 
+// Render resiliente dei valori in tabella/schede.
 const renderValue = (value) => {
   if (value === undefined || value === null || value === "") {
     return <span className="text-body-secondary">-</span>
@@ -237,6 +240,7 @@ const DetailField = ({ label, value, compact = false }) => (
   </div>
 )
 
+// Factory di inizializzazione form per sezioni editabili.
 const createGeneralForm = (anagrafica) => ({
   ragione_sociale: anagrafica?.ragione_sociale ?? "",
   piva: anagrafica?.piva ?? "",
@@ -538,13 +542,15 @@ const AnagraficaDetail = () => {
     return null
   }, [locationStateId, queryId])
 
-  // Se manca l'id, ridireziona alla lista
+  // Se manca l'id, ridireziona alla lista.
+  // Sincronizza azioni contestuali nella breadcrumb action bar.
   useEffect(() => {
     if (!recordId) {
       navigate('/anagrafica/lista', { replace: true })
     }
   }, [recordId, navigate])
 
+  // Reset stato locale quando cambia il record richiesto.
   useEffect(() => {
     setDetail(null)
     setError(null)
@@ -559,6 +565,7 @@ const AnagraficaDetail = () => {
     setContactForm(null)
   }, [recordId])
 
+  // Carica dettaglio completo anagrafica.
   useEffect(() => {
     if (!token || !recordId) {
       return
@@ -603,6 +610,7 @@ const AnagraficaDetail = () => {
     }
   }, [token, recordId, refreshIndex, logout, kpiPeriod])
 
+  // Carica termini di pagamento disponibili.
   useEffect(() => {
     if (!token) {
       setPaymentTerms([])
@@ -640,6 +648,7 @@ const AnagraficaDetail = () => {
     }
   }, [token])
 
+  // Carica modalità pagamento e sezionali da config fatture.
   useEffect(() => {
     if (!token) {
       setModalitaOptions([])
@@ -688,6 +697,7 @@ const AnagraficaDetail = () => {
     }
   }, [token, logout])
 
+  // Carica lookup tipologie/regimi/tipologie sedi.
   useEffect(() => {
     if (!token) {
       setTipologieLookup([])
@@ -732,6 +742,7 @@ const AnagraficaDetail = () => {
     }
   }, [token])
 
+  // Torna alla pagina precedente, con fallback alla lista anagrafiche.
   const handleGoBack = () => {
     if (window.history.length > 1) {
       navigate(-1)
@@ -741,6 +752,7 @@ const AnagraficaDetail = () => {
     navigate("/anagrafica/lista")
   }
 
+  // Richiede un refresh completo del dettaglio.
   const handleRefresh = () => {
     setRefreshIndex((value) => value + 1)
   }
@@ -749,11 +761,13 @@ const AnagraficaDetail = () => {
   const isCompact = !isEditingGeneral && !isEditingFiscal && editingSedeId === null && editingContactId === null
   const gridGapClass = isCompact ? 'g-2' : 'g-3'
 
+  // Aggiorna stato locale dopo una mutazione riuscita.
   const handleMutationSuccess = useCallback((updatedDetail) => {
     setDetail(updatedDetail)
     setMutationError(null)
   }, [])
 
+  // Avvia/cancella editing sezione anagrafica generale.
   const startGeneralEditing = () => {
     if (!detail?.anagrafica) {
       return
@@ -804,6 +818,7 @@ const AnagraficaDetail = () => {
     })
   }
 
+  // Salva i dati generali dell'anagrafica.
   const handleGeneralSubmit = async (event) => {
     event.preventDefault()
     if (!generalForm || !recordId) {
@@ -879,14 +894,16 @@ const AnagraficaDetail = () => {
     setFiscaleForm(null)
   }
 
-const handleFiscalFieldChange = (field) => (event) => {
-  const value = field === "codice_sdi" ? String(event.target.value || "").toUpperCase() : event.target.value
-  setFiscaleForm((current) => ({
-    ...current,
-    [field]: value,
-  }))
-}
+  // Aggiorna il draft campi fiscali.
+  const handleFiscalFieldChange = (field) => (event) => {
+    const value = field === "codice_sdi" ? String(event.target.value || "").toUpperCase() : event.target.value
+    setFiscaleForm((current) => ({
+      ...current,
+      [field]: value,
+    }))
+  }
 
+  // Salva i dati fiscali dell'anagrafica.
   const handleFiscalSubmit = async (event) => {
     event.preventDefault()
     if (!recordId || !fiscaleForm) {
@@ -940,6 +957,7 @@ const handleFiscalFieldChange = (field) => (event) => {
     }
   }
 
+  // Apre form nuova sede.
   const handleSedeCreate = () => {
     setMutationError(null)
     setSavingSedeId(null)
@@ -947,6 +965,7 @@ const handleFiscalFieldChange = (field) => (event) => {
     setSedeForm(createSedeForm(null))
   }
 
+  // Apre form modifica sede esistente.
   const handleSedeEdit = (sede) => {
     setMutationError(null)
     setSavingSedeId(null)
@@ -954,6 +973,7 @@ const handleFiscalFieldChange = (field) => (event) => {
     setSedeForm(createSedeForm(sede))
   }
 
+  // Annulla editing sede.
   const handleSedeCancel = () => {
     setEditingSedeId(null)
     setSedeForm(null)
@@ -967,6 +987,7 @@ const handleFiscalFieldChange = (field) => (event) => {
     }))
   }
 
+  // Salva create/update sede.
   const handleSedeSave = useCallback(async () => {
     if (!recordId || !sedeForm || editingSedeId === null) {
       return
@@ -1092,6 +1113,7 @@ const handleFiscalFieldChange = (field) => (event) => {
     }
   }, [editingSedeId, handleMutationSuccess, kpiPeriod, logout, recordId, sedeForm, sedi, token])
 
+  // Elimina sede selezionata.
   const handleSedeDelete = async (sedeId) => {
     if (!recordId || !sedeId) {
       return
@@ -1126,23 +1148,27 @@ const handleFiscalFieldChange = (field) => (event) => {
     }
   }
 
+  // Apre form modifica contatto.
   const handleContactEdit = (contatto) => {
     setMutationError(null)
     setEditingContactId(contatto.id_contatto)
     setContactForm(createContactForm(contatto))
   }
 
+  // Chiude il form contatto e scarta il draft.
   const handleContactCancel = () => {
     setEditingContactId(null)
     setContactForm(null)
   }
 
+  // Apre form nuovo contatto.
   const handleContactCreate = () => {
     setMutationError(null)
     setEditingContactId('new')
     setContactForm(createContactForm(null))
   }
 
+  // Archivia un contatto associato.
   const handleContactArchive = async (contattoId) => {
     if (!recordId || !contattoId) {
       return
@@ -1183,6 +1209,7 @@ const handleFiscalFieldChange = (field) => (event) => {
     }
   }
 
+  // Ripristina un contatto archiviato.
   const handleContactRestore = useCallback(async (contattoId) => {
     if (!recordId || !contattoId) {
       return
@@ -1208,6 +1235,7 @@ const handleFiscalFieldChange = (field) => (event) => {
     }
   }, [handleMutationSuccess, kpiPeriod, logout, recordId, token])
 
+  // Elimina definitivamente un contatto archiviato.
   const handleArchivedDelete = useCallback(async (contattoId) => {
     if (!recordId || !contattoId) {
       return
@@ -1237,6 +1265,7 @@ const handleFiscalFieldChange = (field) => (event) => {
     }
   }, [handleMutationSuccess, kpiPeriod, logout, recordId, token])
 
+  // Aggiorna draft contatto (checkbox incluse).
   const handleContactFieldChange = (field) => (event) => {
     const value = event.target.type === "checkbox" ? event.target.checked : event.target.value
     setContactForm((current) => ({
@@ -1244,6 +1273,7 @@ const handleFiscalFieldChange = (field) => (event) => {
       [field]: value,
     }))
   }
+  // Salva create/update contatto con regole di unicita predefinito.
   const handleContactSave = useCallback(async (contattoId) => {
     if (!recordId || !contactForm) {
       return
@@ -1333,6 +1363,7 @@ const handleFiscalFieldChange = (field) => (event) => {
     }
   }, [contactForm, contatti, handleMutationSuccess, kpiPeriod, logout, recordId, token])
 
+  // Dataset correlati (preventivi/DDT/fatture) con finestre paginabili.
   const preventivi = useMemo(
     () => (Array.isArray(detail?.preventivi) ? detail.preventivi : []),
     [detail?.preventivi],
@@ -1354,6 +1385,7 @@ const handleFiscalFieldChange = (field) => (event) => {
     const start = preventiviPage * PREVENTIVI_ROWS_PER_PAGE
     return latestPreventivi.slice(start, start + PREVENTIVI_ROWS_PER_PAGE)
   }, [latestPreventivi, preventiviPage])
+  // Naviga al dettaglio preventivo correlato.
   const handleViewPreventivo = (id) => {
     if (!id) return
     navigate(`/preventivi/dettagli?id=${id}`)
@@ -1381,6 +1413,7 @@ const handleFiscalFieldChange = (field) => (event) => {
     return latestFatture.slice(start, start + RELATED_ROWS_PER_PAGE)
   }, [latestFatture, fatturePage])
 
+  // Mantiene le pagine correlate entro i limiti disponibili.
   useEffect(() => {
     setPreventiviPage((prev) => Math.min(prev, Math.max(totalPreventiviPages - 1, 0)))
   }, [totalPreventiviPages])
@@ -1412,6 +1445,7 @@ const handleFiscalFieldChange = (field) => (event) => {
     return options
   }, [sedi])
 
+  // Raggruppa contatti associati per sede.
   const contattiGrouped = useMemo(() => {
     if (!Array.isArray(contatti) || contatti.length === 0) return []
 
@@ -1446,7 +1480,7 @@ const handleFiscalFieldChange = (field) => (event) => {
     return groups
   }, [contatti])
 
-  // Gruppi per contatti archiviati (stessa grafica degli associati)
+  // Raggruppa contatti archiviati per sede (stessa UX degli associati).
   const contattiArchGrouped = useMemo(() => {
     if (!Array.isArray(contattiArchiviati) || contattiArchiviati.length === 0) return []
 
@@ -1480,7 +1514,7 @@ const handleFiscalFieldChange = (field) => (event) => {
 
     return groups
   }, [contattiArchiviati])
-  // Contatti archiviati: ultimi 10, con paginazione 5/pg (come preventivi)
+  // Contatti archiviati: ultimi 10, con paginazione 5/pg (come preventivi).
   const [contattiArchPage, setContattiArchPage] = useState(0)
   const [restoringArchivedId, setRestoringArchivedId] = useState(null)
   const [deletingArchivedId, setDeletingArchivedId] = useState(null)
@@ -1508,6 +1542,7 @@ const handleFiscalFieldChange = (field) => (event) => {
     return items
   }, [totalContattiArchPages])
 
+  // Render della card form contatto (create/edit).
   const renderContactFormCard = ({ isNew, contact }) => {
     if (!contactForm) {
       return null
@@ -1628,6 +1663,7 @@ const handleFiscalFieldChange = (field) => (event) => {
     )
   }
 
+  // Render item accordion per un contatto associato.
   const renderContactAccordionItem = (contatto, groupLabel) => {
     if (!contatto) {
       return null
@@ -1701,6 +1737,7 @@ const handleFiscalFieldChange = (field) => (event) => {
     )
   }
 
+  // Render item accordion per un contatto archiviato.
   const renderArchivedContactAccordionItem = (contatto, groupLabel) => {
     if (!contatto) {
       return null
@@ -1934,6 +1971,7 @@ const handleFiscalFieldChange = (field) => (event) => {
     setBreadcrumbActions,
   ])
 
+  // Riattiva anagrafica disattivata.
   const handleReactivateStato = async () => {
     if (!recordId) return
     setMutationError(null)
@@ -1954,6 +1992,7 @@ const handleFiscalFieldChange = (field) => (event) => {
     }
   }
 
+  // Archivia/disattiva anagrafica e ritorna alla lista.
   const handleArchiveClick = async () => {
     if (!recordId) return
     const confirmed = window.confirm(

@@ -48,6 +48,7 @@ const columns = [
   { key: 'stato', label: 'Stato', sortable: true },
 ]
 
+// Costruisce un indirizzo leggibile da campi anagrafica.
 const formatIndirizzo = (anagrafica) => {
   if (!anagrafica || typeof anagrafica !== 'object') return '-'
   const addr = [anagrafica.indirizzo].filter(Boolean).join(' ')
@@ -58,6 +59,7 @@ const formatIndirizzo = (anagrafica) => {
   return parts.length > 0 ? parts.join(', ') : '-'
 }
 
+// Renderizza una cella tabellare con gestione casi speciali.
 const renderCell = (anagrafica, column) => {
   if (column.key === 'id_anagrafica') {
     return anagrafica.id_anagrafica ?? anagrafica.id ?? '-'
@@ -88,6 +90,7 @@ const renderCell = (anagrafica, column) => {
   return value
 }
 
+// Normalizza ID per ordinamento stabile anche con valori non numerici.
 const getAnagraficaIdValue = (anagrafica) => {
   const rawId = anagrafica?.id_anagrafica ?? anagrafica?.id
 
@@ -131,6 +134,7 @@ const getSortableValue = (anagrafica, key) => {
   return String(value)
 }
 
+// Comparator generico per ordinamento colonne.
 const compareByColumn = (a, b, key) => {
   if (key === 'id_anagrafica') {
     const valueA = getAnagraficaIdValue(a)
@@ -163,6 +167,7 @@ const compareByColumn = (a, b, key) => {
   return collator.compare(valueA, valueB)
 }
 
+// Costruisce paginazione compatta con ellissi.
 const getPageItems = (current, total) => {
   if (total <= 7) {
     return Array.from({ length: total }, (_, index) => index + 1)
@@ -213,6 +218,7 @@ const AnagraficaList = () => {
   const [exporting, setExporting] = useState(false)
   const [viewMode, setViewMode] = useState('attive') // attive | archiviate
 
+  // Carica tutte le anagrafiche (attive/archiviate) gestendo paginazione backend.
   useEffect(() => {
     if (!token) {
       return
@@ -302,6 +308,7 @@ const AnagraficaList = () => {
     }
   }, [token, logout, refreshIndex, viewMode])
 
+  // Filtra e ordina l'elenco in base a ricerca e sort correnti.
   const filteredAnagrafiche = useMemo(() => {
     const term = search.trim().toLowerCase()
 
@@ -342,6 +349,7 @@ const AnagraficaList = () => {
 
   const totalFiltered = filteredAnagrafiche.length
 
+  // Mantiene pagina valida quando cambia il totale risultati.
   useEffect(() => {
     setPage((currentPage) => {
       const maxPageIndex = Math.max(0, Math.ceil(totalFiltered / rowsPerPage) - 1)
@@ -349,7 +357,7 @@ const AnagraficaList = () => {
     })
   }, [totalFiltered, rowsPerPage])
 
-  // Raggruppamento
+  // Raggruppamento opzionale per comune/provincia.
   const groupedFlat = useMemo(() => {
     if (groupBy === 'none') return filteredAnagrafiche.map((d) => ({ type: 'item', data: d }))
     const groups = []
@@ -395,15 +403,18 @@ const AnagraficaList = () => {
   const pageFrom = totalFiltered === 0 ? 0 : visibleItems > 0 ? itemsBefore + 1 : 0
   const pageTo = totalFiltered === 0 ? 0 : itemsBefore + visibleItems
 
+  // Aggiorna query di ricerca e resetta alla prima pagina.
   const handleSearchChange = (event) => {
     setSearch(event.target.value)
     setPage(0)
   }
 
+  // Previene submit nativo del form search (ricerca live client-side).
   const handleSearchSubmit = (event) => {
     event.preventDefault()
   }
 
+  // Aggiorna numero righe per pagina (con opzione "all").
   const handleRowsPerPageChange = (event) => {
     const val = event.target.value
     if (val === 'all') {
@@ -415,6 +426,7 @@ const AnagraficaList = () => {
     }
   }
 
+  // Cambia ordinamento per colonna.
   const handleSort = (columnKey) => {
     if (sortKey === columnKey) {
       setSortDirection((direction) => (direction === 'asc' ? 'desc' : 'asc'))
@@ -426,6 +438,7 @@ const AnagraficaList = () => {
     setPage(0)
   }
 
+  // Normalizza il valore esportato per colonna.
   const getExportValue = (row, key) => {
     if (key === 'id_anagrafica') return row.id_anagrafica ?? row.id ?? ''
     if (key === 'stato') return row.stato ?? ''
@@ -433,6 +446,7 @@ const AnagraficaList = () => {
     return row?.[key] ?? ''
   }
 
+  // Serializza dataset tabellare in formato CSV/TSV.
   const toCSV = (rows, cols, delimiter = ';') => {
     const escape = (val) => {
       const s = String(val ?? '')
@@ -448,6 +462,7 @@ const AnagraficaList = () => {
     return header + '\n' + body
   }
 
+  // Forza download browser di un contenuto testuale.
   const downloadBlob = (content, mime, filename) => {
     const blob = new Blob([content], { type: mime })
     const url = URL.createObjectURL(blob)
@@ -460,6 +475,7 @@ const AnagraficaList = () => {
     URL.revokeObjectURL(url)
   }
 
+  // Gestisce export in CSV/Excel/PDF a partire dalle righe filtrate.
   const handleExport = (type) => {
     if (filteredAnagrafiche.length === 0) return
     if (type === 'csv') {
@@ -503,14 +519,17 @@ const AnagraficaList = () => {
     }
   }
 
+  // Aggiorna pagina corrente.
   const handlePageChange = (nextPage) => {
     setPage(nextPage)
   }
 
+  // Invalida cache locale e rilancia il caricamento.
   const handleRefresh = () => {
     setRefreshIndex((value) => value + 1)
   }
 
+  // Apre il dettaglio dell'anagrafica selezionata.
   const handleViewDetails = (anagrafica) => {
     const recordId = anagrafica.id_anagrafica ?? anagrafica.id
     if (!recordId) {
@@ -520,6 +539,7 @@ const AnagraficaList = () => {
     navigate(`/anagrafica/dettagli?id=${recordId}`, { state: { id: recordId } })
   }
 
+  // Ripristina una anagrafica archiviata e torna alla vista attive.
   const handleRestore = async (anagrafica) => {
     const recordId = anagrafica.id_anagrafica ?? anagrafica.id
     if (!recordId || !token) return

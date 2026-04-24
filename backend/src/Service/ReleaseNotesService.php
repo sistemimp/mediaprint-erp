@@ -25,6 +25,7 @@ final class ReleaseNotesService
     {
         $titolo = trim((string) ($payload['titolo'] ?? ''));
         $contenuto = trim((string) ($payload['contenuto'] ?? ''));
+        // Versione opzionale: puo' essere valorizzata anche in un secondo momento.
         $versione = isset($payload['versione']) ? trim((string) $payload['versione']) : null;
 
         if ($titolo === '' || $contenuto === '') {

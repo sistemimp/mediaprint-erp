@@ -1,5 +1,6 @@
 import { apiFetch } from './apiClient'
 
+// Recupera gli ultimi preventivi (vendita/acquisto) con limite opzionale.
 export const fetchLatestPreventivi = async ({ token, signal, limit, is_acquisto } = {}) => {
   const params = {}
   if (limit) {
@@ -19,6 +20,7 @@ export const fetchLatestPreventivi = async ({ token, signal, limit, is_acquisto 
   return { items }
 }
 
+// Recupera i KPI dashboard dei preventivi.
 export const fetchPreventiviDashboard = async ({ token, period, is_acquisto, signal } = {}) => {
   const params = {}
   if (period) {
@@ -34,6 +36,7 @@ export const fetchPreventiviDashboard = async ({ token, period, is_acquisto, sig
   return payload
 }
 
+// Recupera archivio preventivi con paginazione, ricerca e sorting.
 export const fetchPreventiviArchivio = async ({ token, signal, page, pageSize, search, sortBy, sortDirection, is_acquisto } = {}) => {
   const params = {}
   if (page) params.page = page
@@ -62,6 +65,7 @@ export const fetchPreventiviArchivio = async ({ token, signal, page, pageSize, s
   return { items, meta }
 }
 
+// Crea/aggiorna un preventivo inviando testata, righe e totali.
 export const createPreventivo = async ({
   token,
   id_preventivo,
@@ -114,6 +118,7 @@ export const createPreventivo = async ({
   return response ?? {}
 }
 
+// Recupera dettaglio preventivo con entita collegate e metadata editabilita/stato.
 export const fetchPreventivoDetail = async ({ token, id, is_acquisto, signal } = {}) => {
   const response = await apiFetch('/preventiviDetail.php', {
     token,
@@ -139,6 +144,7 @@ export const fetchPreventivoDetail = async ({ token, id, is_acquisto, signal } =
 }
 
 // Opzioni per la multi-select "Oggetto preventivo"
+// Recupera le opzioni "oggetto preventivo" normalizzandole in formato select.
 export const fetchPreventivoOggettiOptions = async ({ token, signal } = {}) => {
   const response = await apiFetch('/preventiviOggettiList.php', {
     token,
@@ -168,6 +174,7 @@ export const fetchPreventivoOggettiOptions = async ({ token, signal } = {}) => {
 }
 
 // Crea una nuova opzione "oggetto preventivo" nel DB
+// Crea una nuova voce oggetto preventivo e ritorna il record normalizzato.
 export const createPreventivoOggettoOption = async ({ token, label, active = true, signal } = {}) => {
   const response = await apiFetch('/preventiviOggettiCreate.php', {
     method: 'POST',
@@ -197,6 +204,7 @@ export const createPreventivoOggettoOption = async ({ token, label, active = tru
   }
 }
 
+// Riattiva un preventivo archiviato.
 export const reactivatePreventivo = async ({ token, id, signal } = {}) => {
   const numericId = Number(id)
   if (!Number.isFinite(numericId) || numericId <= 0) {
@@ -213,6 +221,7 @@ export const reactivatePreventivo = async ({ token, id, signal } = {}) => {
   return response ?? {}
 }
 
+// Archivia un preventivo attivo.
 export const archivePreventivo = async ({ token, id, signal } = {}) => {
   const numericId = Number(id)
   if (!Number.isFinite(numericId) || numericId <= 0) {
@@ -229,6 +238,7 @@ export const archivePreventivo = async ({ token, id, signal } = {}) => {
   return response ?? { ok: true }
 }
 
+// Aggiorna lo stato del preventivo con nota e operatore opzionali.
 export const updatePreventivoStatus = async ({ token, id, statusCode, operatorName, note, signal } = {}) => {
   const numericId = Number(id)
   const payload = {
@@ -262,6 +272,7 @@ export const updatePreventivoStatus = async ({ token, id, statusCode, operatorNa
 }
 
 // Salva un log del cambio stato (best-effort; non blocca il flusso se fallisce)
+// Registra un evento di cambio stato nel log storico preventivo.
 export const logPreventivoStatusChange = async ({ token, id, fromStatus, toStatus, note, description, context, userId, userName, signal } = {}) => {
   const numericId = Number(id)
   const body = {
@@ -291,6 +302,7 @@ export const logPreventivoStatusChange = async ({ token, id, fromStatus, toStatu
 }
 
 // Legge lo storico dei cambi stato del preventivo
+// Recupera il log storico degli stati del preventivo.
 export const fetchPreventivoStatusLog = async ({ token, id, signal } = {}) => {
   const numericId = Number(id)
   const params = {
@@ -315,10 +327,12 @@ export const fetchPreventivoStatusLog = async ({ token, id, signal } = {}) => {
 }
 
 // Alias semantico per log generico di eventi stato preventivo
+// Helper compatibile per log eventi preventivo.
 export const logPreventivoEvent = async (args = {}) => {
   return logPreventivoStatusChange(args)
 }
 
+// Invia via email il preventivo con metadati di revisione opzionali.
 export const sendPreventivoEmail = async ({ token, id, to, cc, subject, message, revisionNote, revisionOperator, signal } = {}) => {
   const numericId = Number(id)
   const body = {
@@ -341,6 +355,7 @@ export const sendPreventivoEmail = async ({ token, id, to, cc, subject, message,
   return response ?? { ok: false }
 }
 
+// Recupera il dettaglio di una specifica revisione preventivo.
 export const fetchPreventivoRevisionDetail = async ({ token, id, signal } = {}) => {
   const numericId = Number(id)
   const params = {
@@ -357,6 +372,7 @@ export const fetchPreventivoRevisionDetail = async ({ token, id, signal } = {}) 
   return { revision }
 }
 
+// Recupera un riepilogo revisioni per una lista di preventivi.
 export const fetchPreventiviRevisionsSummary = async ({ token, ids = [], signal } = {}) => {
   const validIds = Array.isArray(ids)
     ? ids.map((value) => {
@@ -376,6 +392,7 @@ export const fetchPreventiviRevisionsSummary = async ({ token, ids = [], signal 
   return { data }
 }
 
+// Genera una lavorazione a partire da un preventivo esistente.
 export const generateLavorazioneFromPreventivo = async ({
   token,
   id,

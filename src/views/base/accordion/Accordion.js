@@ -12,6 +12,7 @@ import {
 } from '@coreui/react'
 import { DocsComponents, DocsExample } from 'src/components'
 
+// Vista Accordion: componente UI del modulo.
 const Accordion = () => {
   return (
     <CRow>

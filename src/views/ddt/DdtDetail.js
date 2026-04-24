@@ -37,12 +37,14 @@ import {
   updateDdtDetail,
 } from '../../services/ddt'
 
+// Formatta una data nel formato locale italiano.
 const formatDate = (value) => {
   if (!value) return '-'
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleDateString('it-IT')
 }
 
+// Formatta numeri con gestione fallback.
 const formatNumber = (value, options = {}) => {
   const numeric = Number(value)
   if (!Number.isFinite(numeric)) {
@@ -54,12 +56,14 @@ const formatNumber = (value, options = {}) => {
   return numeric.toString()
 }
 
+// Costruisce URL Jasper per la stampa PDF del DDT.
 const buildDdtPdfUrl = (id) => {
   const numericId = Number(id)
   if (!Number.isFinite(numericId) || numericId <= 0) return null
   return `https://jaspersoft.mediaprint.it/jasperserver/rest_v2/reports/Mediaprint/GestionaleMP/DDT.pdf?id_ddt=${numericId}&j_username=gestionaleMp&j_password=gestionaleMp`
 }
 
+// Normalizza una data in formato YYYY-MM-DD per input type="date".
 const toDateInputValue = (value) => {
   if (!value) return ''
   const date = new Date(value)
@@ -75,6 +79,7 @@ const toDateInputValue = (value) => {
   return ''
 }
 
+// Normalizza valori select testuali (trim + lowercase).
 const normalizeOptionValue = (value) => {
   if (typeof value !== 'string') return ''
   return value.trim().toLowerCase()
@@ -94,6 +99,7 @@ const CURA_TRASPORTO_OPTIONS = [
   { value: 'vettore', label: 'Vettore' },
 ]
 
+// Dettaglio DDT con editing testata, righe, destinazione e cambio stato.
 const DdtDetail = () => {
   const navigate = useNavigate()
   const location = useLocation()
@@ -132,6 +138,7 @@ const DdtDetail = () => {
   const [reloadVersion, setReloadVersion] = useState(0)
   const formRef = useRef(null)
   const rowIdCounterRef = useRef(0)
+  // Factory riga editabile locale con id temporaneo stabile.
   const createEditableRow = useCallback((initial = {}) => {
     rowIdCounterRef.current += 1
     return {
@@ -151,6 +158,7 @@ const DdtDetail = () => {
     }
   }, [])
 
+  // Converte le righe backend in righe editabili per il form.
   const hydrateRowsFromRecord = useCallback(
     (currentRecord) => {
       rowIdCounterRef.current = 0
@@ -170,12 +178,14 @@ const DdtDetail = () => {
     [createEditableRow],
   )
 
+  // Se manca ID valido ritorna alla lista.
   useEffect(() => {
     if (!id) {
       navigate('/ddt/lista', { replace: true })
     }
   }, [id, navigate])
 
+  // Carica dettaglio DDT dal backend.
   useEffect(() => {
     if (!token || !id) return
     const controller = new AbortController()
@@ -205,6 +215,7 @@ const DdtDetail = () => {
     return () => controller.abort()
   }, [token, id, logout, reloadVersion])
 
+  // Carica lookup causali DDT.
   useEffect(() => {
     if (!token) return
     const controller = new AbortController()
@@ -231,6 +242,7 @@ const DdtDetail = () => {
     return () => controller.abort()
   }, [token, logout, reloadVersion])
 
+  // Carica lookup destinazioni predefinite.
   useEffect(() => {
     if (!token) return
     const controller = new AbortController()
@@ -257,6 +269,7 @@ const DdtDetail = () => {
     return () => controller.abort()
   }, [token, logout, reloadVersion])
 
+  // Sincronizza form locale quando cambia il record caricato.
   useEffect(() => {
     if (!record) {
       setFormValues({
@@ -327,6 +340,7 @@ const DdtDetail = () => {
   const activeStatusStep = currentStatus === 2 ? 2 : 1
   const ddtId = record?.id_ddt ?? null
 
+  // Etichetta numero documento (anno/numero) da mostrare in testata.
   const numeroDisplay = useMemo(() => {
     if (!record) return '-'
     const { anno, numero_documento: numero } = record
@@ -335,6 +349,7 @@ const DdtDetail = () => {
     return '-'
   }, [record])
 
+  // Aggiorna campo form della testata DDT.
   const handleFormChange = (field) => (event) => {
     if (!isEditable) return
     const value = event?.target?.value ?? ''
@@ -346,6 +361,7 @@ const DdtDetail = () => {
     setSaveSuccess(null)
   }
 
+  // Ripristina i valori del form allo stato del record caricato.
   const handleReset = () => {
     if (!record || !isEditable) return
     setFormValues({
@@ -386,6 +402,7 @@ const DdtDetail = () => {
     setSaveSuccess(null)
   }
 
+  // Aggiorna campo di una specifica riga DDT.
   const handleRowFieldChange = (rowId, field) => (event) => {
     if (!isEditable) return
     const value = event?.target?.value ?? ''
@@ -394,6 +411,7 @@ const DdtDetail = () => {
     setSaveSuccess(null)
   }
 
+  // Cambia modalità destinazione (sede/manuale/predefinita).
   const handleDestinazioneModeChange = (mode) => {
     if (!isEditable) return
     setDestinazioneMode(mode)
@@ -401,6 +419,7 @@ const DdtDetail = () => {
     setSaveSuccess(null)
   }
 
+  // Applica una destinazione predefinita selezionata.
   const handleDestinazionePredefinitaChange = (event) => {
     if (!isEditable) return
     setSelectedDestinazioneId(event?.target?.value ?? '')
@@ -408,6 +427,7 @@ const DdtDetail = () => {
     setSaveSuccess(null)
   }
 
+  // Aggiunge una nuova riga vuota al documento.
   const handleAddRow = () => {
     if (!isEditable) return
     setRows((prev) => [...prev, createEditableRow()])
@@ -415,6 +435,7 @@ const DdtDetail = () => {
     setSaveSuccess(null)
   }
 
+  // Rimuove una riga del documento.
   const handleRemoveRow = (rowId) => {
     if (!isEditable) return
     setRows((prev) => {
@@ -427,6 +448,7 @@ const DdtDetail = () => {
     setSaveSuccess(null)
   }
 
+  // Normalizza e valida righe prima del submit.
   const normalizeRowsForSubmit = useCallback((list) => {
     const normalized = []
     list.forEach((row, index) => {
@@ -469,6 +491,7 @@ const DdtDetail = () => {
     return normalized
   }, [])
 
+  // Sede cliente correntemente selezionata.
   const selectedSede = useMemo(() => {
     if (Array.isArray(sediOptions) && sediOptions.length > 0) {
       if (selectedSedeId) {
@@ -485,6 +508,7 @@ const DdtDetail = () => {
 
   const sedeDisplay = selectedSede || record?.cliente_sede || null
 
+  // Destinazione predefinita correntemente selezionata.
   const selectedDestinazione = useMemo(() => {
     if (selectedDestinazioneId) {
       const numeric = Number(selectedDestinazioneId)
@@ -501,6 +525,7 @@ const DdtDetail = () => {
     return null
   }, [selectedDestinazioneId, destinazioniPredefinite, record])
 
+  // Totali derivati dalle righe (pezzi e peso).
   const rowsTotals = useMemo(() => {
     if (!Array.isArray(rows) || rows.length === 0) {
       return {
@@ -538,6 +563,7 @@ const DdtDetail = () => {
     }
   }, [rows, record])
 
+  // Indirizzo cliente formattato per riepilogo.
   const clienteAddress = useMemo(() => {
     const sede = sedeDisplay
     if (!sede) {
@@ -571,6 +597,7 @@ const DdtDetail = () => {
     return segments.length > 0 ? segments.join(', ') : '-'
   }, [sedeDisplay, record])
 
+  // Destinazione merce risolta in base alla modalità scelta.
   const destinazioneDisplay = useMemo(() => {
     if (destinazioneMode === 'sede') {
       return clienteAddress
@@ -606,16 +633,19 @@ const DdtDetail = () => {
 
   const showVettoreField = formValues.cura_trasporto === 'vettore'
 
+  // Salvataggio invocato dalla action breadcrumb.
   const handleBreadcrumbSave = useCallback(() => {
     if (formRef.current) {
       formRef.current.requestSubmit()
     }
   }, [])
 
+  // Forza il ricaricamento del record da backend.
   const handleRefreshRecord = useCallback(() => {
     setReloadVersion((prev) => prev + 1)
   }, [])
 
+  // Apre il PDF del documento in una nuova tab.
   const handleOpenPdf = useCallback(() => {
     if (typeof window === 'undefined') return
     if (!ddtId) return
@@ -624,6 +654,7 @@ const DdtDetail = () => {
     window.open(url, '_blank', 'noopener')
   }, [ddtId])
 
+  // Configura azioni contestuali della breadcrumb bar.
   useEffect(() => {
     if (!id) {
       clearBreadcrumbActions()
@@ -661,6 +692,7 @@ const DdtDetail = () => {
     setBreadcrumbActions,
   ])
 
+  // Salva testata e righe DDT.
   const handleSubmit = async (event) => {
     event.preventDefault()
     if (!record?.id_ddt || !token || saving) return
@@ -748,6 +780,7 @@ const DdtDetail = () => {
     }
   }
 
+  // Cambia stato documento (bozza/emesso).
   const handleStatusChange = async (nextStatus) => {
     if (!record?.id_ddt || !token) {
       return

@@ -26,12 +26,14 @@ import { useAuth } from '../../context/AuthContext'
 import { fetchDdtList } from '../../services/ddt'
 import PermissionButton from '../../components/PermissionButton'
 
+// Formatta una data in locale italiano.
 const formatDate = (value) => {
   if (!value) return '-'
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleDateString('it-IT')
 }
 
+// Formatta un numero con fallback sicuro.
 const formatNumber = (value, options = {}) => {
   const numeric = Number(value)
   if (!Number.isFinite(numeric)) {
@@ -43,12 +45,14 @@ const formatNumber = (value, options = {}) => {
   return numeric.toString()
 }
 
+// Costruisce URL Jasper per stampa PDF DDT.
 const buildDdtPdfUrl = (id) => {
   const numericId = Number(id)
   if (!Number.isFinite(numericId) || numericId <= 0) return null
   return `https://jaspersoft.mediaprint.it/jasperserver/rest_v2/reports/Mediaprint/GestionaleMP/DDT.pdf?id_ddt=${numericId}&j_username=gestionaleMp&j_password=gestionaleMp`
 }
 
+// Lista DDT con filtri, refresh e azioni rapide.
 const DdtList = () => {
   const navigate = useNavigate()
   const { token, logout } = useAuth()
@@ -61,6 +65,7 @@ const DdtList = () => {
   const [causaleFilter, setCausaleFilter] = useState('all')
   const [refreshIndex, setRefreshIndex] = useState(0)
 
+  // Carica i DDT disponibili dal backend.
   useEffect(() => {
     if (!token) return
     const controller = new AbortController()
@@ -90,6 +95,7 @@ const DdtList = () => {
     return () => controller.abort()
   }, [token, logout, refreshIndex])
 
+  // Estrae anni disponibili per filtro select.
   const years = useMemo(() => {
     const values = new Set()
     items.forEach((row) => {
@@ -98,6 +104,7 @@ const DdtList = () => {
     return Array.from(values).sort((a, b) => b - a)
   }, [items])
 
+  // Estrae causali disponibili per filtro select.
   const causali = useMemo(() => {
     const values = new Set()
     items.forEach((row) => {
@@ -106,6 +113,7 @@ const DdtList = () => {
     return Array.from(values).sort((a, b) => String(a).localeCompare(String(b)))
   }, [items])
 
+  // Applica filtri testuali/anno/causale lato client.
   const filteredItems = useMemo(() => {
     const term = search.trim().toLowerCase()
     return items.filter((row) => {
@@ -138,11 +146,13 @@ const DdtList = () => {
     })
   }, [items, search, yearFilter, causaleFilter])
 
+  // Apre il dettaglio del DDT selezionato.
   const handleView = (id) => {
     if (!id) return
     navigate(`/ddt/dettagli?id=${id}`)
   }
 
+  // Apre la stampa PDF del documento in nuova tab.
   const handlePrintPdf = (id) => {
     if (typeof window === 'undefined') return
     const url = buildDdtPdfUrl(id)

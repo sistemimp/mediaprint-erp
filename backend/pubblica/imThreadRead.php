@@ -35,6 +35,7 @@ try {
     }
 
     $service = new InstantMessagingService(new InstantMessagingRepository(Database::getConnection()));
+    // Aggiorna last_read_at del partecipante corrente (usato per unread e spunte lettura).
     $service->markRead($accountId, $threadId);
     HttpResponse::json(['ok' => true], 200);
 } catch (RuntimeException $exception) {

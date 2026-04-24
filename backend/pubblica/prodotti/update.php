@@ -35,6 +35,7 @@ try {
     }
     $codice = $input['codice'] ?? null;
     $idCategoria = isset($input['id_categoria']) ? (int) $input['id_categoria'] : null;
+    // Allineato a create: 0 rappresenta categoria non valorizzata.
     if ($idCategoria === 0) { $idCategoria = null; }
     $prezzoListino = $input['prezzo_listino'] ?? null;
     $idIva = $input['id_iva'] ?? null;

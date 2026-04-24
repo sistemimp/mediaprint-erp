@@ -24,6 +24,7 @@ try {
     $auth = AuthGuard::requireAuth();
     AuthGuard::requirePermissions($auth, ['msg.read']);
     $accountId = AuthGuard::getAccountId($auth);
+    // Ritorna thread gia' arricchiti con partecipanti e metadati ultimo messaggio.
     $service = new InstantMessagingService(new InstantMessagingRepository(Database::getConnection()));
 
     $threads = $service->listThreads($accountId);

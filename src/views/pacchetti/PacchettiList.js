@@ -24,6 +24,7 @@ import { useAuth } from '../../context/AuthContext'
 import { fetchPacchetti } from '../../services/pacchetti'
 import PermissionButton from '../../components/PermissionButton'
 
+// Lista pacchetti con ricerca e filtro "solo attivi".
 const PacchettiList = () => {
   const navigate = useNavigate()
   const { token, logout } = useAuth()
@@ -34,6 +35,7 @@ const PacchettiList = () => {
   const [q, setQ] = useState('')
   const [onlyActive, setOnlyActive] = useState(true)
 
+  // Carica i pacchetti applicando i filtri correnti.
   useEffect(() => {
     if (!token) return
     const controller = new AbortController()
@@ -55,6 +57,7 @@ const PacchettiList = () => {
     return () => controller.abort()
   }, [token, q, onlyActive, logout])
 
+  // Ordina pacchetti per nome.
   const sorted = useMemo(() => {
     const out = [...items]
     out.sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || '')))

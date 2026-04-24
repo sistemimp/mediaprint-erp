@@ -71,6 +71,7 @@ import { fetchAnagraficaDetail } from '../../services/anagrafiche'
 
 const currencyFormatter = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' })
 
+// Formatter condivisi e utility numeriche/date per il dettaglio fattura.
 const formatDate = (value) => {
   if (!value) return '-'
   const date = new Date(value)
@@ -201,6 +202,7 @@ const buildScheduleFromTerm = (term, invoiceDate, total) => {
   })
 }
 
+// Calcola imponibile/iva/totale di una riga dettaglio.
 const computeRowAmounts = (row) => {
   const qty = Number(row.quantita)
   const price = Number(row.prezzo_unitario)
@@ -227,6 +229,7 @@ const computeRowAmounts = (row) => {
   }
 }
 
+// Stato iniziale del form dettaglio fattura.
 const createEmptyFormValues = () => ({
   data_fattura: '',
   id_stato_fatt: '',
@@ -369,12 +372,14 @@ const FattureDetail = () => {
   const formRef = useRef(null)
   const rowCounterRef = useRef(0)
 
+  // Redirect alla lista se manca un ID valido.
   useEffect(() => {
     if (!id) {
       navigate(`${basePath}/lista`, { replace: true })
     }
   }, [id, navigate, basePath])
 
+  // Carica il dettaglio fattura.
   useEffect(() => {
     if (!token || !id) return
     const controller = new AbortController()
@@ -405,6 +410,7 @@ const FattureDetail = () => {
     return () => controller.abort()
   }, [token, id, logout, reloadVersion, isAcquisto])
 
+  // Carica configurazioni fatture (stati, sezionali, metodi).
   useEffect(() => {
     if (!token) return
     const controller = new AbortController()
@@ -434,6 +440,7 @@ const FattureDetail = () => {
     return () => controller.abort()
   }, [token, logout, reloadVersion, isAcquisto])
 
+  // Carica i termini di pagamento disponibili.
   useEffect(() => {
     if (!token) return
     const controller = new AbortController()
@@ -462,6 +469,7 @@ const FattureDetail = () => {
     return () => controller.abort()
   }, [token, logout])
 
+  // Carica pagamenti associati quando la sezione è attiva.
   useEffect(() => {
     if (!token || !id || !showPayments) return
     const controller = new AbortController()
@@ -497,6 +505,7 @@ const FattureDetail = () => {
     return () => controller.abort()
   }, [token, id, logout, paymentsReload, showPayments])
 
+  // Carica storico cambi stato fattura.
   useEffect(() => {
     if (!token || !id || !showStatus) return
     const controller = new AbortController()
@@ -526,12 +535,14 @@ const FattureDetail = () => {
     return () => controller.abort()
   }, [token, id, logout, reloadVersion, showStatus])
 
+  // Auto-hide banner pagamenti.
   useEffect(() => {
     if (!paymentBanner) return
     const timer = setTimeout(() => setPaymentBanner(null), 5000)
     return () => clearTimeout(timer)
   }, [paymentBanner])
 
+  // Carica elenco nature IVA per righe documento.
   useEffect(() => {
     if (!token) return
     const controller = new AbortController()
@@ -980,6 +991,7 @@ const FattureDetail = () => {
     [finalStatusVariant],
   )
 
+  // Applica colori/icone custom alla timeline stepper in base ai metadata stato.
   useEffect(() => {
     const stepperRoot = document.querySelector('.invoice-timeline-stepper')
     if (!stepperRoot) return
@@ -1004,6 +1016,7 @@ const FattureDetail = () => {
     })
   }, [timelineSteps])
 
+  // Aggiorna lo stato timeline della fattura con persistenza backend.
   const handleTimelineStatusChange = useCallback(async (nextStatusId) => {
     if (!record || !token) return
     const numericId = Number(nextStatusId)
@@ -1096,6 +1109,7 @@ const FattureDetail = () => {
     return '-'
   }, [record])
 
+  // Totali derivati dalle righe correnti (fallback ai valori record).
   const rowsTotals = useMemo(() => {
     if (!Array.isArray(rows) || rows.length === 0) {
       return {
@@ -1126,6 +1140,7 @@ const FattureDetail = () => {
     )
   }, [rows, record])
 
+  // Riepilogo IVA per aliquota/natura utile al riepilogo fiscale.
   const ivaSummary = useMemo(() => {
     if (!Array.isArray(rows) || rows.length === 0) {
       return []
@@ -1220,6 +1235,7 @@ const FattureDetail = () => {
     return Number.isFinite(numeric) && numeric > 0 ? numeric : null
   }, [formValues.cliente_id_cond_pagamento])
 
+  // Piano scadenze calcolato dal termine pagamento selezionato.
   const paymentSchedule = useMemo(() => {
     const defaultSchedule = Array.isArray(record?.condizioni_pagamento_rate)
       ? record.condizioni_pagamento_rate
@@ -1272,6 +1288,7 @@ const FattureDetail = () => {
     return paymentTerms.some((term) => Number(term?.id) === currentPaymentTermId)
   }, [currentPaymentTermId, paymentTerms])
 
+  // Aggiorna i campi principali del form fattura.
   const handleFormChange = (field) => (event) => {
     const value = event?.target?.value ?? ''
     setFormValues((prev) => ({
@@ -1320,6 +1337,7 @@ const FattureDetail = () => {
     resetPaymentForm()
   }
 
+  // Aggiorna i campi del form pagamento.
   const handlePaymentFieldChange = (field) => (event) => {
     const value = event?.target?.value ?? ''
     setPaymentForm((prev) => ({
@@ -1329,6 +1347,7 @@ const FattureDetail = () => {
     setPaymentSaveError(null)
   }
 
+  // Inserisce/aggiorna un pagamento e sincronizza i totali.
   const handlePaymentSubmit = async (event) => {
     event.preventDefault()
     if (!token || !id) return
@@ -1370,6 +1389,7 @@ const FattureDetail = () => {
     setPaymentDeleteError(null)
   }
 
+  // Elimina il pagamento selezionato.
   const handleDeletePayment = async () => {
     if (!paymentDeleteTarget || !token || !id) {
       return
@@ -1397,6 +1417,7 @@ const FattureDetail = () => {
     }
   }
 
+  // Allinea il saldo al calcolo corrente documento-pagamenti.
   const handleAlignSaldo = () => {
     const numeric = Number(paymentsStats.saldo_residuo)
     const formatted =
@@ -1407,6 +1428,7 @@ const FattureDetail = () => {
     }))
   }
 
+  // Aggiorna i campi di una riga documento.
   const handleRowFieldChange = (rowId, field) => (event) => {
     const value = event?.target?.value ?? ''
     setRows((prev) =>
@@ -1428,12 +1450,14 @@ const FattureDetail = () => {
     setSaveSuccess(null)
   }
 
+  // Aggiunge una nuova riga vuota in fattura.
   const handleAddRow = () => {
     setRows((prev) => [...prev, createEditableRow()])
     setSaveError(null)
     setSaveSuccess(null)
   }
 
+  // Rimuove una riga dal documento.
   const handleRemoveRow = (rowId) => {
     setRows((prev) => {
       if (!Array.isArray(prev) || prev.length <= 1) {
@@ -1445,6 +1469,7 @@ const FattureDetail = () => {
     setSaveSuccess(null)
   }
 
+  // Gestisce cambio natura IVA su riga.
   const handleRowNaturaChange = (rowId) => (event) => {
     const rawValue = event?.target?.value ?? ''
     setRows((prev) =>
@@ -1531,6 +1556,7 @@ const FattureDetail = () => {
     [appendLinesToRows, catOptions],
   )
 
+  // Ripristina il form ai valori caricati dal backend.
   const handleReset = () => {
     if (!record) return
     setFormValues({
@@ -1630,6 +1656,7 @@ const FattureDetail = () => {
     return normalized
   }, [])
 
+  // Salva modifiche fattura (testata + righe).
   const handleSubmit = async (event) => {
     event.preventDefault()
     if (!record || !token) return
@@ -1755,16 +1782,19 @@ const FattureDetail = () => {
     }
   }
 
+  // Azione salvataggio esposta nella breadcrumb action bar.
   const handleBreadcrumbSave = useCallback(() => {
     if (formRef.current) {
       formRef.current.requestSubmit()
     }
   }, [])
 
+  // Trigger manuale refresh dati dettaglio.
   const handleRefreshData = useCallback(() => {
     setReloadVersion((prev) => prev + 1)
   }, [])
 
+  // Esporta XML SDI della fattura corrente.
   const handleExportXml = useCallback(async () => {
     if (!record || !token) {
       return
@@ -1797,6 +1827,7 @@ const FattureDetail = () => {
     }
   }, [logout, record, token])
 
+  // Apre PDF fattura in nuova scheda.
   const handlePrintPdf = useCallback(() => {
     if (!record || typeof window === 'undefined') {
       return

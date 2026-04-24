@@ -36,6 +36,7 @@ try {
     }
 
     $service = new InstantMessagingService(new InstantMessagingRepository(Database::getConnection()));
+    // Il service valida membership thread e policy ruoli prima dell'invio.
     $result = $service->sendMessage($accountId, $threadId, $body);
     HttpResponse::json(['data' => $result], 200);
 } catch (RuntimeException $exception) {

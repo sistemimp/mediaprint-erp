@@ -20,6 +20,7 @@ import {
 import { fetchPagamentiDashboard } from '../../services/pagamenti'
 import { useAuth } from '../../context/AuthContext'
 
+// Formatta valori interi con separatori locali.
 const formatInteger = (value) => {
   if (value === null || value === undefined || Number.isNaN(Number(value))) {
     return '-'
@@ -27,6 +28,7 @@ const formatInteger = (value) => {
   return Number(value).toLocaleString('it-IT')
 }
 
+// Formatta importi in euro.
 const formatCurrency = (value) => {
   const amount = typeof value === 'number' ? value : Number(value)
   if (Number.isNaN(amount)) {
@@ -35,10 +37,12 @@ const formatCurrency = (value) => {
   return amount.toLocaleString('it-IT', { style: 'currency', currency: 'EUR' })
 }
 
+// Placeholder riutilizzabile per tabelle vuote/in caricamento.
 const renderTablePlaceholder = (text) => (
   <div className="text-center text-body-secondary small py-3">{text}</div>
 )
 
+// Renderizza il link cliente verso il dettaglio anagrafica quando disponibile.
 const renderClientLink = (name, id) => {
   const label = name || '-'
   if (!id) {
@@ -58,6 +62,7 @@ const PERIOD_OPTIONS = [
   { value: 'yearly', label: 'Annuale' },
 ]
 
+// Dashboard pagamenti con KPI, ultimi movimenti e top clienti.
 const PagamentiDashboard = () => {
   const { token } = useAuth()
   const [payload, setPayload] = useState(null)
@@ -65,6 +70,7 @@ const PagamentiDashboard = () => {
   const [error, setError] = useState(null)
   const [period, setPeriod] = useState('monthly')
 
+  // Carica i dati dashboard ogni volta che cambia il periodo.
   useEffect(() => {
     const controller = new AbortController()
     let isMounted = true
@@ -96,11 +102,13 @@ const PagamentiDashboard = () => {
   const latest = payload?.latest ?? []
   const topClients = payload?.top_clients ?? []
 
+  // Etichetta descrittiva del periodo selezionato.
   const periodLabel = useMemo(
     () => PERIOD_OPTIONS.find((option) => option.value === period)?.label ?? 'Mensile',
     [period],
   )
 
+  // Costruisce le card KPI mostrate in testata.
   const summaryCards = useMemo(
     () => [
       { key: 'pagamenti_mese', label: `Pagamenti ${periodLabel.toLowerCase()}`, value: formatInteger(kpi.pagamenti_mese) },

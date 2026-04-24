@@ -2,6 +2,7 @@ import React from 'react'
 import { CButton, CCard, CCardBody, CCardHeader, CPopover, CRow, CCol } from '@coreui/react'
 import { DocsComponents, DocsExample } from 'src/components'
 
+// Vista Popovers: componente UI del modulo.
 const Popovers = () => {
   return (
     <CRow>

@@ -33,11 +33,13 @@ import { fetchPagamentiLedger, fetchPagamentiList } from '../../services/pagamen
 
 const currencyFormatter = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' })
 
+// Formatta importi in euro.
 const formatCurrency = (value) => {
   const numeric = Number(value)
   return Number.isFinite(numeric) ? currencyFormatter.format(numeric) : '-'
 }
 
+// Lista pagamenti con tre viste: ledger clienti, registrati, importati.
 const PagamentiList = () => {
   const { token, logout } = useAuth()
   const navigate = useNavigate()
@@ -62,6 +64,7 @@ const PagamentiList = () => {
   })
   const [pendingOnlyOpen, setPendingOnlyOpen] = useState(false)
 
+  // Carica il ledger clienti filtrabile per ricerca.
   useEffect(() => {
     if (!token) return
     const controller = new AbortController()
@@ -91,6 +94,7 @@ const PagamentiList = () => {
     return () => controller.abort()
   }, [token, ledgerSearch, logout])
 
+  // Carica l'elenco pagamenti registrati/importati applicando i filtri.
   useEffect(() => {
     if (!token) return
     const controller = new AbortController()
@@ -120,6 +124,7 @@ const PagamentiList = () => {
     return () => controller.abort()
   }, [token, filters, pendingOnlyOpen, logout])
 
+  // Applica filtri client-side al ledger (testo, sospesi, residui).
   const filteredLedger = useMemo(() => {
     if (!ledger || ledger.length === 0) return []
     const term = ledgerSearch.trim().toLowerCase()
@@ -134,6 +139,7 @@ const PagamentiList = () => {
     return ledger.filter((row) => matchesTerm(row) && matchesPending(row) && matchesResiduo(row))
   }, [ledger, ledgerSearch, ledgerPendingOnly, ledgerResiduoOnly])
 
+  // Esporta il ledger filtrato in file Excel.
   const exportLedger = async () => {
     if (filteredLedger.length === 0 || ledgerExporting) return
     setLedgerExporting(true)
@@ -169,14 +175,17 @@ const PagamentiList = () => {
       setLedgerExporting(false)
     }
   }
+  // Estrae la pagina corrente del ledger (10 righe).
   const paginatedLedger = useMemo(() => {
     const start = ledgerPage * 10
     return filteredLedger.slice(start, start + 10)
   }, [filteredLedger, ledgerPage])
+  // Reset pagina ledger quando cambia la ricerca.
   useEffect(() => {
     setLedgerPage(0)
   }, [ledgerSearch])
 
+  // Aggiorna i filtri della vista pagamenti registrati/importati.
   const handleFiltersChange = (field) => (event) => {
     const value = event?.target?.value ?? ''
     setFilters((prev) => ({
@@ -185,6 +194,7 @@ const PagamentiList = () => {
     }))
   }
 
+  // Separa i pagamenti in sospeso dai pagamenti già assegnati.
   const stagingPayments = useMemo(() => payments.filter((row) => row.staging), [payments])
   const assignedPayments = useMemo(() => payments.filter((row) => !row.staging), [payments])
   const hasPendingPayments = stagingPayments.length > 0

@@ -4,6 +4,7 @@ import { getIconsView } from '../brands/Brands.js'
 import { flagSet } from '@coreui/icons'
 import { DocsIcons } from 'src/components'
 
+// Vista Flags: componente UI del modulo.
 const CoreUIIcons = () => {
   return (
     <>

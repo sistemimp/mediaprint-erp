@@ -1,5 +1,6 @@
 import { apiFetch } from './apiClient'
 
+// Normalizza i metadati di paginazione anche quando l'API restituisce un array semplice.
 const normaliseMeta = (response, fallbackItems) => {
   if (!response || Array.isArray(response)) {
     const total = fallbackItems.length
@@ -26,6 +27,7 @@ const normaliseMeta = (response, fallbackItems) => {
   )
 }
 
+// Recupera lista anagrafiche con filtri, ordinamento e paginazione.
 export const fetchAnagrafiche = async ({
   token,
   search,
@@ -76,6 +78,7 @@ export const fetchAnagrafiche = async ({
   }
 }
 
+// Recupera KPI dashboard anagrafiche (periodo/solo attive).
 export const fetchAnagraficheDashboard = async ({ token, onlyActive, period, signal } = {}) => {
   const params = {}
   if (onlyActive != null) {
@@ -91,6 +94,7 @@ export const fetchAnagraficheDashboard = async ({ token, onlyActive, period, sig
   return payload
 }
 
+// Recupera archivio anagrafiche con paginazione e filtri.
 export const fetchAnagraficheArchiviate = async ({
   token,
   search,
@@ -120,6 +124,7 @@ export const fetchAnagraficheArchiviate = async ({
   return { items, meta }
 }
 
+// Recupera il dettaglio completo di una singola anagrafica.
 export const fetchAnagraficaDetail = async ({ token, id, kpiPeriod, signal } = {}) => {
   const numericId = Number(id)
 
@@ -141,6 +146,7 @@ export const fetchAnagraficaDetail = async ({ token, id, kpiPeriod, signal } = {
   return response ?? {}
 }
 
+// Aggiorna testata/fiscale/contatti/sedi e rilegge il dettaglio aggiornato.
 export const updateAnagraficaDetail = async ({
   token,
   id,
@@ -220,6 +226,7 @@ export const updateAnagraficaDetail = async ({
   return detail ?? { ok: true }
 }
 
+// Crea una nuova anagrafica.
 export const createAnagrafica = async ({ token, body, signal } = {}) => {
   const response = await apiFetch('/anagraficheCreate.php', {
     method: 'POST',
@@ -230,6 +237,7 @@ export const createAnagrafica = async ({ token, body, signal } = {}) => {
   return response
 }
 
+// Riattiva una anagrafica archiviata.
 export const reactivateAnagrafica = async ({ token, id, signal } = {}) => {
   const numericId = Number(id)
   if (!Number.isFinite(numericId) || numericId <= 0) {
@@ -246,16 +254,19 @@ export const reactivateAnagrafica = async ({ token, id, signal } = {}) => {
   return response ?? { ok: true }
 }
 
+// Elenca le tipologie anagrafiche configurate.
 export const fetchTipologieAnagrafiche = async ({ token, signal } = {}) => {
   const response = await apiFetch('/tipologieAnagraficheList.php', { token, signal })
   return Array.isArray(response?.items) ? response.items : []
 }
 
+// Elenca i regimi fiscali disponibili.
 export const fetchRegimiFiscali = async ({ token, signal } = {}) => {
   const response = await apiFetch('/regimiFiscaliList.php', { token, signal })
   return Array.isArray(response?.items) ? response.items : []
 }
 
+// Elenca le tipologie di sede configurate.
 export const fetchTipologieSedi = async ({ token, signal } = {}) => {
   const response = await apiFetch('/tipologieSediList.php', { token, signal })
   return Array.isArray(response?.items) ? response.items : []

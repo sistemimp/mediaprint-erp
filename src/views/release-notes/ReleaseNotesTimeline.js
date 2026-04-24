@@ -24,6 +24,7 @@ import { useNavigate } from 'react-router-dom'
 import { createReleaseNote, fetchReleaseNotes } from '../../services/releaseNotes'
 import HtmlEditor from '../../components/HtmlEditor'
 
+// Formatta data nota nel formato breve italiano.
 const formatDate = (value) => {
   if (!value) return ''
   const date = new Date(value)
@@ -35,6 +36,7 @@ const formatDate = (value) => {
   })
 }
 
+// Formatta orario nota nel formato HH:mm locale.
 const formatTime = (value) => {
   if (!value) return ''
   const date = new Date(value)
@@ -42,6 +44,7 @@ const formatTime = (value) => {
   return date.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })
 }
 
+// Timeline release notes con vista pubblica e inserimento note per admin.
 const ReleaseNotesTimeline = () => {
   const { token, logout, user } = useAuth()
   const { has } = usePermissions()
@@ -62,6 +65,7 @@ const ReleaseNotesTimeline = () => {
   const [success, setSuccess] = useState(null)
   const [editorMode, setEditorMode] = useState('visual')
 
+  // Carica le note rilasciate dal backend.
   useEffect(() => {
     if (!token) return
     const load = async () => {
@@ -83,17 +87,20 @@ const ReleaseNotesTimeline = () => {
     load()
   }, [token, logout])
 
+  // Auto-hide del messaggio di successo dopo salvataggio.
   useEffect(() => {
     if (!success) return undefined
     const timer = window.setTimeout(() => setSuccess(null), 3000)
     return () => window.clearTimeout(timer)
   }, [success])
 
+  // Aggiorna un campo del form amministratore.
   const handleChange = (event) => {
     const { name, value } = event.target
     setForm((prev) => ({ ...prev, [name]: value }))
   }
 
+  // Salva una nuova nota rilascio e aggiorna la timeline.
   const handleSubmit = async () => {
     if (!token || !isAdmin) return
     setSaving(true)
@@ -123,6 +130,7 @@ const ReleaseNotesTimeline = () => {
     }
   }
 
+  // Raggruppa le note per versione (fallback "Senza versione").
   const grouped = useMemo(() => {
     const groups = []
     const map = new Map()
@@ -170,6 +178,7 @@ const ReleaseNotesTimeline = () => {
 
   const getPlainText = (value) => String(value ?? '').replace(/<[^>]*>/g, '').trim()
 
+  // Apre una finestra stampabile con contenuto nota normalizzato in HTML.
   const handlePrintNote = (note, versionLabel) => {
     const title = escapeHtml(note?.titolo || 'Nota')
     const author = escapeHtml(note?.created_by_name || 'Sistema')

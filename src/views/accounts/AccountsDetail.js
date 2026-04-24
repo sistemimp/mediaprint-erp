@@ -23,6 +23,7 @@ import { useAuth } from '../../context/AuthContext'
 import { fetchAccountDetail, updateAccountPermissions } from '../../services/accounts'
 import PermissionButton from '../../components/PermissionButton'
 
+// Formatta data/ora in locale italiano.
 const formatDateTime = (value) => {
   if (!value) return '-'
   const parsed = new Date(value)
@@ -30,11 +31,13 @@ const formatDateTime = (value) => {
   return parsed.toLocaleString('it-IT')
 }
 
+// Dettaglio account con gestione permessi granulari.
 const AccountsDetail = () => {
   const { token, logout } = useAuth()
   const location = useLocation()
   const navigate = useNavigate()
 
+  // Estrae id account dalla querystring.
   const accountId = useMemo(() => {
     const params = new URLSearchParams(location.search)
     const raw = params.get('id') || params.get('id_account') || ''
@@ -52,6 +55,7 @@ const AccountsDetail = () => {
   const [feedback, setFeedback] = useState(null)
   const [search, setSearch] = useState('')
 
+  // Carica dettaglio account e catalogo permessi.
   useEffect(() => {
     if (!token || !accountId) return undefined
     const controller = new AbortController()
@@ -81,13 +85,16 @@ const AccountsDetail = () => {
     return () => controller.abort()
   }, [token, accountId, logout])
 
+  // Auto-hide feedback temporanei.
   useEffect(() => {
     if (!feedback || feedback.persist) return undefined
     const timer = window.setTimeout(() => setFeedback(null), 4000)
     return () => window.clearTimeout(timer)
   }, [feedback])
 
+  // Set utilitario per check rapidi su permessi selezionati.
   const selectedSet = useMemo(() => new Set(selected), [selected])
+  // Set permessi attivi che possono essere assegnati.
   const activeIds = useMemo(
     () =>
       new Set(
@@ -98,6 +105,7 @@ const AccountsDetail = () => {
     [catalog],
   )
 
+  // Filtro testuale sul catalogo permessi.
   const filteredCatalog = useMemo(() => {
     if (!search || search.trim() === '') {
       return catalog
@@ -109,6 +117,7 @@ const AccountsDetail = () => {
     })
   }, [catalog, search])
 
+  // Toggle di un permesso nel set selezionato.
   const togglePermission = (permId) => {
     if (!activeIds.has(permId)) {
       return
@@ -124,6 +133,7 @@ const AccountsDetail = () => {
     })
   }
 
+  // Salva permessi effettivi dell'account.
   const handleSave = async () => {
     if (!accountId) return
     setSaving(true)
@@ -142,6 +152,7 @@ const AccountsDetail = () => {
     }
   }
 
+  // Costruisce preset permessi (admin/operator/client).
   const buildPreset = (type) => {
     const idsByCode = new Map(
       catalog
@@ -170,6 +181,7 @@ const AccountsDetail = () => {
     return out
   }
 
+  // Applica preset derivato dal ruolo assegnato.
   const applyRolePreset = () => {
     setSelected(rolePreset)
   }

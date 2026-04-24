@@ -57,11 +57,13 @@ const PRIORITY_OPTIONS = [
   { value: 'critica', label: 'Critica' },
 ]
 
+// Legge i parametri query correnti della pagina.
 const useQuery = () => {
   const { search } = useLocation()
   return React.useMemo(() => new URLSearchParams(search), [search])
 }
 
+// Formatta data/ora in locale italiano.
 const formatDate = (value) => {
   if (!value) return '-'
   const date = new Date(value)
@@ -69,6 +71,7 @@ const formatDate = (value) => {
   return date.toLocaleString('it-IT')
 }
 
+// Formatta importi in EUR con locale italiano.
 const formatCurrency = (value) => {
   const n = Number(value)
   if (!Number.isFinite(n)) return '-'
@@ -108,6 +111,7 @@ const AcquistiRichiesteDetail = () => {
   const [assignedToDraft, setAssignedToDraft] = useState([])
   const [assigneeToAdd, setAssigneeToAdd] = useState('')
 
+  // Carica account operatori per assegnazioni richiesta.
   useEffect(() => {
     if (!token) return
     const controller = new AbortController()
@@ -129,6 +133,7 @@ const AcquistiRichiesteDetail = () => {
     return () => controller.abort()
   }, [token])
 
+  // Carica il dettaglio richiesta acquisto (header, commenti, preventivi collegati).
   useEffect(() => {
     if (!token || isNew) return
     const controller = new AbortController()
@@ -174,12 +179,14 @@ const AcquistiRichiesteDetail = () => {
     return () => controller.abort()
   }, [token, id, isNew, logout])
 
+  // Nasconde feedback dopo timeout breve.
   useEffect(() => {
     if (!feedback) return undefined
     const timer = window.setTimeout(() => setFeedback(null), 3000)
     return () => window.clearTimeout(timer)
   }, [feedback])
 
+  // Options assegnatari con label leggibile.
   const accountOptions = useMemo(() => {
     if (!Array.isArray(accounts)) return []
     return accounts.map((acc) => ({
@@ -188,6 +195,7 @@ const AcquistiRichiesteDetail = () => {
     }))
   }, [accounts])
 
+  // Dati assegnati correnti con label per rendering.
   const assignedOperators = useMemo(() => {
     const labelById = new Map(accountOptions.map((option) => [String(option.value), option.label]))
     return assignedTo
@@ -198,6 +206,7 @@ const AcquistiRichiesteDetail = () => {
       .filter((item) => item.label.trim() !== '')
   }, [accountOptions, assignedTo])
 
+  // Conteggio commenti per operatore assegnato.
   const commentsCountByOperator = useMemo(() => {
     const counts = {}
     messages.forEach((msg) => {
@@ -208,11 +217,13 @@ const AcquistiRichiesteDetail = () => {
     return counts
   }, [messages])
 
+  // Options ancora selezionabili nel modal assegnazioni.
   const availableAssigneeOptions = useMemo(
     () => accountOptions.filter((option) => !assignedToDraft.includes(String(option.value))),
     [accountOptions, assignedToDraft],
   )
 
+  // Dati draft assegnazioni con label per modal.
   const draftAssignedOperators = useMemo(() => {
     const labelById = new Map(accountOptions.map((option) => [String(option.value), option.label]))
     return assignedToDraft.map((idValue) => ({
@@ -221,6 +232,7 @@ const AcquistiRichiesteDetail = () => {
     }))
   }, [accountOptions, assignedToDraft])
 
+  // Ricarica porzione dinamica dettaglio dopo azioni (commenti/preventivi).
   const loadDetail = async () => {
     if (!token || !id) return
     const data = await fetchAcquistiRichiestaDetail({ token, id })
@@ -229,18 +241,21 @@ const AcquistiRichiesteDetail = () => {
     setUpdatedAt(data?.ticket?.updated_at || updatedAt)
   }
 
+  // Apre il modal assegnazioni inizializzando il draft.
   const handleOpenAssigneesModal = () => {
     setAssignedToDraft(Array.isArray(assignedTo) ? assignedTo : [])
     setAssigneeToAdd('')
     setAssigneesModalVisible(true)
   }
 
+  // Chiude il modal e resetta stato draft.
   const handleCloseAssigneesModal = () => {
     setAssigneesModalVisible(false)
     setAssignedToDraft([])
     setAssigneeToAdd('')
   }
 
+  // Aggiunge un operatore al draft assegnazioni.
   const handleAddDraftAssignee = () => {
     const idValue = String(assigneeToAdd || '').trim()
     if (idValue === '') return
@@ -251,16 +266,19 @@ const AcquistiRichiesteDetail = () => {
     setAssigneeToAdd('')
   }
 
+  // Rimuove un operatore dal draft assegnazioni.
   const handleRemoveDraftAssignee = (idValue) => {
     const key = String(idValue)
     setAssignedToDraft((prev) => prev.filter((value) => value !== key))
   }
 
+  // Conferma le assegnazioni draft nel form principale.
   const handleConfirmAssignees = () => {
     setAssignedTo(assignedToDraft)
     setAssigneesModalVisible(false)
   }
 
+  // Crea una nuova richiesta o aggiorna quella corrente.
   const handleSave = async () => {
     if (!token) return
     setSaving(true)
@@ -306,6 +324,7 @@ const AcquistiRichiesteDetail = () => {
     }
   }
 
+  // Inserisce un commento e ricarica i dati aggiornati.
   const handleAddMessage = async () => {
     const message = newMessage.trim()
     if (!message || !token || !id) return
@@ -329,6 +348,7 @@ const AcquistiRichiesteDetail = () => {
     }
   }
 
+  // Scollega un preventivo acquisto dalla richiesta corrente.
   const handleUnlinkPreventivo = async (idPreventivo) => {
     if (!token || !id || !idPreventivo) return
     try {

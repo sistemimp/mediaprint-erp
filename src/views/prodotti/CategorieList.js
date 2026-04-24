@@ -22,6 +22,7 @@ import { fetchCategorieProdotti, saveCategoriaProdotto } from '../../services/pr
 import BottomToast from '../../components/BottomToast'
 import PermissionButton from '../../components/PermissionButton'
 
+// CRUD minimale categorie prodotto con edit inline tramite form unico.
 const CategorieList = () => {
   const { token, logout } = useAuth()
 
@@ -35,12 +36,14 @@ const CategorieList = () => {
   const [formVisible, setFormVisible] = useState(false)
   const [toast, setToast] = useState({ open: false, type: 'success', message: '' })
 
+  // Mostra un toast temporaneo di esito operazione.
   const showToast = (message, type = 'success') => {
     setToast({ open: true, type, message })
     window.clearTimeout(showToast._t)
     showToast._t = window.setTimeout(() => setToast((t) => ({ ...t, open: false })), 3000)
   }
 
+  // Carica elenco categorie dal backend.
   const load = async (signal) => {
     setLoading(true)
     setError(null)
@@ -54,6 +57,7 @@ const CategorieList = () => {
     } finally { setLoading(false) }
   }
 
+  // Caricamento iniziale categorie.
   useEffect(() => {
     if (!token) return
     const controller = new AbortController()
@@ -61,10 +65,14 @@ const CategorieList = () => {
     return () => controller.abort()
   }, [token])
 
+  // Apre il form in modalita creazione.
   const startCreate = () => { setEditRow(null); setName(''); setFormVisible(true) }
+  // Apre il form in modalita modifica.
   const startEdit = (row) => { setEditRow(row); setName(row.nome || ''); setFormVisible(true) }
+  // Chiude il form e resetta i campi.
   const cancel = () => { setEditRow(null); setName(''); setFormVisible(false) }
 
+  // Salva categoria (nuova o esistente) e aggiorna la tabella.
   const save = async (e) => {
     e.preventDefault()
     setSaving(true)

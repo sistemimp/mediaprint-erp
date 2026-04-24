@@ -21,6 +21,7 @@ import { fetchProdottiDashboard } from '../../services/prodotti'
 import { useAuth } from '../../context/AuthContext'
 import ProdottiFatturazione from './ProdottiFatturazione'
 
+// Formatta interi con separatori locali.
 const formatInteger = (value) => {
   if (value === null || value === undefined || Number.isNaN(Number(value))) {
     return '-'
@@ -28,6 +29,7 @@ const formatInteger = (value) => {
   return Number(value).toLocaleString('it-IT')
 }
 
+// Placeholder comune per stati loading/empty delle tabelle.
 const renderTablePlaceholder = (text) => (
   <div className="text-center text-body-secondary small py-3">{text}</div>
 )
@@ -39,6 +41,7 @@ const PERIOD_OPTIONS = [
   { value: 'yearly', label: 'Annuale' },
 ]
 
+// Dashboard KPI prodotti + riepiloghi categorie/ultimi inserimenti.
 const ProdottiDashboard = () => {
   const { token } = useAuth()
   const [payload, setPayload] = useState(null)
@@ -46,6 +49,7 @@ const ProdottiDashboard = () => {
   const [error, setError] = useState(null)
   const [period, setPeriod] = useState('monthly')
 
+  // Carica payload dashboard in base al periodo selezionato.
   useEffect(() => {
     const controller = new AbortController()
     let isMounted = true
@@ -77,6 +81,7 @@ const ProdottiDashboard = () => {
   const topCategorie = payload?.top_categorie ?? []
   const latest = payload?.latest ?? []
 
+  // Prepara elenco card KPI visualizzate in testata.
   const summaryCards = useMemo(
     () => [
       { key: 'totale_prodotti', label: 'Totale prodotti', value: kpi.totale_prodotti },

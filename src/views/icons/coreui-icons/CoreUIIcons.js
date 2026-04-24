@@ -4,6 +4,7 @@ import { freeSet } from '@coreui/icons'
 import { getIconsView } from '../brands/Brands.js'
 import { DocsIcons } from 'src/components'
 
+// Vista CoreUIIcons: componente UI del modulo.
 const CoreUIIcons = () => {
   return (
     <>

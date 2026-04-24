@@ -16,6 +16,7 @@ import {
 } from '@coreui/react'
 import { DocsComponents, DocsExample } from 'src/components'
 
+// Vista Layout: componente UI del modulo.
 const Layout = () => {
   return (
     <CRow>

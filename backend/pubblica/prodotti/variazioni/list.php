@@ -21,6 +21,7 @@ try {
     $auth = AuthGuard::requireAuth();
     AuthGuard::requirePermissions($auth, ['prod.read']);
     if (AuthGuard::getAccountType($auth) === 'cliente') {
+        // Le variazioni sono un dato di configurazione interno.
         HttpResponse::json(['items' => []], 200);
         return;
     }

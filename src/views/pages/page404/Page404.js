@@ -11,6 +11,7 @@ import {
 import CIcon from '@coreui/icons-react'
 import { cilMagnifyingGlass } from '@coreui/icons'
 
+// Vista Page404: componente UI del modulo.
 const Page404 = () => {
   return (
     <div className="bg-body-tertiary min-vh-100 d-flex flex-row align-items-center">

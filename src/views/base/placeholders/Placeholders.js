@@ -15,6 +15,7 @@ import { DocsComponents, DocsExample } from 'src/components'
 
 import ReactImg from 'src/assets/images/react.jpg'
 
+// Vista Placeholders: componente UI del modulo.
 const Placeholders = () => {
   return (
     <CRow>
