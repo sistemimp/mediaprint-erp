@@ -31,8 +31,9 @@ try {
         $excludeDraft = true;
     }
     $limit = isset($_GET['limit']) ? (int) $_GET['limit'] : 200;
+    $idAnagrafica = isset($_GET['id_anagrafica']) ? (int) $_GET['id_anagrafica'] : 0;
     $repo = new DdtRepository(Database::getConnection());
-    $items = $repo->listLatest($limit, $allowed, $excludeDraft);
+    $items = $repo->listLatest($limit, $allowed, $excludeDraft, $idAnagrafica > 0 ? $idAnagrafica : null);
 
     HttpResponse::json(['data' => $items], 200);
 } catch (RuntimeException $exception) {

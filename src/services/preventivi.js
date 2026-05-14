@@ -1,13 +1,16 @@
 import { apiFetch } from './apiClient'
 
 // Recupera gli ultimi preventivi (vendita/acquisto) con limite opzionale.
-export const fetchLatestPreventivi = async ({ token, signal, limit, is_acquisto } = {}) => {
+export const fetchLatestPreventivi = async ({ token, signal, limit, is_acquisto, id_anagrafica } = {}) => {
   const params = {}
-  if (limit) {
+  if (limit !== undefined && limit !== null) {
     params.limit = limit
   }
   if (is_acquisto !== undefined) {
     params.is_acquisto = is_acquisto ? 1 : 0
+  }
+  if (id_anagrafica !== undefined && id_anagrafica !== null) {
+    params.id_anagrafica = id_anagrafica
   }
 
   const response = await apiFetch('/preventiviList.php', {

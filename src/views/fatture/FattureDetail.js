@@ -195,7 +195,7 @@ const buildScheduleFromTerm = (term, invoiceDate, total) => {
       index: index + 1,
       label,
       due_date: formatIsoDate(dueDate),
-      amount: Math.max(amount, 0),
+      amount,
       anchor,
       offset_days: offsetDays,
     }
@@ -214,7 +214,7 @@ const computeRowAmounts = (row) => {
     row.sconto === '' || row.sconto === null || row.sconto === undefined ? 0 : Number(row.sconto)
   const discountAmount =
     Number.isFinite(discountPercent) && discountPercent > 0 ? gross * (discountPercent / 100) : 0
-  const net = Math.max(0, gross - discountAmount)
+  const net = gross - discountAmount
   const ivaPercent =
     row.aliquota_iva === '' || row.aliquota_iva === null || row.aliquota_iva === undefined
       ? null
@@ -1417,17 +1417,6 @@ const FattureDetail = () => {
     }
   }
 
-  // Allinea il saldo al calcolo corrente documento-pagamenti.
-  const handleAlignSaldo = () => {
-    const numeric = Number(paymentsStats.saldo_residuo)
-    const formatted =
-      Number.isFinite(numeric) && numeric >= 0 ? numeric.toFixed(2) : ''
-    setFormValues((prev) => ({
-      ...prev,
-      saldo: formatted,
-    }))
-  }
-
   // Aggiorna i campi di una riga documento.
   const handleRowFieldChange = (rowId, field) => (event) => {
     const value = event?.target?.value ?? ''
@@ -1703,14 +1692,9 @@ const FattureDetail = () => {
     }
 
     let saldoValue = null
-    if (!isAcquisto && formValues.saldo !== '' && formValues.saldo !== null && formValues.saldo !== undefined) {
-      const parsed = Number(formValues.saldo)
-      if (!Number.isFinite(parsed)) {
-        setSaveError(new Error('Inserire un saldo numerico valido.'))
-        setSaveSuccess(null)
-        return
-      }
-      saldoValue = parsed
+    if (!isAcquisto) {
+      const parsed = Number(paymentsStats.saldo_residuo)
+      saldoValue = Number.isFinite(parsed) && parsed >= 0 ? parsed : 0
     }
 
     setSaving(true)
@@ -1790,9 +1774,28 @@ const FattureDetail = () => {
   }, [])
 
   // Trigger manuale refresh dati dettaglio.
-  const handleRefreshData = useCallback(() => {
-    setReloadVersion((prev) => prev + 1)
-  }, [])
+  const handleRefreshData = useCallback(async () => {
+    if (!record || !token) {
+      setReloadVersion((prev) => prev + 1)
+      return
+    }
+    try {
+      await updateFatturaDetail({
+        token,
+        id: record.id_fattura,
+        ricalcola_saldi: true,
+      })
+      setReloadVersion((prev) => prev + 1)
+      setPaymentsReload((prev) => prev + 1)
+    } catch (err) {
+      if (err?.status === 401 && logout) {
+        logout()
+        return
+      }
+      setSaveError(err)
+      setSaveSuccess(null)
+    }
+  }, [logout, record, token])
 
   // Esporta XML SDI della fattura corrente.
   const handleExportXml = useCallback(async () => {
@@ -2278,29 +2281,14 @@ const FattureDetail = () => {
                 {!isAcquisto && (
                   <CCol md={3}>
                     <CFormLabel>Saldo residuo</CFormLabel>
-                    <div className="d-flex gap-2 align-items-start">
-                      <CFormInput
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        value={formValues.saldo}
-                        onChange={handleFormChange('saldo')}
-                        disabled={formDisabled}
-                        className="flex-grow-1"
-                      />
-                      <CButton
-                        color="secondary"
-                        variant="outline"
-                        type="button"
-                        size="sm"
-                        onClick={handleAlignSaldo}
-                        disabled={formDisabled}
-                      >
-                        Allinea
-                      </CButton>
-                    </div>
+                    <CFormInput
+                      type="text"
+                      value={formatCurrency(paymentsStats.saldo_residuo)}
+                      disabled
+                      readOnly
+                    />
                     <small className="text-body-secondary d-block mt-1">
-                      Residuo calcolato: {formatCurrency(paymentsStats.saldo_residuo)}
+                      Calcolato automaticamente dai pagamenti registrati.
                     </small>
                   </CCol>
                 )}

@@ -290,7 +290,8 @@ final class FattureRepository
         bool $excludeDraft = false,
         ?string $dateFrom = null,
         ?string $dateTo = null,
-        int $isAcquisto = 0
+        ?int $isAcquisto = null,
+        ?int $idAnagrafica = null
     ): array
     {
         $sql = <<<'SQL'
@@ -348,6 +349,10 @@ final class FattureRepository
                 $params[$key] = $id;
             }
             $whereParts[] = 'f.id_anagrafica IN (' . implode(',', $placeholders) . ')';
+        }
+        if ($idAnagrafica !== null && $idAnagrafica > 0) {
+            $whereParts[] = 'f.id_anagrafica = :id_anagrafica';
+            $params[':id_anagrafica'] = $idAnagrafica;
         }
         if ($excludeDraft) {
             $whereParts[] = "(sf.code IS NULL OR sf.code <> 'bozza')";
@@ -536,6 +541,16 @@ final class FattureRepository
         $stmt->execute();
     }
 
+    private function setInvoiceSaldoZero(int $invoiceId): void
+    {
+        if ($invoiceId <= 0) {
+            return;
+        }
+        $stmt = $this->pdo->prepare('UPDATE tb_fatture SET saldo = 0, updated_at = NOW() WHERE id_fattura = :id LIMIT 1');
+        $stmt->bindValue(':id', $invoiceId, PDO::PARAM_INT);
+        $stmt->execute();
+    }
+
     /**
      * @param array<string,mixed> $invoiceDetail
      * @param int|null $preventivoId
@@ -602,7 +617,13 @@ final class FattureRepository
                 continue;
             }
             $price = isset($line['prezzo_unitario']) ? (float) $line['prezzo_unitario'] : 0.0;
-            $negativePrice = $price !== 0.0 ? -abs($price) : 0.0;
+            if (abs($price) < 0.00001 && isset($line['importo_scontato'])) {
+                $imponibile = (float) $line['importo_scontato'];
+                if ($quantita > 0 && abs($imponibile) > 0.00001) {
+                    $price = $imponibile / $quantita;
+                }
+            }
+            $negativePrice = abs($price) > 0.00001 ? -abs($price) : 0.0;
             $result[] = [
                 'descrizione' => $line['descrizione'] ?? '',
                 'quantita' => $quantity,
@@ -1196,6 +1217,8 @@ final class FattureRepository
         if ($idStatoFatt <= 0) {
             $idStatoFatt = 2;
         }
+        $creditTypeId = $this->getTipoFatturaIdByCode('nota_credito');
+        $isCreditNote = $creditTypeId !== null && $idTipoFatt === $creditTypeId;
 
         $date = $this->normalizeDate(isset($data['data_fattura']) ? (string) $data['data_fattura'] : null);
         $dateValue = $date->format('Y-m-d');
@@ -1429,7 +1452,9 @@ final class FattureRepository
                 if ($sconto > 0) {
                     $imponibile = $imponibile * (1 - ($sconto / 100));
                 }
-                $imponibile = max(0.0, $imponibile);
+                if (!$isCreditNote) {
+                    $imponibile = max(0.0, $imponibile);
+                }
                 $iva = $aliquota !== null ? $imponibile * ($aliquota / 100) : 0.0;
                 $totLine = $imponibile + $iva;
 
@@ -1522,6 +1547,13 @@ final class FattureRepository
         $hasChanges = false;
         $rifiutataStatusId = $this->getStatoIdByCode('rifiutata');
         $shouldCreateCreditNote = false;
+        $shouldRecalcSaldo = false;
+        if (array_key_exists('ricalcola_saldi', $data)) {
+            $raw = $data['ricalcola_saldi'];
+            if ($raw === true || $raw === 1 || $raw === '1' || $raw === 'true') {
+                $shouldRecalcSaldo = true;
+            }
+        }
 
         if (array_key_exists('data_fattura', $data)) {
             $rawDate = $data['data_fattura'];
@@ -1556,6 +1588,9 @@ final class FattureRepository
             $newStatusId = $status;
             if ($rifiutataStatusId !== null && $status === $rifiutataStatusId && $previousStatusId !== $status) {
                 $shouldCreateCreditNote = true;
+            }
+            if ($rifiutataStatusId !== null && $status === $rifiutataStatusId) {
+                $setClauses[] = 'saldo = 0';
             }
         }
 
@@ -1718,11 +1753,22 @@ final class FattureRepository
                 }
                 $preventivoId = $this->getPreventivoIdForInvoice($id);
                 $creditNote = $this->createCreditNoteForRejectedInvoice($updatedInvoice, $preventivoId);
+                $this->setInvoiceSaldoZero($id);
                 $creditNoteMessage = $this->buildCreditNoteReferenceMessage($creditNote);
                 $currentNote = $updatedInvoice['note'] ?? null;
                 $updatedNote = $this->mergeNoteWithSuffix($currentNote, $creditNoteMessage);
                 if ($updatedNote !== ($currentNote ?? '')) {
                     $this->updateInvoiceNoteField($id, $updatedNote);
+                }
+                $hasChanges = true;
+            }
+
+            if ($shouldRecalcSaldo) {
+                $targetStatusId = $newStatusId ?? $previousStatusId;
+                if ($rifiutataStatusId !== null && $targetStatusId === $rifiutataStatusId) {
+                    $this->setInvoiceSaldoZero($id);
+                } else {
+                    $this->updateSaldoFromPayments($id);
                 }
                 $hasChanges = true;
             }
@@ -1758,7 +1804,10 @@ final class FattureRepository
             throw new RuntimeException('ID fattura non valido per l\'aggiornamento delle righe.', 422);
         }
 
-        $lines = $this->applyContractPricing($id, $lines);
+        $isCreditNote = $this->isCreditNoteInvoice($id);
+        if (!$isCreditNote) {
+            $lines = $this->applyContractPricing($id, $lines);
+        }
 
         $normalized = [];
         foreach ($lines as $line) {
@@ -1829,7 +1878,10 @@ final class FattureRepository
             if ($sconto !== null && $sconto > 0) {
                 $scontoValore = $lordo * ($sconto / 100);
             }
-            $imponibile = max(0.0, $lordo - $scontoValore);
+            $imponibile = $lordo - $scontoValore;
+            if (!$isCreditNote) {
+                $imponibile = max(0.0, $imponibile);
+            }
             $iva = $aliquota !== null ? $imponibile * ($aliquota / 100) : 0.0;
             $totale = $imponibile + $iva;
 
@@ -2000,7 +2052,7 @@ final class FattureRepository
             throw new RuntimeException('ID fattura non valido per i pagamenti.', 422);
         }
 
-        $invoiceStmt = $this->pdo->prepare('SELECT id_fattura, totale FROM tb_fatture WHERE id_fattura = :id LIMIT 1');
+        $invoiceStmt = $this->pdo->prepare('SELECT id_fattura, totale, id_stato_fatt FROM tb_fatture WHERE id_fattura = :id LIMIT 1');
         $invoiceStmt->bindValue(':id', $idFattura, PDO::PARAM_INT);
         $invoiceStmt->execute();
         $invoice = $invoiceStmt->fetch(PDO::FETCH_ASSOC);
@@ -2044,9 +2096,18 @@ final class FattureRepository
             }
         }
 
-        $residuo = $totaleDocumento - $totalePagato;
-        if ($residuo < 0) {
+        $rifiutataStatusId = $this->getStatoIdByCode('rifiutata');
+        $currentStatusId = isset($invoice['id_stato_fatt']) ? (int) $invoice['id_stato_fatt'] : null;
+        if ($currentStatusId !== null && $currentStatusId <= 0) {
+            $currentStatusId = null;
+        }
+        if ($rifiutataStatusId !== null && $currentStatusId === $rifiutataStatusId) {
             $residuo = 0.0;
+        } else {
+            $residuo = $totaleDocumento - $totalePagato;
+            if ($residuo < 0) {
+                $residuo = 0.0;
+            }
         }
 
         return [
@@ -2471,6 +2532,13 @@ final class FattureRepository
         if ($currentStatusId !== null && $currentStatusId <= 0) {
             $currentStatusId = null;
         }
+        $rifiutataStatusId = $this->getStatoIdByCode('rifiutata');
+        if ($rifiutataStatusId !== null && $currentStatusId === $rifiutataStatusId) {
+            $stmt = $this->pdo->prepare('UPDATE tb_fatture SET saldo = 0, updated_at = NOW() WHERE id_fattura = :id LIMIT 1');
+            $stmt->bindValue(':id', $idFattura, PDO::PARAM_INT);
+            $stmt->execute();
+            return;
+        }
 
         $paidStmt = $this->pdo->prepare(
             'SELECT COALESCE(SUM(importo), 0) AS totale_pagato FROM appoggio_pagamenti_fattura WHERE id_fattura = :id'
@@ -2595,6 +2663,28 @@ final class FattureRepository
         $this->statoIdCache[$code] = $id > 0 ? $id : null;
 
         return $this->statoIdCache[$code];
+    }
+
+    private function isCreditNoteInvoice(int $idFattura): bool
+    {
+        if ($idFattura <= 0) {
+            return false;
+        }
+
+        $creditTypeId = $this->getTipoFatturaIdByCode('nota_credito');
+        if ($creditTypeId === null) {
+            return false;
+        }
+
+        $stmt = $this->pdo->prepare('SELECT id_tipo_fatt FROM tb_fatture WHERE id_fattura = :id LIMIT 1');
+        $stmt->bindValue(':id', $idFattura, PDO::PARAM_INT);
+        $stmt->execute();
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($row === false || !isset($row['id_tipo_fatt'])) {
+            return false;
+        }
+
+        return (int) $row['id_tipo_fatt'] === $creditTypeId;
     }
 
     private function ensureRecalcProcedureExists(): void

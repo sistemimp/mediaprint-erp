@@ -1,10 +1,13 @@
 import { apiFetch } from './apiClient'
 
 // Recupera l'elenco DDT con limite opzionale.
-export const fetchDdtList = async ({ token, limit, signal } = {}) => {
+export const fetchDdtList = async ({ token, limit, id_anagrafica, signal } = {}) => {
   const params = {}
-  if (limit) {
+  if (limit !== undefined && limit !== null) {
     params.limit = limit
+  }
+  if (id_anagrafica !== undefined && id_anagrafica !== null) {
+    params.id_anagrafica = id_anagrafica
   }
 
   const response = await apiFetch('/ddtList.php', {

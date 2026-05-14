@@ -19,6 +19,9 @@ import {
   CFormLabel,
   CFormSelect,
   CFormTextarea,
+  CNav,
+  CNavItem,
+  CNavLink,
   CRow,
   CSpinner,
   CTable,
@@ -53,6 +56,9 @@ import {
 import { apiFetch } from "../../services/apiClient"
 import { fetchPaymentTerms } from "../../services/paymentTerms"
 import { fetchFattureConfig } from "../../services/fatture"
+import { fetchLatestPreventivi } from "../../services/preventivi"
+import { fetchDdtList } from "../../services/ddt"
+import { fetchFattureList } from "../../services/fatture"
 import BottomToast from "../../components/BottomToast"
 import { useAuth } from "../../context/AuthContext"
 import { useBreadcrumbActions } from "../../context/BreadcrumbActionsContext"
@@ -124,6 +130,27 @@ const getDocumentTimestamp = (row, dateField, fallbackField) => {
 
 const sortRowsByDocumentDateDesc = (rows, dateField, fallbackField) =>
   [...rows].sort((a, b) => getDocumentTimestamp(b, dateField, fallbackField) - getDocumentTimestamp(a, dateField, fallbackField))
+
+const filterRowsByPeriod = (rows, dateField, fallbackField, filter) => {
+  if (!Array.isArray(rows)) return []
+  if (!filter || filter.mode !== 'period') return rows
+
+  const fromTs = filter.from ? new Date(`${filter.from}T00:00:00`).getTime() : null
+  const toTs = filter.to ? new Date(`${filter.to}T23:59:59`).getTime() : null
+
+  return rows.filter((row) => {
+    const ts = getDocumentTimestamp(row, dateField, fallbackField)
+    if (!ts) return false
+    if (Number.isFinite(fromTs) && ts < fromTs) return false
+    if (Number.isFinite(toTs) && ts > toTs) return false
+    return true
+  })
+}
+
+const isNotaCredito = (item) => {
+  const tipo = `${item?.tipo_code ?? ''} ${item?.tipo_label ?? ''}`.toLowerCase()
+  return tipo.includes('nota_credit') || tipo.includes('nota credito')
+}
 
 // Costruisce stringa indirizzo sede leggibile.
 const formatSedeAddress = (sede) => {
@@ -233,10 +260,10 @@ const getCategoriaValue = (anagrafica) => {
   return Number(anagrafica?.is_pa) === 1 ? "Comune" : "Azienda Private"
 }
 
-const DetailField = ({ label, value, compact = false }) => (
-  <div className={`detail-field bg-body-tertiary border rounded ${compact ? 'px-2 py-1' : 'px-3 py-2'} h-100`}>
-    <div className="text-body-secondary text-uppercase small fw-semibold">{label}</div>
-    <div className="mt-1">{renderValue(value)}</div>
+const DetailField = ({ label, value, compact = false, valueClassName = "", className = "", labelClassName = "" }) => (
+  <div className={`detail-field bg-body-tertiary border rounded ${compact ? 'px-2 py-1' : 'px-3 py-2'} h-100 ${className}`.trim()}>
+    <div className={`text-body-secondary text-uppercase small fw-semibold ${labelClassName}`.trim()}>{label}</div>
+    <div className={`mt-1 ${valueClassName}`.trim()}>{renderValue(value)}</div>
   </div>
 )
 
@@ -1372,12 +1399,34 @@ const AnagraficaDetail = () => {
   const [preventiviPage, setPreventiviPage] = useState(0)
   const [ddtPage, setDdtPage] = useState(0)
   const [fatturePage, setFatturePage] = useState(0)
+  const [preventiviFilter, setPreventiviFilter] = useState({ mode: 'latest', from: '', to: '' })
+  const [ddtFilter, setDdtFilter] = useState({ mode: 'latest', from: '', to: '' })
+  const [fattureFilter, setFattureFilter] = useState({ mode: 'latest', from: '', to: '' })
+  const [activeTab, setActiveTab] = useState("generali")
+  const [allPreventivi, setAllPreventivi] = useState(null)
+  const [allDdt, setAllDdt] = useState(null)
+  const [allFatture, setAllFatture] = useState(null)
   const PREVENTIVI_ROWS_PER_PAGE = 5
   const RELATED_ROWS_PER_PAGE = 5
-  const RELATED_DOCUMENTS_LIMIT = 10
+  const LEGACY_FRONTEND_LIMIT = 10
+  const effectivePreventivi = useMemo(
+    () => (Array.isArray(allPreventivi) ? allPreventivi : preventivi),
+    [allPreventivi, preventivi],
+  )
+  const preventiviSource = useMemo(
+    () => (preventiviFilter.mode === 'latest' ? preventivi : effectivePreventivi),
+    [preventiviFilter.mode, preventivi, effectivePreventivi],
+  )
+  const filteredPreventivi = useMemo(
+    () => filterRowsByPeriod(preventiviSource, "data_preventivo", "created_at", preventiviFilter),
+    [preventiviSource, preventiviFilter],
+  )
   const latestPreventivi = useMemo(
-    () => sortRowsByDocumentDateDesc(preventivi, "data_preventivo", "created_at").slice(0, RELATED_DOCUMENTS_LIMIT),
-    [preventivi],
+    () => {
+      const sorted = sortRowsByDocumentDateDesc(filteredPreventivi, "data_preventivo", "created_at")
+      return preventiviFilter.mode === 'latest' ? sorted.slice(0, LEGACY_FRONTEND_LIMIT) : sorted
+    },
+    [filteredPreventivi, preventiviFilter.mode],
   )
   const totalPreventivi = latestPreventivi.length
   const totalPreventiviPages = Math.max(Math.ceil(totalPreventivi / PREVENTIVI_ROWS_PER_PAGE), 1)
@@ -1385,33 +1434,127 @@ const AnagraficaDetail = () => {
     const start = preventiviPage * PREVENTIVI_ROWS_PER_PAGE
     return latestPreventivi.slice(start, start + PREVENTIVI_ROWS_PER_PAGE)
   }, [latestPreventivi, preventiviPage])
+  const preventiviKpi = useMemo(() => {
+    return filteredPreventivi.reduce(
+      (acc, item) => {
+        const imponibile = Number(item?.totale_imponibile)
+        const iva = Number(item?.totale_iva)
+        const totale = Number(item?.totale)
+        const stato = String(item?.stato_label || item?.stato || '').toLowerCase()
+
+        if (Number.isFinite(imponibile)) acc.totaleImponibile += imponibile
+        if (Number.isFinite(iva)) acc.totaleIva += iva
+        if (Number.isFinite(totale)) acc.totaleComplessivo += totale
+        if (stato.includes('confermat') || stato.includes('accettat')) acc.confermati += 1
+
+        return acc
+      },
+      { totaleImponibile: 0, totaleIva: 0, totaleComplessivo: 0, confermati: 0 },
+    )
+  }, [filteredPreventivi])
   // Naviga al dettaglio preventivo correlato.
   const handleViewPreventivo = (id) => {
     if (!id) return
     navigate(`/preventivi/dettagli?id=${id}`)
   }
-  const ddt = detail?.ddt ?? []
-  const fatture = detail?.fatture ?? []
+  const ddt = useMemo(() => (Array.isArray(detail?.ddt) ? detail.ddt : []), [detail?.ddt])
+  const fatture = useMemo(() => (Array.isArray(detail?.fatture) ? detail.fatture : []), [detail?.fatture])
+  const effectiveDdt = useMemo(() => (Array.isArray(allDdt) ? allDdt : ddt), [allDdt, ddt])
+  const effectiveFatture = useMemo(() => (Array.isArray(allFatture) ? allFatture : fatture), [allFatture, fatture])
   const [contactsView, setContactsView] = useState('associati')
 
+  const ddtSource = useMemo(
+    () => (ddtFilter.mode === 'latest' ? ddt : effectiveDdt),
+    [ddtFilter.mode, ddt, effectiveDdt],
+  )
+  const filteredDdt = useMemo(
+    () => filterRowsByPeriod(ddtSource, "data_ddt", "created_at", ddtFilter),
+    [ddtSource, ddtFilter],
+  )
   const latestDdt = useMemo(
-    () => sortRowsByDocumentDateDesc(ddt, "data_ddt", "created_at").slice(0, RELATED_DOCUMENTS_LIMIT),
-    [ddt],
+    () => {
+      const sorted = sortRowsByDocumentDateDesc(filteredDdt, "data_ddt", "created_at")
+      return ddtFilter.mode === 'latest' ? sorted.slice(0, LEGACY_FRONTEND_LIMIT) : sorted
+    },
+    [filteredDdt, ddtFilter.mode],
   )
   const totalDdtPages = Math.max(Math.ceil(latestDdt.length / RELATED_ROWS_PER_PAGE), 1)
   const paginatedDdt = useMemo(() => {
     const start = ddtPage * RELATED_ROWS_PER_PAGE
     return latestDdt.slice(start, start + RELATED_ROWS_PER_PAGE)
   }, [latestDdt, ddtPage])
+  const fattureSource = useMemo(
+    () => (fattureFilter.mode === 'latest' ? fatture : effectiveFatture),
+    [fattureFilter.mode, fatture, effectiveFatture],
+  )
+  const filteredFatture = useMemo(
+    () => filterRowsByPeriod(fattureSource, "data_fattura", "created_at", fattureFilter),
+    [fattureSource, fattureFilter],
+  )
   const latestFatture = useMemo(
-    () => sortRowsByDocumentDateDesc(fatture, "data_fattura", "created_at").slice(0, RELATED_DOCUMENTS_LIMIT),
-    [fatture],
+    () => {
+      const sorted = sortRowsByDocumentDateDesc(filteredFatture, "data_fattura", "created_at")
+      return fattureFilter.mode === 'latest' ? sorted.slice(0, LEGACY_FRONTEND_LIMIT) : sorted
+    },
+    [filteredFatture, fattureFilter.mode],
   )
   const totalFatturePages = Math.max(Math.ceil(latestFatture.length / RELATED_ROWS_PER_PAGE), 1)
   const paginatedFatture = useMemo(() => {
     const start = fatturePage * RELATED_ROWS_PER_PAGE
     return latestFatture.slice(start, start + RELATED_ROWS_PER_PAGE)
   }, [latestFatture, fatturePage])
+  const fattureKpi = useMemo(() => {
+    return filteredFatture.reduce(
+      (acc, item) => {
+        const imponibile = Number(item?.totale_imponibile)
+        const iva = Number(item?.totale_iva)
+        const totale = Number(item?.totale)
+        const saldo = Number(item?.saldo)
+        const stato = String(item?.stato_label || item?.stato || '').toLowerCase()
+        const sign = isNotaCredito(item) ? -1 : 1
+        const saldoBase = Number.isFinite(saldo) ? saldo : Number(item?.totale)
+        const isAcquisto = Number(item?.is_acquisto) === 1
+
+        if (isAcquisto) {
+          acc.acquisti.documenti += 1
+          if (Number.isFinite(imponibile)) acc.acquisti.totaleImponibile += imponibile
+          if (Number.isFinite(iva)) acc.acquisti.totaleIva += iva
+          if (Number.isFinite(totale)) acc.acquisti.totaleComplessivo += totale
+          if (Number.isFinite(saldoBase)) acc.acquisti.saldoResiduo += saldoBase * sign
+          return acc
+        }
+
+        acc.documenti += 1
+        if (Number.isFinite(imponibile)) acc.totaleImponibile += imponibile
+        if (Number.isFinite(iva)) acc.totaleIva += iva
+        if (Number.isFinite(totale)) acc.totaleComplessivo += totale
+        if (Number.isFinite(saldoBase)) {
+          const saldoSigned = saldoBase * sign
+          acc.saldoResiduo += saldoSigned
+          acc.totaleDovuto += saldoSigned
+        }
+        if (stato.includes('pagat') || (Number.isFinite(saldo) && saldo <= 0)) acc.pagate += 1
+
+        return acc
+      },
+      {
+        documenti: 0,
+        totaleImponibile: 0,
+        totaleIva: 0,
+        totaleComplessivo: 0,
+        saldoResiduo: 0,
+        totaleDovuto: 0,
+        pagate: 0,
+        acquisti: {
+          documenti: 0,
+          totaleImponibile: 0,
+          totaleIva: 0,
+          totaleComplessivo: 0,
+          saldoResiduo: 0,
+        },
+      },
+    )
+  }, [filteredFatture])
 
   // Mantiene le pagine correlate entro i limiti disponibili.
   useEffect(() => {
@@ -1425,6 +1568,68 @@ const AnagraficaDetail = () => {
   useEffect(() => {
     setFatturePage((prev) => Math.min(prev, Math.max(totalFatturePages - 1, 0)))
   }, [totalFatturePages])
+
+  useEffect(() => {
+    setAllPreventivi(null)
+    setAllDdt(null)
+    setAllFatture(null)
+  }, [recordId])
+
+  useEffect(() => {
+    if (!token || !recordId) return
+    if (activeTab !== 'preventivi') return
+    if (preventiviFilter.mode !== 'all' && preventiviFilter.mode !== 'period') return
+    const controller = new AbortController()
+    fetchLatestPreventivi({
+      token,
+      id_anagrafica: recordId,
+      limit: 0,
+      is_acquisto: 0,
+      signal: controller.signal,
+    })
+      .then((resp) => {
+        if (!controller.signal.aborted) {
+          setAllPreventivi(Array.isArray(resp?.items) ? resp.items : [])
+        }
+      })
+      .catch(() => {})
+    return () => controller.abort()
+  }, [token, recordId, preventiviFilter.mode, activeTab])
+
+  useEffect(() => {
+    if (!token || !recordId) return
+    if (activeTab !== 'ddt') return
+    if (ddtFilter.mode !== 'all' && ddtFilter.mode !== 'period') return
+    const controller = new AbortController()
+    fetchDdtList({ token, id_anagrafica: recordId, limit: 0, signal: controller.signal })
+      .then((resp) => {
+        if (!controller.signal.aborted) {
+          setAllDdt(Array.isArray(resp?.items) ? resp.items : [])
+        }
+      })
+      .catch(() => {})
+    return () => controller.abort()
+  }, [token, recordId, ddtFilter.mode, activeTab])
+
+  useEffect(() => {
+    if (!token || !recordId) return
+    if (activeTab !== 'fatture') return
+    if (fattureFilter.mode !== 'all' && fattureFilter.mode !== 'period') return
+    const controller = new AbortController()
+    fetchFattureList({
+      token,
+      id_anagrafica: recordId,
+      limit: 0,
+      signal: controller.signal,
+    })
+      .then((resp) => {
+        if (!controller.signal.aborted) {
+          setAllFatture(Array.isArray(resp?.items) ? resp.items : [])
+        }
+      })
+      .catch(() => {})
+    return () => controller.abort()
+  }, [token, recordId, fattureFilter.mode, activeTab])
 
   const sedeOptions = useMemo(() => {
     const options = [
@@ -2095,6 +2300,71 @@ const AnagraficaDetail = () => {
 
           {recordId && !loading && !errorMessage && detail && (
             <>
+              <CNav variant="tabs" className="mb-3">
+                <CNavItem>
+                  <CNavLink
+                    href="#"
+                    active={activeTab === "generali"}
+                    onClick={(event) => {
+                      event.preventDefault()
+                      setActiveTab("generali")
+                    }}
+                  >
+                    Informazioni generali
+                  </CNavLink>
+                </CNavItem>
+                <CNavItem>
+                  <CNavLink
+                    href="#"
+                    active={activeTab === "contratti"}
+                    onClick={(event) => {
+                      event.preventDefault()
+                      setActiveTab("contratti")
+                    }}
+                  >
+                    Contratti
+                  </CNavLink>
+                </CNavItem>
+                <CNavItem>
+                  <CNavLink
+                    href="#"
+                    active={activeTab === "preventivi"}
+                    onClick={(event) => {
+                      event.preventDefault()
+                      setActiveTab("preventivi")
+                    }}
+                  >
+                    Preventivi
+                  </CNavLink>
+                </CNavItem>
+                <CNavItem>
+                  <CNavLink
+                    href="#"
+                    active={activeTab === "ddt"}
+                    onClick={(event) => {
+                      event.preventDefault()
+                      setActiveTab("ddt")
+                    }}
+                  >
+                    DDT
+                  </CNavLink>
+                </CNavItem>
+                <CNavItem>
+                  <CNavLink
+                    href="#"
+                    active={activeTab === "fatture"}
+                    onClick={(event) => {
+                      event.preventDefault()
+                      setActiveTab("fatture")
+                    }}
+                  >
+                    Fatture
+                  </CNavLink>
+                </CNavItem>
+              </CNav>
+
+              {activeTab === "generali" && (
+              <>
               <div className="d-flex flex-column flex-lg-row gap-3 align-items-start">
                 <CCard style={{ flex: 6 }}>
                   <CCardBody className="d-flex flex-column gap-3">
@@ -2831,6 +3101,10 @@ const AnagraficaDetail = () => {
                 </CCard>
               </div>
 
+              </>
+              )}
+
+              {activeTab === "contratti" && (
               <section>
                 <div className="d-flex justify-content-between align-items-center mb-3">
                   <h3 className="h6 mb-0">Contratti</h3>
@@ -2897,8 +3171,36 @@ const AnagraficaDetail = () => {
                   <CAlert color="info" className="mb-0">Nessun contratto disponibile.</CAlert>
                 )}
               </section>
+              )}
 
+              {activeTab === "preventivi" && (
               <section>
+                <CRow className="g-3 mb-3">
+                    <CCol md={6} xl={2}>
+                      <DetailField label="Documenti" value={effectivePreventivi.length} compact={isCompact} />
+                  </CCol>
+                  <CCol md={6} xl={2}>
+                    <DetailField label="Confermati" value={preventiviKpi.confermati} compact={isCompact} />
+                  </CCol>
+                  <CCol md={6} xl={3}>
+                    <DetailField
+                      label="Totale imponibile"
+                      value={formatCurrency(preventiviKpi.totaleImponibile)}
+                      compact={isCompact}
+                    />
+                  </CCol>
+                  <CCol md={6} xl={2}>
+                    <DetailField label="Totale IVA" value={formatCurrency(preventiviKpi.totaleIva)} compact={isCompact} />
+                  </CCol>
+                  <CCol md={6} xl={3}>
+                    <DetailField
+                      label="Totale complessivo"
+                      value={formatCurrency(preventiviKpi.totaleComplessivo)}
+                      compact={isCompact}
+                    />
+                  </CCol>
+                </CRow>
+
                 <div className="d-flex justify-content-between align-items-center mb-3">
                   <h3 className="h6 mb-0">Preventivi correlati</h3>
                   <CButton
@@ -2911,6 +3213,47 @@ const AnagraficaDetail = () => {
                     <CIcon icon={cilPlus} className="me-2" /> Nuovo preventivo
                   </CButton>
                 </div>
+                <CCard className="mb-3">
+                  <CCardBody className="py-3">
+                    <CRow className="g-2 align-items-end">
+                      <CCol md={3}>
+                        <CFormLabel className="small text-body-secondary">Filtro periodo</CFormLabel>
+                        <CFormSelect
+                          value={preventiviFilter.mode}
+                          onChange={(e) => setPreventiviFilter((prev) => ({ ...prev, mode: e.target.value }))}
+                        >
+                          <option value="latest">Ultimi 10 preventivi</option>
+                          <option value="all">Mostra tutto</option>
+                          <option value="period">Periodo specifico</option>
+                        </CFormSelect>
+                      </CCol>
+                      {preventiviFilter.mode === 'period' && (
+                        <>
+                          <CCol md={3}>
+                            <CFormLabel className="small text-body-secondary">Dal</CFormLabel>
+                            <CFormInput
+                              type="date"
+                              value={preventiviFilter.from}
+                              onChange={(e) => setPreventiviFilter((prev) => ({ ...prev, from: e.target.value }))}
+                            />
+                          </CCol>
+                          <CCol md={3}>
+                            <CFormLabel className="small text-body-secondary">Al</CFormLabel>
+                            <CFormInput
+                              type="date"
+                              value={preventiviFilter.to}
+                              onChange={(e) => setPreventiviFilter((prev) => ({ ...prev, to: e.target.value }))}
+                            />
+                          </CCol>
+                        </>
+                      )}
+                    </CRow>
+                    <div className="small text-body-secondary mt-2">
+                      Mostrati {totalPreventivi} di {effectivePreventivi.length} record caricati dal backend.
+                      Limite frontend precedente: {LEGACY_FRONTEND_LIMIT} record.
+                    </div>
+                  </CCardBody>
+                </CCard>
                 {totalPreventivi > 0 ? (
                   <>
                     <CTable data-testid="table" hover responsive size="sm">
@@ -2994,8 +3337,51 @@ const AnagraficaDetail = () => {
                   <CAlert color="info" className="mb-0">Nessun preventivo disponibile.</CAlert>
                 )}
               </section>
+              )}
 
+              {activeTab === "ddt" && (
               <section>
+                <CCard className="mb-3">
+                  <CCardBody className="py-3">
+                    <CRow className="g-2 align-items-end">
+                      <CCol md={3}>
+                        <CFormLabel className="small text-body-secondary">Filtro periodo</CFormLabel>
+                        <CFormSelect
+                          value={ddtFilter.mode}
+                          onChange={(e) => setDdtFilter((prev) => ({ ...prev, mode: e.target.value }))}
+                        >
+                          <option value="latest">Ultimi 10 DDT</option>
+                          <option value="all">Mostra tutto</option>
+                          <option value="period">Periodo specifico</option>
+                        </CFormSelect>
+                      </CCol>
+                      {ddtFilter.mode === 'period' && (
+                        <>
+                          <CCol md={3}>
+                            <CFormLabel className="small text-body-secondary">Dal</CFormLabel>
+                            <CFormInput
+                              type="date"
+                              value={ddtFilter.from}
+                              onChange={(e) => setDdtFilter((prev) => ({ ...prev, from: e.target.value }))}
+                            />
+                          </CCol>
+                          <CCol md={3}>
+                            <CFormLabel className="small text-body-secondary">Al</CFormLabel>
+                            <CFormInput
+                              type="date"
+                              value={ddtFilter.to}
+                              onChange={(e) => setDdtFilter((prev) => ({ ...prev, to: e.target.value }))}
+                            />
+                          </CCol>
+                        </>
+                      )}
+                    </CRow>
+                    <div className="small text-body-secondary mt-2">
+                      Mostrati {latestDdt.length} di {effectiveDdt.length} record caricati dal backend.
+                      Limite frontend precedente: {LEGACY_FRONTEND_LIMIT} record.
+                    </div>
+                  </CCardBody>
+                </CCard>
                 <h3 className="h6 mb-3">DDT correlati</h3>
                 {latestDdt.length > 0 ? (
                   <>
@@ -3006,6 +3392,7 @@ const AnagraficaDetail = () => {
                           <CTableHeaderCell scope="col">Data</CTableHeaderCell>
                           <CTableHeaderCell scope="col">Tot. pezzi</CTableHeaderCell>
                           <CTableHeaderCell scope="col">Tot. peso (kg)</CTableHeaderCell>
+                          <CTableHeaderCell scope="col" className="text-center">Azioni</CTableHeaderCell>
                         </CTableRow>
                       </CTableHead>
                       <CTableBody>
@@ -3025,6 +3412,16 @@ const AnagraficaDetail = () => {
                               <CTableDataCell>{formatDate(documento.data_ddt)}</CTableDataCell>
                               <CTableDataCell>{pezziDisplay}</CTableDataCell>
                               <CTableDataCell>{pesoDisplay}</CTableDataCell>
+                              <CTableDataCell className="text-center">
+                                <CButton
+                                  color="link"
+                                  size="sm"
+                                  className="p-0"
+                                  onClick={() => navigate(`/ddt/dettagli?id=${documento.id_ddt}`)}
+                                >
+                                  <CIcon icon={cilDescription} />
+                                </CButton>
+                              </CTableDataCell>
                             </CTableRow>
                           )
                         })}
@@ -3048,8 +3445,138 @@ const AnagraficaDetail = () => {
                   </CAlert>
                 )}
               </section>
+              )}
 
+              {activeTab === "fatture" && (
                 <section>
+                  <CRow className="g-3 mb-3">
+                    <CCol md={6} xl={2}>
+                      <DetailField label="Documenti vendita" value={fattureKpi.documenti} compact={isCompact} />
+                    </CCol>
+                    <CCol md={6} xl={2}>
+                      <DetailField label="Pagate" value={fattureKpi.pagate} compact={isCompact} />
+                    </CCol>
+                    <CCol md={6} xl={2}>
+                      <DetailField
+                        label="Saldo residuo"
+                        value={formatCurrency(fattureKpi.saldoResiduo)}
+                        valueClassName={Number(fattureKpi.saldoResiduo) > 0 ? "text-danger fw-semibold" : "text-success fw-semibold"}
+                        compact={isCompact}
+                      />
+                    </CCol>
+                    <CCol md={6} xl={2}>
+                      <DetailField
+                        label="Totale dovuto cliente"
+                        value={formatCurrency(fattureKpi.totaleDovuto)}
+                        compact={isCompact}
+                      />
+                    </CCol>
+                  </CRow>
+                  <CRow className="g-3 mb-3">
+                    <CCol md={4}>
+                      <DetailField
+                        label="Totale imponibile"
+                        value={formatCurrency(fattureKpi.totaleImponibile)}
+                        compact={isCompact}
+                      />
+                    </CCol>
+                    <CCol md={4}>
+                      <DetailField label="Totale IVA" value={formatCurrency(fattureKpi.totaleIva)} compact={isCompact} />
+                    </CCol>
+                    <CCol md={4}>
+                      <DetailField
+                        label="Totale complessivo"
+                        value={formatCurrency(fattureKpi.totaleComplessivo)}
+                        compact={isCompact}
+                      />
+                    </CCol>
+                  </CRow>
+                  {fattureKpi.acquisti.documenti > 0 && (
+                    <CRow className="g-3 mb-3">
+                      <CCol md={6} xl={2}>
+                        <DetailField
+                          label="Documenti acquisto"
+                          value={fattureKpi.acquisti.documenti}
+                          compact={isCompact}
+                          className="border-warning"
+                          labelClassName="text-body"
+                          valueClassName="text-body-emphasis fw-semibold"
+                        />
+                      </CCol>
+                      <CCol md={6} xl={2}>
+                        <DetailField
+                          label="Imponibile acquisti"
+                          value={formatCurrency(fattureKpi.acquisti.totaleImponibile)}
+                          compact={isCompact}
+                          className="border-warning"
+                          labelClassName="text-body"
+                          valueClassName="text-body-emphasis fw-semibold"
+                        />
+                      </CCol>
+                      <CCol md={6} xl={2}>
+                        <DetailField
+                          label="IVA acquisti"
+                          value={formatCurrency(fattureKpi.acquisti.totaleIva)}
+                          compact={isCompact}
+                          className="border-warning"
+                          labelClassName="text-body"
+                          valueClassName="text-body-emphasis fw-semibold"
+                        />
+                      </CCol>
+                      <CCol md={6} xl={2}>
+                        <DetailField
+                          label="Totale acquisti"
+                          value={formatCurrency(fattureKpi.acquisti.totaleComplessivo)}
+                          compact={isCompact}
+                          className="border-warning"
+                          labelClassName="text-body"
+                          valueClassName="text-body-emphasis fw-semibold"
+                        />
+                      </CCol>
+                    </CRow>
+                  )}
+                  <CCard className="mb-3">
+                    <CCardBody className="py-3">
+                      <CRow className="g-2 align-items-end">
+                        <CCol md={3}>
+                          <CFormLabel className="small text-body-secondary">Filtro periodo</CFormLabel>
+                          <CFormSelect
+                            value={fattureFilter.mode}
+                            onChange={(e) => setFattureFilter((prev) => ({ ...prev, mode: e.target.value }))}
+                          >
+                            <option value="latest">Ultime 10 fatture</option>
+                            <option value="all">Mostra tutto</option>
+                            <option value="period">Periodo specifico</option>
+                          </CFormSelect>
+                        </CCol>
+                        {fattureFilter.mode === 'period' && (
+                          <>
+                            <CCol md={3}>
+                              <CFormLabel className="small text-body-secondary">Dal</CFormLabel>
+                              <CFormInput
+                                type="date"
+                                value={fattureFilter.from}
+                                onChange={(e) => setFattureFilter((prev) => ({ ...prev, from: e.target.value }))}
+                              />
+                            </CCol>
+                            <CCol md={3}>
+                              <CFormLabel className="small text-body-secondary">Al</CFormLabel>
+                              <CFormInput
+                                type="date"
+                                value={fattureFilter.to}
+                                onChange={(e) => setFattureFilter((prev) => ({ ...prev, to: e.target.value }))}
+                              />
+                            </CCol>
+                          </>
+                        )}
+                      </CRow>
+                      <div className="small text-body-secondary mt-2">
+                        Mostrate {latestFatture.length} di {effectiveFatture.length} record caricati dal backend.
+                        Limite frontend precedente: {LEGACY_FRONTEND_LIMIT} record.
+                      </div>
+                    </CCardBody>
+                  </CCard>
+
                   <h3 className="h6 mb-3">Fatture correlate</h3>
                   {latestFatture.length > 0 ? (
                     <>
@@ -3061,8 +3588,11 @@ const AnagraficaDetail = () => {
                             <CTableHeaderCell scope="col">Totale imponibile</CTableHeaderCell>
                             <CTableHeaderCell scope="col">Totale IVA</CTableHeaderCell>
                             <CTableHeaderCell scope="col">Totale</CTableHeaderCell>
-                            <CTableHeaderCell scope="col">Saldo</CTableHeaderCell>
+                            <CTableHeaderCell scope="col">Saldo fattura</CTableHeaderCell>
+                            <CTableHeaderCell scope="col">Sezionale</CTableHeaderCell>
+                            <CTableHeaderCell scope="col">Tipologia</CTableHeaderCell>
                             <CTableHeaderCell scope="col">Stato</CTableHeaderCell>
+                            <CTableHeaderCell scope="col" className="text-center">Azioni</CTableHeaderCell>
                           </CTableRow>
                         </CTableHead>
                         <CTableBody>
@@ -3075,13 +3605,46 @@ const AnagraficaDetail = () => {
                               <CTableDataCell>{formatCurrency(fattura.totale_imponibile)}</CTableDataCell>
                               <CTableDataCell>{formatCurrency(fattura.totale_iva)}</CTableDataCell>
                               <CTableDataCell>{formatCurrency(fattura.totale)}</CTableDataCell>
-                              <CTableDataCell>{formatCurrency(fattura.saldo)}</CTableDataCell>
+                              <CTableDataCell>{formatCurrency(fattura.saldo_fattura ?? fattura.saldo)}</CTableDataCell>
+                              <CTableDataCell>
+                                {fattura.sezionale_code || fattura.sezionale_label || (
+                                  fattura.id_sezionale ? `#${fattura.id_sezionale}` : null
+                                ) || (
+                                  <span className="text-body-secondary">-</span>
+                                )}
+                              </CTableDataCell>
+                              <CTableDataCell>
+                                <div className="d-flex gap-1 flex-wrap">
+                                  <CBadge color={Number(fattura.is_acquisto) === 1 ? "warning" : "primary"}>
+                                    {Number(fattura.is_acquisto) === 1 ? "Acquisto" : "Vendita"}
+                                  </CBadge>
+                                  {fattura.tipo_label || fattura.tipo_code ? (
+                                    <CBadge color="info">{fattura.tipo_label || fattura.tipo_code}</CBadge>
+                                  ) : (
+                                    <span className="text-body-secondary">-</span>
+                                  )}
+                                </div>
+                              </CTableDataCell>
                               <CTableDataCell>
                                 {fattura.stato_label ? (
                                   <CBadge color="secondary">{fattura.stato_label}</CBadge>
                                 ) : (
                                   <span className="text-body-secondary">-</span>
                                 )}
+                              </CTableDataCell>
+                              <CTableDataCell className="text-center">
+                                <CButton
+                                  color="link"
+                                  size="sm"
+                                  className="p-0"
+                                  onClick={() => {
+                                    const isAcquisto = Number(fattura?.is_acquisto) === 1
+                                    const detailPath = isAcquisto ? '/acquisti/fatture/dettagli' : '/fatture/dettagli'
+                                    navigate(`${detailPath}?id=${fattura.id_fattura}`)
+                                  }}
+                                >
+                                  <CIcon icon={cilDescription} />
+                                </CButton>
                               </CTableDataCell>
                             </CTableRow>
                           ))}
@@ -3105,6 +3668,7 @@ const AnagraficaDetail = () => {
                   </CAlert>
                 )}
               </section>
+              )}
             </>
           )}
         </CCardBody>

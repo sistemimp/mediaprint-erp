@@ -500,16 +500,24 @@ final class AnagraficheRepository
                 f.anno,
                 f.numero_documento,
                 f.data_fattura,
+                f.is_acquisto,
+                f.id_sezionale,
                 f.totale_imponibile,
                 f.totale_sconto,
                 f.totale_iva,
                 f.totale,
                 f.saldo,
+                tf.code AS tipo_code,
+                tf.label AS tipo_label,
+                sz.code AS sezionale_code,
+                sz.descrizione AS sezionale_label,
                 sf.code AS stato_code,
                 sf.label AS stato_label,
                 f.created_at,
                 f.updated_at
             FROM tb_fatture f
+            LEFT JOIN cfg_tipi_fattura tf ON tf.id_tipo = f.id_tipo_fatt
+            LEFT JOIN cfg_sezionali sz ON sz.id_sezionale = f.id_sezionale
             LEFT JOIN cfg_stati_fattura sf ON sf.id_stato = f.id_stato_fatt
             WHERE f.id_anagrafica = :id
             ORDER BY f.data_fattura DESC, f.created_at DESC
@@ -657,7 +665,9 @@ final class AnagraficheRepository
     {
         [$dateSql, $params] = $this->buildDateFilter('data_fattura', $start, $end);
         $sql = 'SELECT COUNT(*) AS tot_count, COALESCE(SUM(totale), 0) AS tot_sum, COALESCE(SUM(saldo), 0) AS saldo_sum
-                FROM tb_fatture WHERE id_anagrafica = :id' . $dateSql;
+                FROM tb_fatture
+                WHERE id_anagrafica = :id
+                  AND COALESCE(is_acquisto, 0) = 0' . $dateSql;
         $stmt = $this->pdo->prepare($sql);
         $stmt->bindValue(':id', $id, PDO::PARAM_INT);
         foreach ($params as $key => $value) {

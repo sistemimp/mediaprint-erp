@@ -597,7 +597,13 @@ final class PreventiviRepository
     /**
      * @return list<array<string, mixed>>
      */
-    public function listLatest(int $limit = 10, ?array $allowedAnagrafiche = null, bool $excludeDraft = false, int $isAcquisto = 0): array
+    public function listLatest(
+        int $limit = 10,
+        ?array $allowedAnagrafiche = null,
+        bool $excludeDraft = false,
+        int $isAcquisto = 0,
+        ?int $idAnagrafica = null
+    ): array
     {
         $sql = <<<'SQL'
             SELECT
@@ -635,12 +641,9 @@ final class PreventiviRepository
             LEFT JOIN cfg_stati_preventivo sp ON sp.id_stato = p.id_stato_prev
             /*FILTERS*/
             ORDER BY p.data_preventivo DESC, p.created_at DESC
-            LIMIT :limit
+            /*LIMIT*/
         SQL;
 
-        // Inseriamo il limite direttamente nella query, dato che MySQL con prepared nativi
-        // non consente placeholder in LIMIT quando ATTR_EMULATE_PREPARES=false
-        $effectiveLimit = max(1, $limit);
         $allowed = null;
         if (is_array($allowedAnagrafiche)) {
             $allowed = array_values(array_filter(array_map('intval', $allowedAnagrafiche), static fn($id) => $id > 0));
@@ -657,14 +660,25 @@ final class PreventiviRepository
         if ($excludeDraft) {
             $whereParts[] = "COALESCE(sp.code, 'bozza') <> 'bozza'";
         }
+        if ($idAnagrafica !== null && $idAnagrafica > 0) {
+            $whereParts[] = 'p.id_anagrafica = :id_anagrafica';
+        }
         $whereParts[] = 'p.is_acquisto = :is_acquisto';
         $where = $whereParts ? ('WHERE ' . implode(' AND ', $whereParts)) : '';
 
         $sql = str_replace('/*FILTERS*/', $where, $sql);
-        $sql = str_replace('LIMIT :limit', 'LIMIT ' . (int) $effectiveLimit, $sql);
+        if ($limit > 0) {
+            $effectiveLimit = max(1, min($limit, 5000));
+            $sql = str_replace('/*LIMIT*/', 'LIMIT ' . (int) $effectiveLimit, $sql);
+        } else {
+            $sql = str_replace('/*LIMIT*/', '', $sql);
+        }
 
         $statement = $this->pdo->prepare($sql);
         $statement->bindValue(':is_acquisto', $isAcquisto, PDO::PARAM_INT);
+        if ($idAnagrafica !== null && $idAnagrafica > 0) {
+            $statement->bindValue(':id_anagrafica', $idAnagrafica, PDO::PARAM_INT);
+        }
         if ($allowed !== null) {
             foreach ($allowed as $index => $id) {
                 $statement->bindValue($index + 1, $id, PDO::PARAM_INT);

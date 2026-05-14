@@ -49,6 +49,34 @@ const formatCurrency = (value) => {
 
 const ROWS_PER_PAGE = 10
 const FETCH_LIMIT = 0
+const CREDIT_NOTE_TYPE_CODE = 'nota_credito'
+const isCreditNoteRow = (row) => {
+  const code = String(row?.tipo_code || '').toLowerCase().trim()
+  if (code === CREDIT_NOTE_TYPE_CODE) {
+    return true
+  }
+  const label = String(row?.tipo_label || '').toLowerCase()
+  return label.includes('nota') && label.includes('credit')
+}
+const parseAmount = (value) => {
+  if (value === null || value === undefined || value === '') {
+    return null
+  }
+  if (typeof value === 'string') {
+    const normalized = value.replace(/\s/g, '').replace(',', '.')
+    const numeric = Number(normalized)
+    return Number.isFinite(numeric) ? numeric : null
+  }
+  const numeric = Number(value)
+  return Number.isFinite(numeric) ? numeric : null
+}
+const getSignedAmount = (row, value) => {
+  const numeric = parseAmount(value)
+  if (numeric === null) {
+    return null
+  }
+  return isCreditNoteRow(row) ? -Math.abs(numeric) : numeric
+}
 
 const FattureList = () => {
   const navigate = useNavigate()
@@ -174,8 +202,8 @@ const FattureList = () => {
       return cmp
     }
     if (['totale_imponibile', 'totale_iva', 'totale', 'saldo'].includes(key)) {
-      const numA = Number(valueA) || 0
-      const numB = Number(valueB) || 0
+      const numA = getSignedAmount(a, valueA)
+      const numB = getSignedAmount(b, valueB)
       return numA - numB
     }
     if (key === 'data_fattura') {
@@ -241,10 +269,10 @@ const FattureList = () => {
   const totals = useMemo(() => {
     return sortedItems.reduce(
       (acc, row) => {
-        acc.imponibile += Number(row.totale_imponibile) || 0
-        acc.iva += Number(row.totale_iva) || 0
-        acc.totale += Number(row.totale) || 0
-        acc.saldo += Number(row.saldo) || 0
+        acc.imponibile += getSignedAmount(row, row.totale_imponibile) ?? 0
+        acc.iva += getSignedAmount(row, row.totale_iva) ?? 0
+        acc.totale += getSignedAmount(row, row.totale) ?? 0
+        acc.saldo += getSignedAmount(row, row.saldo) ?? 0
         return acc
       },
       { imponibile: 0, iva: 0, totale: 0, saldo: 0 },
@@ -601,12 +629,18 @@ const FattureList = () => {
                     <CTableDataCell>{formatDate(row.data_fattura)}</CTableDataCell>
                     <CTableDataCell>{row.cliente_ragione_sociale || '-'}</CTableDataCell>
                     <CTableDataCell className="text-end">
-                      {formatCurrency(row.totale_imponibile)}
+                      {formatCurrency(getSignedAmount(row, row.totale_imponibile))}
                     </CTableDataCell>
-                    <CTableDataCell className="text-end">{formatCurrency(row.totale_iva)}</CTableDataCell>
-                    <CTableDataCell className="text-end">{formatCurrency(row.totale)}</CTableDataCell>
+                    <CTableDataCell className="text-end">
+                      {formatCurrency(getSignedAmount(row, row.totale_iva))}
+                    </CTableDataCell>
+                    <CTableDataCell className="text-end">
+                      {formatCurrency(getSignedAmount(row, row.totale))}
+                    </CTableDataCell>
                     {!isAcquisto && (
-                      <CTableDataCell className="text-end">{formatCurrency(row.saldo)}</CTableDataCell>
+                      <CTableDataCell className="text-end">
+                        {formatCurrency(getSignedAmount(row, row.saldo))}
+                      </CTableDataCell>
                     )}
                     {showStatus && (
                       <CTableDataCell>

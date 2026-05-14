@@ -1,7 +1,7 @@
 import { apiFetch, buildApiUrl, getStoredToken, uploadToApi } from './apiClient'
 
 // Recupera l'elenco fatture con filtri opzionali.
-export const fetchFattureList = async ({ token, limit, date_from, date_to, is_acquisto, signal } = {}) => {
+export const fetchFattureList = async ({ token, limit, date_from, date_to, is_acquisto, id_anagrafica, signal } = {}) => {
   const params = {}
   if (limit !== undefined && limit !== null) {
     params.limit = limit
@@ -14,6 +14,9 @@ export const fetchFattureList = async ({ token, limit, date_from, date_to, is_ac
   }
   if (is_acquisto !== undefined) {
     params.is_acquisto = is_acquisto ? 1 : 0
+  }
+  if (id_anagrafica !== undefined && id_anagrafica !== null) {
+    params.id_anagrafica = id_anagrafica
   }
 
   const response = await apiFetch('/fattureList.php', {
@@ -138,6 +141,7 @@ export const updateFatturaDetail = async ({
   cliente_modalita_pagamento,
   cliente_id_cond_pagamento,
   cliente_giorni_pagamento,
+  ricalcola_saldi,
   signal,
 } = {}) => {
   const payload = {
@@ -216,6 +220,9 @@ export const updateFatturaDetail = async ({
   }
   if (cliente_giorni_pagamento !== undefined) {
     payload.cliente_giorni_pagamento = cliente_giorni_pagamento
+  }
+  if (ricalcola_saldi !== undefined) {
+    payload.ricalcola_saldi = ricalcola_saldi ? 1 : 0
   }
 
   const response = await apiFetch('/fattureUpdate.php', {

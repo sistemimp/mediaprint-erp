@@ -70,6 +70,9 @@ $auth = AuthGuard::requireAuth();
     if (array_key_exists('cliente_giorni_pagamento', $payload)) {
         $updates['cliente_giorni_pagamento'] = $payload['cliente_giorni_pagamento'];
     }
+    if (array_key_exists('ricalcola_saldi', $payload)) {
+        $updates['ricalcola_saldi'] = $payload['ricalcola_saldi'];
+    }
     if (array_key_exists('righe', $payload)) {
         $updates['righe'] = is_array($payload['righe']) ? $payload['righe'] : [];
     }

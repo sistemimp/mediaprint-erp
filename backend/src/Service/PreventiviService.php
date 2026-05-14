@@ -354,15 +354,23 @@ final class PreventiviService
     public function listLatest(array $input): array
     {
         $limit = isset($input['limit']) ? (int) $input['limit'] : 10;
-        // vincola a massimo 10 come da richiesta
-        $limit = max(1, min($limit, 10));
+        if ($limit > 0) {
+            $limit = max(1, min($limit, 5000));
+        }
+        $idAnagrafica = isset($input['id_anagrafica']) ? (int) $input['id_anagrafica'] : 0;
 
         $allowed = isset($input['allowed_anagrafiche']) && is_array($input['allowed_anagrafiche'])
             ? $input['allowed_anagrafiche']
             : null;
         $excludeDraft = !empty($input['exclude_draft']);
         $isAcquisto = array_key_exists('is_acquisto', $input) ? (int) $input['is_acquisto'] : 0;
-        $rows = $this->repository->listLatest($limit, $allowed, $excludeDraft, $isAcquisto);
+        $rows = $this->repository->listLatest(
+            $limit,
+            $allowed,
+            $excludeDraft,
+            $isAcquisto,
+            $idAnagrafica > 0 ? $idAnagrafica : null
+        );
         foreach ($rows as &$row) {
             $statusCode = strtolower((string) ($row['stato_code'] ?? ''));
             $warning = false;

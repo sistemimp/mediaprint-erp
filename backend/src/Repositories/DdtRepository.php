@@ -981,9 +981,13 @@ final class DdtRepository
     /**
      * @return list<array<string,mixed>>
      */
-    public function listLatest(int $limit = 200, ?array $allowedAnagrafiche = null, bool $excludeDraft = false): array
+    public function listLatest(
+        int $limit = 200,
+        ?array $allowedAnagrafiche = null,
+        bool $excludeDraft = false,
+        ?int $idAnagrafica = null
+    ): array
     {
-        $limit = max(1, min($limit, 500));
         $sql = <<<'SQL'
             SELECT
                 d.id_ddt,
@@ -1005,7 +1009,7 @@ final class DdtRepository
             LEFT JOIN cfg_causali_ddt c ON c.id_causale = d.id_causale
             /*FILTERS*/
             ORDER BY COALESCE(d.data_ddt, d.created_at) DESC, d.id_ddt DESC
-            LIMIT :limit
+            /*LIMIT*/
         SQL;
 
         $allowed = null;
@@ -1016,22 +1020,35 @@ final class DdtRepository
             }
         }
         $whereParts = [];
+        $params = [];
         if ($allowed !== null) {
-            $placeholders = implode(',', array_fill(0, count($allowed), '?'));
-            $whereParts[] = "d.id_anagrafica IN ({$placeholders})";
+            $placeholders = [];
+            foreach ($allowed as $index => $id) {
+                $key = ':allowed_' . $index;
+                $placeholders[] = $key;
+                $params[$key] = $id;
+            }
+            $whereParts[] = 'd.id_anagrafica IN (' . implode(',', $placeholders) . ')';
         }
         if ($excludeDraft) {
             $whereParts[] = 'd.stato_documento <> 1';
         }
+        if ($idAnagrafica !== null && $idAnagrafica > 0) {
+            $whereParts[] = 'd.id_anagrafica = :id_anagrafica';
+            $params[':id_anagrafica'] = $idAnagrafica;
+        }
         $where = $whereParts ? ('WHERE ' . implode(' AND ', $whereParts)) : '';
 
         $sql = str_replace('/*FILTERS*/', $where, $sql);
-        $sql = str_replace(':limit', (string) $limit, $sql);
+        if ($limit > 0) {
+            $effectiveLimit = max(1, min($limit, 5000));
+            $sql = str_replace('/*LIMIT*/', 'LIMIT ' . (string) $effectiveLimit, $sql);
+        } else {
+            $sql = str_replace('/*LIMIT*/', '', $sql);
+        }
         $stmt = $this->pdo->prepare($sql);
-        if ($allowed !== null) {
-            foreach ($allowed as $index => $id) {
-                $stmt->bindValue($index + 1, $id, PDO::PARAM_INT);
-            }
+        foreach ($params as $placeholder => $value) {
+            $stmt->bindValue($placeholder, $value, PDO::PARAM_INT);
         }
         $stmt->execute();
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
