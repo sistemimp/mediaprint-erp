@@ -105,7 +105,7 @@ const DdtDetail = () => {
   const location = useLocation()
   const query = new URLSearchParams(location.search)
   const id = Number(query.get('id') || 0)
-  const { token, logout } = useAuth()
+  const { token, logout, user } = useAuth()
   const { setBreadcrumbActions, clearBreadcrumbActions } = useBreadcrumbActions()
 
   const [record, setRecord] = useState(null)
@@ -332,7 +332,9 @@ const DdtDetail = () => {
 
   const isEditable = record?.stato_documento !== 2
   const isBusy = saving || statusSaving
-  const formDisabled = !isEditable || isBusy
+  const accountType = String(user?.accountType || user?.account_type || '').toLowerCase().trim()
+  const isCustomerAccount = accountType === 'cliente'
+  const formDisabled = !isEditable || isBusy || isCustomerAccount
   const currentStatus = record?.stato_documento === 2 ? 2 : 1
   const statusLabel = currentStatus === 2 ? 'Emesso' : 'Bozza'
   const statusColor = currentStatus === 2 ? 'success' : 'warning'
@@ -830,7 +832,7 @@ const DdtDetail = () => {
   }
 
   return (
-    <CCard>
+    <CCard className={isCustomerAccount ? 'customer-readonly' : undefined}>
       <CCardHeader>
         <div className="d-flex justify-content-between align-items-center flex-wrap gap-3">
           <div>

@@ -229,6 +229,9 @@ final class AccountsService
             if (count($valid) !== count($anagrafiche)) {
                 throw new RuntimeException('Anagrafiche non valide o non attive.', 422);
             }
+            if (count($valid) > 1) {
+                throw new RuntimeException("Ogni contatto puo essere associato a una sola anagrafica.", 422);
+            }
             $anagrafiche = $valid;
         }
 
@@ -268,7 +271,7 @@ final class AccountsService
                 throw new RuntimeException("Per associare anagrafiche e' necessario selezionare un contatto.", 422);
             }
             $defaultId = $this->resolveDefaultAnagrafica($anagrafiche, $defaultAnagrafica);
-            $this->syncAccountAnagraficheForContatto((int) $effectiveContatto, $anagrafiche, $defaultId);
+            $this->syncAccountAnagraficheForContatto((int) $effectiveContatto, $defaultId);
         }
 
         if ($contatti !== []) {
@@ -391,13 +394,16 @@ final class AccountsService
             if (count($valid) !== count($anagrafiche)) {
                 throw new RuntimeException('Anagrafiche non valide o non attive.', 422);
             }
+            if (count($valid) > 1) {
+                throw new RuntimeException("Ogni contatto puo essere associato a una sola anagrafica.", 422);
+            }
             $defaultAnagrafica = isset($input['anagrafica_predefinita']) ? (int) $input['anagrafica_predefinita'] : null;
             $defaultId = $this->resolveDefaultAnagrafica($valid, $defaultAnagrafica);
             $effectiveContatto = $primaryContatto ?? (array_key_exists('id_contatto', $payload) ? $payload['id_contatto'] : ($meta['id_contatto'] ?? null));
             if ($effectiveContatto === null || $effectiveContatto <= 0) {
                 throw new RuntimeException("Per associare anagrafiche e' necessario selezionare un contatto.", 422);
             }
-            $this->syncAccountAnagraficheForContatto((int) $effectiveContatto, $valid, $defaultId);
+            $this->syncAccountAnagraficheForContatto((int) $effectiveContatto, $defaultId);
         }
 
         return ['ok' => true];
@@ -702,11 +708,8 @@ final class AccountsService
         return $ids[0];
     }
 
-    /**
-     * @param list<int> $targetIds
-     */
-    private function syncAccountAnagraficheForContatto(int $contattoId, array $targetIds, int $defaultId): void
+    private function syncAccountAnagraficheForContatto(int $contattoId, int $anagraficaId): void
     {
-        $this->repository->replaceContattoAnagrafiche($contattoId, $targetIds, $defaultId);
+        $this->repository->replaceContattoAnagrafiche($contattoId, $anagraficaId);
     }
 }

@@ -55,9 +55,6 @@ try {
     $items = [];
     foreach ($parsed['items'] as $row) {
         $normalized = normalize_import_row($row);
-        if (empty($normalized['data_pagamento']) && !empty($normalized['data_valuta'])) {
-            $normalized['data_pagamento'] = $normalized['data_valuta'];
-        }
         $matchResult = $pagamentiRepo->resolveInvoiceForRow($normalized);
         $metodoInfo = null;
         if (!empty($normalized['metodo'])) {
@@ -145,7 +142,7 @@ function normalize_import_row(array $row): array
         'note' => ['note', 'descrizione'],
         'metodo' => ['metodo', 'metodo_pagamento'],
         'modalita' => ['modalita', 'modalita_pagamento', 'mp'],
-        'data_pagamento' => ['data_pagamento', 'data', 'operaz', 'operazione', 'data_operazione', 'data_valuta'],
+        'data_pagamento' => ['data_pagamento', 'data', 'operaz', 'operazione', 'data_operazione'],
         'data_valuta' => ['data_valuta', 'valuta'],
         'importo' => ['importo', 'amount', 'eur'],
     ];
@@ -223,6 +220,31 @@ function parse_date_value(string $value): ?string
             return $date->format('Y-m-d');
         }
     }
+
+    $explicitFormats = [
+        'd/m/Y',
+        'd-m-Y',
+        'd.m.Y',
+        'd/m/y',
+        'd-m-y',
+        'd.m.y',
+        'Y-m-d',
+        'Y/m/d',
+        'Y.m.d',
+    ];
+    foreach ($explicitFormats as $format) {
+        $dt = \DateTime::createFromFormat('!' . $format, $trim);
+        if ($dt instanceof \DateTime) {
+            $errors = \DateTime::getLastErrors();
+            $hasErrors = is_array($errors)
+                ? (($errors['warning_count'] ?? 0) > 0 || ($errors['error_count'] ?? 0) > 0)
+                : false;
+            if (!$hasErrors) {
+                return $dt->format('Y-m-d');
+            }
+        }
+    }
+
     try {
         $dt = new \DateTime($trim);
         return $dt->format('Y-m-d');

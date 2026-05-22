@@ -606,26 +606,20 @@ final class AccountsRepository
         return array_map(static fn(array $row): int => (int) $row['id_anagrafica'], $rows);
     }
 
-    /**
-     * @param list<int> $anagraficaIds
-     */
-    public function replaceContattoAnagrafiche(int $contattoId, array $anagraficaIds, int $defaultId): void
+    public function replaceContattoAnagrafiche(int $contattoId, int $anagraficaId): void
     {
         $delete = $this->pdo->prepare('DELETE FROM tb_contatti_anagrafiche WHERE id_contatto = :id');
         $delete->bindValue(':id', $contattoId, PDO::PARAM_INT);
         $delete->execute();
 
-        if ($anagraficaIds === []) {
+        if ($anagraficaId <= 0) {
             return;
         }
 
-        $insert = $this->pdo->prepare('INSERT INTO tb_contatti_anagrafiche (id_contatto, id_anagrafica, is_predefinita) VALUES (:contatto, :anagrafica, :default)');
-        foreach ($anagraficaIds as $anagraficaId) {
-            $insert->bindValue(':contatto', $contattoId, PDO::PARAM_INT);
-            $insert->bindValue(':anagrafica', $anagraficaId, PDO::PARAM_INT);
-            $insert->bindValue(':default', $anagraficaId === $defaultId ? 1 : 0, PDO::PARAM_INT);
-            $insert->execute();
-        }
+        $insert = $this->pdo->prepare('INSERT INTO tb_contatti_anagrafiche (id_contatto, id_anagrafica, is_predefinita) VALUES (:contatto, :anagrafica, 1)');
+        $insert->bindValue(':contatto', $contattoId, PDO::PARAM_INT);
+        $insert->bindValue(':anagrafica', $anagraficaId, PDO::PARAM_INT);
+        $insert->execute();
     }
 
     /**

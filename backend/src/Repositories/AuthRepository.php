@@ -176,4 +176,27 @@ final class AuthRepository
         $stmt = $this->pdo->prepare('UPDATE auth_accounts SET last_login = NOW() WHERE id_account = :id');
         $stmt->execute(['id' => $accountId]);
     }
+
+    public function getPrimaryAnagraficaIdForAccount(int $accountId): ?int
+    {
+        $sql = <<<SQL
+        SELECT ca.id_anagrafica
+        FROM auth_accounts a
+        INNER JOIN tb_contatti_anagrafiche ca ON ca.id_contatto = a.id_contatto
+        WHERE a.id_account = :id_account
+        ORDER BY ca.is_predefinita DESC, ca.id_anagrafica ASC
+        LIMIT 1
+        SQL;
+
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute(['id_account' => $accountId]);
+        $value = $stmt->fetchColumn();
+
+        if ($value === false || $value === null) {
+            return null;
+        }
+
+        $id = (int) $value;
+        return $id > 0 ? $id : null;
+    }
 }

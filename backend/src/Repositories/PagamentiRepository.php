@@ -458,6 +458,22 @@ SQL;
             }
         }
 
+        $note = isset($criteria['note']) ? (string) $criteria['note'] : '';
+        if ($note !== '') {
+            $softClient = $this->resolveAnagraficaByNoteSoft($note);
+            if ($softClient !== null) {
+                return [
+                    'match' => [
+                        'id_fattura' => null,
+                        'id_anagrafica' => (int) $softClient['id_anagrafica'],
+                        'cliente' => $softClient['ragione_sociale'],
+                        'ragione_sociale' => $softClient['ragione_sociale'],
+                    ],
+                    'warnings' => $warnings,
+                ];
+            }
+        }
+
         return ['match' => null, 'warnings' => $warnings];
     }
 
@@ -1109,6 +1125,116 @@ SQL;
         return $detail;
     }
 
+    /**
+     * Tenta riassegnazione automatica cliente su pagamento importato da campo note.
+     *
+     * @return array{updated:bool,data:array<string,mixed>}
+     */
+    public function tryAutoAssignPendingPaymentByNote(int $idPagamento): array
+    {
+        if ($idPagamento <= 0) {
+            throw new RuntimeException('ID pagamento non valido per riassegnazione.', 422);
+        }
+
+        $stmt = $this->pdo->prepare(
+            'SELECT id_pagamento, note, id_anagrafica_hint
+             FROM tb_pagamenti
+             WHERE id_pagamento = :id
+             LIMIT 1'
+        );
+        $stmt->bindValue(':id', $idPagamento, PDO::PARAM_INT);
+        $stmt->execute();
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($row === false) {
+            throw new RuntimeException('Pagamento non trovato.', 404);
+        }
+
+        $note = trim((string) ($row['note'] ?? ''));
+        $existingCustomer = isset($row['id_anagrafica_hint']) ? (int) $row['id_anagrafica_hint'] : 0;
+        if ($existingCustomer > 0) {
+            $detail = $this->fetchPagamento($idPagamento);
+            if ($detail === null) {
+                throw new RuntimeException('Impossibile ricaricare il pagamento.', 500);
+            }
+            return ['updated' => false, 'data' => $detail];
+        }
+
+        if ($note === '') {
+            $detail = $this->fetchPagamento($idPagamento);
+            if ($detail === null) {
+                throw new RuntimeException('Impossibile ricaricare il pagamento.', 500);
+            }
+            return ['updated' => false, 'data' => $detail];
+        }
+
+        $resolved = $this->resolveAnagraficaByNoteSoft($note);
+        if ($resolved === null) {
+            $detail = $this->fetchPagamento($idPagamento);
+            if ($detail === null) {
+                throw new RuntimeException('Impossibile ricaricare il pagamento.', 500);
+            }
+            return ['updated' => false, 'data' => $detail];
+        }
+
+        $updatedDetail = $this->assignPendingPaymentToAnagrafica($idPagamento, (int) $resolved['id_anagrafica']);
+        return ['updated' => true, 'data' => $updatedDetail];
+    }
+
+    /**
+     * Esegue auto-riassegnazione cliente sui pagamenti pending non assegnati
+     * sfruttando i pattern appresi dai pagamenti mappati manualmente.
+     *
+     * @return array{checked:int,updated:int,updated_ids:list<int>}
+     */
+    public function autoReassignPendingByLearnedMappings(int $limit = 300): array
+    {
+        $limit = max(1, min($limit, 1000));
+        $stmt = $this->pdo->prepare(
+            'SELECT id_pagamento, note
+             FROM tb_pagamenti
+             WHERE id_anagrafica_hint IS NULL
+               AND note IS NOT NULL
+               AND TRIM(note) <> \'\'
+             ORDER BY id_pagamento DESC
+             LIMIT ' . $limit
+        );
+        $stmt->execute();
+        $pendingRows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        if ($pendingRows === []) {
+            return ['checked' => 0, 'updated' => 0, 'updated_ids' => []];
+        }
+
+        $trainingRows = $this->fetchTrainingMappingsForAutoAssign();
+        $checked = 0;
+        $updated = 0;
+        $updatedIds = [];
+
+        foreach ($pendingRows as $pending) {
+            $checked++;
+            $idPagamento = (int) ($pending['id_pagamento'] ?? 0);
+            $note = trim((string) ($pending['note'] ?? ''));
+            if ($idPagamento <= 0 || $note === '') {
+                continue;
+            }
+
+            $learned = $this->resolveAnagraficaByLearnedNoteMapping($note, $trainingRows);
+            $resolved = $learned ?? $this->resolveAnagraficaByNoteSoft($note);
+            if ($resolved === null) {
+                continue;
+            }
+
+            $this->assignPendingPaymentToAnagrafica($idPagamento, (int) $resolved['id_anagrafica']);
+            $updated++;
+            $updatedIds[] = $idPagamento;
+        }
+
+        return [
+            'checked' => $checked,
+            'updated' => $updated,
+            'updated_ids' => $updatedIds,
+        ];
+    }
+
     private function normalizeDate(?string $date): string
     {
         $value = $date !== null && trim($date) !== '' ? trim($date) : 'now';
@@ -1124,5 +1250,285 @@ SQL;
     private function generateImportUid(): string
     {
         return bin2hex(random_bytes(16));
+    }
+
+    /**
+     * Tenta una risoluzione "morbida" cliente da nota bonifico.
+     *
+     * @return array{id_anagrafica:int,ragione_sociale:string}|null
+     */
+    private function resolveAnagraficaByNoteSoft(string $note): ?array
+    {
+        $normalizedNote = $this->normalizeSearchText($note);
+        $tokens = $this->extractMeaningfulTokens($note);
+        if (count($tokens) < 2) {
+            return null;
+        }
+
+        $stmt = $this->pdo->query(
+            'SELECT id_anagrafica, ragione_sociale
+             FROM tb_anagrafiche
+             WHERE is_active = 1 AND ragione_sociale IS NOT NULL AND ragione_sociale <> \'\''
+        );
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        if ($rows === []) {
+            return null;
+        }
+
+        $best = null;
+        $secondScore = 0;
+        foreach ($rows as $row) {
+            $ragioneSociale = (string) ($row['ragione_sociale'] ?? '');
+            if ($ragioneSociale === '') {
+                continue;
+            }
+            $normName = $this->normalizeSearchText($ragioneSociale);
+            $leadPhrase = $this->extractLeadingBusinessPhrase($normName);
+            $score = 0;
+            $longHit = false;
+            $prefixHit = false;
+            foreach ($tokens as $token) {
+                if ($token === '') {
+                    continue;
+                }
+                if (str_contains($normName, $token)) {
+                    $score++;
+                    if (strlen($token) >= 6) {
+                        $longHit = true;
+                    }
+                }
+            }
+            if ($leadPhrase !== '' && str_contains($normalizedNote, $leadPhrase)) {
+                $score += 3;
+                $prefixHit = true;
+            }
+            if ($score <= 0) {
+                continue;
+            }
+
+            if ($best === null || $score > $best['score']) {
+                $secondScore = $best['score'] ?? 0;
+                $best = [
+                    'id_anagrafica' => (int) $row['id_anagrafica'],
+                    'ragione_sociale' => $ragioneSociale,
+                    'score' => $score,
+                    'long_hit' => $longHit,
+                    'prefix_hit' => $prefixHit,
+                ];
+                continue;
+            }
+            if ($score > $secondScore) {
+                $secondScore = $score;
+            }
+        }
+
+        if ($best === null) {
+            return null;
+        }
+
+        // Soglia minima: almeno 2 match e vantaggio netto sul secondo candidato.
+        if ($best['score'] < 2) {
+            return null;
+        }
+        if ($best['score'] === $secondScore) {
+            return null;
+        }
+        if ($best['score'] === 2 && !$best['long_hit'] && !$best['prefix_hit']) {
+            return null;
+        }
+
+        return [
+            'id_anagrafica' => (int) $best['id_anagrafica'],
+            'ragione_sociale' => (string) $best['ragione_sociale'],
+        ];
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function extractMeaningfulTokens(string $input): array
+    {
+        $normalized = $this->normalizeSearchText($input);
+        if ($normalized === '') {
+            return [];
+        }
+        $parts = preg_split('/\s+/', $normalized) ?: [];
+        $stopWords = [
+            'BONIFICO', 'VOSTRO', 'FAVORE', 'SEPA', 'ISTANTANEO', 'DEL', 'ALLE', 'DA', 'PER',
+            'TRN', 'FT', 'FATT', 'FATTURA', 'SALDO', 'ACCONTO', 'DOCUMENTO', 'COMM', 'SPESE',
+            'N', 'NR', 'NUMERO', 'CIG', 'MAND', 'PAGAMENTO', 'VS',
+        ];
+        $stopMap = array_fill_keys($stopWords, true);
+        $tokens = [];
+        foreach ($parts as $part) {
+            $token = trim($part);
+            if ($token === '' || isset($stopMap[$token])) {
+                continue;
+            }
+            if (strlen($token) < 3) {
+                continue;
+            }
+            if (preg_match('/^\d+$/', $token) === 1) {
+                continue;
+            }
+            $tokens[$token] = true;
+            if (count($tokens) >= 12) {
+                break;
+            }
+        }
+        return array_keys($tokens);
+    }
+
+    private function normalizeSearchText(string $value): string
+    {
+        $upper = strtoupper(trim($value));
+        if ($upper === '') {
+            return '';
+        }
+        $ascii = iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $upper);
+        if ($ascii !== false) {
+            $upper = $ascii;
+        }
+        $upper = preg_replace('/[^A-Z0-9]+/', ' ', $upper) ?? '';
+        $upper = preg_replace('/\s+/', ' ', $upper) ?? '';
+        return trim($upper);
+    }
+
+    private function extractLeadingBusinessPhrase(string $normalizedCompanyName): string
+    {
+        if ($normalizedCompanyName === '') {
+            return '';
+        }
+        $parts = preg_split('/\s+/', $normalizedCompanyName) ?: [];
+        $stop = [
+            'SRL', 'S R L', 'SPA', 'S P A', 'SAS', 'S A S', 'SNC', 'S N C', 'SS', 'S S',
+            'SOCIETA', 'COOPERATIVA', 'CONSORZIO', 'DITTA',
+        ];
+        $tokens = [];
+        foreach ($parts as $part) {
+            $token = trim($part);
+            if ($token === '') {
+                continue;
+            }
+            if (in_array($token, $stop, true)) {
+                break;
+            }
+            if (strlen($token) < 2) {
+                continue;
+            }
+            $tokens[] = $token;
+            if (count($tokens) >= 3) {
+                break;
+            }
+        }
+        return trim(implode(' ', $tokens));
+    }
+
+    /**
+     * @return list<array{id_anagrafica:int,ragione_sociale:string,note:string}>
+     */
+    private function fetchTrainingMappingsForAutoAssign(): array
+    {
+        $sql = <<<'SQL'
+            SELECT
+                f.id_anagrafica,
+                a.ragione_sociale,
+                p.note
+            FROM appoggio_pagamenti_fattura p
+            INNER JOIN tb_fatture f ON f.id_fattura = p.id_fattura
+            INNER JOIN tb_anagrafiche a ON a.id_anagrafica = f.id_anagrafica
+            WHERE p.note IS NOT NULL
+              AND TRIM(p.note) <> ''
+              AND a.ragione_sociale IS NOT NULL
+              AND TRIM(a.ragione_sociale) <> ''
+            ORDER BY p.id_pag_fattura DESC
+            LIMIT 2500
+        SQL;
+
+        $stmt = $this->pdo->query($sql);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        $out = [];
+        foreach ($rows as $row) {
+            $idAnagrafica = isset($row['id_anagrafica']) ? (int) $row['id_anagrafica'] : 0;
+            $ragioneSociale = trim((string) ($row['ragione_sociale'] ?? ''));
+            $note = trim((string) ($row['note'] ?? ''));
+            if ($idAnagrafica <= 0 || $ragioneSociale === '' || $note === '') {
+                continue;
+            }
+            $out[] = [
+                'id_anagrafica' => $idAnagrafica,
+                'ragione_sociale' => $ragioneSociale,
+                'note' => $note,
+            ];
+        }
+        return $out;
+    }
+
+    /**
+     * @param list<array{id_anagrafica:int,ragione_sociale:string,note:string}> $trainingRows
+     * @return array{id_anagrafica:int,ragione_sociale:string}|null
+     */
+    private function resolveAnagraficaByLearnedNoteMapping(string $note, array $trainingRows): ?array
+    {
+        if ($trainingRows === []) {
+            return null;
+        }
+        $targetTokens = $this->extractMeaningfulTokens($note);
+        if (count($targetTokens) < 2) {
+            return null;
+        }
+        $targetSet = array_fill_keys($targetTokens, true);
+
+        $scores = [];
+        $labels = [];
+        foreach ($trainingRows as $row) {
+            $trainTokens = $this->extractMeaningfulTokens($row['note']);
+            if (count($trainTokens) < 2) {
+                continue;
+            }
+            $common = 0;
+            foreach ($trainTokens as $token) {
+                if (isset($targetSet[$token])) {
+                    $common++;
+                }
+            }
+            if ($common < 2) {
+                continue;
+            }
+
+            $id = (int) $row['id_anagrafica'];
+            $trainSize = max(1, count($trainTokens));
+            $targetSize = max(1, count($targetTokens));
+            $ratioTrain = $common / $trainSize;
+            $ratioTarget = $common / $targetSize;
+            $score = ($common * 2.0) + ($ratioTrain * 3.0) + ($ratioTarget * 3.0);
+
+            if (!isset($scores[$id]) || $score > $scores[$id]) {
+                $scores[$id] = $score;
+                $labels[$id] = $row['ragione_sociale'];
+            }
+        }
+
+        if ($scores === []) {
+            return null;
+        }
+
+        arsort($scores);
+        $ids = array_keys($scores);
+        $bestId = (int) $ids[0];
+        $bestScore = (float) $scores[$bestId];
+        $secondScore = count($ids) > 1 ? (float) $scores[(int) $ids[1]] : 0.0;
+
+        if ($bestScore < 6.0) {
+            return null;
+        }
+        if (($bestScore - $secondScore) < 1.5) {
+            return null;
+        }
+
+        return [
+            'id_anagrafica' => $bestId,
+            'ragione_sociale' => (string) ($labels[$bestId] ?? ''),
+        ];
     }
 }

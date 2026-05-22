@@ -1,8 +1,13 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import {
+  CAccordion,
+  CAccordionBody,
+  CAccordionHeader,
+  CAccordionItem,
   CAlert,
   CBadge,
+  CButton,
   CCard,
   CCardBody,
   CCardHeader,
@@ -20,7 +25,13 @@ import {
 } from '@coreui/react'
 
 import { useAuth } from '../../context/AuthContext'
-import { fetchAccountDetail, updateAccountPermissions } from '../../services/accounts'
+import {
+  fetchAccountAnagraficheOptions,
+  fetchAccountContattiOptions,
+  fetchAccountDetail,
+  updateAccount,
+  updateAccountPermissions,
+} from '../../services/accounts'
 import PermissionButton from '../../components/PermissionButton'
 
 // Formatta data/ora in locale italiano.
@@ -54,6 +65,37 @@ const AccountsDetail = () => {
   const [error, setError] = useState(null)
   const [feedback, setFeedback] = useState(null)
   const [search, setSearch] = useState('')
+  const [anagraficheOptions, setAnagraficheOptions] = useState([])
+  const [selectedAnagraficheIds, setSelectedAnagraficheIds] = useState([])
+  const [contattiOptions, setContattiOptions] = useState([])
+  const [selectedContattiIds, setSelectedContattiIds] = useState([])
+  const [primaryContattoId, setPrimaryContattoId] = useState(null)
+  const [defaultAnagraficaId, setDefaultAnagraficaId] = useState(null)
+  const [savingAssociations, setSavingAssociations] = useState(false)
+  const [refreshIndex, setRefreshIndex] = useState(0)
+  const [anagraficaSearch, setAnagraficaSearch] = useState('')
+  const [anagraficaPage, setAnagraficaPage] = useState(0)
+
+  const loadContattiForAnagrafiche = useCallback(
+    async (anagraficheIds, signal) => {
+      const payload = await fetchAccountContattiOptions({
+        token,
+        anagrafiche: anagraficheIds,
+        accountId,
+        signal,
+      })
+      const items = Array.isArray(payload?.items) ? payload.items : []
+      const selectedIds = Array.isArray(payload?.selected)
+        ? payload.selected.map(Number).filter((id) => Number.isFinite(id) && id > 0)
+        : []
+      return {
+        items,
+        selectedIds,
+        primaryId: Number(payload?.primary_id || 0) || null,
+      }
+    },
+    [accountId, token],
+  )
 
   // Carica dettaglio account e catalogo permessi.
   useEffect(() => {
@@ -63,13 +105,62 @@ const AccountsDetail = () => {
       setLoading(true)
       setError(null)
       try {
-        const response = await fetchAccountDetail({ token, id: accountId, signal: controller.signal })
-        setDetail(response?.account ?? null)
+        const response = await fetchAccountDetail({
+          token,
+          id: accountId,
+          signal: controller.signal,
+        })
+        const accountDetail = response?.account ?? null
+        setDetail(accountDetail)
         setCatalog(Array.isArray(response?.permissions_catalog) ? response.permissions_catalog : [])
         const rolePerms = Array.isArray(response?.role_permissions) ? response.role_permissions : []
-        const effectivePerms = Array.isArray(response?.effective_permissions) ? response.effective_permissions : []
+        const effectivePerms = Array.isArray(response?.effective_permissions)
+          ? response.effective_permissions
+          : []
         setRolePreset(rolePerms)
         setSelected(effectivePerms)
+
+        const anagrafichePayload = await fetchAccountAnagraficheOptions({
+          token,
+          accountId,
+          signal: controller.signal,
+        })
+        const anagraficheItems = Array.isArray(anagrafichePayload?.items)
+          ? anagrafichePayload.items
+          : []
+        const selectedAnagraficheIds = Array.isArray(anagrafichePayload?.selected)
+          ? anagrafichePayload.selected.map(Number).filter((id) => Number.isFinite(id) && id > 0)
+          : []
+        const preferredAnagraficaId =
+          Number(anagrafichePayload?.default_id || 0) > 0
+            ? Number(anagrafichePayload.default_id)
+            : (selectedAnagraficheIds[0] || null)
+        setAnagraficheOptions(anagraficheItems)
+        setSelectedAnagraficheIds(preferredAnagraficaId ? [preferredAnagraficaId] : [])
+        setDefaultAnagraficaId(preferredAnagraficaId)
+
+        const contattiPayload = await loadContattiForAnagrafiche(
+          selectedAnagraficheIds,
+          controller.signal,
+        )
+        const contattiItems = contattiPayload.items
+        const selectedContattiIds = contattiPayload.selectedIds
+        const primaryContattoId =
+          contattiPayload.primaryId || Number(accountDetail?.id_contatto || 0) || null
+        setContattiOptions(contattiItems)
+        setSelectedContattiIds(selectedContattiIds)
+        setPrimaryContattoId(primaryContattoId)
+        const selectedContattiSet = new Set(selectedContattiIds)
+        const selectedContatti = contattiItems.filter((item) =>
+          selectedContattiSet.has(Number(item?.id_contatto)),
+        )
+        const linked =
+          selectedContatti.find((item) => Number(item?.id_contatto) === primaryContattoId) ||
+          selectedContatti[0] ||
+          contattiItems.find(
+            (item) => Number(item?.id_contatto) === Number(accountDetail?.id_contatto || 0),
+          ) ||
+          null
       } catch (e) {
         if (e.name === 'AbortError') return
         if (e.status === 401 && logout) {
@@ -83,7 +174,35 @@ const AccountsDetail = () => {
     }
     loadDetail()
     return () => controller.abort()
-  }, [token, accountId, logout])
+  }, [token, accountId, logout, loadContattiForAnagrafiche, refreshIndex])
+
+  useEffect(() => {
+    if (!token || !accountId) return undefined
+    const controller = new AbortController()
+    const load = async () => {
+      try {
+        const payload = await loadContattiForAnagrafiche(selectedAnagraficheIds, controller.signal)
+        setContattiOptions(payload.items)
+        setSelectedContattiIds((prev) => {
+          const available = new Set(payload.items.map((item) => Number(item?.id_contatto)))
+          const kept = prev.filter((id) => available.has(Number(id)))
+          return kept.length > 0 ? kept : payload.selectedIds
+        })
+        setPrimaryContattoId((prev) => {
+          const available = new Set(payload.items.map((item) => Number(item?.id_contatto)))
+          if (prev && available.has(Number(prev))) return prev
+          if (payload.primaryId && available.has(Number(payload.primaryId)))
+            return payload.primaryId
+          const fallback = payload.selectedIds[0]
+          return fallback || null
+        })
+      } catch (e) {
+        if (e.name === 'AbortError') return
+      }
+    }
+    load()
+    return () => controller.abort()
+  }, [accountId, loadContattiForAnagrafiche, selectedAnagraficheIds, token])
 
   // Auto-hide feedback temporanei.
   useEffect(() => {
@@ -98,9 +217,7 @@ const AccountsDetail = () => {
   const activeIds = useMemo(
     () =>
       new Set(
-        catalog
-          .filter((perm) => Number(perm.attivo) === 1)
-          .map((perm) => Number(perm.id_permesso)),
+        catalog.filter((perm) => Number(perm.attivo) === 1).map((perm) => Number(perm.id_permesso)),
       ),
     [catalog],
   )
@@ -159,7 +276,20 @@ const AccountsDetail = () => {
         .filter((perm) => Number(perm.attivo) === 1)
         .map((perm) => [String(perm.code || ''), Number(perm.id_permesso)]),
     )
-    const modules = ['prod', 'pack', 'contr', 'anag', 'acct', 'prev', 'acqu', 'ddt', 'fatt', 'pay', 'job', 'msg']
+    const modules = [
+      'prod',
+      'pack',
+      'contr',
+      'anag',
+      'acct',
+      'prev',
+      'acqu',
+      'ddt',
+      'fatt',
+      'pay',
+      'job',
+      'msg',
+    ]
     const actions = ['read', 'write', 'create', 'delete']
     const out = []
 
@@ -189,6 +319,150 @@ const AccountsDetail = () => {
   const applyAdminPreset = () => setSelected(buildPreset('admin'))
   const applyOperatorPreset = () => setSelected(buildPreset('operator'))
   const applyClientPreset = () => setSelected(buildPreset('client'))
+  const selectedAnagraficheSet = useMemo(
+    () => new Set(selectedAnagraficheIds.map((id) => Number(id))),
+    [selectedAnagraficheIds],
+  )
+  const selectedContattiSet = useMemo(
+    () => new Set(selectedContattiIds.map((id) => Number(id))),
+    [selectedContattiIds],
+  )
+  const filteredAnagrafiche = useMemo(() => {
+    if (!anagraficaSearch || anagraficaSearch.trim() === '') return anagraficheOptions
+    const needle = anagraficaSearch.trim().toLowerCase()
+    return anagraficheOptions.filter((item) => {
+      const label = `${item?.ragione_sociale || ''} ${item?.id_anagrafica || ''}`.toLowerCase()
+      return label.includes(needle)
+    })
+  }, [anagraficaSearch, anagraficheOptions])
+  const anagraficaPageSize = 5
+  const anagraficaTotalPages = Math.max(
+    1,
+    Math.ceil(filteredAnagrafiche.length / anagraficaPageSize),
+  )
+  const anagraficaPageIndex = Math.min(anagraficaPage, anagraficaTotalPages - 1)
+  const pagedAnagrafiche = useMemo(() => {
+    const start = anagraficaPageIndex * anagraficaPageSize
+    return filteredAnagrafiche.slice(start, start + anagraficaPageSize)
+  }, [anagraficaPageIndex, filteredAnagrafiche])
+  const anagraficaPaginationItems = useMemo(() => {
+    const totalPages = anagraficaTotalPages
+    const currentPage = anagraficaPageIndex
+    if (totalPages <= 7) {
+      return Array.from({ length: totalPages }, (_, idx) => idx)
+    }
+    const pages = [0, totalPages - 1]
+    for (let i = currentPage - 1; i <= currentPage + 1; i += 1) {
+      if (i > 0 && i < totalPages - 1) pages.push(i)
+    }
+    const sorted = Array.from(new Set(pages)).sort((a, b) => a - b)
+    const out = []
+    sorted.forEach((page, idx) => {
+      if (idx > 0 && page - sorted[idx - 1] > 1) out.push('ellipsis')
+      out.push(page)
+    })
+    return out
+  }, [anagraficaPageIndex, anagraficaTotalPages])
+  const associationRows = useMemo(() => {
+    const grouped = new Map()
+    contattiOptions.forEach((item) => {
+      const contattoId = Number(item?.id_contatto || 0)
+      if (!contattoId || !selectedContattiSet.has(contattoId)) return
+      const anagId = Number(item?.id_anagrafica || 0)
+      if (anagId <= 0) return
+      if (!grouped.has(contattoId)) {
+        grouped.set(contattoId, {
+          id_contatto: contattoId,
+          nome: item?.nome || '-',
+          email: item?.email || '-',
+          anagrafiche: [],
+        })
+      }
+      const row = grouped.get(contattoId)
+      const exists = row.anagrafiche.some((anag) => Number(anag.id_anagrafica) === anagId)
+      if (!exists) {
+        row.anagrafiche.push({
+          id_anagrafica: anagId,
+          ragione_sociale: item?.ragione_sociale || `ID ${anagId}`,
+        })
+      }
+    })
+    return Array.from(grouped.values()).map((row) => {
+      const preferred =
+        row.anagrafiche.find(
+          (anag) => Number(anag.id_anagrafica) === Number(defaultAnagraficaId),
+        ) ||
+        row.anagrafiche[0] ||
+        null
+      return {
+        id_contatto: row.id_contatto,
+        nome: row.nome,
+        email: row.email,
+        id_anagrafica: preferred?.id_anagrafica || null,
+        ragione_sociale: preferred?.ragione_sociale || '-',
+      }
+    })
+  }, [contattiOptions, defaultAnagraficaId, selectedContattiSet])
+  const toggleAnagrafica = (id) => {
+    const numericId = Number(id)
+    if (numericId <= 0) return
+    setSelectedAnagraficheIds([numericId])
+    setDefaultAnagraficaId(numericId)
+  }
+
+  const toggleContatto = (id) => {
+    const numericId = Number(id)
+    setSelectedContattiIds((prev) => {
+      const set = new Set(prev.map((row) => Number(row)))
+      if (set.has(numericId)) set.delete(numericId)
+      else set.add(numericId)
+      return Array.from(set)
+    })
+    setPrimaryContattoId((prev) => (Number(prev) === numericId ? null : prev))
+  }
+
+  const handleSaveAssociations = async () => {
+    if (!accountId) return
+    if (selectedAnagraficheIds.length === 0) {
+      setError(new Error('Seleziona almeno una anagrafica.'))
+      return
+    }
+    if (selectedContattiIds.length === 0) {
+      setError(new Error('Seleziona almeno un contatto.'))
+      return
+    }
+    const resolvedDefaultAnagrafica =
+      Number(defaultAnagraficaId) > 0
+        ? Number(defaultAnagraficaId)
+        : Number(selectedAnagraficheIds[0])
+    const resolvedPrimaryContatto =
+      Number(primaryContattoId) > 0 ? Number(primaryContattoId) : Number(selectedContattiIds[0])
+    setSavingAssociations(true)
+    setError(null)
+    try {
+      await updateAccount({
+        token,
+        body: {
+          id_account: accountId,
+          id_contatto: resolvedPrimaryContatto,
+          anagrafiche: selectedAnagraficheIds.map(Number),
+          anagrafica_predefinita: resolvedDefaultAnagrafica,
+          contatti: selectedContattiIds.map(Number),
+          contatto_predefinito: resolvedPrimaryContatto,
+        },
+      })
+      setFeedback({ message: 'Associazioni account aggiornate.', color: 'success' })
+      setRefreshIndex((prev) => prev + 1)
+    } catch (e) {
+      if (e.status === 401 && logout) {
+        logout()
+        return
+      }
+      setError(e)
+    } finally {
+      setSavingAssociations(false)
+    }
+  }
 
   if (!accountId) {
     return (
@@ -229,16 +503,36 @@ const AccountsDetail = () => {
           >
             Preset ruolo
           </PermissionButton>
-          <PermissionButton color="primary" variant="outline" onClick={applyAdminPreset} permission="acct.write">
+          <PermissionButton
+            color="primary"
+            variant="outline"
+            onClick={applyAdminPreset}
+            permission="acct.write"
+          >
             Preset Amministratore
           </PermissionButton>
-          <PermissionButton color="primary" variant="outline" onClick={applyOperatorPreset} permission="acct.write">
+          <PermissionButton
+            color="primary"
+            variant="outline"
+            onClick={applyOperatorPreset}
+            permission="acct.write"
+          >
             Preset Operatore interno
           </PermissionButton>
-          <PermissionButton color="primary" variant="outline" onClick={applyClientPreset} permission="acct.write">
+          <PermissionButton
+            color="primary"
+            variant="outline"
+            onClick={applyClientPreset}
+            permission="acct.write"
+          >
             Preset Cliente
           </PermissionButton>
-          <PermissionButton color="primary" onClick={handleSave} disabled={saving} permission="acct.write">
+          <PermissionButton
+            color="primary"
+            onClick={handleSave}
+            disabled={saving}
+            permission="acct.write"
+          >
             {saving ? <CSpinner size="sm" /> : 'Salva permessi'}
           </PermissionButton>
         </div>
@@ -251,7 +545,9 @@ const AccountsDetail = () => {
         )}
 
         {loading && (
-          <div className="d-flex justify-content-center py-5"><CSpinner /></div>
+          <div className="d-flex justify-content-center py-5">
+            <CSpinner />
+          </div>
         )}
 
         {!loading && error && (
@@ -291,6 +587,226 @@ const AccountsDetail = () => {
               </CCol>
             </CRow>
 
+            <CAccordion className="mb-4" alwaysOpen>
+              <CAccordionItem itemKey="associazioni">
+                <CAccordionHeader>Associazioni</CAccordionHeader>
+                <CAccordionBody>
+                  <CTable hover responsive className="mb-0">
+                    <CTableHead className="mp-table-head">
+                      <CTableRow>
+                        <CTableHeaderCell>Contatto associato</CTableHeaderCell>
+                        <CTableHeaderCell>Email</CTableHeaderCell>
+                        <CTableHeaderCell>Anagrafica accessibile</CTableHeaderCell>
+                      </CTableRow>
+                    </CTableHead>
+                    <CTableBody>
+                      {associationRows.map((row) => (
+                        <CTableRow
+                          key={`assoc-${row.id_contatto}-${row.id_anagrafica}`}
+                          className="align-middle"
+                        >
+                          <CTableDataCell>
+                            <div className="fw-semibold">{row.nome}</div>
+                            <small className="text-body-secondary">ID {row.id_contatto}</small>
+                          </CTableDataCell>
+                          <CTableDataCell>{row.email}</CTableDataCell>
+                          <CTableDataCell>
+                            <PermissionButton
+                              color="secondary"
+                              size="sm"
+                              variant="outline"
+                              permission="anag.read"
+                              onClick={() =>
+                                row.id_anagrafica &&
+                                navigate(`/anagrafica/dettagli?id=${row.id_anagrafica}`)
+                              }
+                              disabled={!row.id_anagrafica}
+                            >
+                              {row.ragione_sociale || `ID ${row.id_anagrafica || '-'}`}
+                            </PermissionButton>
+                          </CTableDataCell>
+                        </CTableRow>
+                      ))}
+                      {associationRows.length === 0 && (
+                        <CTableRow>
+                          <CTableDataCell colSpan={3}>
+                            <span className="text-body-secondary">Nessun contatto associato</span>
+                          </CTableDataCell>
+                        </CTableRow>
+                      )}
+                    </CTableBody>
+                  </CTable>
+                </CAccordionBody>
+              </CAccordionItem>
+
+              <CAccordionItem itemKey="gestione-associazioni">
+                <CAccordionHeader>Gestione associazioni</CAccordionHeader>
+                <CAccordionBody>
+                  <CRow className="g-3">
+                    <CCol lg={6}>
+                      <div className="d-flex justify-content-between align-items-center gap-2 mb-2">
+                        <div className="small text-body-secondary">Anagrafiche collegabili</div>
+                        <CFormInput
+                          size="sm"
+                          style={{ maxWidth: '260px' }}
+                          placeholder="Cerca anagrafica..."
+                          value={anagraficaSearch}
+                          onChange={(e) => {
+                            setAnagraficaSearch(e.target.value)
+                            setAnagraficaPage(0)
+                          }}
+                        />
+                      </div>
+                      <CTable hover responsive size="sm">
+                        <CTableHead className="mp-table-head">
+                          <CTableRow>
+                            <CTableHeaderCell style={{ width: 70 }}>Sel.</CTableHeaderCell>
+                            <CTableHeaderCell>Anagrafica</CTableHeaderCell>
+                          </CTableRow>
+                        </CTableHead>
+                        <CTableBody>
+                          {pagedAnagrafiche.map((item) => {
+                            const id = Number(item?.id_anagrafica || 0)
+                            const isSelected = selectedAnagraficheSet.has(id)
+                            return (
+                              <CTableRow key={`anag-${id}`} className="align-middle">
+                                <CTableDataCell>
+                                  <CFormCheck
+                                    type="radio"
+                                    name="selected_anagrafica_detail"
+                                    checked={isSelected}
+                                    onChange={() => toggleAnagrafica(id)}
+                                  />
+                                </CTableDataCell>
+                                <CTableDataCell>
+                                  {item?.ragione_sociale || `ID ${id}`}
+                                </CTableDataCell>
+                              </CTableRow>
+                            )
+                          })}
+                          {filteredAnagrafiche.length === 0 && (
+                            <CTableRow>
+                              <CTableDataCell colSpan={2}>
+                                Nessuna anagrafica disponibile.
+                              </CTableDataCell>
+                            </CTableRow>
+                          )}
+                        </CTableBody>
+                      </CTable>
+                      {filteredAnagrafiche.length > anagraficaPageSize && (
+                        <div className="d-flex justify-content-end">
+                          <div className="d-flex align-items-center gap-1">
+                            <CButton
+                              size="sm"
+                              color="light"
+                              variant="outline"
+                              disabled={anagraficaPageIndex <= 0}
+                              onClick={() =>
+                                setAnagraficaPage(Math.max(0, anagraficaPageIndex - 1))
+                              }
+                            >
+                              ‹
+                            </CButton>
+                            {anagraficaPaginationItems.map((item, index) =>
+                              item === 'ellipsis' ? (
+                                <span
+                                  key={`ellipsis-${index}`}
+                                  className="px-1 text-body-secondary"
+                                >
+                                  ...
+                                </span>
+                              ) : (
+                                <CButton
+                                  key={`page-${item}`}
+                                  size="sm"
+                                  color={item === anagraficaPageIndex ? 'primary' : 'light'}
+                                  variant={item === anagraficaPageIndex ? undefined : 'outline'}
+                                  onClick={() => setAnagraficaPage(item)}
+                                >
+                                  {item + 1}
+                                </CButton>
+                              ),
+                            )}
+                            <CButton
+                              size="sm"
+                              color="light"
+                              variant="outline"
+                              disabled={anagraficaPageIndex >= anagraficaTotalPages - 1}
+                              onClick={() =>
+                                setAnagraficaPage(
+                                  Math.min(anagraficaTotalPages - 1, anagraficaPageIndex + 1),
+                                )
+                              }
+                            >
+                              ›
+                            </CButton>
+                          </div>
+                        </div>
+                      )}
+                    </CCol>
+
+                    <CCol lg={6}>
+                      <div className="small text-body-secondary mb-2">Contatti collegabili</div>
+                      <CTable hover responsive size="sm">
+                        <CTableHead className="mp-table-head">
+                          <CTableRow>
+                            <CTableHeaderCell style={{ width: 70 }}>Sel.</CTableHeaderCell>
+                            <CTableHeaderCell>Contatto</CTableHeaderCell>
+                            <CTableHeaderCell>Email</CTableHeaderCell>
+                            <CTableHeaderCell style={{ width: 110 }}>Primario</CTableHeaderCell>
+                          </CTableRow>
+                        </CTableHead>
+                        <CTableBody>
+                          {contattiOptions.map((item) => {
+                            const id = Number(item?.id_contatto || 0)
+                            const isSelected = selectedContattiSet.has(id)
+                            return (
+                              <CTableRow key={`cont-${id}`} className="align-middle">
+                                <CTableDataCell>
+                                  <CFormCheck
+                                    checked={isSelected}
+                                    onChange={() => toggleContatto(id)}
+                                  />
+                                </CTableDataCell>
+                                <CTableDataCell>{item?.nome || `ID ${id}`}</CTableDataCell>
+                                <CTableDataCell>{item?.email || '-'}</CTableDataCell>
+                                <CTableDataCell>
+                                  <CFormCheck
+                                    type="radio"
+                                    name="primary_contatto"
+                                    checked={Number(primaryContattoId) === id}
+                                    disabled={!isSelected}
+                                    onChange={() => setPrimaryContattoId(id)}
+                                  />
+                                </CTableDataCell>
+                              </CTableRow>
+                            )
+                          })}
+                          {contattiOptions.length === 0 && (
+                            <CTableRow>
+                              <CTableDataCell colSpan={4}>
+                                Nessun contatto disponibile per le anagrafiche selezionate.
+                              </CTableDataCell>
+                            </CTableRow>
+                          )}
+                        </CTableBody>
+                      </CTable>
+                    </CCol>
+                  </CRow>
+                  <div className="d-flex justify-content-end mt-3">
+                    <PermissionButton
+                      color="primary"
+                      permission="acct.write"
+                      onClick={handleSaveAssociations}
+                      disabled={savingAssociations}
+                    >
+                      {savingAssociations ? <CSpinner size="sm" /> : 'Salva associazioni'}
+                    </PermissionButton>
+                  </div>
+                </CAccordionBody>
+              </CAccordionItem>
+            </CAccordion>
+
             <div className="d-flex flex-wrap gap-2 align-items-center justify-content-between mb-3">
               <div className="fw-semibold">Permessi</div>
               <CFormInput
@@ -319,7 +835,11 @@ const AccountsDetail = () => {
                   return (
                     <CTableRow key={permId} className="align-middle">
                       <CTableDataCell>
-                        {isActive ? <CBadge color="success">Si</CBadge> : <CBadge color="secondary">No</CBadge>}
+                        {isActive ? (
+                          <CBadge color="success">Si</CBadge>
+                        ) : (
+                          <CBadge color="secondary">No</CBadge>
+                        )}
                       </CTableDataCell>
                       <CTableDataCell>{perm.label || 'Permesso'}</CTableDataCell>
                       <CTableDataCell>{perm.code || '-'}</CTableDataCell>
@@ -348,6 +868,3 @@ const AccountsDetail = () => {
 }
 
 export default AccountsDetail
-
-
-

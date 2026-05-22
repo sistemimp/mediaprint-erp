@@ -653,8 +653,15 @@ final class PreventiviRepository
         }
 
         $whereParts = [];
+        $allowedBindMap = [];
         if ($allowed !== null) {
-            $placeholders = implode(',', array_fill(0, count($allowed), '?'));
+            $placeholders = [];
+            foreach ($allowed as $index => $id) {
+                $key = ':allowed_' . $index;
+                $placeholders[] = $key;
+                $allowedBindMap[$key] = $id;
+            }
+            $placeholders = implode(',', $placeholders);
             $whereParts[] = "p.id_anagrafica IN ({$placeholders})";
         }
         if ($excludeDraft) {
@@ -679,9 +686,9 @@ final class PreventiviRepository
         if ($idAnagrafica !== null && $idAnagrafica > 0) {
             $statement->bindValue(':id_anagrafica', $idAnagrafica, PDO::PARAM_INT);
         }
-        if ($allowed !== null) {
-            foreach ($allowed as $index => $id) {
-                $statement->bindValue($index + 1, $id, PDO::PARAM_INT);
+        if ($allowedBindMap !== []) {
+            foreach ($allowedBindMap as $placeholder => $id) {
+                $statement->bindValue($placeholder, $id, PDO::PARAM_INT);
             }
         }
         $statement->execute();

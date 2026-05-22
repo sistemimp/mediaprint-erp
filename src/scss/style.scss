@@ -240,6 +240,26 @@ body {
   }
 }
 
+/* Customer account: show detail forms as plain text */
+.customer-readonly {
+  .form-control,
+  .form-select {
+    background: transparent !important;
+    border-color: transparent !important;
+    box-shadow: none !important;
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+    color: var(--cui-body-color) !important;
+    pointer-events: none;
+    appearance: none;
+  }
+
+  textarea.form-control {
+    min-height: auto;
+    resize: none;
+  }
+}
+
 .preventivi-revision-modal {
   .modal-dialog {
     width: 90vw;

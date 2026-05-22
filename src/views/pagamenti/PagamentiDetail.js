@@ -845,7 +845,7 @@ const PagamentiDetail = () => {
 
             <section>
               <h6 className="text-body-secondary mb-2">Note</h6>
-              <div className="border rounded p-3 bg-white">
+              <div className="border rounded p-3 bg-body-tertiary text-body">
                 {record.note ? record.note : <span className="text-body-secondary">Nessuna nota presente.</span>}
               </div>
             </section>

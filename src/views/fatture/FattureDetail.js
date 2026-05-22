@@ -289,6 +289,10 @@ const FattureDetail = () => {
   const showStatus = !isAcquisto
   const showPayments = !isAcquisto
   const { token, logout, user } = useAuth()
+  const accountType = String(user?.accountType || user?.account_type || '').toLowerCase().trim()
+  const isCustomerAccount = accountType === 'cliente'
+  const showSezionale = !isAcquisto && !isCustomerAccount
+  const showStatusTimeline = showStatus && !isCustomerAccount
   const { setBreadcrumbActions, clearBreadcrumbActions } = useBreadcrumbActions()
 
   const [record, setRecord] = useState(null)
@@ -1099,7 +1103,7 @@ const FattureDetail = () => {
     [config],
   )
 
-  const formDisabled = saving || loading || !record
+  const formDisabled = saving || loading || !record || isCustomerAccount
 
   const numeroDisplay = useMemo(() => {
     if (!record) return '-'
@@ -1880,7 +1884,7 @@ const FattureDetail = () => {
   ])
 
   return (
-    <CCard>
+    <CCard className={isCustomerAccount ? 'customer-readonly' : undefined}>
       <CCardHeader>
         <div className="d-flex justify-content-between align-items-center flex-wrap gap-3">
           <div>
@@ -1901,7 +1905,7 @@ const FattureDetail = () => {
               <CIcon icon={cilPrint} className="me-2" />
               Stampa PDF
             </CButton>
-            {!isAcquisto && (
+            {!isAcquisto && !isCustomerAccount && (
               <CButton color="primary" onClick={handleExportXml} disabled={!record || exportingXml}>
                 {exportingXml ? (
                   <>
@@ -1996,7 +2000,7 @@ const FattureDetail = () => {
               </CCol>
             </CRow>
 
-            {showStatus && (
+            {showStatusTimeline && (
               <section className="mb-4">
                 <h6 className="mb-3 text-body-secondary">Timeline stato documento</h6>
                 <div className="border rounded p-3 bg-body-tertiary">
@@ -2255,7 +2259,7 @@ const FattureDetail = () => {
                     disabled={formDisabled}
                   />
                 </CCol>
-                {!isAcquisto && (
+                {showSezionale && (
                   <CCol md={3}>
                     <CFormLabel>Sezionale</CFormLabel>
                     <CFormInput value={resolvedSezionaleLabel} disabled readOnly />
@@ -2449,40 +2453,46 @@ const FattureDetail = () => {
             <div className="d-flex justify-content-between align-items-center mb-3">
               <h6 className="mb-0 text-body-secondary">Righe fattura</h6>
               <div className="d-flex flex-wrap gap-2">
-                <CButton
-                  color="secondary"
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleAddRow}
-                  disabled={formDisabled}
-                >
-                  <CIcon icon={cilPlus} className="me-2" />
-                  Aggiungi riga
-                </CButton>
-                <CButton
-                  color="primary"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    resetProductModal()
-                    setStepperOpen(true)
-                  }}
-                  disabled={formDisabled}
-                >
-                  Selettore prodotti
-                </CButton>
-                <CButton
-                  color="primary"
-                  size="sm"
-                  type="button"
-                  onClick={() => {
-                    resetPkgModal()
-                    setPkgOpen(true)
-                  }}
-                  disabled={formDisabled}
-                >
-                  Inserisci pacchetto
-                </CButton>
+                {!isCustomerAccount && (
+                  <CButton
+                    color="secondary"
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleAddRow}
+                    disabled={formDisabled}
+                  >
+                    <CIcon icon={cilPlus} className="me-2" />
+                    Aggiungi riga
+                  </CButton>
+                )}
+                {!isCustomerAccount && (
+                  <CButton
+                    color="primary"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      resetProductModal()
+                      setStepperOpen(true)
+                    }}
+                    disabled={formDisabled}
+                  >
+                    Selettore prodotti
+                  </CButton>
+                )}
+                {!isCustomerAccount && (
+                  <CButton
+                    color="primary"
+                    size="sm"
+                    type="button"
+                    onClick={() => {
+                      resetPkgModal()
+                      setPkgOpen(true)
+                    }}
+                    disabled={formDisabled}
+                  >
+                    Inserisci pacchetto
+                  </CButton>
+                )}
               </div>
             </div>
 
@@ -3130,9 +3140,11 @@ const FattureDetail = () => {
                     <CTableHeaderCell className="text-end" style={{ width: '160px' }}>
                       Totale riga
                     </CTableHeaderCell>
-                    <CTableHeaderCell className="text-center" style={{ width: '90px' }}>
-                      Azioni
-                    </CTableHeaderCell>
+                    {!isCustomerAccount && (
+                      <CTableHeaderCell className="text-center" style={{ width: '90px' }}>
+                        Azioni
+                      </CTableHeaderCell>
+                    )}
                   </CTableRow>
                 </CTableHead>
                 <CTableBody>
@@ -3193,18 +3205,27 @@ const FattureDetail = () => {
                         </CTableDataCell>
                         <CTableDataCell>
                           {requireNatura ? (
-                            <CFormSelect
-                              value={row.id_sdi_natura_iva ?? ''}
-                              onChange={handleRowNaturaChange(row.localId)}
-                              disabled={formDisabled || naturaLoading}
-                            >
-                              <option value="">Seleziona natura</option>
-                              {naturaOptions.map((option) => (
-                                <option key={option.id_natura} value={option.id_natura}>
-                                  {option.code} - {option.label}
-                                </option>
-                              ))}
-                            </CFormSelect>
+                            isCustomerAccount ? (
+                              <span>
+                                {(() => {
+                                  const selected = naturaOptions.find((option) => Number(option.id_natura) === Number(row.id_sdi_natura_iva))
+                                  return selected ? `${selected.code} - ${selected.label}` : '-'
+                                })()}
+                              </span>
+                            ) : (
+                              <CFormSelect
+                                value={row.id_sdi_natura_iva ?? ''}
+                                onChange={handleRowNaturaChange(row.localId)}
+                                disabled={formDisabled || naturaLoading}
+                              >
+                                <option value="">Seleziona natura</option>
+                                {naturaOptions.map((option) => (
+                                  <option key={option.id_natura} value={option.id_natura}>
+                                    {option.code} - {option.label}
+                                  </option>
+                                ))}
+                              </CFormSelect>
+                            )
                           ) : (
                             <span className="text-body-secondary">-</span>
                           )}
@@ -3212,17 +3233,19 @@ const FattureDetail = () => {
                         <CTableDataCell className="text-end">
                           {amounts.totale !== null ? formatCurrency(amounts.totale) : '-'}
                         </CTableDataCell>
-                        <CTableDataCell className="text-center">
-                          <CButton
-                            color="danger"
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleRemoveRow(row.localId)}
-                            disabled={formDisabled || rows.length <= 1}
-                          >
-                            <CIcon icon={cilTrash} />
-                          </CButton>
-                        </CTableDataCell>
+                        {!isCustomerAccount && (
+                          <CTableDataCell className="text-center">
+                            <CButton
+                              color="danger"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleRemoveRow(row.localId)}
+                              disabled={formDisabled || rows.length <= 1}
+                            >
+                              <CIcon icon={cilTrash} />
+                            </CButton>
+                          </CTableDataCell>
+                        )}
                       </CTableRow>
                     )
                   })}

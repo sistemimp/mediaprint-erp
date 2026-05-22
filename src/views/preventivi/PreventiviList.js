@@ -159,6 +159,25 @@ const getFatturazionePercent = (row) => {
   return Math.min(100, Math.max(0, percent))
 }
 
+// Corregge IVA incoerente in testata (es. importi errati in alcuni acquisti)
+// usando il delta tra totale e imponibile quando disponibile.
+const resolvePreventivoIvaAmount = (row) => {
+  const rawIva = Number(row?.totale_iva)
+  const imponibile = Number(row?.totale_imponibile)
+  const totale = Number(row?.totale)
+  const hasImponibile = Number.isFinite(imponibile)
+  const hasTotale = Number.isFinite(totale)
+  const recalculatedIva = hasImponibile && hasTotale ? (totale - imponibile) : null
+
+  if (!Number.isFinite(rawIva)) {
+    return Number.isFinite(recalculatedIva) ? recalculatedIva : 0
+  }
+  if (Number.isFinite(recalculatedIva) && (rawIva < 0 || rawIva > totale + 0.01)) {
+    return recalculatedIva
+  }
+  return rawIva
+}
+
 // Render tabellare riusabile per confronto righe revisione/corrente.
   const renderLinesTable = (lines, emptyMessage) => {
     const normalized = Array.isArray(lines) ? lines : []
@@ -214,6 +233,10 @@ const PreventiviList = () => {
   const [sorts, setSorts] = useState([{ field: 'data', dir: 'desc' }])
   const [groupBy, setGroupBy] = useState('none') // none | giorno | mese | stato | cliente
   const [viewMode, setViewMode] = useState('attivi') // attivi | archiviati
+  const [filterStato, setFilterStato] = useState('')
+  const [filterCliente, setFilterCliente] = useState('')
+  const [filterDateFrom, setFilterDateFrom] = useState('')
+  const [filterDateTo, setFilterDateTo] = useState('')
   const [refreshIndex, setRefreshIndex] = useState(0)
   const [emailModalVisible, setEmailModalVisible] = useState(false)
   const [emailModalLoading, setEmailModalLoading] = useState(false)
@@ -385,6 +408,7 @@ const PreventiviList = () => {
           const { items: data = [] } = await fetchLatestPreventivi({
             token,
             signal: controller.signal,
+            limit: 0,
             is_acquisto: isAcquisto,
           })
           setItems(Array.isArray(data) ? data : [])
@@ -407,12 +431,50 @@ const PreventiviList = () => {
     return () => controller.abort()
   }, [token, logout, viewMode, refreshIndex, isAcquisto])
 
-  const total = items.length
+  const statoOptions = useMemo(() => {
+    const labels = new Set()
+    items.forEach((row) => {
+      const value = String(row?.stato_label || row?.stato_code || '').trim()
+      if (value) labels.add(value)
+    })
+    return Array.from(labels).sort((a, b) => a.localeCompare(b, 'it-IT'))
+  }, [items])
+
+  const filteredItems = useMemo(() => {
+    const clienteNeedle = filterCliente.trim().toLocaleLowerCase()
+    const fromTs = filterDateFrom ? new Date(`${filterDateFrom}T00:00:00`).getTime() : null
+    const toTs = filterDateTo ? new Date(`${filterDateTo}T23:59:59`).getTime() : null
+
+    return items.filter((row) => {
+      if (filterStato) {
+        const stato = String(row?.stato_label || row?.stato_code || '').trim()
+        if (stato !== filterStato) return false
+      }
+
+      if (clienteNeedle) {
+        const cliente = String(row?.ragione_sociale || '').toLocaleLowerCase()
+        if (!cliente.includes(clienteNeedle)) return false
+      }
+
+      if (fromTs !== null || toTs !== null) {
+        const raw = row?.data_preventivo || row?.created_at
+        if (!raw) return false
+        const ts = new Date(raw).getTime()
+        if (!Number.isFinite(ts)) return false
+        if (fromTs !== null && ts < fromTs) return false
+        if (toTs !== null && ts > toTs) return false
+      }
+
+      return true
+    })
+  }, [items, filterStato, filterCliente, filterDateFrom, filterDateTo])
+
+  const total = filteredItems.length
   const totalPages = Math.max(Math.ceil(total / rowsPerPage), 1)
 
   // Applica ordinamento multi-colonna lato client.
   const sortedItems = useMemo(() => {
-    const out = [...items]
+    const out = [...filteredItems]
     const getter = (row, field) => {
       if (field === 'cliente') return String(row.ragione_sociale || '')
       if (field === 'documento') return `${row.anno_preventivo ?? ''}/${row.numero_documento ?? ''}`
@@ -434,7 +496,7 @@ const PreventiviList = () => {
       return 0
     })
     return out
-  }, [items, sorts])
+  }, [filteredItems, sorts])
 
   // Costruisce vista appiattita con eventuali header gruppo.
   const groupedFlat = useMemo(() => {
@@ -532,9 +594,24 @@ const PreventiviList = () => {
   const paginationItems = useMemo(() => {
     const current = page + 1
     const pages = []
-    for (let p = 1; p <= totalPages; p += 1) pages.push(p)
+    const windowSize = 2
+    const start = Math.max(2, current - windowSize)
+    const end = Math.min(totalPages - 1, current + windowSize)
+
+    pages.push(1)
+    if (start > 2) pages.push('ellipsis-start')
+    for (let p = start; p <= end; p += 1) {
+      pages.push(p)
+    }
+    if (end < totalPages - 1) pages.push('ellipsis-end')
+    if (totalPages > 1) pages.push(totalPages)
+
     return pages
   }, [page, totalPages])
+
+  useEffect(() => {
+    setPage(0)
+  }, [filterStato, filterCliente, filterDateFrom, filterDateTo])
 
   useEffect(() => {
     if (!token) {
@@ -871,12 +948,75 @@ const PreventiviList = () => {
             <CAlert color="danger">{error.message || 'Impossibile caricare i preventivi.'}</CAlert>
           )}
 
-          {!loading && !error && total === 0 && (
-            <CAlert color="warning">Nessun preventivo disponibile.</CAlert>
-          )}
-
-          {!loading && !error && total > 0 && (
+          {!loading && !error && (
             <>
+              <div className="mb-3">
+                <CRow className="g-2 align-items-end">
+                  <CCol xs={12} md={3}>
+                    <CFormLabel className="small text-body-secondary mb-1">Stato</CFormLabel>
+                    <select
+                      className="form-select form-select-sm"
+                      value={filterStato}
+                      onChange={(e) => setFilterStato(e.target.value)}
+                    >
+                      <option value="">Tutti gli stati</option>
+                      {statoOptions.map((stato) => (
+                        <option key={stato} value={stato}>{stato}</option>
+                      ))}
+                    </select>
+                  </CCol>
+                  <CCol xs={12} md={3}>
+                    <CFormLabel className="small text-body-secondary mb-1">{isAcquisto ? 'Fornitore' : 'Cliente'}</CFormLabel>
+                    <CFormInput
+                      size="sm"
+                      type="text"
+                      placeholder={`Cerca ${isAcquisto ? 'fornitore' : 'cliente'}...`}
+                      value={filterCliente}
+                      onChange={(e) => setFilterCliente(e.target.value)}
+                    />
+                  </CCol>
+                  <CCol xs={12} md={2}>
+                    <CFormLabel className="small text-body-secondary mb-1">Periodo dal</CFormLabel>
+                    <CFormInput
+                      size="sm"
+                      type="date"
+                      value={filterDateFrom}
+                      onChange={(e) => setFilterDateFrom(e.target.value)}
+                    />
+                  </CCol>
+                  <CCol xs={12} md={2}>
+                    <CFormLabel className="small text-body-secondary mb-1">Periodo al</CFormLabel>
+                    <CFormInput
+                      size="sm"
+                      type="date"
+                      value={filterDateTo}
+                      onChange={(e) => setFilterDateTo(e.target.value)}
+                    />
+                  </CCol>
+                  <CCol xs={12} md={2}>
+                    <CButton
+                      color="secondary"
+                      variant="outline"
+                      size="sm"
+                      className="w-100"
+                      onClick={() => {
+                        setFilterStato('')
+                        setFilterCliente('')
+                        setFilterDateFrom('')
+                        setFilterDateTo('')
+                      }}
+                    >
+                      Reset filtri
+                    </CButton>
+                  </CCol>
+                </CRow>
+              </div>
+
+              {total === 0 && (
+                <CAlert color="warning">Nessun preventivo disponibile.</CAlert>
+              )}
+
+              {total > 0 && (
               <CTable hover responsive data-testid="table">
                 <CTableHead className="mp-table-head">
                   <CTableRow className="align-middle">
@@ -950,7 +1090,7 @@ const PreventiviList = () => {
                           <CTableDataCell>{formatDate(r.data_preventivo)}</CTableDataCell>
                           <CTableDataCell>{r.riferimento_cliente || '-'}</CTableDataCell>
                           <CTableDataCell>{formatCurrency(r.totale_imponibile)}</CTableDataCell>
-                          <CTableDataCell>{formatCurrency(r.totale_iva)}</CTableDataCell>
+                          <CTableDataCell>{formatCurrency(resolvePreventivoIvaAmount(r))}</CTableDataCell>
                           <CTableDataCell>{formatCurrency(r.totale)}</CTableDataCell>
                           <CTableDataCell className="text-center">
                             {r.stato_label ? (
@@ -1026,7 +1166,7 @@ const PreventiviList = () => {
                               <div className="d-flex flex-wrap gap-3 align-items-baseline" key={rev.id_revisione}>
                                 <span className="fw-semibold text-dark">{rev.label || `Rev.${rev.numero_revision}`}</span>
                                 <span>Imponibile: {formatCurrency(rev.totale_imponibile)}</span>
-                                <span>IVA: {formatCurrency(rev.totale_iva)}</span>
+                                <span>IVA: {formatCurrency(resolvePreventivoIvaAmount(rev))}</span>
                                 <span>Totale: {formatCurrency(rev.totale)}</span>
                                 <span className="text-muted">({formatDate(rev.created_at)})</span>
                                 <PermissionButton
@@ -1050,7 +1190,9 @@ const PreventiviList = () => {
                   })}
                 </CTableBody>
               </CTable>
+              )}
 
+              {total > 0 && (
               <CRow className="mt-3 align-items-center">
                 <CCol className="text-body-secondary">
                   Mostrando {Math.min(total, page * rowsPerPage + 1)} -
@@ -1066,10 +1208,16 @@ const PreventiviList = () => {
                     >
                       &laquo;
                     </CPaginationItem>
-                    {paginationItems.map((p) => (
-                      <CPaginationItem key={p} active={p === page + 1} onClick={() => setPage(p - 1)}>
-                        {p}
-                      </CPaginationItem>
+                    {paginationItems.map((p, idx) => (
+                      typeof p === 'number' ? (
+                        <CPaginationItem key={p} active={p === page + 1} onClick={() => setPage(p - 1)}>
+                          {p}
+                        </CPaginationItem>
+                      ) : (
+                        <CPaginationItem key={`${p}-${idx}`} disabled>
+                          ...
+                        </CPaginationItem>
+                      )
                     ))}
                     <CPaginationItem
                       aria-label="Pagina successiva"
@@ -1081,6 +1229,7 @@ const PreventiviList = () => {
                   </CPagination>
                 </CCol>
               </CRow>
+              )}
             </>
           )}
         </CCardBody>

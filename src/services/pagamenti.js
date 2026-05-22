@@ -106,6 +106,44 @@ export const assignPagamentoToAnagrafica = async ({ token, id_pagamento, id_anag
   return response?.data ?? null
 }
 
+// Tenta assegnazione automatica cliente da note per pagamento importato.
+export const tryAutoAssignPagamento = async ({ token, id_pagamento, signal } = {}) => {
+  const pagamentoId = Number(id_pagamento ?? 0)
+  if (!Number.isFinite(pagamentoId) || pagamentoId <= 0) {
+    throw new Error('ID pagamento mancante per la riassegnazione automatica.')
+  }
+
+  const response = await apiFetch('/pagamentiTryAutoAssign.php', {
+    method: 'POST',
+    token,
+    body: {
+      id_pagamento: pagamentoId,
+    },
+    signal,
+  })
+
+  return {
+    updated: Boolean(response?.updated),
+    data: response?.data ?? null,
+  }
+}
+
+// Riassegna in batch pagamenti importati non assegnati, apprendendo dai mapping manuali.
+export const autoReassignPagamentiLearned = async ({ token, limit = 300, signal } = {}) => {
+  const response = await apiFetch('/pagamentiAutoReassignLearned.php', {
+    method: 'POST',
+    token,
+    body: { limit },
+    signal,
+  })
+
+  return {
+    checked: Number(response?.checked || 0),
+    updated: Number(response?.updated || 0),
+    updated_ids: Array.isArray(response?.updated_ids) ? response.updated_ids : [],
+  }
+}
+
 // Carica file Excel/CSV pagamenti e restituisce righe normalizzate lato backend.
 export const uploadPagamentiExcel = async ({ token, file, signal } = {}) => {
   if (!file) {

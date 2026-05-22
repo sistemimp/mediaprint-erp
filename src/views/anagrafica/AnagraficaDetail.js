@@ -59,6 +59,12 @@ import { fetchFattureConfig } from "../../services/fatture"
 import { fetchLatestPreventivi } from "../../services/preventivi"
 import { fetchDdtList } from "../../services/ddt"
 import { fetchFattureList } from "../../services/fatture"
+import {
+  createAccount,
+  fetchAccountRoles,
+  fetchAccounts,
+  updateAccount,
+} from "../../services/accounts"
 import BottomToast from "../../components/BottomToast"
 import { useAuth } from "../../context/AuthContext"
 import { useBreadcrumbActions } from "../../context/BreadcrumbActionsContext"
@@ -145,6 +151,28 @@ const filterRowsByPeriod = (rows, dateField, fallbackField, filter) => {
     if (Number.isFinite(toTs) && ts > toTs) return false
     return true
   })
+}
+
+const resolvePreventivoIvaAmount = (item) => {
+  const imponibile = Number(item?.totale_imponibile)
+  const sconto = Number(item?.totale_sconto)
+  const totale = Number(item?.totale)
+  const ivaHeader = Number(item?.totale_iva)
+
+  const hasImponibile = Number.isFinite(imponibile)
+  const hasTotale = Number.isFinite(totale)
+  const hasSconto = Number.isFinite(sconto)
+  const hasHeader = Number.isFinite(ivaHeader)
+
+  if (hasImponibile && hasTotale) {
+    const derived = totale - imponibile + (hasSconto ? sconto : 0)
+    // Se il valore salvato in testata e' incoerente, usa il ricalcolo (allineato al dettaglio).
+    if (!hasHeader || Math.abs(ivaHeader - derived) > 0.01) {
+      return Math.max(0, derived)
+    }
+  }
+
+  return hasHeader ? ivaHeader : 0
 }
 
 const isNotaCredito = (item) => {
@@ -385,12 +413,15 @@ const AnagraficaDetail = () => {
   const [mutationError, setMutationError] = useState(null)
   const [toast, setToast] = useState({ open: false, type: 'success', message: '' })
   const kpiPeriod = 'all'
+  const toastTimeoutRef = useRef(null)
 
-  const showToast = (message, type = 'success') => {
+  const showToast = useCallback((message, type = 'success') => {
     setToast({ open: true, type, message })
-    window.clearTimeout(showToast._t)
-    showToast._t = window.setTimeout(() => setToast((t) => ({ ...t, open: false })), 3000)
-  }
+    if (toastTimeoutRef.current) {
+      window.clearTimeout(toastTimeoutRef.current)
+    }
+    toastTimeoutRef.current = window.setTimeout(() => setToast((t) => ({ ...t, open: false })), 3000)
+  }, [])
 
   const [isEditingGeneral, setIsEditingGeneral] = useState(false)
   const [generalForm, setGeneralForm] = useState(null)
@@ -409,6 +440,8 @@ const AnagraficaDetail = () => {
   const [editingContactId, setEditingContactId] = useState(null)
   const [contactForm, setContactForm] = useState(null)
   const [savingContactId, setSavingContactId] = useState(null)
+  const [creatingAccountContactId, setCreatingAccountContactId] = useState(null)
+  const [emailAccountMatches, setEmailAccountMatches] = useState({})
   const sedi = useMemo(() => (Array.isArray(detail?.sedi) ? detail.sedi : []), [detail?.sedi])
   const contatti = useMemo(
     () => (Array.isArray(detail?.contatti) ? detail.contatti : []),
@@ -1331,6 +1364,9 @@ const AnagraficaDetail = () => {
     })
 
     try {
+      let savedContactId = contattoId === 'new' ? null : Number(contattoId)
+      let savedContactEmail = String(payload.email || "").trim().toLowerCase()
+
       if (contattoId === 'new') {
         const prevIds = contatti.map((c) => c.id_contatto)
 
@@ -1345,6 +1381,11 @@ const AnagraficaDetail = () => {
         const newId = (createdResp?.contatti ?? [])
           .map((c) => c.id_contatto)
           .find((id) => !prevIds.includes(id))
+        savedContactId = Number(newId || 0) || null
+        if (!savedContactEmail && savedContactId) {
+          const createdContact = (createdResp?.contatti ?? []).find((c) => Number(c?.id_contatto) === savedContactId)
+          savedContactEmail = String(createdContact?.email || "").trim().toLowerCase()
+        }
 
         // Enforce uniqueness for defaults if requested on creation (per sede)
         const followUps = []
@@ -1376,7 +1417,49 @@ const AnagraficaDetail = () => {
 
         const response = await updateAnagraficaDetail({ token, id: recordId, kpiPeriod, contatti: batch })
         handleMutationSuccess(response)
+        if (!savedContactEmail) {
+          const updatedContact = (response?.contatti ?? []).find((c) => Number(c?.id_contatto) === Number(contattoId))
+          savedContactEmail = String(updatedContact?.email || "").trim().toLowerCase()
+        }
       }
+
+      // Se il contatto ha email già presente su un account, collega automaticamente anagrafica+contatto.
+      if (savedContactId && savedContactEmail) {
+        let page = 1
+        let lastPage = 1
+        let matchedAccount = null
+        do {
+          const accountsResp = await fetchAccounts({ token, page, pageSize: 100 })
+          const items = Array.isArray(accountsResp?.items) ? accountsResp.items : []
+          matchedAccount = items.find(
+            (row) => String(row?.email || "").trim().toLowerCase() === savedContactEmail,
+          ) || null
+          const metaLastPage = Number(accountsResp?.meta?.last_page || 1)
+          lastPage = Number.isFinite(metaLastPage) && metaLastPage > 0 ? metaLastPage : 1
+          page += 1
+        } while (!matchedAccount && page <= lastPage)
+
+        const matchedAccountId = Number(matchedAccount?.id_account || 0)
+        if (matchedAccountId > 0) {
+          // Evita di importare contatti di altre anagrafiche tramite account:
+          // collega esplicitamente solo l'anagrafica corrente e il contatto appena salvato.
+          const targetAnagraficaId = Number(recordId)
+          const targetContattoId = Number(savedContactId)
+
+          await updateAccount({
+            token,
+            body: {
+              id_account: matchedAccountId,
+              id_contatto: targetContattoId,
+              anagrafiche: [targetAnagraficaId],
+              anagrafica_predefinita: targetAnagraficaId,
+              contatti: [targetContattoId],
+              contatto_predefinito: targetContattoId,
+            },
+          })
+        }
+      }
+
       setEditingContactId(null)
       setContactForm(null)
     } catch (mutationErrorInstance) {
@@ -1389,6 +1472,180 @@ const AnagraficaDetail = () => {
       setSavingContactId(null)
     }
   }, [contactForm, contatti, handleMutationSuccess, kpiPeriod, logout, recordId, token])
+
+  // Carica account in paginazione e crea indice email -> account (evita filtri backend su search).
+  const fetchAccountsEmailIndex = useCallback(async (signal) => {
+    const byEmail = {}
+    let page = 1
+    let lastPage = 1
+
+    do {
+      const response = await fetchAccounts({
+        token,
+        page,
+        pageSize: 100,
+        signal,
+      })
+      const items = Array.isArray(response?.items) ? response.items : []
+      items.forEach((row) => {
+        const email = String(row?.email || "").trim().toLowerCase()
+        if (!email || byEmail[email]) {
+          return
+        }
+        byEmail[email] = row
+      })
+      const metaLastPage = Number(response?.meta?.last_page || 1)
+      lastPage = Number.isFinite(metaLastPage) && metaLastPage > 0 ? metaLastPage : 1
+      page += 1
+    } while (page <= lastPage)
+
+    return byEmail
+  }, [token])
+
+  // Precarica match email->account per i contatti mostrati.
+  useEffect(() => {
+    if (!token || !Array.isArray(contatti) || contatti.length === 0) {
+      setEmailAccountMatches({})
+      return undefined
+    }
+    const controller = new AbortController()
+    const loadMatches = async () => {
+      try {
+        const emails = new Set(
+          contatti.map((c) => String(c?.email || "").trim().toLowerCase()).filter(Boolean),
+        )
+        const accountsIndex = await fetchAccountsEmailIndex(controller.signal)
+        const next = {}
+        emails.forEach((email) => {
+          const account = accountsIndex[email]
+          if (account?.id_account) {
+            next[email] = account
+          }
+        })
+        setEmailAccountMatches(next)
+      } catch (lookupError) {
+        if (lookupError?.name === "AbortError") {
+          return
+        }
+        // Silenzioso: il fallback avviene al click.
+      }
+    }
+
+    loadMatches()
+    return () => controller.abort()
+  }, [contatti, fetchAccountsEmailIndex, token])
+
+  // Crea account cliente a partire da un contatto associato.
+  const handleCreateClienteAccount = useCallback(async (contatto) => {
+    if (!token || !recordId || !contatto?.id_contatto) {
+      return
+    }
+    const contattoId = Number(contatto.id_contatto)
+    if (!Number.isFinite(contattoId) || contattoId <= 0) {
+      setMutationError("Contatto non valido per creazione account.")
+      return
+    }
+    if (contatto?.id_account) {
+      setMutationError(`Il contatto ha già un account associato (ID ${contatto.id_account}).`)
+      return
+    }
+
+    const email = String(contatto.email || "").trim()
+    const normalizedEmail = email.toLowerCase()
+    const cachedExisting = normalizedEmail ? emailAccountMatches[normalizedEmail] : null
+    if (cachedExisting?.id_account) {
+      setMutationError(`Email già presente su account #${cachedExisting.id_account}. Non è possibile creare duplicati.`)
+      return
+    }
+    const fullName = String(contatto.nome || "").trim()
+    const usernameBase =
+      email.includes("@")
+        ? email.split("@")[0]
+        : fullName
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, ".")
+            .replace(/(^\.+|\.+$)/g, "") || `cliente.${contattoId}`
+    const username = `${usernameBase}.${contattoId}`.slice(0, 60)
+
+    setCreatingAccountContactId(contattoId)
+    setMutationError(null)
+    try {
+      // Double-check anti-duplicato prima della creazione.
+      const accountsIndex = await fetchAccountsEmailIndex()
+      const existingByEmail = email ? accountsIndex[normalizedEmail] : null
+      if (existingByEmail?.id_account) {
+        setEmailAccountMatches((prev) => ({
+          ...prev,
+          [normalizedEmail]: existingByEmail,
+        }))
+        throw new Error(`Email già presente su account #${existingByEmail.id_account}.`)
+      }
+
+      const roles = await fetchAccountRoles({ token })
+      const clienteRole = Array.isArray(roles)
+        ? roles.find((role) => {
+            const label = String(
+              role?.label ?? role?.nome ?? role?.name ?? role?.codice ?? role?.code ?? "",
+            )
+              .trim()
+              .toLowerCase()
+            return label === "cliente"
+          })
+        : null
+
+      if (!clienteRole?.id_ruolo) {
+        throw new Error('Ruolo "Cliente" non trovato.')
+      }
+
+      const response = await createAccount({
+        token,
+        body: {
+          username,
+          email: email || undefined,
+          account_type: "cliente",
+          id_ruolo: Number(clienteRole.id_ruolo),
+          id_contatto: contattoId,
+          is_active: 1,
+          must_change_pwd: 1,
+          anagrafiche: [Number(recordId)],
+          anagrafica_predefinita: Number(recordId),
+          contatti: [contattoId],
+          contatto_predefinito: contattoId,
+        },
+      })
+
+      const generatedPwd = response?.generated_password
+      showToast(
+        generatedPwd
+          ? `Account cliente creato. Password temporanea: ${generatedPwd}`
+          : "Account cliente creato.",
+        "success",
+      )
+      setRefreshIndex((prev) => prev + 1)
+    } catch (createError) {
+      if (createError.status === 401 && logout) {
+        logout()
+        return
+      }
+      setMutationError(createError?.payload?.message || createError?.message || "Errore creazione account.")
+    } finally {
+      setCreatingAccountContactId(null)
+    }
+  }, [emailAccountMatches, fetchAccountsEmailIndex, logout, recordId, showToast, token])
+
+  const resolveLinkedAnagraficaId = useCallback((account) => {
+    if (!account || typeof account !== "object") {
+      return null
+    }
+    const candidate =
+      account.id_anagrafica_predefinita ??
+      account.anagrafica_predefinita ??
+      account.default_anagrafica_id ??
+      account.id_anagrafica ??
+      null
+    const numeric = Number(candidate)
+    return Number.isFinite(numeric) && numeric > 0 ? numeric : null
+  }, [])
 
   // Dataset correlati (preventivi/DDT/fatture) con finestre paginabili.
   const preventivi = useMemo(
@@ -1435,13 +1692,24 @@ const AnagraficaDetail = () => {
     return latestPreventivi.slice(start, start + PREVENTIVI_ROWS_PER_PAGE)
   }, [latestPreventivi, preventiviPage])
   const preventiviKpi = useMemo(() => {
-    return filteredPreventivi.reduce(
+    return latestPreventivi.reduce(
       (acc, item) => {
         const imponibile = Number(item?.totale_imponibile)
-        const iva = Number(item?.totale_iva)
+        const iva = resolvePreventivoIvaAmount(item)
         const totale = Number(item?.totale)
         const stato = String(item?.stato_label || item?.stato || '').toLowerCase()
+        const isAcquisto = Number(item?.is_acquisto) === 1
 
+        if (isAcquisto) {
+          acc.acquisti.documenti += 1
+          if (Number.isFinite(imponibile)) acc.acquisti.totaleImponibile += imponibile
+          if (Number.isFinite(iva)) acc.acquisti.totaleIva += iva
+          if (Number.isFinite(totale)) acc.acquisti.totaleComplessivo += totale
+          if (stato.includes('confermat') || stato.includes('accettat')) acc.acquisti.confermati += 1
+          return acc
+        }
+
+        acc.documenti += 1
         if (Number.isFinite(imponibile)) acc.totaleImponibile += imponibile
         if (Number.isFinite(iva)) acc.totaleIva += iva
         if (Number.isFinite(totale)) acc.totaleComplessivo += totale
@@ -1449,9 +1717,22 @@ const AnagraficaDetail = () => {
 
         return acc
       },
-      { totaleImponibile: 0, totaleIva: 0, totaleComplessivo: 0, confermati: 0 },
+      {
+        documenti: 0,
+        totaleImponibile: 0,
+        totaleIva: 0,
+        totaleComplessivo: 0,
+        confermati: 0,
+        acquisti: {
+          documenti: 0,
+          totaleImponibile: 0,
+          totaleIva: 0,
+          totaleComplessivo: 0,
+          confermati: 0,
+        },
+      },
     )
-  }, [filteredPreventivi])
+  }, [latestPreventivi])
   // Naviga al dettaglio preventivo correlato.
   const handleViewPreventivo = (id) => {
     if (!id) return
@@ -1584,7 +1865,6 @@ const AnagraficaDetail = () => {
       token,
       id_anagrafica: recordId,
       limit: 0,
-      is_acquisto: 0,
       signal: controller.signal,
     })
       .then((resp) => {
@@ -1876,7 +2156,13 @@ const AnagraficaDetail = () => {
     const fullName = String(contatto.nome || "").trim() || "-"
     const isDefault = Number(contatto.is_predefinito) === 1
     const isReferente = Number(contatto.is_referente) === 1
-    const actionDisabled = isDisabled || savingContactId !== null || isEditingGeneral || isEditingFiscal
+    const hasAccount = Number(contatto?.id_account) > 0
+    const normalizedEmail = String(contatto?.email || "").trim().toLowerCase()
+    const accountByEmail = normalizedEmail ? emailAccountMatches[normalizedEmail] : null
+    const existingAccountId = Number(accountByEmail?.id_account || 0)
+    const linkedAnagraficaId = resolveLinkedAnagraficaId(accountByEmail)
+    const isCreatingAccount = creatingAccountContactId === Number(contatto.id_contatto)
+    const actionDisabled = isDisabled || savingContactId !== null || isEditingGeneral || isEditingFiscal || creatingAccountContactId !== null
     return (
       <CAccordionItem key={`contatto-${contatto.id_contatto}`} itemKey={`contatto-${contatto.id_contatto}`}>
         <CAccordionHeader className="py-2">
@@ -1918,6 +2204,43 @@ const AnagraficaDetail = () => {
             </CCol>
           </CRow>
           <div className="d-flex gap-2 flex-wrap justify-content-end mt-3">
+            {existingAccountId > 0 && (
+              <CButton
+                color="info"
+                variant="outline"
+                size="sm"
+                onClick={() => navigate(`/accounts/dettagli?id=${existingAccountId}`)}
+                disabled={actionDisabled}
+              >
+                Apri account esistente
+              </CButton>
+            )}
+            {linkedAnagraficaId && linkedAnagraficaId !== Number(recordId) && (
+              <CButton
+                color="info"
+                variant="outline"
+                size="sm"
+                onClick={() => navigate(`/anagrafica/dettagli?id=${linkedAnagraficaId}`)}
+                disabled={actionDisabled}
+              >
+                Apri anagrafica collegata
+              </CButton>
+            )}
+            <CButton
+              color="primary"
+              variant={hasAccount ? "outline" : undefined}
+              size="sm"
+              onClick={() => handleCreateClienteAccount(contatto)}
+              disabled={actionDisabled || hasAccount || isCreatingAccount || existingAccountId > 0}
+            >
+              {hasAccount
+                ? `Account #${contatto.id_account}`
+                : existingAccountId > 0
+                  ? `Email già censita (account #${existingAccountId})`
+                : isCreatingAccount
+                  ? "Creazione account..."
+                  : "Crea account cliente"}
+            </CButton>
             <CButton
               color="secondary"
               variant="outline"
@@ -3177,7 +3500,7 @@ const AnagraficaDetail = () => {
               <section>
                 <CRow className="g-3 mb-3">
                     <CCol md={6} xl={2}>
-                      <DetailField label="Documenti" value={effectivePreventivi.length} compact={isCompact} />
+                      <DetailField label="Documenti vendita" value={preventiviKpi.documenti} compact={isCompact} />
                   </CCol>
                   <CCol md={6} xl={2}>
                     <DetailField label="Confermati" value={preventiviKpi.confermati} compact={isCompact} />
@@ -3200,6 +3523,50 @@ const AnagraficaDetail = () => {
                     />
                   </CCol>
                 </CRow>
+                {preventiviKpi.acquisti.documenti > 0 && (
+                  <CRow className="g-3 mb-3">
+                    <CCol md={6} xl={2}>
+                      <DetailField
+                        label="Documenti acquisto"
+                        value={preventiviKpi.acquisti.documenti}
+                        className="border border-warning"
+                        compact={isCompact}
+                      />
+                    </CCol>
+                    <CCol md={6} xl={2}>
+                      <DetailField
+                        label="Confermati acquisto"
+                        value={preventiviKpi.acquisti.confermati}
+                        className="border border-warning"
+                        compact={isCompact}
+                      />
+                    </CCol>
+                    <CCol md={6} xl={3}>
+                      <DetailField
+                        label="Imponibile acquisti"
+                        value={formatCurrency(preventiviKpi.acquisti.totaleImponibile)}
+                        className="border border-warning"
+                        compact={isCompact}
+                      />
+                    </CCol>
+                    <CCol md={6} xl={2}>
+                      <DetailField
+                        label="IVA acquisti"
+                        value={formatCurrency(preventiviKpi.acquisti.totaleIva)}
+                        className="border border-warning"
+                        compact={isCompact}
+                      />
+                    </CCol>
+                    <CCol md={6} xl={3}>
+                      <DetailField
+                        label="Totale acquisti"
+                        value={formatCurrency(preventiviKpi.acquisti.totaleComplessivo)}
+                        className="border border-warning"
+                        compact={isCompact}
+                      />
+                    </CCol>
+                  </CRow>
+                )}
 
                 <div className="d-flex justify-content-between align-items-center mb-3">
                   <h3 className="h6 mb-0">Preventivi correlati</h3>
@@ -3260,6 +3627,7 @@ const AnagraficaDetail = () => {
                       <CTableHead color="dark">
                         <CTableRow className="align-middle">
                           <CTableHeaderCell scope="col">Numero</CTableHeaderCell>
+                          <CTableHeaderCell scope="col">Tipo</CTableHeaderCell>
                           <CTableHeaderCell scope="col">Data</CTableHeaderCell>
                           <CTableHeaderCell scope="col">Totale imponibile</CTableHeaderCell>
                           <CTableHeaderCell scope="col">Totale IVA</CTableHeaderCell>
@@ -3274,9 +3642,14 @@ const AnagraficaDetail = () => {
                             <CTableDataCell>
                               {preventivo.anno_preventivo}/{preventivo.numero_documento}
                             </CTableDataCell>
+                            <CTableDataCell>
+                              <CBadge color={Number(preventivo?.is_acquisto) === 1 ? "warning" : "primary"}>
+                                {Number(preventivo?.is_acquisto) === 1 ? "Acquisto" : "Vendita"}
+                              </CBadge>
+                            </CTableDataCell>
                             <CTableDataCell>{formatDate(preventivo.data_preventivo)}</CTableDataCell>
                             <CTableDataCell>{formatCurrency(preventivo.totale_imponibile)}</CTableDataCell>
-                            <CTableDataCell>{formatCurrency(preventivo.totale_iva)}</CTableDataCell>
+                            <CTableDataCell>{formatCurrency(resolvePreventivoIvaAmount(preventivo))}</CTableDataCell>
                             <CTableDataCell>{formatCurrency(preventivo.totale)}</CTableDataCell>
                             <CTableDataCell className="text-center">
                               {preventivo.stato_label ? (

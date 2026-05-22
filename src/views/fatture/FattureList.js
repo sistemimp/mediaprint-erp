@@ -81,11 +81,14 @@ const getSignedAmount = (row, value) => {
 const FattureList = () => {
   const navigate = useNavigate()
   const location = useLocation()
-  const { token, logout } = useAuth()
+  const { token, logout, user } = useAuth()
   const isAcquisto = location.pathname.includes('/acquisti/')
   const basePath = isAcquisto ? '/acquisti/fatture' : '/fatture'
   const counterpartyLabel = isAcquisto ? 'Fornitore' : 'Cliente'
   const showStatus = !isAcquisto
+  const accountType = String(user?.accountType || user?.account_type || '').toLowerCase().trim()
+  const isCustomerAccount = accountType === 'cliente'
+  const showSezionaleInfo = !isAcquisto && !isCustomerAccount
 
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(false)
@@ -226,7 +229,7 @@ const FattureList = () => {
           return false
         }
       }
-      if (sezionaleFilter !== 'all') {
+      if (showSezionaleInfo && sezionaleFilter !== 'all') {
         if (row.id_sezionale == null || String(row.id_sezionale) !== sezionaleFilter) {
           return false
         }
@@ -251,7 +254,7 @@ const FattureList = () => {
       }
       return true
     })
-  }, [items, search, yearFilter, statusFilter, sezionaleFilter, showStatus])
+  }, [items, search, yearFilter, statusFilter, sezionaleFilter, showStatus, showSezionaleInfo])
 
   // Applica ordinamento lato client.
   const sortedItems = useMemo(() => {
@@ -265,7 +268,7 @@ const FattureList = () => {
 
   const totalPages = Math.max(Math.ceil(sortedItems.length / ROWS_PER_PAGE), 1)
   const totalItems = sortedItems.length
-  const totalsLeadingColSpan = isAcquisto ? 4 : 5
+  const totalsLeadingColSpan = isAcquisto ? 4 : showSezionaleInfo ? 5 : 4
   const totals = useMemo(() => {
     return sortedItems.reduce(
       (acc, row) => {
@@ -469,7 +472,7 @@ const FattureList = () => {
               </CFormSelect>
             </CCol>
           )}
-          {!isAcquisto && (
+          {showSezionaleInfo && (
             <CCol xs={6} md={3} lg={3}>
               <CFormSelect
                 value={sezionaleFilter}
@@ -534,7 +537,7 @@ const FattureList = () => {
                   >
                     Tipo{renderSortIndicator('tipo_label')}
                   </CTableHeaderCell>
-                  {!isAcquisto && (
+                  {showSezionaleInfo && (
                     <CTableHeaderCell
                       className="cursor-pointer"
                       onClick={() => handleSort('sezionale_label')}
@@ -612,7 +615,7 @@ const FattureList = () => {
                         <span className="text-body-secondary">-</span>
                       )}
                     </CTableDataCell>
-                    {!isAcquisto && (
+                    {showSezionaleInfo && (
                       <CTableDataCell>
                         {row.id_sezionale || row.sezionale_code || row.sezionale_label ? (
                           <>

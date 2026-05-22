@@ -404,7 +404,7 @@ final class AnagraficheRepository
                 s.email AS sede_email
             FROM tb_contatti_anagrafiche ca
             INNER JOIN tb_sedi_contatti sc ON sc.id_contatto = ca.id_contatto
-            LEFT JOIN tb_sedi s ON s.id_sede = sc.id_sede
+            INNER JOIN tb_sedi s ON s.id_sede = sc.id_sede AND s.id_anagrafica = ca.id_anagrafica
             WHERE ca.id_anagrafica = :id
             ORDER BY sc.is_predefinito DESC, sc.nome ASC
         SQL;
@@ -453,6 +453,7 @@ final class AnagraficheRepository
                 p.anno_preventivo,
                 p.numero_documento,
                 p.data_preventivo,
+                p.is_acquisto,
                 p.totale_imponibile,
                 p.totale_sconto,
                 p.totale_iva,

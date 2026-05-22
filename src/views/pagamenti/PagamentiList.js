@@ -1,6 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
+  CAccordion,
+  CAccordionBody,
+  CAccordionHeader,
+  CAccordionItem,
   CAlert,
   CBadge,
   CButton,
@@ -29,7 +33,12 @@ import CIcon from '@coreui/icons-react'
 import { cilArrowRight, cilSpreadsheet, cilWarning } from '@coreui/icons'
 
 import { useAuth } from '../../context/AuthContext'
-import { fetchPagamentiLedger, fetchPagamentiList } from '../../services/pagamenti'
+import {
+  autoReassignPagamentiLearned,
+  fetchPagamentiLedger,
+  fetchPagamentiList,
+  tryAutoAssignPagamento,
+} from '../../services/pagamenti'
 
 const currencyFormatter = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' })
 
@@ -63,6 +72,10 @@ const PagamentiList = () => {
     date_to: '',
   })
   const [pendingOnlyOpen, setPendingOnlyOpen] = useState(false)
+  const [retryAssigningId, setRetryAssigningId] = useState(null)
+  const [retryAssignMessage, setRetryAssignMessage] = useState(null)
+  const [massReassignLoading, setMassReassignLoading] = useState(false)
+  const [rowRetryMessages, setRowRetryMessages] = useState({})
 
   // Carica il ledger clienti filtrabile per ricerca.
   useEffect(() => {
@@ -123,6 +136,109 @@ const PagamentiList = () => {
     load()
     return () => controller.abort()
   }, [token, filters, pendingOnlyOpen, logout])
+
+  const reloadPayments = async () => {
+    if (!token) return
+    setPaymentsLoading(true)
+    setPaymentsError(null)
+    try {
+      const { items } = await fetchPagamentiList({
+        token,
+        filters: { ...filters, pending_only_open: pendingOnlyOpen },
+      })
+      setPayments(items)
+    } catch (err) {
+      if (err?.status === 401 && logout) {
+        logout()
+        return
+      }
+      setPayments([])
+      setPaymentsError(err)
+    } finally {
+      setPaymentsLoading(false)
+    }
+  }
+
+  const handleRetryAutoAssign = async (idPagamento) => {
+    if (!token || !idPagamento || retryAssigningId) return
+    setRetryAssigningId(idPagamento)
+    setRetryAssignMessage(null)
+    setRowRetryMessages((prev) => {
+      const next = { ...prev }
+      delete next[idPagamento]
+      return next
+    })
+    try {
+      const result = await tryAutoAssignPagamento({ token, id_pagamento: idPagamento })
+      const rowMessage = result.updated
+        ? { color: 'success', text: 'Riassegnazione completata: cliente trovato dalle note.' }
+        : { color: 'warning', text: 'Nessuna riassegnazione effettuata: controllo note non sufficiente.' }
+      setRowRetryMessages((prev) => ({ ...prev, [idPagamento]: rowMessage }))
+      if (result?.data && Number(result.data.id_pagamento) > 0) {
+        setPayments((prev) =>
+          prev.map((item) =>
+            Number(item?.id_pagamento) === Number(result.data.id_pagamento) ? { ...item, ...result.data } : item,
+          ),
+        )
+      }
+      window.setTimeout(() => {
+        setRowRetryMessages((prev) => {
+          if (!prev[idPagamento]) return prev
+          const next = { ...prev }
+          delete next[idPagamento]
+          return next
+        })
+      }, 5000)
+    } catch (err) {
+      if (err?.status === 401 && logout) {
+        logout()
+        return
+      }
+      const errorMessage = {
+        color: 'danger',
+        text: err?.message || 'Errore durante il tentativo di riassegnazione.',
+      }
+      setRowRetryMessages((prev) => ({ ...prev, [idPagamento]: errorMessage }))
+      window.setTimeout(() => {
+        setRowRetryMessages((prev) => {
+          if (!prev[idPagamento]) return prev
+          const next = { ...prev }
+          delete next[idPagamento]
+          return next
+        })
+      }, 5000)
+    } finally {
+      setRetryAssigningId(null)
+    }
+  }
+
+  const handleMassAutoReassign = async () => {
+    if (!token || massReassignLoading) return
+    setMassReassignLoading(true)
+    setRetryAssignMessage(null)
+    try {
+      const result = await autoReassignPagamentiLearned({ token, limit: 500 })
+      setRetryAssignMessage({
+        color: result.updated > 0 ? 'success' : 'warning',
+        text:
+          result.updated > 0
+            ? `Riassegnazione completata: ${result.updated} pagamento/i aggiornati su ${result.checked} verificati.`
+            : `Nessuna riassegnazione eseguita su ${result.checked} pagamento/i verificati.`,
+      })
+      await reloadPayments()
+    } catch (err) {
+      if (err?.status === 401 && logout) {
+        logout()
+        return
+      }
+      setRetryAssignMessage({
+        color: 'danger',
+        text: err?.message || 'Errore durante la riassegnazione automatica massiva.',
+      })
+    } finally {
+      setMassReassignLoading(false)
+    }
+  }
 
   // Applica filtri client-side al ledger (testo, sospesi, residui).
   const filteredLedger = useMemo(() => {
@@ -491,7 +607,16 @@ const PagamentiList = () => {
 
         {activeTab === 'imported' && (
           <>
-            <div className="d-flex justify-content-end mb-3">
+            <div className="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+              <CButton
+                color="primary"
+                variant="outline"
+                type="button"
+                onClick={handleMassAutoReassign}
+                disabled={massReassignLoading || paymentsLoading || stagingPayments.length === 0}
+              >
+                {massReassignLoading ? 'Riassegnazione in corso...' : 'Auto riassegna da storico manuale'}
+              </CButton>
               <CFormCheck
                 id="pendingOnlyOpenToggle"
                 label="Mostra solo pagamenti con residuo da assegnare"
@@ -509,81 +634,102 @@ const PagamentiList = () => {
               <CAlert color="info">Nessun pagamento importato in sospeso.</CAlert>
             ) : (
               <>
+                {retryAssignMessage && (
+                  <CAlert color={retryAssignMessage.color} className="mb-3">
+                    {retryAssignMessage.text}
+                  </CAlert>
+                )}
                 <CAlert color="info" className="mb-3">
                   Questi pagamenti sono stati importati ma non ancora assegnati a una fattura. Utilizza il dettaglio per
                   completare l'associazione o eliminarli se non piu necessari.
                 </CAlert>
-                <CTable responsive hover data-testid="table">
-                  <CTableHead className="mp-table-head">
-                    <CTableRow className="align-middle">
-                      <CTableHeaderCell>Data</CTableHeaderCell>
-                      <CTableHeaderCell>Cliente</CTableHeaderCell>
-                      <CTableHeaderCell>Riferimento</CTableHeaderCell>
-                      <CTableHeaderCell className="text-end">Importo totale</CTableHeaderCell>
-                      <CTableHeaderCell className="text-end">Allocato</CTableHeaderCell>
-                      <CTableHeaderCell className="text-end">Residuo</CTableHeaderCell>
-                      <CTableHeaderCell>Modalita</CTableHeaderCell>
-                      <CTableHeaderCell className="text-center">Azioni</CTableHeaderCell>
-                    </CTableRow>
-                  </CTableHead>
-                  <CTableBody>
-                    {stagingPayments.map((row) => {
-                      const totaleImporto = Number(row.importo_totale)
-                      const allocatoRaw = Number(row.importo_allocato)
-                      const residuoRaw = row.residuo_pagamento != null ? Number(row.residuo_pagamento) : null
-                      const allocatoValue = Number.isFinite(allocatoRaw) ? allocatoRaw : 0
-                      const residuoValue = Number.isFinite(totaleImporto)
-                        ? Math.max(0, Math.round((totaleImporto - allocatoValue) * 100) / 100)
-                        : residuoRaw
-                      return (
-                        <CTableRow
-                          key={`pending-${row.id_pagamento}`}
-                          data-testid={`row-${row.id_pagamento}`}
-                        >
-                          <CTableDataCell>{row.data_pagamento || '-'}</CTableDataCell>
-                          <CTableDataCell>{row.cliente || '-'}</CTableDataCell>
-                          <CTableDataCell>
-                            <div>{row.reference || '-'}</div>
-                            {row.import_uid && (
-                              <small className="text-body-secondary">UID: {row.import_uid}</small>
+                <CAccordion alwaysOpen data-testid="table">
+                  {stagingPayments.map((row) => {
+                    const totaleImporto = Number(row.importo_totale)
+                    const allocatoRaw = Number(row.importo_allocato)
+                    const residuoRaw = row.residuo_pagamento != null ? Number(row.residuo_pagamento) : null
+                    const allocatoValue = Number.isFinite(allocatoRaw) ? allocatoRaw : 0
+                    const residuoValue = Number.isFinite(totaleImporto)
+                      ? Math.max(0, Math.round((totaleImporto - allocatoValue) * 100) / 100)
+                      : residuoRaw
+                    return (
+                      <CAccordionItem itemKey={String(row.id_pagamento)} key={`pending-acc-${row.id_pagamento}`}>
+                        <CAccordionHeader>
+                          <div className="w-100 pe-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
+                            <div>
+                              <strong>{row.cliente || 'Cliente non assegnato'}</strong>
+                              <div className="small text-body-secondary">
+                                {row.data_pagamento || '-'} {row.reference ? `• ${row.reference}` : ''}
+                              </div>
+                            </div>
+                            <div className="text-end">
+                              <div className="fw-semibold">{formatCurrency(row.importo_totale)}</div>
+                              <small className="text-body-secondary">
+                                Residuo: {residuoValue != null ? formatCurrency(residuoValue) : '-'}
+                              </small>
+                            </div>
+                          </div>
+                        </CAccordionHeader>
+                        <CAccordionBody>
+                          <CRow className="g-3">
+                            <CCol md={4}>
+                              <div className="small text-body-secondary">Allocato</div>
+                              <div>{formatCurrency(allocatoValue)}</div>
+                            </CCol>
+                            <CCol md={4}>
+                              <div className="small text-body-secondary">Modalità</div>
+                              <div>
+                                {row.modalita_code
+                                  ? `${row.modalita_code}${row.modalita_label ? ` - ${row.modalita_label}` : ''}`
+                                  : '-'}
+                              </div>
+                            </CCol>
+                            <CCol md={4}>
+                              <div className="small text-body-secondary">UID Import</div>
+                              <div>{row.import_uid || '-'}</div>
+                            </CCol>
+                            <CCol xs={12}>
+                              <div className="small text-body-secondary">Nota importazione</div>
+                              <div className="border rounded p-2 bg-body-tertiary text-body">
+                                {row.note || <span className="text-body-secondary">Nessuna nota</span>}
+                              </div>
+                            </CCol>
+                            {rowRetryMessages[row.id_pagamento] && (
+                              <CCol xs={12}>
+                                <div className={`small text-${rowRetryMessages[row.id_pagamento].color}`}>
+                                  {rowRetryMessages[row.id_pagamento].text}
+                                </div>
+                              </CCol>
                             )}
-                          </CTableDataCell>
-                          <CTableDataCell className="text-end">
-                            {formatCurrency(row.importo_totale)}
-                          </CTableDataCell>
-                          <CTableDataCell className="text-end">
-                            {formatCurrency(allocatoValue)}
-                          </CTableDataCell>
-                          <CTableDataCell className="text-end">
-                            {residuoValue != null ? formatCurrency(residuoValue) : '-'}
-                          </CTableDataCell>
-                          <CTableDataCell>
-                            {row.modalita_code ? (
-                              <>
-                                <div className="fw-semibold">{row.modalita_code}</div>
-                                {row.modalita_label && (
-                                  <small className="text-body-secondary d-block">{row.modalita_label}</small>
-                                )}
-                              </>
-                            ) : (
-                              <span className="text-body-secondary">-</span>
-                            )}
-                          </CTableDataCell>
-                          <CTableDataCell className="text-center">
-                            <CButton
-                              color="link"
-                              size="sm"
-                              className="p-0"
-                              onClick={() => navigate(`/pagamenti/dettaglio?id=${row.id_pagamento}`)}
-                            >
-                              <CIcon icon={cilArrowRight} />
-                            </CButton>
-                          </CTableDataCell>
-                        </CTableRow>
-                      )
-                    })}
-                  </CTableBody>
-                </CTable>
+                            <CCol xs={12}>
+                              <div className="d-flex align-items-center gap-2">
+                                <CButton
+                                  color="secondary"
+                                  variant="outline"
+                                  size="sm"
+                                  type="button"
+                                  onClick={() => handleRetryAutoAssign(row.id_pagamento)}
+                                  disabled={retryAssigningId === row.id_pagamento || Number(row.id_anagrafica) > 0}
+                                >
+                                  {retryAssigningId === row.id_pagamento ? 'Verifica...' : 'Prova riassegnazione'}
+                                </CButton>
+                                <CButton
+                                  color="link"
+                                  size="sm"
+                                  type="button"
+                                  className="p-0"
+                                  onClick={() => navigate(`/pagamenti/dettaglio?id=${row.id_pagamento}`)}
+                                >
+                                  <CIcon icon={cilArrowRight} />
+                                </CButton>
+                              </div>
+                            </CCol>
+                          </CRow>
+                        </CAccordionBody>
+                      </CAccordionItem>
+                    )
+                  })}
+                </CAccordion>
               </>
             )}
           </>

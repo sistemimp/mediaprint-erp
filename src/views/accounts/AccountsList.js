@@ -114,7 +114,6 @@ const AccountsList = () => {
   const [formData, setFormData] = useState(emptyForm)
   const [anagraficheOptions, setAnagraficheOptions] = useState([])
   const [selectedAnagrafiche, setSelectedAnagrafiche] = useState([])
-  const [defaultAnagrafica, setDefaultAnagrafica] = useState('')
   const [anagraficaSearch, setAnagraficaSearch] = useState('')
   const [anagraficaPage, setAnagraficaPage] = useState(0)
   const [contattiOptions, setContattiOptions] = useState([])
@@ -135,15 +134,6 @@ const AccountsList = () => {
     const preferred = roles.find((r) => Number(r.id_ruolo) === 3)
     return preferred ? String(preferred.id_ruolo) : String(roles[0].id_ruolo)
   }, [roles])
-
-  // Mappa anagrafica id -> label per lookup rapido.
-  const anagraficheMap = useMemo(() => {
-    const map = {}
-    anagraficheOptions.forEach((item) => {
-      map[String(item.id_anagrafica)] = item.ragione_sociale || `ID ${item.id_anagrafica}`
-    })
-    return map
-  }, [anagraficheOptions])
 
   // Filtra anagrafiche nel modal in base alla ricerca locale.
   const filteredAnagrafiche = useMemo(() => {
@@ -240,17 +230,11 @@ const AccountsList = () => {
       const items = Array.isArray(payload?.items) ? payload.items : []
       const selected = Array.isArray(payload?.selected) ? payload.selected.map((id) => String(id)) : []
       const defaultId = payload?.default_id ? String(payload.default_id) : ''
+      const selectedSingle = defaultId
+        ? [defaultId]
+        : (selected.length > 0 ? [selected[0]] : [])
       setAnagraficheOptions(items)
-      setSelectedAnagrafiche(selected)
-      if (selected.length > 0) {
-        if (defaultId && selected.includes(defaultId)) {
-          setDefaultAnagrafica(defaultId)
-        } else {
-          setDefaultAnagrafica(selected[0])
-        }
-      } else {
-        setDefaultAnagrafica('')
-      }
+      setSelectedAnagrafiche(selectedSingle)
       if (accountId) {
         setFormData((prev) => ({ ...prev, id_contatto: prev.id_contatto || '' }))
       }
@@ -346,7 +330,6 @@ const AccountsList = () => {
     })
     setAnagraficheOptions([])
     setSelectedAnagrafiche([])
-    setDefaultAnagrafica('')
     setAnagraficaSearch('')
     setAnagraficaPage(0)
     setContattiOptions([])
@@ -373,7 +356,6 @@ const AccountsList = () => {
     })
     setAnagraficheOptions([])
     setSelectedAnagrafiche([])
-    setDefaultAnagrafica('')
     setAnagraficaSearch('')
     setAnagraficaPage(0)
     setContattiOptions([])
@@ -408,7 +390,6 @@ const AccountsList = () => {
     }
     if (name === 'account_type' && value !== 'cliente') {
       setSelectedAnagrafiche([])
-      setDefaultAnagrafica('')
       setContattiOptions([])
       setSelectedContatti([])
       setPrimaryContatto('')
@@ -416,26 +397,11 @@ const AccountsList = () => {
     }
   }
 
-  // Seleziona/deseleziona anagrafica associata all'account cliente.
+  // Selezione singola anagrafica associata all'account cliente.
   const toggleAnagrafica = (id) => {
     const stringId = String(id)
-    setSelectedAnagrafiche((prev) => {
-      if (prev.includes(stringId)) {
-        const next = prev.filter((value) => value !== stringId)
-        if (next.length === 0) {
-          setDefaultAnagrafica('')
-          setAnagraficaWarning(null)
-        } else if (!next.includes(defaultAnagrafica)) {
-          setDefaultAnagrafica(next[0])
-        }
-        return next
-      }
-      const next = [...prev, stringId]
-      if (!defaultAnagrafica) {
-        setDefaultAnagrafica(stringId)
-      }
-      return next
-    })
+    setSelectedAnagrafiche([stringId])
+    setAnagraficaWarning(null)
   }
 
   // Seleziona/deseleziona contatto associato.
@@ -527,7 +493,7 @@ const AccountsList = () => {
             is_active: formData.is_active,
             must_change_pwd: formData.must_change_pwd,
             anagrafiche: formData.account_type === 'cliente' ? selectedAnagrafiche.map(Number) : undefined,
-            anagrafica_predefinita: formData.account_type === 'cliente' ? (Number(defaultAnagrafica) || undefined) : undefined,
+            anagrafica_predefinita: formData.account_type === 'cliente' ? (Number(selectedAnagrafiche[0]) || undefined) : undefined,
             contatti: formData.account_type === 'cliente' ? selectedContatti.map(Number) : undefined,
             contatto_predefinito: formData.account_type === 'cliente' ? (Number(primaryContatto) || undefined) : undefined,
           },
@@ -546,7 +512,7 @@ const AccountsList = () => {
             must_change_pwd: formData.must_change_pwd,
             password: formData.password,
             anagrafiche: formData.account_type === 'cliente' ? selectedAnagrafiche.map(Number) : undefined,
-            anagrafica_predefinita: formData.account_type === 'cliente' ? (Number(defaultAnagrafica) || undefined) : undefined,
+            anagrafica_predefinita: formData.account_type === 'cliente' ? (Number(selectedAnagrafiche[0]) || undefined) : undefined,
             contatti: formData.account_type === 'cliente' ? selectedContatti.map(Number) : undefined,
             contatto_predefinito: formData.account_type === 'cliente' ? (Number(primaryContatto) || undefined) : undefined,
           },
@@ -940,10 +906,7 @@ const AccountsList = () => {
                               data-testid={`row-${id}`}
                             >
                               <CTableDataCell>
-                                <CFormCheck
-                                  checked={checked}
-                                  onChange={() => toggleAnagrafica(id)}
-                                />
+                                <CFormCheck type="radio" name="selected_anagrafica" checked={checked} onChange={() => toggleAnagrafica(id)} />
                               </CTableDataCell>
                               <CTableDataCell>
                                 {item.ragione_sociale || `ID ${item.id_anagrafica}`}
@@ -994,7 +957,7 @@ const AccountsList = () => {
                       </CPaginationItem>
                     </CPagination>
                   )}
-                  <div className="form-text">Seleziona una o piu anagrafiche da associare al cliente.</div>
+                  <div className="form-text">Seleziona una sola anagrafica da associare al cliente.</div>
                 </CCol>
               )}
               {formData.account_type === 'cliente' && (
@@ -1096,23 +1059,6 @@ const AccountsList = () => {
                     </CPagination>
                   )}
                   <div className="form-text">Mostra i contatti disponibili sulle anagrafiche selezionate.</div>
-                </CCol>
-              )}
-              {formData.account_type === 'cliente' && (
-                <CCol md={6}>
-                  <CFormSelect
-                    label="Anagrafica predefinita"
-                    value={defaultAnagrafica}
-                    onChange={(e) => setDefaultAnagrafica(e.target.value)}
-                    disabled={selectedAnagrafiche.length === 0}
-                  >
-                    <option value="">Seleziona</option>
-                    {selectedAnagrafiche.map((id) => (
-                      <option key={id} value={id}>
-                        {anagraficheMap[id] || `ID ${id}`}
-                      </option>
-                    ))}
-                  </CFormSelect>
                 </CCol>
               )}
               {!formData.id_account && (

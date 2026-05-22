@@ -31,6 +31,7 @@ import { CStepper } from '@coreui/react-pro'
 import CIcon from '@coreui/icons-react'
 import { cilSave, cilTrash, cilPlus, cilArrowLeft, cilEnvelopeClosed, cilCloudDownload } from '@coreui/icons'
 import { useAuth } from '../../context/AuthContext'
+import { useBreadcrumbActions } from '../../context/BreadcrumbActionsContext'
 import usePermissions from '../../hooks/usePermissions'
 import { fetchAnagrafiche } from '../../services/anagrafiche'
 import { buildApiUrl, getStoredToken } from '../../services/apiClient'
@@ -96,6 +97,7 @@ const ContrattiDetail = () => {
   const id = Number(query.get('id') || 0)
   const { token, logout, user } = useAuth()
   const { has } = usePermissions()
+  const { setBreadcrumbActions, clearBreadcrumbActions } = useBreadcrumbActions()
 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -128,6 +130,7 @@ const ContrattiDetail = () => {
   const [fileDeletingId, setFileDeletingId] = useState(null)
   const [fileDeleteError, setFileDeleteError] = useState(null)
   const [fileForm, setFileForm] = useState({ file: null })
+  const formRef = useRef(null)
 
   const [emailModalVisible, setEmailModalVisible] = useState(false)
   const [emailSending, setEmailSending] = useState(false)
@@ -833,6 +836,13 @@ const ContrattiDetail = () => {
     }
   }
 
+  // Salvataggio invocato dalla action breadcrumb.
+  const handleBreadcrumbSave = useCallback(() => {
+    if (formRef.current) {
+      formRef.current.requestSubmit()
+    }
+  }, [])
+
   // Indicizza i prodotti per id per velocizzare i lookup nelle righe.
   const productsMap = useMemo(() => {
     const map = new Map()
@@ -870,6 +880,31 @@ const ContrattiDetail = () => {
   const revisionDetail = revisionModalData?.payload?.detail ?? null
   const revisionHeader = revisionDetail?.contratto ?? {}
   const revisionLines = Array.isArray(revisionDetail?.righe) ? revisionDetail.righe : []
+
+  // Configura azione contestuale della breadcrumb bar.
+  useEffect(() => {
+    if (!id) {
+      clearBreadcrumbActions()
+      return
+    }
+    setBreadcrumbActions([
+      {
+        id: 'contratto-save',
+        icon: cilSave,
+        label: saving ? 'Salvataggio contratto...' : 'Salva contratto',
+        onClick: handleBreadcrumbSave,
+        disabled: uiDisabled,
+      },
+    ])
+    return () => clearBreadcrumbActions()
+  }, [
+    clearBreadcrumbActions,
+    handleBreadcrumbSave,
+    id,
+    saving,
+    setBreadcrumbActions,
+    uiDisabled,
+  ])
 
 
   if (loading) {
@@ -926,7 +961,7 @@ const ContrattiDetail = () => {
             Il contratto non è in stato bozza. La modifica è disabilitata.
           </CAlert>
         )}
-        <CForm onSubmit={handleSubmit}>
+        <CForm onSubmit={handleSubmit} ref={formRef}>
           <section className="mb-4">
             {visualStatusSteps.length > 0 && (
               <div className="px-2 px-lg-3 py-3 border rounded bg-body-tertiary">

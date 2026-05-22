@@ -18,6 +18,8 @@ import {
   CTableHead,
   CTableHeaderCell,
   CTableRow,
+  CPagination,
+  CPaginationItem,
 } from '@coreui/react'
 import CIcon from '@coreui/icons-react'
 import { cilArrowRight, cilPrint, cilReload } from '@coreui/icons'
@@ -63,6 +65,12 @@ const DdtList = () => {
   const [search, setSearch] = useState('')
   const [yearFilter, setYearFilter] = useState('all')
   const [causaleFilter, setCausaleFilter] = useState('all')
+  const [statusFilter, setStatusFilter] = useState('all')
+  const [clienteFilter, setClienteFilter] = useState('all')
+  const [filterDateFrom, setFilterDateFrom] = useState('')
+  const [filterDateTo, setFilterDateTo] = useState('')
+  const [page, setPage] = useState(1)
+  const [rowsPerPage, setRowsPerPage] = useState(25)
   const [refreshIndex, setRefreshIndex] = useState(0)
 
   // Carica i DDT disponibili dal backend.
@@ -76,7 +84,7 @@ const DdtList = () => {
         const { items: data = [] } = await fetchDdtList({
           token,
           signal: controller.signal,
-          limit: 250,
+          limit: 0,
         })
         setItems(Array.isArray(data) ? data : [])
       } catch (err) {
@@ -113,9 +121,20 @@ const DdtList = () => {
     return Array.from(values).sort((a, b) => String(a).localeCompare(String(b)))
   }, [items])
 
-  // Applica filtri testuali/anno/causale lato client.
+  // Estrae clienti disponibili per filtro select.
+  const clienti = useMemo(() => {
+    const values = new Set()
+    items.forEach((row) => {
+      if (row.cliente_ragione_sociale) values.add(row.cliente_ragione_sociale)
+    })
+    return Array.from(values).sort((a, b) => String(a).localeCompare(String(b)))
+  }, [items])
+
+  // Applica filtri testuali/anno/causale/stato/cliente/periodo lato client.
   const filteredItems = useMemo(() => {
     const term = search.trim().toLowerCase()
+    const fromTs = filterDateFrom ? new Date(`${filterDateFrom}T00:00:00`).getTime() : null
+    const toTs = filterDateTo ? new Date(`${filterDateTo}T23:59:59`).getTime() : null
     return items.filter((row) => {
       if (yearFilter !== 'all' && row.anno && String(row.anno) !== String(yearFilter)) {
         return false
@@ -125,8 +144,21 @@ const DdtList = () => {
           return false
         }
       }
+      const rowStatus = Number(row.stato_documento) === 2 ? 'emesso' : 'bozza'
+      if (statusFilter !== 'all' && rowStatus !== statusFilter) {
+        return false
+      }
+      if (clienteFilter !== 'all' && (row.cliente_ragione_sociale || '-') !== clienteFilter) {
+        return false
+      }
+      const rowTs = row.data_ddt ? new Date(`${row.data_ddt}T12:00:00`).getTime() : NaN
+      if (Number.isFinite(fromTs) || Number.isFinite(toTs)) {
+        if (!Number.isFinite(rowTs)) return false
+        if (Number.isFinite(fromTs) && rowTs < fromTs) return false
+        if (Number.isFinite(toTs) && rowTs > toTs) return false
+      }
       if (term !== '') {
-        const statusLabel = Number(row.stato_documento) === 2 ? 'emesso' : 'bozza'
+        const statusLabel = rowStatus
         const haystack = [
           row.cliente_ragione_sociale,
           row.causale_label,
@@ -144,7 +176,22 @@ const DdtList = () => {
       }
       return true
     })
-  }, [items, search, yearFilter, causaleFilter])
+  }, [items, search, yearFilter, causaleFilter, statusFilter, clienteFilter, filterDateFrom, filterDateTo])
+
+  // Reset pagina quando cambiano i filtri.
+  useEffect(() => {
+    setPage(1)
+  }, [search, yearFilter, causaleFilter, statusFilter, clienteFilter, filterDateFrom, filterDateTo])
+
+  // Calcolo paginazione lato client.
+  const totalRows = filteredItems.length
+  const totalPages = Math.max(1, Math.ceil(totalRows / rowsPerPage))
+  const safePage = Math.min(page, totalPages)
+  const pageStart = (safePage - 1) * rowsPerPage
+  const pagedItems = useMemo(
+    () => filteredItems.slice(pageStart, pageStart + rowsPerPage),
+    [filteredItems, pageStart, rowsPerPage],
+  )
 
   // Apre il dettaglio del DDT selezionato.
   const handleView = (id) => {
@@ -167,7 +214,7 @@ const DdtList = () => {
           <div>
             <h5 className="mb-0">Documenti di trasporto</h5>
             <small className="text-body-secondary">
-              Elenco ultimi {items.length} DDT ordinati per data decrescente.
+              Elenco di tutti i DDT disponibili ordinati per data decrescente.
             </small>
           </div>
           <div className="d-flex flex-wrap gap-2">
@@ -221,6 +268,54 @@ const DdtList = () => {
               ))}
             </CFormSelect>
           </CCol>
+          <CCol xs={6} md={4} lg={2}>
+            <CFormSelect value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+              <option value="all">Tutti gli stati</option>
+              <option value="bozza">Bozza</option>
+              <option value="emesso">Emesso</option>
+            </CFormSelect>
+          </CCol>
+          <CCol xs={12} md={6} lg={4}>
+            <CFormSelect value={clienteFilter} onChange={(e) => setClienteFilter(e.target.value)}>
+              <option value="all">Tutti i clienti</option>
+              {clienti.map((label) => (
+                <option key={label} value={label}>
+                  {label}
+                </option>
+              ))}
+            </CFormSelect>
+          </CCol>
+          <CCol xs={6} md={3} lg={2}>
+            <CFormInput
+              type="date"
+              value={filterDateFrom}
+              onChange={(e) => setFilterDateFrom(e.target.value)}
+              aria-label="Data da"
+            />
+          </CCol>
+          <CCol xs={6} md={3} lg={2}>
+            <CFormInput
+              type="date"
+              value={filterDateTo}
+              onChange={(e) => setFilterDateTo(e.target.value)}
+              aria-label="Data a"
+            />
+          </CCol>
+          <CCol xs={6} md={3} lg={2}>
+            <CFormSelect
+              value={rowsPerPage}
+              onChange={(e) => {
+                const next = Number(e.target.value) || 25
+                setRowsPerPage(next)
+                setPage(1)
+              }}
+            >
+              <option value={10}>10 / pagina</option>
+              <option value={25}>25 / pagina</option>
+              <option value={50}>50 / pagina</option>
+              <option value={100}>100 / pagina</option>
+            </CFormSelect>
+          </CCol>
         </CRow>
 
         {loading && (
@@ -253,7 +348,7 @@ const DdtList = () => {
               </CTableRow>
             </CTableHead>
             <CTableBody>
-              {filteredItems.map((row) => {
+              {pagedItems.map((row) => {
                 const statusMeta =
                   Number(row.stato_documento) === 2
                     ? { label: 'Emesso', color: 'success' }
@@ -317,6 +412,28 @@ const DdtList = () => {
               })}
             </CTableBody>
           </CTable>
+        )}
+        {!loading && !error && filteredItems.length > 0 && (
+          <div className="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-2 mt-3">
+            <small className="text-body-secondary">
+              Mostrati {pageStart + 1}-{Math.min(pageStart + rowsPerPage, totalRows)} di {totalRows}
+            </small>
+            <CPagination className="mb-0" align="end">
+              <CPaginationItem disabled={safePage <= 1} onClick={() => setPage(1)}>
+                «
+              </CPaginationItem>
+              <CPaginationItem disabled={safePage <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
+                ‹
+              </CPaginationItem>
+              <CPaginationItem active>{safePage}</CPaginationItem>
+              <CPaginationItem disabled={safePage >= totalPages} onClick={() => setPage((p) => Math.min(totalPages, p + 1))}>
+                ›
+              </CPaginationItem>
+              <CPaginationItem disabled={safePage >= totalPages} onClick={() => setPage(totalPages)}>
+                »
+              </CPaginationItem>
+            </CPagination>
+          </div>
         )}
       </CCardBody>
     </CCard>

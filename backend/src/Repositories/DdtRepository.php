@@ -11,6 +11,14 @@ final class DdtRepository
 {
     private ?bool $comboKeySupported = null;
     private ?bool $anagraficheCodiceClienteSupported = null;
+    private ?bool $anagraficheEmailSupported = null;
+    private ?bool $anagraficheTelefonoSupported = null;
+    private ?bool $anagrafichePecSupported = null;
+    private ?bool $anagraficheIndirizzoSupported = null;
+    private ?bool $anagraficheCapSupported = null;
+    private ?bool $anagraficheComuneSupported = null;
+    private ?bool $anagraficheProvinciaSupported = null;
+    private ?bool $anagraficheNazioneIso2Supported = null;
 
     public function __construct(private PDO $pdo) {}
 
@@ -125,6 +133,140 @@ final class DdtRepository
 
         $this->anagraficheCodiceClienteSupported = $exists;
         return $this->anagraficheCodiceClienteSupported;
+    }
+
+    private function hasAnagraficheEmail(): bool
+    {
+        if ($this->anagraficheEmailSupported !== null) {
+            return $this->anagraficheEmailSupported;
+        }
+
+        $exists = false;
+        try {
+            $stmt = $this->pdo->query("SHOW COLUMNS FROM tb_anagrafiche LIKE 'email'");
+            $exists = $stmt && $stmt->fetch(PDO::FETCH_ASSOC) !== false;
+        } catch (\Throwable $ignored) {
+            $exists = false;
+        }
+
+        $this->anagraficheEmailSupported = $exists;
+        return $this->anagraficheEmailSupported;
+    }
+
+    private function hasAnagraficheTelefono(): bool
+    {
+        if ($this->anagraficheTelefonoSupported !== null) {
+            return $this->anagraficheTelefonoSupported;
+        }
+
+        $exists = false;
+        try {
+            $stmt = $this->pdo->query("SHOW COLUMNS FROM tb_anagrafiche LIKE 'telefono'");
+            $exists = $stmt && $stmt->fetch(PDO::FETCH_ASSOC) !== false;
+        } catch (\Throwable $ignored) {
+            $exists = false;
+        }
+
+        $this->anagraficheTelefonoSupported = $exists;
+        return $this->anagraficheTelefonoSupported;
+    }
+
+    private function hasAnagrafichePec(): bool
+    {
+        if ($this->anagrafichePecSupported !== null) {
+            return $this->anagrafichePecSupported;
+        }
+
+        $exists = false;
+        try {
+            $stmt = $this->pdo->query("SHOW COLUMNS FROM tb_anagrafiche LIKE 'pec'");
+            $exists = $stmt && $stmt->fetch(PDO::FETCH_ASSOC) !== false;
+        } catch (\Throwable $ignored) {
+            $exists = false;
+        }
+
+        $this->anagrafichePecSupported = $exists;
+        return $this->anagrafichePecSupported;
+    }
+
+    private function hasAnagraficheIndirizzo(): bool
+    {
+        if ($this->anagraficheIndirizzoSupported !== null) {
+            return $this->anagraficheIndirizzoSupported;
+        }
+        $exists = false;
+        try {
+            $stmt = $this->pdo->query("SHOW COLUMNS FROM tb_anagrafiche LIKE 'indirizzo'");
+            $exists = $stmt && $stmt->fetch(PDO::FETCH_ASSOC) !== false;
+        } catch (\Throwable $ignored) {
+            $exists = false;
+        }
+        $this->anagraficheIndirizzoSupported = $exists;
+        return $this->anagraficheIndirizzoSupported;
+    }
+
+    private function hasAnagraficheCap(): bool
+    {
+        if ($this->anagraficheCapSupported !== null) {
+            return $this->anagraficheCapSupported;
+        }
+        $exists = false;
+        try {
+            $stmt = $this->pdo->query("SHOW COLUMNS FROM tb_anagrafiche LIKE 'cap'");
+            $exists = $stmt && $stmt->fetch(PDO::FETCH_ASSOC) !== false;
+        } catch (\Throwable $ignored) {
+            $exists = false;
+        }
+        $this->anagraficheCapSupported = $exists;
+        return $this->anagraficheCapSupported;
+    }
+
+    private function hasAnagraficheComune(): bool
+    {
+        if ($this->anagraficheComuneSupported !== null) {
+            return $this->anagraficheComuneSupported;
+        }
+        $exists = false;
+        try {
+            $stmt = $this->pdo->query("SHOW COLUMNS FROM tb_anagrafiche LIKE 'comune'");
+            $exists = $stmt && $stmt->fetch(PDO::FETCH_ASSOC) !== false;
+        } catch (\Throwable $ignored) {
+            $exists = false;
+        }
+        $this->anagraficheComuneSupported = $exists;
+        return $this->anagraficheComuneSupported;
+    }
+
+    private function hasAnagraficheProvincia(): bool
+    {
+        if ($this->anagraficheProvinciaSupported !== null) {
+            return $this->anagraficheProvinciaSupported;
+        }
+        $exists = false;
+        try {
+            $stmt = $this->pdo->query("SHOW COLUMNS FROM tb_anagrafiche LIKE 'provincia'");
+            $exists = $stmt && $stmt->fetch(PDO::FETCH_ASSOC) !== false;
+        } catch (\Throwable $ignored) {
+            $exists = false;
+        }
+        $this->anagraficheProvinciaSupported = $exists;
+        return $this->anagraficheProvinciaSupported;
+    }
+
+    private function hasAnagraficheNazioneIso2(): bool
+    {
+        if ($this->anagraficheNazioneIso2Supported !== null) {
+            return $this->anagraficheNazioneIso2Supported;
+        }
+        $exists = false;
+        try {
+            $stmt = $this->pdo->query("SHOW COLUMNS FROM tb_anagrafiche LIKE 'nazione_iso2'");
+            $exists = $stmt && $stmt->fetch(PDO::FETCH_ASSOC) !== false;
+        } catch (\Throwable $ignored) {
+            $exists = false;
+        }
+        $this->anagraficheNazioneIso2Supported = $exists;
+        return $this->anagraficheNazioneIso2Supported;
     }
 
     /**
@@ -266,6 +408,30 @@ final class DdtRepository
         $codiceClienteSelect = $this->hasAnagraficheCodiceCliente()
             ? 'a.codice_cliente AS cliente_codice_cliente,'
             : 'NULL AS cliente_codice_cliente,';
+        $emailSelect = $this->hasAnagraficheEmail()
+            ? 'a.email AS cliente_email,'
+            : 'NULL AS cliente_email,';
+        $telefonoSelect = $this->hasAnagraficheTelefono()
+            ? 'a.telefono AS cliente_telefono,'
+            : 'NULL AS cliente_telefono,';
+        $pecSelect = $this->hasAnagrafichePec()
+            ? 'a.pec AS cliente_pec,'
+            : 'NULL AS cliente_pec,';
+        $indirizzoSelect = $this->hasAnagraficheIndirizzo()
+            ? 'a.indirizzo AS cliente_indirizzo,'
+            : 'NULL AS cliente_indirizzo,';
+        $capSelect = $this->hasAnagraficheCap()
+            ? 'a.cap AS cliente_cap,'
+            : 'NULL AS cliente_cap,';
+        $comuneSelect = $this->hasAnagraficheComune()
+            ? 'a.comune AS cliente_comune,'
+            : 'NULL AS cliente_comune,';
+        $provinciaSelect = $this->hasAnagraficheProvincia()
+            ? 'a.provincia AS cliente_provincia,'
+            : 'NULL AS cliente_provincia,';
+        $nazioneSelect = $this->hasAnagraficheNazioneIso2()
+            ? 'a.nazione_iso2 AS cliente_nazione,'
+            : 'NULL AS cliente_nazione,';
 
         $stmt = $this->pdo->prepare(
             'SELECT
@@ -294,14 +460,14 @@ final class DdtRepository
                 ' . $codiceClienteSelect . '
                 a.piva AS cliente_piva,
                 a.codice_fiscale AS cliente_codice_fiscale,
-                a.email AS cliente_email,
-                a.telefono AS cliente_telefono,
-                a.pec AS cliente_pec,
-                a.indirizzo AS cliente_indirizzo,
-                a.cap AS cliente_cap,
-                a.comune AS cliente_comune,
-                a.provincia AS cliente_provincia,
-                a.nazione_iso2 AS cliente_nazione,
+                ' . $emailSelect . '
+                ' . $telefonoSelect . '
+                ' . $pecSelect . '
+                ' . $indirizzoSelect . '
+                ' . $capSelect . '
+                ' . $comuneSelect . '
+                ' . $provinciaSelect . '
+                ' . $nazioneSelect . '
                 dm.label AS destinazione_label,
                 dm.indirizzo AS destinazione_indirizzo,
                 dm.cap AS destinazione_cap,

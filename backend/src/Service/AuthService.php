@@ -96,7 +96,12 @@ final class AuthService
         $roleIds = array_map(static fn(array $role): int => (int) $role['id_ruolo'], $roles);
         $permissions = $this->resolveAccountPermissions((int) $account['id_account'], $roleIds);
 
-        return $this->buildUserPayload($account, $roles, $permissions);
+        $payload = $this->buildUserPayload($account, $roles, $permissions);
+        if (strtolower((string) ($account['account_type'] ?? '')) === 'cliente') {
+            $payload['id_anagrafica'] = $this->repository->getPrimaryAnagraficaIdForAccount((int) $account['id_account']);
+        }
+
+        return $payload;
     }
 
     /**

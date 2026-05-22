@@ -96,6 +96,14 @@ const PagamentiImport = () => {
   // Lookup opzioni select per metodi e modalita.
   const metodiOptions = useMemo(() => config.metodi_pagamento || [], [config])
   const modalitaOptions = useMemo(() => config.modalita_pagamento || [], [config])
+  const defaultModalitaSdiId = useMemo(() => {
+    const normalizeCode = (value) => String(value || '').replace(/[^a-z0-9]/gi, '').toUpperCase()
+    return (
+      modalitaOptions.find((m) => normalizeCode(m?.code) === 'MP05')?.id_modalita ??
+      modalitaOptions.find((m) => /bonifico/i.test(String(m?.label || '')))?.id_modalita ??
+      ''
+    )
+  }, [modalitaOptions])
 
   // Upload file e normalizzazione righe importate per il mapping manuale.
   const handleFileChange = async (event) => {
@@ -141,7 +149,7 @@ const PagamentiImport = () => {
           cliente_id_hint: item.auto_invoice?.id_anagrafica || null,
           warnings: Array.isArray(item.warnings) ? item.warnings : [],
           id_metodo: item.metodo?.id_metodo ?? '',
-          id_mp: item.modalita?.id_modalita ?? '',
+          id_mp: item.modalita?.id_modalita ?? defaultModalitaSdiId,
           allocations: [
             {
               id: cryptoRandom(),
@@ -165,6 +173,19 @@ const PagamentiImport = () => {
       event.target.value = ''
     }
   }
+
+  useEffect(() => {
+    if (!defaultModalitaSdiId) return
+    setRows((prev) =>
+      prev.map((row) => {
+        if (row.id_mp) return row
+        return {
+          ...row,
+          id_mp: defaultModalitaSdiId,
+        }
+      }),
+    )
+  }, [defaultModalitaSdiId])
 
   // Aggiorna i campi editabili di una riga pagamento.
   const handleRowFieldChange = (rowId, field) => (event) => {

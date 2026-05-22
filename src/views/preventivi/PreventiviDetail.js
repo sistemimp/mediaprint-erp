@@ -90,6 +90,7 @@ import {
   fetchProdottoDetail,
 } from '../../services/prodotti'
 import { fetchPacchetti, fetchPacchettoDetail } from '../../services/pacchetti'
+import { fetchContratti, fetchContrattoDetail } from '../../services/contratti'
 import HtmlEditor from '../../components/HtmlEditor'
 
 const currencyFormatter = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' })
@@ -605,6 +606,12 @@ const PreventiviDetail = () => {
   const [selPacchetto, setSelPacchetto] = useState('')
   const [pkgPreview, setPkgPreview] = useState([])
   const [pkgOnlyActive, setPkgOnlyActive] = useState(true)
+  // Contratti (modal selezione righe contratto)
+  const [contrattoOpen, setContrattoOpen] = useState(false)
+  const [contrattoSearch, setContrattoSearch] = useState('')
+  const [contrattoOptions, setContrattoOptions] = useState([])
+  const [selContratto, setSelContratto] = useState('')
+  const [contrattoPreview, setContrattoPreview] = useState([])
 
   useEffect(() => {
     const currentId = Number(idAnagrafica || clienteDisplay.id || 0)
@@ -1604,6 +1611,12 @@ const PreventiviDetail = () => {
     setPkgOptions([])
     setPkgPreview([])
   }
+  const resetContrattoModal = () => {
+    setContrattoSearch('')
+    setSelContratto('')
+    setContrattoOptions([])
+    setContrattoPreview([])
+  }
   const handleRemoveRiga = (index) => {
     setRighe((rows) => rows.filter((_, i) => i !== index))
   }
@@ -1752,6 +1765,54 @@ const PreventiviDetail = () => {
     loadDetail()
     return () => controller.abort()
   }, [token, pkgOpen, selPacchetto])
+
+  // Carica contratti quando apro modal o modifico ricerca/cliente.
+  useEffect(() => {
+    if (!token || !contrattoOpen) return
+    const controller = new AbortController()
+    const load = async () => {
+      try {
+        const anagraficaId = Number(idAnagrafica) || undefined
+        const { items } = await fetchContratti({
+          token,
+          q: contrattoSearch,
+          id_anagrafica: anagraficaId,
+          onlyActive: true,
+          signal: controller.signal,
+        })
+        setContrattoOptions(Array.isArray(items) ? items : [])
+      } catch (_e) {
+        setContrattoOptions([])
+      }
+    }
+    load()
+    return () => controller.abort()
+  }, [token, contrattoOpen, contrattoSearch, idAnagrafica])
+
+  // Carica righe contratto selezionato.
+  useEffect(() => {
+    if (!token || !contrattoOpen) return
+    if (!selContratto) {
+      setContrattoPreview([])
+      return
+    }
+    const controller = new AbortController()
+    const loadDetail = async () => {
+      try {
+        const detail = await fetchContrattoDetail({
+          token,
+          id: Number(selContratto),
+          signal: controller.signal,
+        })
+        const rows = Array.isArray(detail?.righe) ? detail.righe : []
+        setContrattoPreview(rows)
+      } catch (_e) {
+        setContrattoPreview([])
+      }
+    }
+    loadDetail()
+    return () => controller.abort()
+  }, [token, contrattoOpen, selContratto])
 
   // Aggiorna lo stato documento e registra il cambio nel log storico.
   const handleStatusChange = useCallback(async (nextCode) => {
@@ -2487,7 +2548,22 @@ const PreventiviDetail = () => {
     })
   }, [statusOptions])
 
-  const uiDisabled = !editable || anagraficaDisabled
+  const accountType = String(user?.accountType || user?.account_type || '').toLowerCase().trim()
+  const isCustomerAccount = accountType === 'cliente'
+  const uiDisabled = !editable || anagraficaDisabled || isCustomerAccount
+  const isBozzaStatus = useCallback((value) => String(value || '').trim().toLowerCase() === 'bozza', [])
+  const visibleLinkedLavorazioni = useMemo(
+    () => (Array.isArray(linkedLavorazioni) ? linkedLavorazioni.filter((item) => !isBozzaStatus(item?.stato)) : []),
+    [linkedLavorazioni, isBozzaStatus],
+  )
+  const visibleLinkedDdt = useMemo(
+    () => (Array.isArray(linkedDdt) ? linkedDdt.filter((item) => !isBozzaStatus(item?.stato_label || item?.stato_code || item?.stato)) : []),
+    [linkedDdt, isBozzaStatus],
+  )
+  const visibleLinkedFatture = useMemo(
+    () => (Array.isArray(linkedFatture) ? linkedFatture.filter((item) => !isBozzaStatus(item?.stato_label || item?.stato_code || item?.stato)) : []),
+    [linkedFatture, isBozzaStatus],
+  )
   const latestRevisionLabel = revisions.length > 0 ? revisions[0].label : null
   const revisionModalDetail = revisionModalData?.payload?.detail ?? null
   const revisionModalLines = Array.isArray(revisionModalDetail?.righe) ? revisionModalDetail.righe : []
@@ -2500,6 +2576,12 @@ const PreventiviDetail = () => {
       bozzaSaveHandlerRef.current()
     }
   }, [pendingOggettoCreate, submitting, uiDisabled])
+
+  useEffect(() => {
+    if (isCustomerAccount && statusTab !== 'documenti') {
+      setStatusTab('documenti')
+    }
+  }, [isCustomerAccount, statusTab])
 
   useEffect(() => {
     if (!id && !createMode) {
@@ -2516,7 +2598,7 @@ const PreventiviDetail = () => {
         disabled: loading,
       })
     }
-    if (!loading && !loadError) {
+    if (!isCustomerAccount && !loading && !loadError) {
       actions.push({
         id: 'preventivo-save',
         label: submitting ? 'Salvataggio preventivo...' : 'Aggiorna bozza',
@@ -2534,6 +2616,7 @@ const PreventiviDetail = () => {
     id,
     loadError,
     loading,
+    isCustomerAccount,
     pendingOggettoCreate,
     setBreadcrumbActions,
     submitting,
@@ -2546,7 +2629,7 @@ const PreventiviDetail = () => {
   }
 
   return (
-    <CCard>
+    <CCard className={isCustomerAccount ? 'customer-readonly' : undefined}>
       <CCardHeader>
         <div className="d-flex justify-content-between align-items-center flex-wrap gap-3">
           <div>
@@ -2596,28 +2679,32 @@ const PreventiviDetail = () => {
               <CIcon icon={cibAdobeAcrobatReader} className="me-2" />
               Stampa PDF
             </CButton>
-            <CButton
-              color="warning"
-              variant="outline"
-              size="sm"
-              type="button"
-              onClick={handleArchivePreventivo}
-              disabled={loading || archiveLoading || !token}
-            >
-              <CIcon icon={cilTrash} className="me-2" />
-              Archivia
-            </CButton>
-            <CButton
-              color="secondary"
-              variant="outline"
-              size="sm"
-              type="button"
-              onClick={handleDuplicatePreventivo}
-              disabled={loading || archiveLoading || duplicateLoading || !token}
-            >
-              <CIcon icon={cilCopy} className="me-2" />
-              {duplicateLoading ? 'Duplicazione...' : (isAcquisto ? 'Duplica' : 'Duplica per nuove attività')}
-            </CButton>
+            {!isCustomerAccount && (
+              <CButton
+                color="warning"
+                variant="outline"
+                size="sm"
+                type="button"
+                onClick={handleArchivePreventivo}
+                disabled={loading || archiveLoading || !token}
+              >
+                <CIcon icon={cilTrash} className="me-2" />
+                Archivia
+              </CButton>
+            )}
+            {!isCustomerAccount && (
+              <CButton
+                color="secondary"
+                variant="outline"
+                size="sm"
+                type="button"
+                onClick={handleDuplicatePreventivo}
+                disabled={loading || archiveLoading || duplicateLoading || !token}
+              >
+                <CIcon icon={cilCopy} className="me-2" />
+                {duplicateLoading ? 'Duplicazione...' : (isAcquisto ? 'Duplica' : 'Duplica per nuove attività')}
+              </CButton>
+            )}
             {isConfirmed && (
               <>
                 {!isAcquisto && hasLinkedLavorazione ? (
@@ -2733,7 +2820,7 @@ const PreventiviDetail = () => {
               </CAlert>
             )}
 
-            {!editable && (
+            {!editable && !isCustomerAccount && (
               <CAlert color="info" className="mb-3">
                 Il documento non è in stato bozza. La modifica è disabilitata.
               </CAlert>
@@ -2741,21 +2828,27 @@ const PreventiviDetail = () => {
 
             <section className="mb-4">
               <CNav variant="tabs" role="tablist" className="mb-3">
-                <CNavItem>
-                  <CNavLink active={statusTab === 'timeline'} role="tab" aria-selected={statusTab === 'timeline'} onClick={() => setStatusTab('timeline')}>
-                    Timeline
-                  </CNavLink>
-                </CNavItem>
-                <CNavItem>
-                  <CNavLink active={statusTab === 'storico'} role="tab" aria-selected={statusTab === 'storico'} onClick={() => setStatusTab('storico')}>
-                    Storico
-                  </CNavLink>
-                </CNavItem>
-                <CNavItem>
-                  <CNavLink active={statusTab === 'revisioni'} role="tab" aria-selected={statusTab === 'revisioni'} onClick={() => setStatusTab('revisioni')}>
-                    Revisioni
-                  </CNavLink>
-                </CNavItem>
+                {!isCustomerAccount && (
+                  <CNavItem>
+                    <CNavLink active={statusTab === 'timeline'} role="tab" aria-selected={statusTab === 'timeline'} onClick={() => setStatusTab('timeline')}>
+                      Timeline
+                    </CNavLink>
+                  </CNavItem>
+                )}
+                {!isCustomerAccount && (
+                  <CNavItem>
+                    <CNavLink active={statusTab === 'storico'} role="tab" aria-selected={statusTab === 'storico'} onClick={() => setStatusTab('storico')}>
+                      Storico
+                    </CNavLink>
+                  </CNavItem>
+                )}
+                {!isCustomerAccount && (
+                  <CNavItem>
+                    <CNavLink active={statusTab === 'revisioni'} role="tab" aria-selected={statusTab === 'revisioni'} onClick={() => setStatusTab('revisioni')}>
+                      Revisioni
+                    </CNavLink>
+                  </CNavItem>
+                )}
                 <CNavItem>
                   <CNavLink active={statusTab === 'documenti'} role="tab" aria-selected={statusTab === 'documenti'} onClick={() => setStatusTab('documenti')}>
                     Documenti correlati
@@ -2763,7 +2856,7 @@ const PreventiviDetail = () => {
                 </CNavItem>
               </CNav>
               <CTabContent>
-                <CTabPane visible={statusTab === 'timeline'} role="tabpanel">
+                {!isCustomerAccount && <CTabPane visible={statusTab === 'timeline'} role="tabpanel">
                   {visualStatusSteps.length > 0 && (
                     <>
                       {statusError && (
@@ -2834,8 +2927,8 @@ const PreventiviDetail = () => {
                       </div>
                     </>
                   )}
-                </CTabPane>
-                <CTabPane visible={statusTab === 'storico'} role="tabpanel">
+                </CTabPane>}
+                {!isCustomerAccount && <CTabPane visible={statusTab === 'storico'} role="tabpanel">
                   {statusLogLoading && (
                     <div className="d-flex align-items-center gap-2">
                       <CSpinner size="sm" />
@@ -2875,8 +2968,8 @@ const PreventiviDetail = () => {
                       </CTable>
                     )
                   )}
-                </CTabPane>
-                <CTabPane visible={statusTab === 'revisioni'} role="tabpanel">
+                </CTabPane>}
+                {!isCustomerAccount && <CTabPane visible={statusTab === 'revisioni'} role="tabpanel">
                   {revisions.length === 0 ? (
                     <small className="text-body-secondary">Nessuna revisione registrata.</small>
                   ) : (
@@ -2914,12 +3007,12 @@ const PreventiviDetail = () => {
                       </CTableBody>
                     </CTable>
                   )}
-                </CTabPane>
+                </CTabPane>}
                 <CTabPane visible={statusTab === 'documenti'} role="tabpanel">
                   {!isAcquisto && (
                     <>
                       <h6 className="text-body-secondary mb-3">Lavorazioni collegate</h6>
-                      {linkedLavorazioni.length === 0 ? (
+                      {visibleLinkedLavorazioni.length === 0 ? (
                         <CAlert color="info" className="mb-4">Nessuna lavorazione collegata al preventivo.</CAlert>
                       ) : (
                         <CTable data-testid="table" small responsive className="mb-4">
@@ -2929,26 +3022,28 @@ const PreventiviDetail = () => {
                               <CTableHeaderCell>Titolo</CTableHeaderCell>
                               <CTableHeaderCell>Stato</CTableHeaderCell>
                               <CTableHeaderCell>Creata il</CTableHeaderCell>
-                              <CTableHeaderCell className="text-center">Azioni</CTableHeaderCell>
+                              {!isCustomerAccount && <CTableHeaderCell className="text-center">Azioni</CTableHeaderCell>}
                             </CTableRow>
                           </CTableHead>
                           <CTableBody>
-                            {linkedLavorazioni.map((lavorazione) => (
+                            {visibleLinkedLavorazioni.map((lavorazione) => (
                               <CTableRow key={lavorazione.id}>
                                 <CTableDataCell>{lavorazione.codice || `ID ${lavorazione.id}`}</CTableDataCell>
                                 <CTableDataCell>{lavorazione.titolo || '-'}</CTableDataCell>
                                 <CTableDataCell>{lavorazione.stato || '-'}</CTableDataCell>
                                 <CTableDataCell>{formatDateTime(lavorazione.created_at)}</CTableDataCell>
-                                <CTableDataCell className="text-center">
-                                  <CButton
-                                    color="link"
-                                    size="sm"
-                                    className="p-0"
-                                    onClick={() => handleOpenLavorazioneDetail(lavorazione.id)}
-                                  >
-                                    Dettagli
-                                  </CButton>
-                                </CTableDataCell>
+                                {!isCustomerAccount && (
+                                  <CTableDataCell className="text-center">
+                                    <CButton
+                                      color="link"
+                                      size="sm"
+                                      className="p-0"
+                                      onClick={() => handleOpenLavorazioneDetail(lavorazione.id)}
+                                    >
+                                      Dettagli
+                                    </CButton>
+                                  </CTableDataCell>
+                                )}
                               </CTableRow>
                             ))}
                           </CTableBody>
@@ -2959,7 +3054,7 @@ const PreventiviDetail = () => {
                   <CRow className="g-4">
                     <CCol md={6}>
                       <h6 className="text-body-secondary mb-3">DDT collegati</h6>
-                      {linkedDdt.length === 0 ? (
+                      {visibleLinkedDdt.length === 0 ? (
                         <CAlert color="info" className="mb-0">Nessun DDT collegato al preventivo.</CAlert>
                       ) : (
                         <CTable data-testid="table" small responsive>
@@ -2970,11 +3065,11 @@ const PreventiviDetail = () => {
                               <CTableHeaderCell>Causale</CTableHeaderCell>
                               <CTableHeaderCell className="text-end">Pezzi</CTableHeaderCell>
                               <CTableHeaderCell className="text-end">Peso (kg)</CTableHeaderCell>
-                              <CTableHeaderCell className="text-center">Azioni</CTableHeaderCell>
+                              {!isCustomerAccount && <CTableHeaderCell className="text-center">Azioni</CTableHeaderCell>}
                             </CTableRow>
                           </CTableHead>
                           <CTableBody>
-                            {linkedDdt.map((doc) => (
+                            {visibleLinkedDdt.map((doc) => (
                               <CTableRow key={doc.id_ddt}>
                                 <CTableDataCell>
                                   {doc.anno ?? '-'}/{doc.numero_documento ?? '-'}
@@ -2987,16 +3082,18 @@ const PreventiviDetail = () => {
                                 <CTableDataCell className="text-end">
                                   {formatNumberValue(doc.totale_peso_kg, 3)}
                                 </CTableDataCell>
-                                <CTableDataCell className="text-center">
-                                  <CButton
-                                    color="link"
-                                    size="sm"
-                                    className="p-0"
-                                    onClick={() => navigate(`/ddt/dettagli?id=${doc.id_ddt}`)}
-                                  >
-                                    Dettagli
-                                  </CButton>
-                                </CTableDataCell>
+                                {!isCustomerAccount && (
+                                  <CTableDataCell className="text-center">
+                                    <CButton
+                                      color="link"
+                                      size="sm"
+                                      className="p-0"
+                                      onClick={() => navigate(`/ddt/dettagli?id=${doc.id_ddt}`)}
+                                    >
+                                      Dettagli
+                                    </CButton>
+                                  </CTableDataCell>
+                                )}
                               </CTableRow>
                             ))}
                           </CTableBody>
@@ -3005,7 +3102,7 @@ const PreventiviDetail = () => {
                     </CCol>
                     <CCol md={6}>
                       <h6 className="text-body-secondary mb-3">Fatture collegate</h6>
-                      {linkedFatture.length === 0 ? (
+                      {visibleLinkedFatture.length === 0 ? (
                         <CAlert color="info" className="mb-0">Nessuna fattura collegata al preventivo.</CAlert>
                       ) : (
                         <CTable data-testid="table" small responsive>
@@ -3016,11 +3113,11 @@ const PreventiviDetail = () => {
                               <CTableHeaderCell className="text-end">Totale</CTableHeaderCell>
                               <CTableHeaderCell className="text-end">Saldo</CTableHeaderCell>
                               <CTableHeaderCell>Stato</CTableHeaderCell>
-                              <CTableHeaderCell className="text-center">Azioni</CTableHeaderCell>
+                              {!isCustomerAccount && <CTableHeaderCell className="text-center">Azioni</CTableHeaderCell>}
                             </CTableRow>
                           </CTableHead>
                           <CTableBody>
-                            {linkedFatture.map((doc) => (
+                            {visibleLinkedFatture.map((doc) => (
                               <CTableRow key={doc.id_fattura}>
                                 <CTableDataCell>
                                   {doc.anno ?? '-'}/{doc.numero_documento ?? '-'}
@@ -3035,16 +3132,18 @@ const PreventiviDetail = () => {
                                     <span className="text-body-secondary">-</span>
                                   )}
                                 </CTableDataCell>
-                                <CTableDataCell className="text-center">
-                                  <CButton
-                                    color="link"
-                                    size="sm"
-                                    className="p-0"
-                                    onClick={() => navigate(`/fatture/dettagli?id=${doc.id_fattura}`)}
-                                  >
-                                    Dettagli
-                                  </CButton>
-                                </CTableDataCell>
+                                {!isCustomerAccount && (
+                                  <CTableDataCell className="text-center">
+                                    <CButton
+                                      color="link"
+                                      size="sm"
+                                      className="p-0"
+                                      onClick={() => navigate(`/fatture/dettagli?id=${doc.id_fattura}`)}
+                                    >
+                                      Dettagli
+                                    </CButton>
+                                  </CTableDataCell>
+                                )}
                               </CTableRow>
                             ))}
                           </CTableBody>
@@ -3061,71 +3160,79 @@ const PreventiviDetail = () => {
               <CRow className="g-3">
                 <CCol md={6}>
                   <CFormLabel>{clienteLabel}</CFormLabel>
-                  <AnagraficaAutocomplete
-                    items={clientiOptions}
-                    value={idAnagrafica}
-                    onChange={(id) => setIdAnagrafica(id)}
-                    onChangeCliente={(cliente) => {
-                      // Evita aggiornamenti ridondanti del display cliente
-                      if (cliente) {
-                        const nextId = Number(cliente.id_anagrafica ?? cliente.id ?? idAnagrafica ?? 0) || null
-                        const nextLabel = String(
-                          cliente.ragione_sociale ?? cliente.ragioneSociale ?? cliente.cliente_ragione_sociale ?? ''
-                        )
-                        const nextCodice = cliente.codice_cliente ?? null
-                        const nextPiva = cliente.piva ?? null
-                        const nextCf = cliente.codice_fiscale ?? null
-                        const nextEmail = cliente.email ?? cliente.cliente_email ?? cliente.mail ?? null
-                        setClienteDisplay((prev) => {
-                          if (
-                            prev.id === nextId &&
-                            prev.label === nextLabel &&
-                            prev.codiceCliente === nextCodice &&
-                            prev.piva === nextPiva &&
-                            prev.codiceFiscale === nextCf &&
-                            prev.email === nextEmail
-                          ) {
-                            return prev
-                          }
-                          return {
-                            id: nextId,
-                            label: nextLabel,
-                            codiceCliente: nextCodice,
-                            piva: nextPiva,
-                            codiceFiscale: nextCf,
-                            email: nextEmail,
-                          }
-                        })
-                      } else {
-                        setClienteDisplay((prev) => {
-                          if (
-                            prev.id == null &&
-                            prev.label === '' &&
-                            prev.codiceCliente == null &&
-                            prev.piva == null &&
-                            prev.codiceFiscale == null &&
-                            prev.email == null
-                          ) {
-                            return prev
-                          }
-                          return {
-                            id: null,
-                            label: '',
-                            codiceCliente: null,
-                            piva: null,
-                            codiceFiscale: null,
-                            email: null,
-                          }
-                        })
-                      }
-                    }}
-                    onSearch={(q) => {
-                      const s = String(q || '')
-                      setClienteSearch((prev) => (prev === s ? prev : s))
-                    }}
-                    loading={loadingClienti}
-                    disabled={uiDisabled}
-                  />
+                  {isCustomerAccount ? (
+                    <CFormInput
+                      value={clienteDisplay?.label || ''}
+                      readOnly
+                      disabled
+                    />
+                  ) : (
+                    <AnagraficaAutocomplete
+                      items={clientiOptions}
+                      value={idAnagrafica}
+                      onChange={(id) => setIdAnagrafica(id)}
+                      onChangeCliente={(cliente) => {
+                        // Evita aggiornamenti ridondanti del display cliente
+                        if (cliente) {
+                          const nextId = Number(cliente.id_anagrafica ?? cliente.id ?? idAnagrafica ?? 0) || null
+                          const nextLabel = String(
+                            cliente.ragione_sociale ?? cliente.ragioneSociale ?? cliente.cliente_ragione_sociale ?? ''
+                          )
+                          const nextCodice = cliente.codice_cliente ?? null
+                          const nextPiva = cliente.piva ?? null
+                          const nextCf = cliente.codice_fiscale ?? null
+                          const nextEmail = cliente.email ?? cliente.cliente_email ?? cliente.mail ?? null
+                          setClienteDisplay((prev) => {
+                            if (
+                              prev.id === nextId &&
+                              prev.label === nextLabel &&
+                              prev.codiceCliente === nextCodice &&
+                              prev.piva === nextPiva &&
+                              prev.codiceFiscale === nextCf &&
+                              prev.email === nextEmail
+                            ) {
+                              return prev
+                            }
+                            return {
+                              id: nextId,
+                              label: nextLabel,
+                              codiceCliente: nextCodice,
+                              piva: nextPiva,
+                              codiceFiscale: nextCf,
+                              email: nextEmail,
+                            }
+                          })
+                        } else {
+                          setClienteDisplay((prev) => {
+                            if (
+                              prev.id == null &&
+                              prev.label === '' &&
+                              prev.codiceCliente == null &&
+                              prev.piva == null &&
+                              prev.codiceFiscale == null &&
+                              prev.email == null
+                            ) {
+                              return prev
+                            }
+                            return {
+                              id: null,
+                              label: '',
+                              codiceCliente: null,
+                              piva: null,
+                              codiceFiscale: null,
+                              email: null,
+                            }
+                          })
+                        }
+                      }}
+                      onSearch={(q) => {
+                        const s = String(q || '')
+                        setClienteSearch((prev) => (prev === s ? prev : s))
+                      }}
+                      loading={loadingClienti}
+                      disabled={uiDisabled}
+                    />
+                  )}
                 </CCol>
                 {!isAcquisto && (
                 <CCol md={6}>
@@ -3136,11 +3243,11 @@ const PreventiviDetail = () => {
                         <CTableHeaderCell style={{ width: '25%' }}>CIG</CTableHeaderCell>
                         <CTableHeaderCell style={{ width: '20%' }}>Data</CTableHeaderCell>
                         <CTableHeaderCell>Motivazione</CTableHeaderCell>
-                        <CTableHeaderCell style={{ width: '10%' }} className="text-center">Azioni</CTableHeaderCell>
+                        {!isCustomerAccount && <CTableHeaderCell style={{ width: '10%' }} className="text-center">Azioni</CTableHeaderCell>}
                       </CTableRow>
                     </CTableHead>
                     <CTableBody>
-                      <CTableRow>
+                      {!isCustomerAccount && <CTableRow>
                         <CTableDataCell>
                           <CFormInput placeholder="CIG" value={newCig.cig} onChange={(e) => setNewCig((s) => ({ ...s, cig: e.target.value }))} disabled={uiDisabled} />
                         </CTableDataCell>
@@ -3155,15 +3262,17 @@ const PreventiviDetail = () => {
                             Aggiungi
                           </CButton>
                         </CTableDataCell>
-                      </CTableRow>
+                      </CTableRow>}
                       {cigList.map((c, idx) => (
                         <CTableRow key={idx}>
                           <CTableDataCell>{c.cig}</CTableDataCell>
                           <CTableDataCell>{c.data_cig || '-'}</CTableDataCell>
                           <CTableDataCell>{c.motivazione || ''}</CTableDataCell>
-                          <CTableDataCell className="text-center">
-                            <CButton size="sm" color="link" type="button" onClick={() => removeCig(idx)} disabled={uiDisabled}>Rimuovi</CButton>
-                          </CTableDataCell>
+                          {!isCustomerAccount && (
+                            <CTableDataCell className="text-center">
+                              <CButton size="sm" color="link" type="button" onClick={() => removeCig(idx)} disabled={uiDisabled}>Rimuovi</CButton>
+                            </CTableDataCell>
+                          )}
                         </CTableRow>
                       ))}
                     </CTableBody>
@@ -3196,11 +3305,11 @@ const PreventiviDetail = () => {
                         <CTableHeaderCell style={{ width: '25%' }}>Determina</CTableHeaderCell>
                         <CTableHeaderCell style={{ width: '20%' }}>Data</CTableHeaderCell>
                         <CTableHeaderCell>Motivazione</CTableHeaderCell>
-                        <CTableHeaderCell style={{ width: '10%' }} className="text-center">Azioni</CTableHeaderCell>
+                        {!isCustomerAccount && <CTableHeaderCell style={{ width: '10%' }} className="text-center">Azioni</CTableHeaderCell>}
                       </CTableRow>
                     </CTableHead>
                     <CTableBody>
-                      <CTableRow>
+                      {!isCustomerAccount && <CTableRow>
                         <CTableDataCell>
                           <CFormInput placeholder="Num./Codice" value={newDetermina.determina} onChange={(e) => setNewDetermina((s) => ({ ...s, determina: e.target.value }))} disabled={uiDisabled} />
                         </CTableDataCell>
@@ -3215,15 +3324,17 @@ const PreventiviDetail = () => {
                             Aggiungi
                           </CButton>
                         </CTableDataCell>
-                      </CTableRow>
+                      </CTableRow>}
                       {determineList.map((d, idx) => (
                         <CTableRow key={idx}>
                           <CTableDataCell>{d.determina}</CTableDataCell>
                           <CTableDataCell>{d.data_determina || '-'}</CTableDataCell>
                           <CTableDataCell>{d.motivazione || ''}</CTableDataCell>
-                          <CTableDataCell className="text-center">
-                            <CButton size="sm" color="link" type="button" onClick={() => removeDetermina(idx)} disabled={uiDisabled}>Rimuovi</CButton>
-                          </CTableDataCell>
+                          {!isCustomerAccount && (
+                            <CTableDataCell className="text-center">
+                              <CButton size="sm" color="link" type="button" onClick={() => removeDetermina(idx)} disabled={uiDisabled}>Rimuovi</CButton>
+                            </CTableDataCell>
+                          )}
                         </CTableRow>
                       ))}
                     </CTableBody>
@@ -3232,7 +3343,20 @@ const PreventiviDetail = () => {
                 )}
                 <CCol md={6}>
                   <CFormLabel>Attività lavorative</CFormLabel>
-                  <CMultiSelect
+                  {isCustomerAccount ? (
+                    <CFormInput
+                      value={selectedOggetti
+                        .map((id) => {
+                          const found = (oggettiOptions || []).find((opt) => Number(opt?.id ?? opt?.id_oggetto ?? 0) === Number(id))
+                          return found?.label || null
+                        })
+                        .filter(Boolean)
+                        .join(' - ')}
+                      readOnly
+                      disabled
+                    />
+                  ) : (
+                    <CMultiSelect
                     options={oggettiOptions}
                     selectionType="tags"
                     placeholder="Seleziona o crea opzioni"
@@ -3290,11 +3414,12 @@ const PreventiviDetail = () => {
                       return null
                     }}
                   />
+                  )}
                 </CCol>
               </CRow>
             </section>
 
-            {!isAcquisto && (
+            {!isAcquisto && !isCustomerAccount && (
             <section className="mb-4">
               <div className="d-flex align-items-start justify-content-between mb-2">
                 <h6 className="mb-0 text-body-secondary">Mittente spedizione</h6>
@@ -3411,11 +3536,101 @@ const PreventiviDetail = () => {
                   <CButton color="primary" variant="outline" size="sm" onClick={() => { resetProductModal(); setStepperOpen(true) }} disabled={uiDisabled}>
                     Selettore prodotti
                   </CButton>
+                  <CButton color="primary" variant="outline" size="sm" type="button" onClick={() => { resetContrattoModal(); setContrattoOpen(true) }} disabled={uiDisabled || !Number(idAnagrafica)}>
+                    Importa da contratto
+                  </CButton>
                   <CButton color="primary" size="sm" type="button" onClick={() => { resetPkgModal(); setPkgOpen(true) }} disabled={uiDisabled}>
                     Inserisci pacchetto
                   </CButton>
                 </div>
               </div>
+              {/* Modal selezione contratto */}
+              <CModal visible={contrattoOpen} onClose={() => setContrattoOpen(false)} size="lg" backdrop="static">
+                <CModalHeader>
+                  <CModalTitle>Importa righe da contratto</CModalTitle>
+                </CModalHeader>
+                <CModalBody>
+                  <CRow className="g-3 mb-3 align-items-end">
+                    <CCol md={7}>
+                      <CFormLabel>Ricerca</CFormLabel>
+                      <CFormInput
+                        placeholder="Titolo o codice contratto"
+                        value={contrattoSearch}
+                        onChange={(e) => setContrattoSearch(e.target.value)}
+                        disabled={uiDisabled}
+                      />
+                    </CCol>
+                    <CCol md={5}>
+                      <CFormLabel>Contratto</CFormLabel>
+                      <CFormSelect
+                        value={selContratto}
+                        onChange={(e) => setSelContratto(e.target.value)}
+                        disabled={uiDisabled}
+                      >
+                        <option value="">Seleziona…</option>
+                        {contrattoOptions.map((c) => (
+                          <option key={c.id_contratto} value={c.id_contratto}>
+                            {c.codice ? `${c.codice} - ${c.titolo}` : c.titolo}
+                          </option>
+                        ))}
+                      </CFormSelect>
+                    </CCol>
+                  </CRow>
+                  {contrattoPreview.length > 0 && (
+                    <div className="border rounded p-2">
+                      <div className="fw-semibold mb-2">Righe del contratto</div>
+                      <CTable data-testid="table" small hover responsive>
+                        <CTableHead className="mp-table-head">
+                          <CTableRow>
+                            <CTableHeaderCell>Descrizione</CTableHeaderCell>
+                            <CTableHeaderCell className="text-end">Prezzo</CTableHeaderCell>
+                            <CTableHeaderCell className="text-end">IVA %</CTableHeaderCell>
+                            <CTableHeaderCell className="text-end">Sconto %</CTableHeaderCell>
+                          </CTableRow>
+                        </CTableHead>
+                        <CTableBody>
+                          {contrattoPreview.map((r, idx) => (
+                            <CTableRow key={idx}>
+                              <CTableDataCell>{r.descrizione || '-'}</CTableDataCell>
+                              <CTableDataCell className="text-end">{(Number(r.prezzo_unitario) || 0).toFixed(2)}</CTableDataCell>
+                              <CTableDataCell className="text-end">{r.iva ?? '-'}</CTableDataCell>
+                              <CTableDataCell className="text-end">{r.sconto_base ?? 0}</CTableDataCell>
+                            </CTableRow>
+                          ))}
+                        </CTableBody>
+                      </CTable>
+                    </div>
+                  )}
+                </CModalBody>
+                <CModalFooter className="d-flex justify-content-between">
+                  <div />
+                  <div className="d-flex gap-2">
+                    <CButton color="link" onClick={() => setContrattoOpen(false)}>Annulla</CButton>
+                    <CButton
+                      color="primary"
+                      disabled={!selContratto || contrattoPreview.length === 0 || uiDisabled}
+                      onClick={() => {
+                        if (!selContratto || contrattoPreview.length === 0) return
+                        const newLines = contrattoPreview.map((r) => ({
+                          descrizione: r.descrizione ?? '',
+                          quantita: 1,
+                          prezzo: Number(r.prezzo_unitario) || 0,
+                          iva: r.iva != null ? Number(r.iva) : 22,
+                          sconto: r.sconto_base != null ? Number(r.sconto_base) : 0,
+                          id_prodotto: r.id_prodotto ?? null,
+                          combo_key: r.combo_key ?? null,
+                          id_sdi_natura_iva: r.id_sdi_natura_iva ?? null,
+                          id_contratto: Number(selContratto) || null,
+                        }))
+                        setRighe((rows) => rows.concat(newLines))
+                        setContrattoOpen(false)
+                      }}
+                    >
+                      Inserisci in preventivo
+                    </CButton>
+                  </div>
+                </CModalFooter>
+              </CModal>
               {/* Modal selezione pacchetto */}
               <CModal visible={pkgOpen} onClose={() => setPkgOpen(false)} size="lg" backdrop="static">
                 <CModalHeader>
@@ -3953,9 +4168,11 @@ const PreventiviDetail = () => {
                     <CTableHeaderCell className="text-end">Imponibile</CTableHeaderCell>
                     <CTableHeaderCell className="text-end">IVA</CTableHeaderCell>
                     <CTableHeaderCell className="text-end">Totale</CTableHeaderCell>
-                    <CTableHeaderCell className="text-center">
-                      Azioni
-                    </CTableHeaderCell>
+                    {!isCustomerAccount && (
+                      <CTableHeaderCell className="text-center">
+                        Azioni
+                      </CTableHeaderCell>
+                    )}
                   </CTableRow>
                 </CTableHead>
                 <CTableBody>
@@ -3987,7 +4204,7 @@ const PreventiviDetail = () => {
                     for (const [cat, arr] of groups) {
                       out.push(
                         <CTableRow key={`grp-${cat}`}>
-                          <CTableDataCell colSpan={10} className="bg-body-secondary fw-semibold">
+                          <CTableDataCell colSpan={isCustomerAccount ? 9 : 10} className="bg-body-secondary fw-semibold">
                             Categoria: {cat}
                           </CTableDataCell>
                         </CTableRow>,
@@ -4093,30 +4310,41 @@ const PreventiviDetail = () => {
                               />
                             </CTableDataCell>
                             <CTableDataCell className="text-end">
-                              <CFormSelect
-                                value={riga.id_sdi_natura_iva ?? ''}
-                                onChange={(e) => updateRiga(idx, { id_sdi_natura_iva: e.target.value ? Number(e.target.value) : null })}
-                                disabled={uiDisabled || Number(riga.iva) !== 0}
-                                style={SELECT_OPTION_WRAP_STYLE}
-                              >
-                                <option value="" style={SELECT_OPTION_WRAP_STYLE}>
-                                  --
-                                </option>
-                                {naturaOptions.map((n) => (
-                                  <option key={n.id_natura} value={n.id_natura} style={SELECT_OPTION_WRAP_STYLE}>
-                                    {n.code} - {n.label}
+                              {isCustomerAccount ? (
+                                <span>
+                                  {(() => {
+                                    const selected = naturaOptions.find((n) => Number(n.id_natura) === Number(riga.id_sdi_natura_iva))
+                                    return selected ? `${selected.code} - ${selected.label}` : '--'
+                                  })()}
+                                </span>
+                              ) : (
+                                <CFormSelect
+                                  value={riga.id_sdi_natura_iva ?? ''}
+                                  onChange={(e) => updateRiga(idx, { id_sdi_natura_iva: e.target.value ? Number(e.target.value) : null })}
+                                  disabled={uiDisabled || Number(riga.iva) !== 0}
+                                  style={SELECT_OPTION_WRAP_STYLE}
+                                >
+                                  <option value="" style={SELECT_OPTION_WRAP_STYLE}>
+                                    --
                                   </option>
-                                ))}
-                              </CFormSelect>
+                                  {naturaOptions.map((n) => (
+                                    <option key={n.id_natura} value={n.id_natura} style={SELECT_OPTION_WRAP_STYLE}>
+                                      {n.code} - {n.label}
+                                    </option>
+                                  ))}
+                                </CFormSelect>
+                              )}
                             </CTableDataCell>
                             <CTableDataCell className="text-end">{formatCurrency(impon)}</CTableDataCell>
                             <CTableDataCell className="text-end">{formatCurrency(ivaVal)}</CTableDataCell>
                             <CTableDataCell className="text-end">{formatCurrency(tot)}</CTableDataCell>
-                            <CTableDataCell className="text-center">
-                              <CButton color="link" size="sm" className="p-0" onClick={() => handleRemoveRiga(idx)} disabled={uiDisabled}>
-                                <CIcon icon={cilX} />
-                              </CButton>
-                            </CTableDataCell>
+                            {!isCustomerAccount && (
+                              <CTableDataCell className="text-center">
+                                <CButton color="link" size="sm" className="p-0" onClick={() => handleRemoveRiga(idx)} disabled={uiDisabled}>
+                                  <CIcon icon={cilX} />
+                                </CButton>
+                              </CTableDataCell>
+                            )}
                           </CTableRow>,
                         )
                       }
@@ -4169,9 +4397,11 @@ const PreventiviDetail = () => {
             </section>
 
             <div className="d-flex gap-2">
-              <CButton color="secondary" variant="outline" type="button" onClick={handleSalvaBozza} disabled={uiDisabled || submitting || pendingOggettoCreate}>
-                <CIcon icon={cilSave} className="me-2" /> Aggiorna bozza
-              </CButton>
+              {!isCustomerAccount && (
+                <CButton color="secondary" variant="outline" type="button" onClick={handleSalvaBozza} disabled={uiDisabled || submitting || pendingOggettoCreate}>
+                  <CIcon icon={cilSave} className="me-2" /> Aggiorna bozza
+                </CButton>
+              )}
               <CButton color="link" type="button" onClick={() => navigate(`${basePath}/lista`)}>
                 Torna alla lista
               </CButton>
