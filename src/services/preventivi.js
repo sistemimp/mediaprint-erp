@@ -1,7 +1,13 @@
-import { apiFetch } from './apiClient'
+import { apiFetch, buildApiUrl, getStoredToken } from './apiClient'
 
 // Recupera gli ultimi preventivi (vendita/acquisto) con limite opzionale.
-export const fetchLatestPreventivi = async ({ token, signal, limit, is_acquisto, id_anagrafica } = {}) => {
+export const fetchLatestPreventivi = async ({
+  token,
+  signal,
+  limit,
+  is_acquisto,
+  id_anagrafica,
+} = {}) => {
   const params = {}
   if (limit !== undefined && limit !== null) {
     params.limit = limit
@@ -40,7 +46,16 @@ export const fetchPreventiviDashboard = async ({ token, period, is_acquisto, sig
 }
 
 // Recupera archivio preventivi con paginazione, ricerca e sorting.
-export const fetchPreventiviArchivio = async ({ token, signal, page, pageSize, search, sortBy, sortDirection, is_acquisto } = {}) => {
+export const fetchPreventiviArchivio = async ({
+  token,
+  signal,
+  page,
+  pageSize,
+  search,
+  sortBy,
+  sortDirection,
+  is_acquisto,
+} = {}) => {
   const params = {}
   if (page) params.page = page
   if (pageSize) params.per_page = pageSize
@@ -138,12 +153,30 @@ export const fetchPreventivoDetail = async ({ token, id, is_acquisto, signal } =
   const linkedFatture = Array.isArray(response?.linked_fatture) ? response.linked_fatture : []
   const linkedLavorazioni = Array.isArray(response?.linked_lavorazioni)
     ? response.linked_lavorazioni
-    : (Array.isArray(response?.data?.lavorazioni) ? response.data.lavorazioni : [])
+    : Array.isArray(response?.data?.lavorazioni)
+      ? response.data.lavorazioni
+      : []
   const statuses = Array.isArray(response?.meta?.statuses) ? response.meta.statuses : []
   const currentStatus = response?.meta?.current_status ?? null
   const revisions = Array.isArray(response?.meta?.revisions) ? response.meta.revisions : []
   const stockAlerts = Array.isArray(response?.stock_alerts) ? response.stock_alerts : []
-  return { data, editable, righe, stockAlerts, cig, determine, contatti, linkedDdt, linkedFatture, linkedLavorazioni, statuses, currentStatus, revisions }
+  const acceptanceExists = Boolean(response?.meta?.acceptance_exists)
+  return {
+    data,
+    editable,
+    righe,
+    stockAlerts,
+    cig,
+    determine,
+    contatti,
+    linkedDdt,
+    linkedFatture,
+    linkedLavorazioni,
+    statuses,
+    currentStatus,
+    revisions,
+    acceptanceExists,
+  }
 }
 
 // Opzioni per la multi-select "Oggetto preventivo"
@@ -178,7 +211,12 @@ export const fetchPreventivoOggettiOptions = async ({ token, signal } = {}) => {
 
 // Crea una nuova opzione "oggetto preventivo" nel DB
 // Crea una nuova voce oggetto preventivo e ritorna il record normalizzato.
-export const createPreventivoOggettoOption = async ({ token, label, active = true, signal } = {}) => {
+export const createPreventivoOggettoOption = async ({
+  token,
+  label,
+  active = true,
+  signal,
+} = {}) => {
   const response = await apiFetch('/preventiviOggettiCreate.php', {
     method: 'POST',
     token,
@@ -228,7 +266,7 @@ export const reactivatePreventivo = async ({ token, id, signal } = {}) => {
 export const archivePreventivo = async ({ token, id, signal } = {}) => {
   const numericId = Number(id)
   if (!Number.isFinite(numericId) || numericId <= 0) {
-    throw new Error('ID preventivo mancante o non valido per l\'archiviazione.')
+    throw new Error("ID preventivo mancante o non valido per l'archiviazione.")
   }
 
   const response = await apiFetch('/preventiviArchive.php', {
@@ -242,7 +280,14 @@ export const archivePreventivo = async ({ token, id, signal } = {}) => {
 }
 
 // Aggiorna lo stato del preventivo con nota e operatore opzionali.
-export const updatePreventivoStatus = async ({ token, id, statusCode, operatorName, note, signal } = {}) => {
+export const updatePreventivoStatus = async ({
+  token,
+  id,
+  statusCode,
+  operatorName,
+  note,
+  signal,
+} = {}) => {
   const numericId = Number(id)
   const payload = {
     stato: statusCode,
@@ -276,7 +321,18 @@ export const updatePreventivoStatus = async ({ token, id, statusCode, operatorNa
 
 // Salva un log del cambio stato (best-effort; non blocca il flusso se fallisce)
 // Registra un evento di cambio stato nel log storico preventivo.
-export const logPreventivoStatusChange = async ({ token, id, fromStatus, toStatus, note, description, context, userId, userName, signal } = {}) => {
+export const logPreventivoStatusChange = async ({
+  token,
+  id,
+  fromStatus,
+  toStatus,
+  note,
+  description,
+  context,
+  userId,
+  userName,
+  signal,
+} = {}) => {
   const numericId = Number(id)
   const body = {
     id: Number.isFinite(numericId) && numericId > 0 ? numericId : id,
@@ -320,11 +376,11 @@ export const fetchPreventivoStatusLog = async ({ token, id, signal } = {}) => {
 
   const items = Array.isArray(response?.items)
     ? response.items
-    : (Array.isArray(response?.data)
+    : Array.isArray(response?.data)
       ? response.data
-      : (Array.isArray(response)
+      : Array.isArray(response)
         ? response
-        : []))
+        : []
 
   return { items }
 }
@@ -336,7 +392,17 @@ export const logPreventivoEvent = async (args = {}) => {
 }
 
 // Invia via email il preventivo con metadati di revisione opzionali.
-export const sendPreventivoEmail = async ({ token, id, to, cc, subject, message, revisionNote, revisionOperator, signal } = {}) => {
+export const sendPreventivoEmail = async ({
+  token,
+  id,
+  to,
+  cc,
+  subject,
+  message,
+  revisionNote,
+  revisionOperator,
+  signal,
+} = {}) => {
   const numericId = Number(id)
   const body = {
     id_preventivo: Number.isFinite(numericId) && numericId > 0 ? numericId : id,
@@ -378,10 +444,12 @@ export const fetchPreventivoRevisionDetail = async ({ token, id, signal } = {}) 
 // Recupera un riepilogo revisioni per una lista di preventivi.
 export const fetchPreventiviRevisionsSummary = async ({ token, ids = [], signal } = {}) => {
   const validIds = Array.isArray(ids)
-    ? ids.map((value) => {
-        const num = Number(value)
-        return Number.isFinite(num) && num > 0 ? num : null
-      }).filter(Number.isFinite)
+    ? ids
+        .map((value) => {
+          const num = Number(value)
+          return Number.isFinite(num) && num > 0 ? num : null
+        })
+        .filter(Number.isFinite)
     : []
 
   const response = await apiFetch('/preventiviRevisionsSummary.php', {
@@ -422,4 +490,64 @@ export const generateLavorazioneFromPreventivo = async ({
   })
 
   return response ?? {}
+}
+
+// Recupera artefatti accettazione (PDF firmato + ricevute firma OTP) per il preventivo.
+export const fetchPreventivoAcceptanceArtifacts = async ({ token, id, signal } = {}) => {
+  const numericId = Number(id)
+  const params = {
+    id: Number.isFinite(numericId) && numericId > 0 ? numericId : id,
+  }
+  const response = await apiFetch('/preventiviAcceptance.php', {
+    token,
+    params,
+    signal,
+  })
+  return {
+    items: Array.isArray(response?.items) ? response.items : [],
+    pdfUrl: typeof response?.pdf_url === 'string' ? response.pdf_url : '',
+  }
+}
+
+// Scarica il PDF di accettazione autenticato e ritorna un object URL per iframe.
+export const fetchPreventivoAcceptancePdfObjectUrl = async ({
+  token,
+  id,
+  signal,
+  signedOnly = false,
+} = {}) => {
+  const numericId = Number(id)
+  const url = buildApiUrl('/preventiviAcceptancePdf.php', {
+    id: Number.isFinite(numericId) && numericId > 0 ? numericId : id,
+    refresh: 1,
+    ...(signedOnly ? { signed: 1 } : {}),
+  })
+  const resolvedToken = token || getStoredToken()
+  const headers = {
+    Accept: 'application/pdf',
+  }
+  if (resolvedToken) {
+    headers.Authorization = `Bearer ${resolvedToken}`
+    headers['X-Authorization'] = `Bearer ${resolvedToken}`
+    headers['X-Access-Token'] = resolvedToken
+  }
+  const response = await fetch(url.toString(), {
+    method: 'GET',
+    headers,
+    signal,
+  })
+  if (!response.ok) {
+    let message = `Errore ${response.status}`
+    try {
+      const payload = await response.json()
+      if (payload?.message) {
+        message = payload.message
+      }
+    } catch (_e) {
+      // ignore parse errors
+    }
+    throw new Error(message)
+  }
+  const blob = await response.blob()
+  return URL.createObjectURL(blob)
 }

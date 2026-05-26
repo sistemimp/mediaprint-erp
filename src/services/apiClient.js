@@ -42,7 +42,10 @@ export const getStoredToken = () => {
   return localStorage.getItem(AUTH_TOKEN_STORAGE_KEY)
 }
 
-export const apiFetch = async (path, { method = 'GET', token, body, params, signal } = {}) => {
+export const apiFetch = async (
+  path,
+  { method = 'GET', token, body, params, signal, suppressAuthRedirect = false } = {},
+) => {
   const url = buildUrl(path, params)
   const headers = {
     Accept: 'application/json',
@@ -73,7 +76,7 @@ export const apiFetch = async (path, { method = 'GET', token, body, params, sign
   let error = null
   try {
     response = await fetch(url.toString(), options)
-    payload = await handleApiResponse(response)
+    payload = await handleApiResponse(response, { suppressAuthRedirect })
     return payload
   } catch (err) {
     error = err
@@ -96,7 +99,7 @@ export const apiFetch = async (path, { method = 'GET', token, body, params, sign
   }
 }
 
-const handleApiResponse = async (response) => {
+const handleApiResponse = async (response, { suppressAuthRedirect = false } = {}) => {
   if (response.status === 204) {
     return null
   }
@@ -123,7 +126,7 @@ const handleApiResponse = async (response) => {
       payloadText.includes('malformed json') ||
       payloadText.includes('malformed')
 
-    if (isAccessError && typeof window !== 'undefined') {
+    if (!suppressAuthRedirect && isAccessError && typeof window !== 'undefined') {
       localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY)
       localStorage.removeItem(AUTH_USER_STORAGE_KEY)
       if (window.location.pathname !== '/login') {
@@ -142,7 +145,7 @@ const handleApiResponse = async (response) => {
 
 export const uploadToApi = async (path, { token, formData, params, signal } = {}) => {
   if (!formData) {
-    throw new Error('Nessun FormData fornito per l\'upload.')
+    throw new Error("Nessun FormData fornito per l'upload.")
   }
   const url = buildUrl(path, params)
   const headers = {

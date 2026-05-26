@@ -8,7 +8,6 @@ import {
   CCardBody,
   CCardHeader,
   CCol,
-  CForm,
   CFormInput,
   CFormLabel,
   CInputGroup,
@@ -30,7 +29,11 @@ import AnagraficaAutocomplete from '../../components/AnagraficaAutocomplete'
 import PermissionButton from '../../components/PermissionButton'
 import { useAuth } from '../../context/AuthContext'
 import { fetchAnagrafiche } from '../../services/anagrafiche'
-import { assignPagamentoToAnagrafica, fetchPagamentoDetail, searchPagamentiFatture } from '../../services/pagamenti'
+import {
+  assignPagamentoToAnagrafica,
+  fetchPagamentoDetail,
+  searchPagamentiFatture,
+} from '../../services/pagamenti'
 import { deleteFatturaPagamento, saveFatturaPagamento } from '../../services/fatture'
 
 const currencyFormatter = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' })
@@ -78,7 +81,9 @@ const extractCustomerHintFromReference = (reference, fallbackName) => {
   if (separatorSplit.length > 1) {
     candidate = separatorSplit[separatorSplit.length - 1]
   }
-  candidate = candidate.replace(/\b(fattur[aeo]?|fatt\.|doc\.?|pagamento|n°|n\.|nr\.|numero|prot\.)\b.*$/i, '').trim()
+  candidate = candidate
+    .replace(/\b(fattur[aeo]?|fatt\.|doc\.?|pagamento|n°|n\.|nr\.|numero|prot\.)\b.*$/i, '')
+    .trim()
   candidate = candidate.replace(/[()]/g, ' ').replace(/\s+/g, ' ').trim()
   if (!candidate || candidate.length < 3 || /^[\d#\/.\- ]+$/.test(candidate)) {
     return fallback
@@ -113,8 +118,7 @@ const PagamentiDetail = () => {
   const [assignmentResults, setAssignmentResults] = useState([])
   const [assignmentLoading, setAssignmentLoading] = useState(false)
   const [assignmentError, setAssignmentError] = useState(null)
-  const [assignmentSelected, setAssignmentSelected] = useState(null)
-  const [assignmentAmount, setAssignmentAmount] = useState('')
+  const [assignmentSelectedIds, setAssignmentSelectedIds] = useState([])
   const [assignmentSaving, setAssignmentSaving] = useState(false)
   const [assignmentSubmitError, setAssignmentSubmitError] = useState(null)
   const [assignCustomerModalOpen, setAssignCustomerModalOpen] = useState(false)
@@ -210,7 +214,10 @@ const PagamentiDetail = () => {
     return null
   })()
   const totaleAssegnato = roundCurrencyValue(totalAssignedFromList) ?? 0
-  const computedResiduo = totalePagamento !== null ? Math.max(0, roundCurrencyValue(totalePagamento - totaleAssegnato) ?? 0) : null
+  const computedResiduo =
+    totalePagamento !== null
+      ? Math.max(0, roundCurrencyValue(totalePagamento - totaleAssegnato) ?? 0)
+      : null
   const assignmentStats = (() => {
     const fallback = record?.assegnazioni_stats || null
     const totale = totalePagamento ?? toNumberOrNull(fallback?.totale)
@@ -260,7 +267,7 @@ const PagamentiDetail = () => {
   // Rimuove una singola assegnazione pagamento-fattura.
   const handleRemoveAssignment = async (assignment) => {
     if (!assignment?.id_pagamento || !assignment?.id_fattura || !token) return
-    if (!window.confirm('Confermi la rimozione dell\'assegnazione selezionata?')) return
+    if (!window.confirm("Confermi la rimozione dell'assegnazione selezionata?")) return
     setRemovingAssignmentId(assignment.id_pagamento)
     setDeleteError(null)
     try {
@@ -329,13 +336,11 @@ const PagamentiDetail = () => {
   // Apre il modal per assegnare il residuo a una fattura.
   const openAssignmentModal = () => {
     if (!record) return
-    const defaultAmount = residuoDisponibile != null ? Number(residuoDisponibile) : null
     setAssignmentModalOpen(true)
     setAssignmentSearch('')
     setAssignmentResults([])
     setAssignmentError(null)
-    setAssignmentSelected(null)
-    setAssignmentAmount(defaultAmount && defaultAmount > 0 ? defaultAmount.toFixed(2) : '')
+    setAssignmentSelectedIds([])
     setAssignmentSubmitError(null)
     if (assignedCustomerId) {
       void performAssignmentSearch('')
@@ -347,64 +352,81 @@ const PagamentiDetail = () => {
     setAssignmentModalOpen(false)
     setAssignmentResults([])
     setAssignmentError(null)
-    setAssignmentSelected(null)
-    setAssignmentAmount('')
+    setAssignmentSelectedIds([])
     setAssignmentSubmitError(null)
   }
 
-  // Seleziona la fattura target e propone un importo suggerito.
+  // Seleziona/deseleziona una fattura target per assegnazione multipla.
   const handleSelectAssignmentInvoice = (invoice) => {
-    if (!invoice) return
-    setAssignmentSelected(invoice)
-    setAssignmentSubmitError(null)
-    if (residuoDisponibile !== null && residuoDisponibile > 0) {
-      const suggested = Math.min(
-        residuoDisponibile,
-        invoice?.saldo != null ? Number(invoice.saldo) : residuoDisponibile,
-      )
-      if (suggested > 0) {
-        setAssignmentAmount(suggested.toFixed(2))
+    const invoiceId = Number(invoice?.id_fattura)
+    if (!Number.isFinite(invoiceId) || invoiceId <= 0) return
+    setAssignmentSelectedIds((prev) => {
+      const exists = prev.includes(invoiceId)
+      if (exists) {
+        return prev.filter((idValue) => idValue !== invoiceId)
       }
-    }
+      return [...prev, invoiceId]
+    })
+    setAssignmentSubmitError(null)
   }
 
-  // Conferma assegnazione importo pagamento a fattura selezionata.
+  // Conferma assegnazione multipla del residuo sulle fatture selezionate.
   const handleAssignmentSubmit = async (event) => {
     event?.preventDefault?.()
     if (!record || !token) return
-    if (!assignmentSelected) {
-      setAssignmentSubmitError(new Error('Seleziona una fattura da associare.'))
+    if (assignmentSelectedIds.length === 0) {
+      setAssignmentSubmitError(new Error('Seleziona almeno una fattura da associare.'))
       return
     }
-    const numericAmount = Number(assignmentAmount)
-    if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
-      setAssignmentSubmitError(new Error('Indicare un importo valido da assegnare.'))
+    const selectedInvoices = assignmentSelectedIds
+      .map((invoiceId) => assignmentResults.find((item) => Number(item?.id_fattura) === invoiceId))
+      .filter(Boolean)
+    if (selectedInvoices.length === 0) {
+      setAssignmentSubmitError(new Error('Nessuna fattura selezionata valida. Ripeti la ricerca.'))
       return
     }
-    if (residuoDisponibile !== null && numericAmount - residuoDisponibile > 0.009) {
-      setAssignmentSubmitError(new Error('L\'importo supera il residuo disponibile.'))
+    let remaining = toNumberOrNull(residuoDisponibile)
+    if (remaining === null || remaining <= 0) {
+      setAssignmentSubmitError(new Error("Non c'è residuo disponibile da assegnare."))
       return
     }
     setAssignmentSaving(true)
     setAssignmentSubmitError(null)
     try {
-      await saveFatturaPagamento({
-        token,
-        id_fattura: assignmentSelected.id_fattura,
-        id_pagamento: record.id_pagamento,
-        importo: numericAmount,
-        data_pagamento: record.data_pagamento,
-        id_metodo: record.id_metodo,
-        id_mp: record.id_mp,
-        note: record.note,
-        import_uid: record.import_uid,
-      })
-      const invoiceCustomerId = toNumberOrNull(assignmentSelected?.id_anagrafica)
-      if (Number.isFinite(invoiceCustomerId) && invoiceCustomerId > 0) {
+      let savedCount = 0
+      for (const invoice of selectedInvoices) {
+        if (remaining <= 0.009) break
+        const invoiceSaldo = toNumberOrNull(invoice?.saldo)
+        const allocabile = Math.min(
+          remaining,
+          invoiceSaldo !== null && invoiceSaldo > 0 ? invoiceSaldo : remaining,
+        )
+        if (!Number.isFinite(allocabile) || allocabile <= 0.009) continue
+        await saveFatturaPagamento({
+          token,
+          id_fattura: invoice.id_fattura,
+          id_pagamento: record.id_pagamento,
+          importo: allocabile,
+          data_pagamento: record.data_pagamento,
+          id_metodo: record.id_metodo,
+          id_mp: record.id_mp,
+          note: record.note,
+          import_uid: record.import_uid,
+        })
+        remaining = Math.max(0, roundCurrencyValue(remaining - allocabile) ?? 0)
+        savedCount += 1
+      }
+      if (savedCount === 0) {
+        throw new Error(
+          'Le fatture selezionate non hanno saldo disponibile compatibile con il residuo.',
+        )
+      }
+      const firstInvoiceCustomerId = toNumberOrNull(selectedInvoices[0]?.id_anagrafica)
+      if (Number.isFinite(firstInvoiceCustomerId) && firstInvoiceCustomerId > 0) {
         await assignPagamentoToAnagrafica({
           token,
           id_pagamento: record.id_pagamento,
-          id_anagrafica: invoiceCustomerId,
+          id_anagrafica: firstInvoiceCustomerId,
         })
       }
       closeAssignmentModal()
@@ -523,6 +545,30 @@ const PagamentiDetail = () => {
     return null
   }
 
+  const selectedInvoicesForPreview = assignmentSelectedIds
+    .map((invoiceId) => assignmentResults.find((item) => Number(item?.id_fattura) === invoiceId))
+    .filter(Boolean)
+  const assignmentPreview = (() => {
+    const baseResiduo = toNumberOrNull(residuoDisponibile)
+    if (baseResiduo === null) {
+      return { allocato: 0, residuo: null }
+    }
+    let remaining = baseResiduo
+    let assigned = 0
+    for (const invoice of selectedInvoicesForPreview) {
+      if (remaining <= 0.009) break
+      const invoiceSaldo = toNumberOrNull(invoice?.saldo)
+      const allocabile = Math.min(
+        remaining,
+        invoiceSaldo !== null && invoiceSaldo > 0 ? invoiceSaldo : remaining,
+      )
+      if (!Number.isFinite(allocabile) || allocabile <= 0.009) continue
+      assigned += allocabile
+      remaining = Math.max(0, roundCurrencyValue(remaining - allocabile) ?? 0)
+    }
+    return { allocato: assigned, residuo: remaining }
+  })()
+
   return (
     <>
       <CCard>
@@ -569,288 +615,317 @@ const PagamentiDetail = () => {
             </CButton>
           </div>
         </CCardHeader>
-      <CCardBody>
-        {loading && (
-          <div className="d-flex justify-content-center py-5">
-            <CSpinner color="primary" />
-          </div>
-        )}
+        <CCardBody>
+          {loading && (
+            <div className="d-flex justify-content-center py-5">
+              <CSpinner color="primary" />
+            </div>
+          )}
 
-        {!loading && error && (
-          <CAlert color="danger">{error.message || 'Impossibile caricare il pagamento.'}</CAlert>
-        )}
+          {!loading && error && (
+            <CAlert color="danger">{error.message || 'Impossibile caricare il pagamento.'}</CAlert>
+          )}
 
-        {!loading && !error && !record && <CAlert color="warning">Pagamento non trovato.</CAlert>}
+          {!loading && !error && !record && <CAlert color="warning">Pagamento non trovato.</CAlert>}
 
-        {deleteError && (
-          <CAlert color="danger" className="mb-3">
-            {deleteError.message || 'Errore durante la cancellazione.'}
-          </CAlert>
-        )}
+          {deleteError && (
+            <CAlert color="danger" className="mb-3">
+              {deleteError.message || 'Errore durante la cancellazione.'}
+            </CAlert>
+          )}
 
-        {!loading && record && (
-          <>
-            <CRow className="gy-3 mb-4">
-              <CCol md={3}>
-                <div className="text-body-secondary small">Data pagamento</div>
-                <div className="fw-semibold">{record.data_pagamento || '-'}</div>
-              </CCol>
-              <CCol md={3}>
-                <div className="text-body-secondary small">Importo importato</div>
-                <div className="fw-semibold">
-                  {currencyFormatter.format(
-                    record.importo_documento != null ? Number(record.importo_documento) : Number(record.importo) || 0,
+          {!loading && record && (
+            <>
+              <CRow className="gy-3 mb-4">
+                <CCol md={3}>
+                  <div className="text-body-secondary small">Data pagamento</div>
+                  <div className="fw-semibold">{record.data_pagamento || '-'}</div>
+                </CCol>
+                <CCol md={3}>
+                  <div className="text-body-secondary small">Importo importato</div>
+                  <div className="fw-semibold">
+                    {currencyFormatter.format(
+                      record.importo_documento != null
+                        ? Number(record.importo_documento)
+                        : Number(record.importo) || 0,
+                    )}
+                  </div>
+                  {residuoDisponibile != null && Math.abs(residuoDisponibile) > 0.009 && (
+                    <CBadge color="warning" className="mt-2">
+                      Residuo da assegnare: {currencyFormatter.format(residuoDisponibile)}
+                    </CBadge>
+                  )}
+                </CCol>
+                <CCol md={3}>
+                  <div className="text-body-secondary small">Modalità</div>
+                  {record.modalita_code ? (
+                    <CBadge color="secondary">
+                      {record.modalita_code}
+                      {record.modalita_label ? ` - ${record.modalita_label}` : ''}
+                    </CBadge>
+                  ) : (
+                    <span className="text-body-secondary">-</span>
+                  )}
+                </CCol>
+                <CCol md={3}>
+                  <div className="text-body-secondary small">Riferimento</div>
+                  <div className="fw-semibold">{record.reference || '-'}</div>
+                  {record.note && (
+                    <small
+                      className="text-body-secondary d-block text-truncate"
+                      title={record.note}
+                    >
+                      Note: {record.note}
+                    </small>
+                  )}
+                </CCol>
+              </CRow>
+
+              <section className="mb-4">
+                <div className="d-flex justify-content-between align-items-start mb-2">
+                  <h6 className="text-body-secondary mb-0">Cliente</h6>
+                  {isStaging && (
+                    <PermissionButton
+                      size="sm"
+                      color="primary"
+                      variant="outline"
+                      onClick={openAssignCustomerModal}
+                      permission="pay.write"
+                    >
+                      Assegna cliente
+                    </PermissionButton>
                   )}
                 </div>
-                {residuoDisponibile != null && Math.abs(residuoDisponibile) > 0.009 && (
-                  <CBadge color="warning" className="mt-2">
-                    Residuo da assegnare: {currencyFormatter.format(residuoDisponibile)}
-                  </CBadge>
-                )}
-              </CCol>
-              <CCol md={3}>
-                <div className="text-body-secondary small">Modalità</div>
-                {record.modalita_code ? (
-                  <CBadge color="secondary">
-                    {record.modalita_code}
-                    {record.modalita_label ? ` - ${record.modalita_label}` : ''}
-                  </CBadge>
-                ) : (
-                  <span className="text-body-secondary">-</span>
-                )}
-              </CCol>
-              <CCol md={3}>
-                <div className="text-body-secondary small">Riferimento</div>
-                <div className="fw-semibold">{record.reference || '-'}</div>
-                {record.note && (
-                  <small className="text-body-secondary d-block text-truncate" title={record.note}>
-                    Note: {record.note}
-                  </small>
-                )}
-              </CCol>
-            </CRow>
-
-            <section className="mb-4">
-              <div className="d-flex justify-content-between align-items-start mb-2">
-                <h6 className="text-body-secondary mb-0">Cliente</h6>
-                {isStaging && (
-                  <PermissionButton
-                    size="sm"
-                    color="primary"
-                    variant="outline"
-                    onClick={openAssignCustomerModal}
-                    permission="pay.write"
-                  >
-                    Assegna cliente
-                  </PermissionButton>
-                )}
-              </div>
-              <div className="border rounded p-3 bg-body-tertiary">
-                <CRow>
-                  <CCol md={6}>
-                    <div className="text-body-secondary small">Nome</div>
-                    <div className="fw-semibold">{record.cliente || '-'}</div>
-                  </CCol>
-                  <CCol md={3}>
-                    <div className="text-body-secondary small">ID anagrafica</div>
-                    <div className="fw-semibold">{record.id_anagrafica || '-'}</div>
-                  </CCol>
-                  <CCol md={3}>
-                    <div className="text-body-secondary small">Partita IVA</div>
-                    <div className="fw-semibold">{record.piva || '-'}</div>
-                  </CCol>
-                </CRow>
-              </div>
-            </section>
-
-            {isStaging ? (
-              <section className="mb-4">
-                <h6 className="text-body-secondary mb-2">Stato assegnazione</h6>
-                <CAlert color="info" className="mb-0">
-                  Questo pagamento è stato importato e non è ancora collegato ad alcuna fattura. Utilizza il pulsante
-                  <strong> &quot;Assegna ad altra fattura&quot;</strong> per distribuire l&apos;importo disponibile sulle
-                  fatture aperte.
-                </CAlert>
-              </section>
-            ) : (
-              <section className="mb-4">
-                <h6 className="text-body-secondary mb-2">Fattura collegata</h6>
                 <div className="border rounded p-3 bg-body-tertiary">
-                  <CRow className="align-items-center g-3">
-                    <CCol md={3}>
-                      <div className="text-body-secondary small">Numero</div>
-                      <div className="fw-semibold">{record.fattura_display || '-'}</div>
+                  <CRow>
+                    <CCol md={6}>
+                      <div className="text-body-secondary small">Nome</div>
+                      <div className="fw-semibold">{record.cliente || '-'}</div>
                     </CCol>
                     <CCol md={3}>
-                      <div className="text-body-secondary small">Totale</div>
-                      <div className="fw-semibold">
-                        {record.fattura_totale != null ? currencyFormatter.format(record.fattura_totale) : '-'}
-                      </div>
+                      <div className="text-body-secondary small">ID anagrafica</div>
+                      <div className="fw-semibold">{record.id_anagrafica || '-'}</div>
                     </CCol>
                     <CCol md={3}>
-                      <div className="text-body-secondary small">Saldo residuo</div>
-                      <div className="fw-semibold">
-                        {record.fattura_saldo != null ? currencyFormatter.format(record.fattura_saldo) : '-'}
-                      </div>
-                    </CCol>
-                    <CCol md={3}>
-                      <CButton
-                        color="link"
-                        className="px-0"
-                        disabled={!record.id_fattura}
-                        onClick={() => navigate(`/fatture/dettagli?id=${record.id_fattura}`)}
-                      >
-                        Apri fattura
-                      </CButton>
+                      <div className="text-body-secondary small">Partita IVA</div>
+                      <div className="fw-semibold">{record.piva || '-'}</div>
                     </CCol>
                   </CRow>
                 </div>
-                {!record.id_fattura && (
-                  <CAlert color="info" className="mt-3 mb-0">
-                    Questo pagamento non è ancora collegato a una fattura. Utilizza il pulsante &quot;Assegna ad altra
-                    fattura&quot; per completare l&apos;associazione.
-                  </CAlert>
-                )}
               </section>
-            )}
 
-            <section className="mb-4">
-              <div className="d-flex justify-content-between align-items-center mb-2">
-                <h6 className="text-body-secondary mb-0">Assegnazioni alle fatture</h6>
-                {canAssignMore && (
-                  <CButton color="primary" variant="outline" size="sm" onClick={openAssignmentModal}>
-                    <CIcon icon={cilPlus} className="me-2" />
-                    Assegna ad altra fattura
-                  </CButton>
-                )}
-              </div>
-              {assignments.length > 0 ? (
-                <div className="table-responsive">
-                  <table className="table align-middle table-sm mb-0">
-                    <thead>
-                      <tr>
-                        <th scope="col">ID</th>
-                        <th scope="col">Fattura</th>
-                        <th scope="col">Cliente</th>
-                        <th scope="col" className="text-end">
-                          Importo
-                        </th>
-                        <th scope="col" className="text-end">
-                          Azioni
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {assignments.map((item) => {
-                        const assignmentUnassigned = !item.id_fattura
-                        return (
-                          <tr key={item.id_pagamento}>
-                            <td className="fw-semibold">
-                              #{item.id_pagamento}
-                              {record.id_pagamento === item.id_pagamento && (
-                                <CBadge color="info" className="ms-2">
-                                  corrente
-                                </CBadge>
-                              )}
-                            </td>
-                            <td>
-                              <div className="fw-semibold">
+              {isStaging ? (
+                <section className="mb-4">
+                  <h6 className="text-body-secondary mb-2">Stato assegnazione</h6>
+                  <CAlert color="info" className="mb-0">
+                    Questo pagamento è stato importato e non è ancora collegato ad alcuna fattura.
+                    Utilizza il pulsante
+                    <strong> &quot;Assegna ad altra fattura&quot;</strong> per distribuire
+                    l&apos;importo disponibile sulle fatture aperte.
+                  </CAlert>
+                </section>
+              ) : (
+                <section className="mb-4">
+                  <h6 className="text-body-secondary mb-2">Fattura collegata</h6>
+                  <div className="border rounded p-3 bg-body-tertiary">
+                    <CRow className="align-items-center g-3">
+                      <CCol md={3}>
+                        <div className="text-body-secondary small">Numero</div>
+                        <div className="fw-semibold">{record.fattura_display || '-'}</div>
+                      </CCol>
+                      <CCol md={3}>
+                        <div className="text-body-secondary small">Totale</div>
+                        <div className="fw-semibold">
+                          {record.fattura_totale != null
+                            ? currencyFormatter.format(record.fattura_totale)
+                            : '-'}
+                        </div>
+                      </CCol>
+                      <CCol md={3}>
+                        <div className="text-body-secondary small">Saldo residuo</div>
+                        <div className="fw-semibold">
+                          {record.fattura_saldo != null
+                            ? currencyFormatter.format(record.fattura_saldo)
+                            : '-'}
+                        </div>
+                      </CCol>
+                      <CCol md={3}>
+                        <CButton
+                          color="link"
+                          className="px-0"
+                          disabled={!record.id_fattura}
+                          onClick={() => navigate(`/fatture/dettagli?id=${record.id_fattura}`)}
+                        >
+                          Apri fattura
+                        </CButton>
+                      </CCol>
+                    </CRow>
+                  </div>
+                  {!record.id_fattura && (
+                    <CAlert color="info" className="mt-3 mb-0">
+                      Questo pagamento non è ancora collegato a una fattura. Utilizza il pulsante
+                      &quot;Assegna ad altra fattura&quot; per completare l&apos;associazione.
+                    </CAlert>
+                  )}
+                </section>
+              )}
+
+              <section className="mb-4">
+                <div className="d-flex justify-content-between align-items-center mb-2">
+                  <h6 className="text-body-secondary mb-0">Assegnazioni alle fatture</h6>
+                  {canAssignMore && (
+                    <CButton
+                      color="primary"
+                      variant="outline"
+                      size="sm"
+                      onClick={openAssignmentModal}
+                    >
+                      <CIcon icon={cilPlus} className="me-2" />
+                      Assegna ad altra fattura
+                    </CButton>
+                  )}
+                </div>
+                {assignments.length > 0 ? (
+                  <div className="table-responsive">
+                    <table className="table align-middle table-sm mb-0">
+                      <thead>
+                        <tr>
+                          <th scope="col">ID</th>
+                          <th scope="col">Fattura</th>
+                          <th scope="col">Cliente</th>
+                          <th scope="col" className="text-end">
+                            Importo
+                          </th>
+                          <th scope="col" className="text-end">
+                            Azioni
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {assignments.map((item) => {
+                          const assignmentUnassigned = !item.id_fattura
+                          return (
+                            <tr key={item.id_pagamento}>
+                              <td className="fw-semibold">
+                                #{item.id_pagamento}
+                                {record.id_pagamento === item.id_pagamento && (
+                                  <CBadge color="info" className="ms-2">
+                                    corrente
+                                  </CBadge>
+                                )}
+                              </td>
+                              <td>
+                                <div className="fw-semibold">
+                                  {assignmentUnassigned ? (
+                                    item.fattura_display || '-'
+                                  ) : (
+                                    <CButton
+                                      color="link"
+                                      className="p-0 fw-semibold"
+                                      onClick={() =>
+                                        navigate(`/fatture/dettagli?id=${item.id_fattura}`)
+                                      }
+                                    >
+                                      {item.fattura_display || `Fattura #${item.id_fattura}`}
+                                    </CButton>
+                                  )}
+                                </div>
                                 {assignmentUnassigned ? (
-                                  item.fattura_display || '-'
+                                  <CBadge color="warning" textColor="dark" className="mt-1">
+                                    Da assegnare
+                                  </CBadge>
+                                ) : (
+                                  <small className="text-body-secondary d-block">
+                                    Data {item.fattura_data || '-'}
+                                    {item.fattura_totale != null
+                                      ? ` · Totale ${currencyFormatter.format(item.fattura_totale)}`
+                                      : ''}
+                                  </small>
+                                )}
+                              </td>
+                              <td>
+                                <div className="fw-semibold">{item.cliente || '-'}</div>
+                                <small className="text-body-secondary">
+                                  ID {item.id_anagrafica || '-'}
+                                </small>
+                              </td>
+                              <td className="text-end fw-semibold">
+                                {item.importo != null
+                                  ? currencyFormatter.format(item.importo)
+                                  : '-'}
+                              </td>
+                              <td className="text-end">
+                                {assignmentUnassigned ? (
+                                  <span className="text-body-secondary">-</span>
                                 ) : (
                                   <CButton
-                                    color="link"
-                                    className="p-0 fw-semibold"
-                                    onClick={() => navigate(`/fatture/dettagli?id=${item.id_fattura}`)}
+                                    color="danger"
+                                    variant="ghost"
+                                    size="sm"
+                                    disabled={removingAssignmentId === item.id_pagamento}
+                                    onClick={() => handleRemoveAssignment(item)}
                                   >
-                                    {item.fattura_display || `Fattura #${item.id_fattura}`}
+                                    {removingAssignmentId === item.id_pagamento ? (
+                                      <>
+                                        <CSpinner size="sm" className="me-2" />
+                                        Rimozione...
+                                      </>
+                                    ) : (
+                                      <>
+                                        <CIcon icon={cilTrash} className="me-2" />
+                                        Rimuovi
+                                      </>
+                                    )}
                                   </CButton>
                                 )}
-                              </div>
-                              {assignmentUnassigned ? (
-                                <CBadge color="warning" textColor="dark" className="mt-1">
-                                  Da assegnare
-                                </CBadge>
-                              ) : (
-                                <small className="text-body-secondary d-block">
-                                  Data {item.fattura_data || '-'}
-                                  {item.fattura_totale != null
-                                    ? ` · Totale ${currencyFormatter.format(item.fattura_totale)}`
-                                    : ''}
-                                </small>
-                              )}
-                            </td>
-                            <td>
-                              <div className="fw-semibold">{item.cliente || '-'}</div>
-                              <small className="text-body-secondary">ID {item.id_anagrafica || '-'}</small>
-                            </td>
-                            <td className="text-end fw-semibold">
-                              {item.importo != null ? currencyFormatter.format(item.importo) : '-'}
-                            </td>
-                            <td className="text-end">
-                              {assignmentUnassigned ? (
-                                <span className="text-body-secondary">-</span>
-                              ) : (
-                                <CButton
-                                  color="danger"
-                                  variant="ghost"
-                                  size="sm"
-                                  disabled={removingAssignmentId === item.id_pagamento}
-                                  onClick={() => handleRemoveAssignment(item)}
-                                >
-                                  {removingAssignmentId === item.id_pagamento ? (
-                                    <>
-                                      <CSpinner size="sm" className="me-2" />
-                                      Rimozione...
-                                    </>
-                                  ) : (
-                                    <>
-                                      <CIcon icon={cilTrash} className="me-2" />
-                                      Rimuovi
-                                    </>
-                                  )}
-                                </CButton>
-                              )}
-                            </td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              ) : (
-                <CAlert color="info" className="mb-0">
-                  Nessuna assegnazione disponibile per questo pagamento.
-                </CAlert>
-              )}
-              {assignmentStats && (
-                <div className="d-flex flex-wrap gap-4 mt-3 small text-body-secondary">
-                  <span>
-                    Importo pagamento:{' '}
-                    {assignmentStats.totale != null ? currencyFormatter.format(assignmentStats.totale) : '-'}
-                  </span>
-                  <span>
-                    Totale assegnato:{' '}
-                    {assignmentStats.allocato != null
-                      ? currencyFormatter.format(assignmentStats.allocato)
-                      : '-'}
-                  </span>
-                  <span>
-                    Residuo disponibile:{' '}
-                    {assignmentStats.residuo != null ? currencyFormatter.format(assignmentStats.residuo) : '-'}
-                  </span>
-                </div>
-              )}
-            </section>
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <CAlert color="info" className="mb-0">
+                    Nessuna assegnazione disponibile per questo pagamento.
+                  </CAlert>
+                )}
+                {assignmentStats && (
+                  <div className="d-flex flex-wrap gap-4 mt-3 small text-body-secondary">
+                    <span>
+                      Importo pagamento:{' '}
+                      {assignmentStats.totale != null
+                        ? currencyFormatter.format(assignmentStats.totale)
+                        : '-'}
+                    </span>
+                    <span>
+                      Totale assegnato:{' '}
+                      {assignmentStats.allocato != null
+                        ? currencyFormatter.format(assignmentStats.allocato)
+                        : '-'}
+                    </span>
+                    <span>
+                      Residuo disponibile:{' '}
+                      {assignmentStats.residuo != null
+                        ? currencyFormatter.format(assignmentStats.residuo)
+                        : '-'}
+                    </span>
+                  </div>
+                )}
+              </section>
 
-            <section>
-              <h6 className="text-body-secondary mb-2">Note</h6>
-              <div className="border rounded p-3 bg-body-tertiary text-body">
-                {record.note ? record.note : <span className="text-body-secondary">Nessuna nota presente.</span>}
-              </div>
-            </section>
-          </>
-        )}
+              <section>
+                <h6 className="text-body-secondary mb-2">Note</h6>
+                <div className="border rounded p-3 bg-body-tertiary text-body">
+                  {record.note ? (
+                    record.note
+                  ) : (
+                    <span className="text-body-secondary">Nessuna nota presente.</span>
+                  )}
+                </div>
+              </section>
+            </>
+          )}
         </CCardBody>
       </CCard>
 
@@ -858,7 +933,7 @@ const PagamentiDetail = () => {
         <CModalHeader closeButton>
           <CModalTitle>Assegna ad altra fattura</CModalTitle>
         </CModalHeader>
-        <CModalBody>
+        <CModalBody style={{ maxHeight: '70vh', overflowY: 'auto' }}>
           {residuoDisponibile != null && (
             <CBadge color="warning" className="mb-3 text-dark">
               Residuo disponibile: {currencyFormatter.format(residuoDisponibile)}
@@ -866,7 +941,7 @@ const PagamentiDetail = () => {
           )}
           {assignmentSubmitError && (
             <CAlert color="danger" className="mb-3">
-              {assignmentSubmitError.message || 'Errore durante il salvataggio dell\'assegnazione.'}
+              {assignmentSubmitError.message || "Errore durante il salvataggio dell'assegnazione."}
             </CAlert>
           )}
           <CInputGroup className="mb-3">
@@ -884,7 +959,12 @@ const PagamentiDetail = () => {
                 }
               }}
             />
-            <CButton color="primary" type="button" onClick={() => performAssignmentSearch()} disabled={assignmentLoading}>
+            <CButton
+              color="primary"
+              type="button"
+              onClick={() => performAssignmentSearch()}
+              disabled={assignmentLoading}
+            >
               Cerca
             </CButton>
           </CInputGroup>
@@ -898,14 +978,16 @@ const PagamentiDetail = () => {
               <CSpinner color="primary" />
             </div>
           ) : assignmentResults.length === 0 ? (
-            <p className="text-body-secondary">Nessuna fattura trovata. Prova a cambiare i termini di ricerca.</p>
+            <p className="text-body-secondary">
+              Nessuna fattura trovata. Prova a cambiare i termini di ricerca.
+            </p>
           ) : (
             <CListGroup className="mb-3">
               {assignmentResults.map((item) => (
                 <CListGroupItem
                   key={item.id_fattura}
                   action
-                  active={assignmentSelected?.id_fattura === item.id_fattura}
+                  active={assignmentSelectedIds.includes(Number(item.id_fattura))}
                   onClick={() => handleSelectAssignmentInvoice(item)}
                   className="d-flex justify-content-between align-items-center"
                 >
@@ -925,53 +1007,42 @@ const PagamentiDetail = () => {
               ))}
             </CListGroup>
           )}
-
-          {assignmentSelected && (
-            <div className="border rounded bg-body-tertiary p-3">
-              <div className="fw-semibold mb-2">
-                Fattura selezionata: {assignmentSelected.anno}/{assignmentSelected.numero_documento ?? '-'}
-              </div>
-              <small className="text-body-secondary d-block mb-2">
-                Cliente: {assignmentSelected.ragione_sociale || '-'}
-              </small>
-
-              <CForm onSubmit={handleAssignmentSubmit}>
-                <CFormLabel>Importo da assegnare</CFormLabel>
-                <CFormInput
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={assignmentAmount}
-                  onChange={(event) => setAssignmentAmount(event.target.value)}
-                  required
-                />
-                <small className="text-body-secondary d-block mt-1">
-                  Residuo disponibile:{' '}
-                  {residuoDisponibile != null ? currencyFormatter.format(residuoDisponibile) : '-'}
-                </small>
-                <div className="d-flex justify-content-end gap-2 mt-3">
-                  <CButton color="secondary" variant="ghost" type="button" onClick={closeAssignmentModal}>
-                    Annulla
-                  </CButton>
-                  <CButton color="primary" type="submit" disabled={assignmentSaving}>
-                    {assignmentSaving ? (
-                      <>
-                        <CSpinner size="sm" className="me-2" />
-                        Salvataggio...
-                      </>
-                    ) : (
-                      'Conferma assegnazione'
-                    )}
-                  </CButton>
-                </div>
-              </CForm>
-            </div>
-          )}
         </CModalBody>
-        <CModalFooter>
-          <CButton color="secondary" variant="ghost" onClick={closeAssignmentModal}>
-            Chiudi
-          </CButton>
+        <CModalFooter className="d-flex justify-content-between align-items-end gap-3 flex-wrap">
+          <div className="small text-body-secondary">
+            <div className="fw-semibold text-body mb-1">
+              Fatture selezionate: {assignmentSelectedIds.length}
+            </div>
+            <div className="mb-1">
+              Il residuo verrà distribuito automaticamente sulle fatture selezionate, in ordine di
+              selezione.
+            </div>
+            <div>
+              Residuo disponibile:{' '}
+              {assignmentPreview.residuo != null
+                ? currencyFormatter.format(assignmentPreview.residuo)
+                : '-'}
+            </div>
+          </div>
+          <div className="d-flex justify-content-end gap-2">
+            <CButton color="secondary" variant="ghost" onClick={closeAssignmentModal}>
+              Annulla
+            </CButton>
+            <CButton
+              color="primary"
+              onClick={handleAssignmentSubmit}
+              disabled={assignmentSaving || assignmentSelectedIds.length === 0}
+            >
+              {assignmentSaving ? (
+                <>
+                  <CSpinner size="sm" className="me-2" />
+                  Salvataggio...
+                </>
+              ) : (
+                'Conferma assegnazione'
+              )}
+            </CButton>
+          </div>
         </CModalFooter>
       </CModal>
       <CModal visible={assignCustomerModalOpen} onClose={closeAssignCustomerModal} size="lg">
@@ -1004,7 +1075,10 @@ const PagamentiDetail = () => {
                   '-'}
               </div>
               <small className="text-body-secondary">
-                ID {assignCustomerSelectedCliente.id_anagrafica || assignCustomerSelectedCliente.id || '-'}
+                ID{' '}
+                {assignCustomerSelectedCliente.id_anagrafica ||
+                  assignCustomerSelectedCliente.id ||
+                  '-'}
               </small>
             </div>
           ) : (
@@ -1014,7 +1088,7 @@ const PagamentiDetail = () => {
           )}
           {assignCustomerSubmitError && (
             <CAlert color="danger" className="mt-3">
-              {assignCustomerSubmitError.message || 'Errore durante l\'assegnazione del cliente.'}
+              {assignCustomerSubmitError.message || "Errore durante l'assegnazione del cliente."}
             </CAlert>
           )}
         </CModalBody>

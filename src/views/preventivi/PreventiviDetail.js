@@ -3,6 +3,10 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import {
   CAlert,
+  CAccordion,
+  CAccordionBody,
+  CAccordionHeader,
+  CAccordionItem,
   CBadge,
   CButton,
   CCard,
@@ -41,7 +45,10 @@ import {
 import { CStepper } from '@coreui/react-pro'
 import AnagraficaAutocomplete from '../../components/AnagraficaAutocomplete'
 import PreventivoContattiTable from '../../components/PreventivoContattiTable'
-import { normalizePreventivoContact, serializePreventivoContacts } from '../../utils/preventiviContacts'
+import {
+  normalizePreventivoContact,
+  serializePreventivoContacts,
+} from '../../utils/preventiviContacts'
 import { getPreventivoIdFromResponse } from '../../utils/preventiviResponses'
 import CIcon from '@coreui/icons-react'
 import {
@@ -60,7 +67,6 @@ import {
   cibAdobeAcrobatReader,
 } from '@coreui/icons'
 
-
 import { useAuth } from '../../context/AuthContext'
 import { useBreadcrumbActions } from '../../context/BreadcrumbActionsContext'
 import { fetchAnagrafiche, fetchAnagraficaDetail } from '../../services/anagrafiche'
@@ -77,6 +83,8 @@ import {
   logPreventivoEvent,
   generateLavorazioneFromPreventivo,
   archivePreventivo,
+  fetchPreventivoAcceptanceArtifacts,
+  fetchPreventivoAcceptancePdfObjectUrl,
 } from '../../services/preventivi'
 import { fetchDdtCausali, emitPreventivoDdt } from '../../services/ddt'
 import { fetchFattureConfig, emitPreventivoFattura } from '../../services/fatture'
@@ -169,7 +177,9 @@ const isFornitoreAnagrafica = (item) => {
   if (Number(item?.is_fornitore ?? item?.fornitore ?? item?.supplier ?? 0) === 1) return true
   const idTip = Number(item?.id_tipologia ?? item?.tipologia?.id ?? item?.tipologia_id ?? null)
   if (Number.isFinite(idTip) && [2, 3].includes(idTip)) return true
-  const label = String(item?.tipologia_label ?? item?.tipologia?.label ?? item?.tipologia ?? '').toLowerCase()
+  const label = String(
+    item?.tipologia_label ?? item?.tipologia?.label ?? item?.tipologia ?? '',
+  ).toLowerCase()
   const code = String(item?.tipologia_code ?? item?.tipologia?.code ?? '').toLowerCase()
   return label.includes('forn') || code.includes('forn')
 }
@@ -177,8 +187,12 @@ const isFornitoreAnagrafica = (item) => {
 // Riconosce un'opzione tipo fattura relativa agli acquisti/passivo.
 const isPurchaseInvoiceTypeOption = (option) => {
   if (!option) return false
-  const code = String(option.code || '').trim().toLowerCase()
-  const label = String(option.label || '').trim().toLowerCase()
+  const code = String(option.code || '')
+    .trim()
+    .toLowerCase()
+  const label = String(option.label || '')
+    .trim()
+    .toLowerCase()
   const text = `${code} ${label}`
   return text.includes('acquisto') || text.includes('passiv') || text.includes('fornitor')
 }
@@ -197,8 +211,12 @@ const resolvePreferredInvoiceTypeId = (tipi = [], isAcquisto = false) => {
   }
 
   const immediateType = list.find((option) => {
-    const code = String(option.code || '').trim().toLowerCase()
-    const label = String(option.label || '').trim().toLowerCase()
+    const code = String(option.code || '')
+      .trim()
+      .toLowerCase()
+    const label = String(option.label || '')
+      .trim()
+      .toLowerCase()
     return code === 'immediata' || label === 'immediata'
   })
   const immediateId = Number(immediateType?.id_tipo)
@@ -213,12 +231,7 @@ const resolvePreferredInvoiceTypeId = (tipi = [], isAcquisto = false) => {
 // Normalizza un'opzione "oggetto preventivo" in formato consistente.
 const normalizeOggettoOption = (option) => {
   if (!option) return null
-  const rawValue =
-    option.id ??
-    option.id_oggetto ??
-    option.value ??
-    option.valueId ??
-    null
+  const rawValue = option.id ?? option.id_oggetto ?? option.value ?? option.valueId ?? null
   const numericValue = Number(rawValue)
   const label = String(option.label ?? option.nome ?? option.text ?? '').trim()
   if (!Number.isFinite(numericValue) || numericValue <= 0 || label === '') {
@@ -278,11 +291,7 @@ const mergeOggettoOptionLists = (base = [], extra = []) => {
 // Normalizza una lavorazione collegata in struttura uniforme.
 const normalizeLavorazioneItem = (item) => {
   if (!item) return null
-  const rawId =
-    item.id_lavorazione ??
-    item.id ??
-    item.idLavorazione ??
-    null
+  const rawId = item.id_lavorazione ?? item.id ?? item.idLavorazione ?? null
   const id = Number(rawId)
   if (!Number.isFinite(id) || id <= 0) {
     return null
@@ -298,35 +307,22 @@ const normalizeLavorazioneItem = (item) => {
 }
 
 // Costruisce e filtra le opzioni anagrafica mantenendo l'elemento corrente.
-const buildAnagraficaOptions = ({
-  baseList,
-  currentId,
-  display = {},
-  query = '',
-}) => {
+const buildAnagraficaOptions = ({ baseList, currentId, display = {}, query = '' }) => {
   const list = Array.isArray(baseList) ? [...baseList] : []
   const numericId = Number(currentId)
-  const shouldInjectFallback =
-    Number.isFinite(numericId) && numericId > 0
+  const shouldInjectFallback = Number.isFinite(numericId) && numericId > 0
   if (shouldInjectFallback) {
     const fallbackLabel =
-      display?.label ??
-      display?.ragione_sociale ??
-      display?.ragioneSociale ??
-      ''
+      display?.label ?? display?.ragione_sociale ?? display?.ragioneSociale ?? ''
     const fallbackEntry = {
       id_anagrafica: numericId,
       ragione_sociale: fallbackLabel || '--',
-      codice_cliente:
-        display?.codiceCliente ?? display?.codice_cliente ?? null,
+      codice_cliente: display?.codiceCliente ?? display?.codice_cliente ?? null,
       piva: display?.piva ?? display?.partita_iva ?? null,
-      codice_fiscale:
-        display?.codiceFiscale ?? display?.codice_fiscale ?? null,
+      codice_fiscale: display?.codiceFiscale ?? display?.codice_fiscale ?? null,
       email: display?.email ?? null,
     }
-    const exists = list.some(
-      (c) => Number(c?.id_anagrafica ?? c?.id ?? 0) === numericId,
-    )
+    const exists = list.some((c) => Number(c?.id_anagrafica ?? c?.id ?? 0) === numericId)
     if (!exists) {
       list.unshift(fallbackEntry)
     }
@@ -342,24 +338,20 @@ const buildAnagraficaOptions = ({
   }
 
   const normalizedList = Array.from(mapById.values())
-  const normalizedQuery = String(query || '').trim().toLowerCase()
+  const normalizedQuery = String(query || '')
+    .trim()
+    .toLowerCase()
   if (normalizedQuery === '') {
     return normalizedList
   }
 
   const queryNoSep = normalizedQuery.replace(/[ .-]/g, '')
   return normalizedList.filter((item) => {
-    const rgSociale = String(
-      item?.ragione_sociale ?? item?.ragioneSociale ?? '',
-    ).toLowerCase()
-    const rawPiva = String(
-      item?.piva ?? item?.partita_iva ?? item?.partitaIva ?? '',
-    ).toLowerCase()
+    const rgSociale = String(item?.ragione_sociale ?? item?.ragioneSociale ?? '').toLowerCase()
+    const rawPiva = String(item?.piva ?? item?.partita_iva ?? item?.partitaIva ?? '').toLowerCase()
     const pivaNoSep = rawPiva.replace(/[ .-]/g, '')
     const cf = String(item?.codice_fiscale ?? item?.codiceFiscale ?? '').toLowerCase()
-    const codice = String(
-      item?.codice_cliente ?? item?.codiceCliente ?? '',
-    ).toLowerCase()
+    const codice = String(item?.codice_cliente ?? item?.codiceCliente ?? '').toLowerCase()
     return (
       rgSociale.includes(normalizedQuery) ||
       pivaNoSep.includes(queryNoSep) ||
@@ -397,9 +389,9 @@ const PreventiviDetail = () => {
   const modeParam = String(query.get('mode') || '').toLowerCase()
   const createMode = Boolean(
     modeParam === 'create' ||
-    modeParam === 'nuovo' ||
-    modeParam === 'new' ||
-    location.state?.createMode,
+      modeParam === 'nuovo' ||
+      modeParam === 'new' ||
+      location.state?.createMode,
   )
   const id = Number(query.get('id') || 0)
   const { token, logout, user } = useAuth()
@@ -428,7 +420,12 @@ const PreventiviDetail = () => {
   const [statusLogLoading, setStatusLogLoading] = useState(false)
   const [statusLogError, setStatusLogError] = useState(null)
   const [revisions, setRevisions] = useState([])
+  const [acceptanceExists, setAcceptanceExists] = useState(false)
   const [statusTab, setStatusTab] = useState('timeline')
+  const [acceptanceLoading, setAcceptanceLoading] = useState(false)
+  const [acceptanceError, setAcceptanceError] = useState(null)
+  const [acceptanceItems, setAcceptanceItems] = useState([])
+  const [acceptancePdfUrl, setAcceptancePdfUrl] = useState('')
   const [archiveLoading, setArchiveLoading] = useState(false)
   const [archiveError, setArchiveError] = useState(null)
   const [duplicateLoading, setDuplicateLoading] = useState(false)
@@ -549,7 +546,11 @@ const PreventiviDetail = () => {
   const [cigList, setCigList] = useState([])
   const [newCig, setNewCig] = useState({ cig: '', data_cig: '', motivazione: '' })
   const [determineList, setDetermineList] = useState([])
-  const [newDetermina, setNewDetermina] = useState({ determina: '', data_determina: '', motivazione: '' })
+  const [newDetermina, setNewDetermina] = useState({
+    determina: '',
+    data_determina: '',
+    motivazione: '',
+  })
 
   // Righe
   const [righe, setRighe] = useState([])
@@ -665,21 +666,14 @@ const PreventiviDetail = () => {
     }
     if (Array.isArray(prefill.oggetti)) {
       setSelectedOggetti(
-        prefill.oggetti
-          .map((v) => Number(v))
-          .filter((num) => Number.isFinite(num) && num > 0),
+        prefill.oggetti.map((v) => Number(v)).filter((num) => Number.isFinite(num) && num > 0),
       )
     }
     if (Array.isArray(prefill.oggetti_detail)) {
-      const detailOptions = prefill.oggetti_detail
-        .map(normalizeOggettoOption)
-        .filter(Boolean)
+      const detailOptions = prefill.oggetti_detail.map(normalizeOggettoOption).filter(Boolean)
       if (detailOptions.length > 0) {
         setOggettiOptions((prev) =>
-          mergeOggettoOptionLists(
-            Array.isArray(prev) ? prev : [],
-            detailOptions,
-          ),
+          mergeOggettoOptionLists(Array.isArray(prev) ? prev : [], detailOptions),
         )
       }
     }
@@ -687,10 +681,7 @@ const PreventiviDetail = () => {
     if (prefill.riferimento_cliente != null) {
       setRifCliente(prefill.riferimento_cliente)
     }
-    const label =
-      prefill.cliente?.label ??
-      prefill.clienteLabel ??
-      null
+    const label = prefill.cliente?.label ?? prefill.clienteLabel ?? null
 
     if (prefill.cliente && prefill.cliente.id) {
       setClienteDisplay((prev) => ({
@@ -703,8 +694,7 @@ const PreventiviDetail = () => {
       }))
       setAllClientiOptions((prev) => {
         const exists = prev.some(
-          (c) =>
-            Number(c?.id_anagrafica ?? c?.id ?? 0) === Number(prefill.cliente.id ?? 0),
+          (c) => Number(c?.id_anagrafica ?? c?.id ?? 0) === Number(prefill.cliente.id ?? 0),
         )
         if (exists) return prev
         return [
@@ -730,8 +720,7 @@ const PreventiviDetail = () => {
       }))
       setAllClientiOptions((prev) => {
         const exists = prev.some(
-          (c) =>
-            Number(c?.id_anagrafica ?? c?.id ?? 0) === Number(prefill.id_anagrafica ?? 0),
+          (c) => Number(c?.id_anagrafica ?? c?.id ?? 0) === Number(prefill.id_anagrafica ?? 0),
         )
         if (exists) return prev
         return [
@@ -822,7 +811,14 @@ const PreventiviDetail = () => {
         }
       })
     return () => controller.abort()
-  }, [fatturaModalVisible, token, isAcquisto, fatturaConfig.sezionali.length, fatturaConfig.tipi.length, fatturaConfig.stati.length])
+  }, [
+    fatturaModalVisible,
+    token,
+    isAcquisto,
+    fatturaConfig.sezionali.length,
+    fatturaConfig.tipi.length,
+    fatturaConfig.stati.length,
+  ])
 
   useEffect(() => {
     if (!fatturaModalVisible) return
@@ -835,7 +831,9 @@ const PreventiviDetail = () => {
         const preferredId = resolvePreferredInvoiceTypeId(fatturaConfig.tipi, isAcquisto)
         if (isAcquisto) {
           const currentId = Number(defaults.id_tipo_fatt || 0)
-          const currentOption = fatturaConfig.tipi.find((option) => Number(option?.id_tipo) === currentId)
+          const currentOption = fatturaConfig.tipi.find(
+            (option) => Number(option?.id_tipo) === currentId,
+          )
           const currentIsPurchase = isPurchaseInvoiceTypeOption(currentOption)
           if (!currentIsPurchase && Number.isFinite(preferredId) && preferredId > 0) {
             defaults.id_tipo_fatt = String(preferredId)
@@ -845,7 +843,9 @@ const PreventiviDetail = () => {
         }
       }
       if (!defaults.id_stato_fatt && fatturaConfig.stati.length > 0) {
-        const bozza = fatturaConfig.stati.find((s) => String(s.code || '').toLowerCase() === 'bozza')
+        const bozza = fatturaConfig.stati.find(
+          (s) => String(s.code || '').toLowerCase() === 'bozza',
+        )
         defaults.id_stato_fatt = String((bozza ?? fatturaConfig.stati[0]).id_stato)
       }
       return defaults
@@ -861,7 +861,9 @@ const PreventiviDetail = () => {
       try {
         const opts = await fetchPreventivoOggettiOptions({ token, signal })
         if (signal?.aborted) return []
-        const normalized = (Array.isArray(opts) ? opts : []).map(normalizeOggettoOption).filter(Boolean)
+        const normalized = (Array.isArray(opts) ? opts : [])
+          .map(normalizeOggettoOption)
+          .filter(Boolean)
         setOggettiOptions((prev) => {
           const prevList = Array.isArray(prev) ? prev : []
           const withServer = mergeOggettoOptionLists(normalized, prevList)
@@ -927,26 +929,23 @@ const PreventiviDetail = () => {
   )
 
   // Gestisce selezione oggetti esistenti e creazione on-the-fly di nuove opzioni.
-  const handleOggettiChange = useCallback(
-    (vals) => {
-      const incoming = Array.isArray(vals) ? vals : []
-      const next = new Set()
-      incoming.forEach((item) => {
-        let candidate = null
-        if (item && typeof item === 'object') {
-          candidate = item.id ?? item.id_oggetto ?? item.value ?? null
-        } else {
-          candidate = item
-        }
-        const numeric = Number(candidate)
-        if (Number.isFinite(numeric) && numeric > 0) {
-          next.add(numeric)
-        }
-      })
-      setSelectedOggetti(Array.from(next))
-    },
-    [],
-  )
+  const handleOggettiChange = useCallback((vals) => {
+    const incoming = Array.isArray(vals) ? vals : []
+    const next = new Set()
+    incoming.forEach((item) => {
+      let candidate = null
+      if (item && typeof item === 'object') {
+        candidate = item.id ?? item.id_oggetto ?? item.value ?? null
+      } else {
+        candidate = item
+      }
+      const numeric = Number(candidate)
+      if (Number.isFinite(numeric) && numeric > 0) {
+        next.add(numeric)
+      }
+    })
+    setSelectedOggetti(Array.from(next))
+  }, [])
 
   // Carica opzioni per multi-select Oggetto preventivo
   useEffect(() => {
@@ -982,6 +981,7 @@ const PreventiviDetail = () => {
           linkedFatture: linkedFattureSrv,
           linkedLavorazioni: linkedLavorazioniSrv,
           revisions: revisionsSrv,
+          acceptanceExists: acceptanceExistsSrv,
           statuses,
           currentStatus: current,
         } = await fetchPreventivoDetail({
@@ -1010,6 +1010,7 @@ const PreventiviDetail = () => {
           })
         }
         setRevisions(Array.isArray(revisionsSrv) ? revisionsSrv : [])
+        setAcceptanceExists(Boolean(acceptanceExistsSrv))
         if (data.id_anagrafica != null && data.id_anagrafica !== '') {
           setIdAnagrafica(String(data.id_anagrafica))
         }
@@ -1027,21 +1028,14 @@ const PreventiviDetail = () => {
         // Inizializza la multi-select "Oggetto preventivo" con i valori dal backend
         if (Array.isArray(data.oggetti)) {
           setSelectedOggetti(
-            data.oggetti
-              .map((v) => Number(v))
-              .filter((num) => Number.isFinite(num) && num > 0),
+            data.oggetti.map((v) => Number(v)).filter((num) => Number.isFinite(num) && num > 0),
           )
         }
         if (Array.isArray(data.oggetti_detail)) {
-          const detailOptions = data.oggetti_detail
-            .map(normalizeOggettoOption)
-            .filter(Boolean)
+          const detailOptions = data.oggetti_detail.map(normalizeOggettoOption).filter(Boolean)
           if (detailOptions.length > 0) {
             setOggettiOptions((prev) =>
-              mergeOggettoOptionLists(
-                Array.isArray(prev) ? prev : [],
-                detailOptions,
-              ),
+              mergeOggettoOptionLists(Array.isArray(prev) ? prev : [], detailOptions),
             )
             if (!Array.isArray(data.oggetti) || data.oggetti.length === 0) {
               const detailIds = detailOptions
@@ -1053,17 +1047,13 @@ const PreventiviDetail = () => {
             }
           }
         }
-        const fetchedRif =
-          data.riferimento_cliente ?? data.riferimento ?? data.rif_cliente ?? null
+        const fetchedRif = data.riferimento_cliente ?? data.riferimento ?? data.rif_cliente ?? null
         if (fetchedRif != null) {
           setRifCliente(fetchedRif)
         }
         if (data.id_anagrafica != null && data.id_anagrafica !== '') {
           const numericId = Number(data.id_anagrafica)
-          const clienteLabel =
-            data.cliente_ragione_sociale ??
-            data.ragione_sociale ??
-            null
+          const clienteLabel = data.cliente_ragione_sociale ?? data.ragione_sociale ?? null
           setClienteDisplay((prev) => ({
             id: Number.isFinite(numericId) && numericId > 0 ? numericId : prev.id,
             label: clienteLabel ?? prev.label ?? '',
@@ -1077,9 +1067,7 @@ const PreventiviDetail = () => {
             if (!Number.isFinite(numericId) || numericId <= 0) {
               return list
             }
-            const exists = list.some(
-              (c) => Number(c?.id_anagrafica ?? c?.id ?? 0) === numericId,
-            )
+            const exists = list.some((c) => Number(c?.id_anagrafica ?? c?.id ?? 0) === numericId)
             if (exists) {
               return list
             }
@@ -1126,7 +1114,11 @@ const PreventiviDetail = () => {
               const idCategoria =
                 r.id_categoria ?? r.id_categoria_prodotto ?? r.id_categoria_prodotto_default ?? null
               const categoriaNome =
-                r.categoria_nome ?? r.categoria ?? r.nome_categoria ?? r.nome_categoria_prodotto ?? null
+                r.categoria_nome ??
+                r.categoria ??
+                r.nome_categoria ??
+                r.nome_categoria_prodotto ??
+                null
               return {
                 id_riga: r.id_riga ?? null,
                 descrizione: r.descrizione ?? '',
@@ -1153,23 +1145,31 @@ const PreventiviDetail = () => {
         }
         setStockAlerts(Array.isArray(stockAlertsSrv) ? stockAlertsSrv : [])
         // CIG / Determine dal server
-        setCigList(Array.isArray(cigSrv) ? cigSrv.map((c) => ({
-          id_cig: c.id_cig ?? undefined,
-          cig: c.cig ?? '',
-          data_cig: c.data_cig ?? '',
-          motivazione: c.motivazione ?? '',
-        })) : [])
-        setDetermineList(Array.isArray(determineSrv) ? determineSrv.map((d) => ({
-          id_determina: d.id_determina ?? undefined,
-          determina: d.determina ?? '',
-          data_determina: d.data_determina ?? '',
-          motivazione: d.motivazione ?? '',
-        })) : [])
+        setCigList(
+          Array.isArray(cigSrv)
+            ? cigSrv.map((c) => ({
+                id_cig: c.id_cig ?? undefined,
+                cig: c.cig ?? '',
+                data_cig: c.data_cig ?? '',
+                motivazione: c.motivazione ?? '',
+              }))
+            : [],
+        )
+        setDetermineList(
+          Array.isArray(determineSrv)
+            ? determineSrv.map((d) => ({
+                id_determina: d.id_determina ?? undefined,
+                determina: d.determina ?? '',
+                data_determina: d.data_determina ?? '',
+                motivazione: d.motivazione ?? '',
+              }))
+            : [],
+        )
         setPreventivoContatti(
           Array.isArray(contattiSrv)
             ? contattiSrv
-              .map((c) => normalizePreventivoContact(c, data.id_anagrafica))
-              .filter(Boolean)
+                .map((c) => normalizePreventivoContact(c, data.id_anagrafica))
+                .filter(Boolean)
             : [],
         )
         setLinkedDdt(Array.isArray(linkedDdtSrv) ? linkedDdtSrv : [])
@@ -1258,11 +1258,7 @@ const PreventiviDetail = () => {
         if (detailData) {
           setClienteDisplay((prev) => ({
             id: Number(detailData.id_anagrafica ?? detailData.id ?? aid),
-            label:
-              detailData.ragione_sociale ??
-              detailData.ragioneSociale ??
-              prev.label ??
-              '',
+            label: detailData.ragione_sociale ?? detailData.ragioneSociale ?? prev.label ?? '',
             codiceCliente: detailData.codice_cliente ?? prev.codiceCliente ?? null,
             piva: detailData.piva ?? detailData.partita_iva ?? prev.piva ?? null,
             codiceFiscale: detailData.codice_fiscale ?? prev.codiceFiscale ?? null,
@@ -1322,7 +1318,12 @@ const PreventiviDetail = () => {
           // Fallback: continua se la prima pagina è piena
           let nextPage = 2
           let safety = 0
-          while (!controller.signal.aborted && allItems.length > 0 && allItems.length % perPage === 0 && safety < 100) {
+          while (
+            !controller.signal.aborted &&
+            allItems.length > 0 &&
+            allItems.length % perPage === 0 &&
+            safety < 100
+          ) {
             const { items: pageItems = [] } = await fetchAnagrafiche({
               token,
               signal: controller.signal,
@@ -1380,8 +1381,7 @@ const PreventiviDetail = () => {
 
   // Opzioni già filtrate a monte; il componente si occupa solo del rendering/controllo
   const mittenteInfo = useMemo(() => {
-    const resolvedClienteId =
-      clienteDisplay.id ?? (idAnagrafica ? Number(idAnagrafica) : null)
+    const resolvedClienteId = clienteDisplay.id ?? (idAnagrafica ? Number(idAnagrafica) : null)
     const generalInfo = {
       id:
         Number.isFinite(Number(resolvedClienteId)) && Number(resolvedClienteId) > 0
@@ -1415,13 +1415,8 @@ const PreventiviDetail = () => {
         customMittente.nome ??
         '',
       codiceCliente: customMittente.codice_cliente ?? customMittente.codiceCliente ?? null,
-      piva:
-        customMittente.piva ??
-        customMittente.partita_iva ??
-        customMittente.partitaIva ??
-        null,
-      codiceFiscale:
-        customMittente.codice_fiscale ?? customMittente.codiceFiscale ?? null,
+      piva: customMittente.piva ?? customMittente.partita_iva ?? customMittente.partitaIva ?? null,
+      codiceFiscale: customMittente.codice_fiscale ?? customMittente.codiceFiscale ?? null,
       email: customMittente.email ?? customMittente.contatto_email ?? null,
     }
   }, [clienteDisplay, customMittente, idAnagrafica, mittenteMode])
@@ -1449,7 +1444,7 @@ const PreventiviDetail = () => {
         ])
         setCatOptions(cats)
         setNaturaOptions(nats)
-      } catch (_e) { }
+      } catch (_e) {}
     }
     load()
     return () => controller.abort()
@@ -1462,7 +1457,12 @@ const PreventiviDetail = () => {
     const load = async () => {
       try {
         const idcat = selCat ? Number(selCat) : undefined
-        const { items } = await fetchProdotti({ token, id_categoria: idcat, q: prodSearch, signal: controller.signal })
+        const { items } = await fetchProdotti({
+          token,
+          id_categoria: idcat,
+          q: prodSearch,
+          signal: controller.signal,
+        })
         setProdOptions(items)
       } catch (_e) {
         setProdOptions([])
@@ -1478,9 +1478,13 @@ const PreventiviDetail = () => {
     const controller = new AbortController()
     const run = async () => {
       try {
-        const ids = Array.from(new Set((Array.isArray(righe) ? righe : [])
-          .map((r) => Number(r?.id_prodotto) || 0)
-          .filter((n) => n > 0)))
+        const ids = Array.from(
+          new Set(
+            (Array.isArray(righe) ? righe : [])
+              .map((r) => Number(r?.id_prodotto) || 0)
+              .filter((n) => n > 0),
+          ),
+        )
         const missing = ids.filter((idp) => prodCategoryMap[idp] == null)
         if (missing.length === 0) return
         // Carica categorie se non presenti
@@ -1495,16 +1499,24 @@ const PreventiviDetail = () => {
           }
         }
         const catNameById = {}
-        cats.forEach((c) => { if (c?.id_categoria != null) catNameById[Number(c.id_categoria)] = String(c.nome || '') })
+        cats.forEach((c) => {
+          if (c?.id_categoria != null) catNameById[Number(c.id_categoria)] = String(c.nome || '')
+        })
         const updates = {}
         for (const idp of missing) {
           try {
-            const resp = await fetchProdottoDetail({ token, id_prodotto: idp, signal: controller.signal })
+            const resp = await fetchProdottoDetail({
+              token,
+              id_prodotto: idp,
+              signal: controller.signal,
+            })
             const detail = resp?.item ?? resp?.data ?? resp ?? {}
             const idcat = Number(detail?.id_categoria) || 0
-            const nameFromDetail = detail?.categoria_nome ?? detail?.categoria ?? detail?.nome_categoria
+            const nameFromDetail =
+              detail?.categoria_nome ?? detail?.categoria ?? detail?.nome_categoria
             const name =
-              (nameFromDetail && String(nameFromDetail)) || (idcat && catNameById[idcat] ? catNameById[idcat] : 'Altro')
+              (nameFromDetail && String(nameFromDetail)) ||
+              (idcat && catNameById[idcat] ? catNameById[idcat] : 'Altro')
             updates[idp] = name || 'Altro'
           } catch (_e) {
             updates[idp] = 'Altro'
@@ -1513,7 +1525,7 @@ const PreventiviDetail = () => {
         if (Object.keys(updates).length > 0) {
           setProdCategoryMap((prev) => ({ ...prev, ...updates }))
         }
-      } catch (_e) { }
+      } catch (_e) {}
     }
     run()
     return () => controller.abort()
@@ -1532,16 +1544,30 @@ const PreventiviDetail = () => {
     const load = async () => {
       try {
         const [{ items }, combo] = await Promise.all([
-          fetchProdottoVariazioni({ token, id_prodotto: Number(selProd), signal: controller.signal }),
-          fetchProdottoPrezziCombinati({ token, id_prodotto: Number(selProd), signal: controller.signal }),
+          fetchProdottoVariazioni({
+            token,
+            id_prodotto: Number(selProd),
+            signal: controller.signal,
+          }),
+          fetchProdottoPrezziCombinati({
+            token,
+            id_prodotto: Number(selProd),
+            signal: controller.signal,
+          }),
         ])
         const sorted = Array.isArray(items)
-          ? [...items].sort((a, b) => String(a?.codice || '').localeCompare(String(b?.codice || '')) || String(a?.nome || '').localeCompare(String(b?.nome || '')))
+          ? [...items].sort(
+              (a, b) =>
+                String(a?.codice || '').localeCompare(String(b?.codice || '')) ||
+                String(a?.nome || '').localeCompare(String(b?.nome || '')),
+            )
           : []
         setProdVarOptions(sorted)
         const cmap = {}
         const rows = Array.isArray(combo?.items) ? combo.items : []
-        rows.forEach((r) => { if (r?.combo_key) cmap[String(r.combo_key)] = Number(r.prezzo) || 0 })
+        rows.forEach((r) => {
+          if (r?.combo_key) cmap[String(r.combo_key)] = Number(r.prezzo) || 0
+        })
         setProdComboMap(cmap)
         setProdComboList(rows)
       } catch (_e) {
@@ -1558,14 +1584,16 @@ const PreventiviDetail = () => {
   useEffect(() => {
     const prod = prodOptions.find((p) => String(p.id_prodotto) === String(selProd))
     const base = Number(prod?.prezzo_listino) || 0
-    const comboKey = selectedComboKey && String(selectedComboKey).trim() !== ''
-      ? selectedComboKey
-      : (selectedVarIds
-        .map((id) => Number(id) || 0)
-        .filter((n) => n > 0)
-        .sort((a, b) => a - b)
-        .join('+'))
-    const comboPrice = comboKey && prodComboMap[comboKey] != null ? Number(prodComboMap[comboKey]) : null
+    const comboKey =
+      selectedComboKey && String(selectedComboKey).trim() !== ''
+        ? selectedComboKey
+        : selectedVarIds
+            .map((id) => Number(id) || 0)
+            .filter((n) => n > 0)
+            .sort((a, b) => a - b)
+            .join('+')
+    const comboPrice =
+      comboKey && prodComboMap[comboKey] != null ? Number(prodComboMap[comboKey]) : null
     const suggested = comboPrice != null ? comboPrice : base
     setModalPrice(suggested)
   }, [selProd, prodOptions, selectedComboKey, selectedVarIds, prodVarOptions, prodComboMap])
@@ -1625,7 +1653,10 @@ const PreventiviDetail = () => {
   const addCig = () => {
     const code = String(newCig.cig || '').trim()
     if (!code) return
-    setCigList((list) => [...list, { cig: code, data_cig: newCig.data_cig || '', motivazione: newCig.motivazione || '' }])
+    setCigList((list) => [
+      ...list,
+      { cig: code, data_cig: newCig.data_cig || '', motivazione: newCig.motivazione || '' },
+    ])
     setNewCig({ cig: '', data_cig: '', motivazione: '' })
   }
   const removeCig = (index) => setCigList((list) => list.filter((_, i) => i !== index))
@@ -1634,7 +1665,14 @@ const PreventiviDetail = () => {
   const addDetermina = () => {
     const num = String(newDetermina.determina || '').trim()
     if (!num) return
-    setDetermineList((list) => [...list, { determina: num, data_determina: newDetermina.data_determina || '', motivazione: newDetermina.motivazione || '' }])
+    setDetermineList((list) => [
+      ...list,
+      {
+        determina: num,
+        data_determina: newDetermina.data_determina || '',
+        motivazione: newDetermina.motivazione || '',
+      },
+    ])
     setNewDetermina({ determina: '', data_determina: '', motivazione: '' })
   }
   const removeDetermina = (index) => setDetermineList((list) => list.filter((_, i) => i !== index))
@@ -1712,9 +1750,9 @@ const PreventiviDetail = () => {
         : `ID ${id}`
     const docDate = dataPreventivo
       ? (() => {
-        const parsed = new Date(dataPreventivo)
-        return Number.isFinite(parsed.getTime()) ? parsed.toLocaleDateString('it-IT') : null
-      })()
+          const parsed = new Date(dataPreventivo)
+          return Number.isFinite(parsed.getTime()) ? parsed.toLocaleDateString('it-IT') : null
+        })()
       : null
     const descrizione = (computedOggettoText || oggetto || 'la lavorazione richiesta').trim()
     const totalFormatted = totals?.totale ? formatCurrency(totals.totale) : formatCurrency(0)
@@ -1739,7 +1777,12 @@ const PreventiviDetail = () => {
     const controller = new AbortController()
     const load = async () => {
       try {
-        const { items } = await fetchPacchetti({ token, q: pkgSearch, onlyActive: pkgOnlyActive, signal: controller.signal })
+        const { items } = await fetchPacchetti({
+          token,
+          q: pkgSearch,
+          onlyActive: pkgOnlyActive,
+          signal: controller.signal,
+        })
         setPkgOptions(items)
       } catch (_e) {
         setPkgOptions([])
@@ -1752,11 +1795,18 @@ const PreventiviDetail = () => {
   // Carica righe pacchetto selezionato
   useEffect(() => {
     if (!token || !pkgOpen) return
-    if (!selPacchetto) { setPkgPreview([]); return }
+    if (!selPacchetto) {
+      setPkgPreview([])
+      return
+    }
     const controller = new AbortController()
     const loadDetail = async () => {
       try {
-        const { righe } = await fetchPacchettoDetail({ token, id: Number(selPacchetto), signal: controller.signal })
+        const { righe } = await fetchPacchettoDetail({
+          token,
+          id: Number(selPacchetto),
+          signal: controller.signal,
+        })
         setPkgPreview(righe)
       } catch (_e) {
         setPkgPreview([])
@@ -1815,97 +1865,105 @@ const PreventiviDetail = () => {
   }, [token, contrattoOpen, selContratto])
 
   // Aggiorna lo stato documento e registra il cambio nel log storico.
-  const handleStatusChange = useCallback(async (nextCode) => {
-    const safeCode = typeof nextCode === 'string' ? nextCode.trim().toLowerCase() : String(nextCode || '').trim().toLowerCase()
-    if (!safeCode) return
-    if (!token || !id) return
-    if (statusUpdating) return
-    const operatorName = user?.username || user?.name || user?.email || null
-    const statusNote = safeCode === 'inviato' ? 'Invio manuale da timeline.' : null
-    const prevCode = String(currentStatus?.code || '').toLowerCase()
-    const prevLabel = currentStatus?.label ?? prevCode
-    setStatusError(null)
-    setStatusSuccess(null)
-    setStatusUpdating(true)
-    try {
-      const result = await updatePreventivoStatus({
-        token,
-        id,
-        statusCode: safeCode,
-        operatorName,
-        note: statusNote,
-      })
-      const updatedStatuses = Array.isArray(result.statuses) ? result.statuses : null
-      if (updatedStatuses) {
-        setStatusOptions(updatedStatuses)
-      }
-      const resolvedCode = result.currentStatus?.code ?? safeCode
-      let resolvedLabel = result.currentStatus?.label ?? null
-      if (!resolvedLabel) {
-        const sourceStatuses = updatedStatuses || statusOptions
-        if (Array.isArray(sourceStatuses)) {
-          const match = sourceStatuses.find((s) => s?.code === resolvedCode)
-          if (match) {
-            resolvedLabel = match.label ?? resolvedLabel
-          }
-        }
-      }
-      setCurrentStatus({
-        code: resolvedCode ?? null,
-        label: resolvedLabel ?? resolvedCode ?? null,
-      })
-      // best-effort: salva log cambio stato (non blocca il flusso)
+  const handleStatusChange = useCallback(
+    async (nextCode) => {
+      const safeCode =
+        typeof nextCode === 'string'
+          ? nextCode.trim().toLowerCase()
+          : String(nextCode || '')
+              .trim()
+              .toLowerCase()
+      if (!safeCode) return
+      if (!token || !id) return
+      if (statusUpdating) return
+      const operatorName = user?.username || user?.name || user?.email || null
+      const statusNote = safeCode === 'inviato' ? 'Invio manuale da timeline.' : null
+      const prevCode = String(currentStatus?.code || '').toLowerCase()
+      const prevLabel = currentStatus?.label ?? prevCode
+      setStatusError(null)
+      setStatusSuccess(null)
+      setStatusUpdating(true)
       try {
-        const description = `Cambio stato da ${prevLabel || prevCode || '-'} a ${resolvedLabel || resolvedCode || safeCode}`
-        await logPreventivoStatusChange({
+        const result = await updatePreventivoStatus({
           token,
           id,
-          fromStatus: prevLabel || prevCode || null,
-          toStatus: resolvedLabel || resolvedCode || safeCode,
-          note: description,
-          description,
-          userId: (user && (user.id || user.user_id)) || null,
-          userName: (user && (user.username || user.name || user.nome)) || null,
-          context: {
-            preventivo_id: id,
-            previous_code: prevCode || null,
-            previous_label: prevLabel || null,
-            new_code: resolvedCode || safeCode,
-            new_label: resolvedLabel || null,
-          },
+          statusCode: safeCode,
+          operatorName,
+          note: statusNote,
         })
+        const updatedStatuses = Array.isArray(result.statuses) ? result.statuses : null
+        if (updatedStatuses) {
+          setStatusOptions(updatedStatuses)
+        }
+        const resolvedCode = result.currentStatus?.code ?? safeCode
+        let resolvedLabel = result.currentStatus?.label ?? null
+        if (!resolvedLabel) {
+          const sourceStatuses = updatedStatuses || statusOptions
+          if (Array.isArray(sourceStatuses)) {
+            const match = sourceStatuses.find((s) => s?.code === resolvedCode)
+            if (match) {
+              resolvedLabel = match.label ?? resolvedLabel
+            }
+          }
+        }
+        setCurrentStatus({
+          code: resolvedCode ?? null,
+          label: resolvedLabel ?? resolvedCode ?? null,
+        })
+        // best-effort: salva log cambio stato (non blocca il flusso)
         try {
-          const { items } = await fetchPreventivoStatusLog({ token, id })
-          const normalized = Array.isArray(items) ? items.slice() : []
-          normalized.sort((a, b) => {
-            const da = new Date(a?.at || a?.created_at || a?.timestamp || 0).getTime()
-            const db = new Date(b?.at || b?.created_at || b?.timestamp || 0).getTime()
-            return db - da
+          const description = `Cambio stato da ${prevLabel || prevCode || '-'} a ${resolvedLabel || resolvedCode || safeCode}`
+          await logPreventivoStatusChange({
+            token,
+            id,
+            fromStatus: prevLabel || prevCode || null,
+            toStatus: resolvedLabel || resolvedCode || safeCode,
+            note: description,
+            description,
+            userId: (user && (user.id || user.user_id)) || null,
+            userName: (user && (user.username || user.name || user.nome)) || null,
+            context: {
+              preventivo_id: id,
+              previous_code: prevCode || null,
+              previous_label: prevLabel || null,
+              new_code: resolvedCode || safeCode,
+              new_label: resolvedLabel || null,
+            },
           })
-          setStatusLog(normalized)
-        } catch (_e2) { }
-      } catch (_e) { }
-      if (result.data) {
-        setHeader((prev) => ({
-          ...prev,
-          stato: result.data.stato_label ?? result.data.stato_code ?? prev?.stato ?? null,
-        }))
+          try {
+            const { items } = await fetchPreventivoStatusLog({ token, id })
+            const normalized = Array.isArray(items) ? items.slice() : []
+            normalized.sort((a, b) => {
+              const da = new Date(a?.at || a?.created_at || a?.timestamp || 0).getTime()
+              const db = new Date(b?.at || b?.created_at || b?.timestamp || 0).getTime()
+              return db - da
+            })
+            setStatusLog(normalized)
+          } catch (_e2) {}
+        } catch (_e) {}
+        if (result.data) {
+          setHeader((prev) => ({
+            ...prev,
+            stato: result.data.stato_label ?? result.data.stato_code ?? prev?.stato ?? null,
+          }))
+        }
+        if (typeof result.editable === 'boolean') {
+          setEditable(result.editable)
+        }
+        setStatusSuccess('Stato aggiornato correttamente.')
+      } catch (err) {
+        if (err?.name === 'AbortError') return
+        if (err?.status === 401 && logout) {
+          logout()
+          return
+        }
+        setStatusError(err)
+      } finally {
+        setStatusUpdating(false)
       }
-      if (typeof result.editable === 'boolean') {
-        setEditable(result.editable)
-      }
-      setStatusSuccess('Stato aggiornato correttamente.')
-    } catch (err) {
-      if (err?.name === 'AbortError') return
-      if (err?.status === 401 && logout) {
-        logout()
-        return
-      }
-      setStatusError(err)
-    } finally {
-      setStatusUpdating(false)
-    }
-  }, [token, id, statusUpdating, logout, statusOptions, user])
+    },
+    [token, id, statusUpdating, logout, statusOptions, user],
+  )
 
   // Stepper usa gestione inline (3 step). Le transizioni 1->bozza, 2->inviato
   // sono gestite direttamente, mentre il passo 3 (Finale) usa la select.
@@ -1928,8 +1986,20 @@ const PreventiviDetail = () => {
       note,
       oggetti: selectedOggetti.map((v) => Number(v)).filter((n) => Number.isFinite(n) && n > 0),
       riferimento_cliente: rifCliente,
-      cig: isAcquisto ? undefined : cigList.map((c) => ({ cig: c.cig, data_cig: c.data_cig || null, motivazione: c.motivazione || null })),
-      determine: isAcquisto ? undefined : determineList.map((d) => ({ determina: d.determina, data_determina: d.data_determina || null, motivazione: d.motivazione || null })),
+      cig: isAcquisto
+        ? undefined
+        : cigList.map((c) => ({
+            cig: c.cig,
+            data_cig: c.data_cig || null,
+            motivazione: c.motivazione || null,
+          })),
+      determine: isAcquisto
+        ? undefined
+        : determineList.map((d) => ({
+            determina: d.determina,
+            data_determina: d.data_determina || null,
+            motivazione: d.motivazione || null,
+          })),
       contatti: serializePreventivoContacts(preventivoContatti, Number(idAnagrafica) || null),
       righe: normalizedRighe,
       totals: {
@@ -2055,42 +2125,42 @@ const PreventiviDetail = () => {
     setLavorazioneSuccess(null)
     const normalizedNote = typeof note === 'string' ? note.trim() : ''
     try {
-        const titoloLavorazione =
-          (computedOggettoText && computedOggettoText.trim() !== '' ? computedOggettoText : null) ||
-          (oggetto && oggetto.trim() !== '' ? oggetto : null) ||
-          (headerNumero ? `Preventivo ${headerNumero}` : null)
+      const titoloLavorazione =
+        (computedOggettoText && computedOggettoText.trim() !== '' ? computedOggettoText : null) ||
+        (oggetto && oggetto.trim() !== '' ? oggetto : null) ||
+        (headerNumero ? `Preventivo ${headerNumero}` : null)
 
-        const payload = await generateLavorazioneFromPreventivo({
-          token,
-          id,
-          titolo: titoloLavorazione ?? undefined,
-          descrizione: normalizedNote || titoloLavorazione || undefined,
-          note: normalizedNote || undefined,
-        })
+      const payload = await generateLavorazioneFromPreventivo({
+        token,
+        id,
+        titolo: titoloLavorazione ?? undefined,
+        descrizione: normalizedNote || titoloLavorazione || undefined,
+        note: normalizedNote || undefined,
+      })
 
-        const newId = payload?.id_lavorazione ?? payload?.lavorazione?.id_lavorazione ?? null
-        const newCode = payload?.codice ?? payload?.lavorazione?.codice ?? null
-        const activitiesCreated =
-          Number(payload?.attivita_create ?? payload?.lavorazione?.attivita_create ?? 0) || 0
-        const newEntry = normalizeLavorazioneItem({
-          id_lavorazione: newId,
-          codice: newCode,
-          titolo: titoloLavorazione ?? null,
-          stato: 'aperta',
-          created_at: new Date().toISOString(),
+      const newId = payload?.id_lavorazione ?? payload?.lavorazione?.id_lavorazione ?? null
+      const newCode = payload?.codice ?? payload?.lavorazione?.codice ?? null
+      const activitiesCreated =
+        Number(payload?.attivita_create ?? payload?.lavorazione?.attivita_create ?? 0) || 0
+      const newEntry = normalizeLavorazioneItem({
+        id_lavorazione: newId,
+        codice: newCode,
+        titolo: titoloLavorazione ?? null,
+        stato: 'aperta',
+        created_at: new Date().toISOString(),
+      })
+      if (newEntry) {
+        setLinkedLavorazioni((prev) => {
+          const list = Array.isArray(prev) ? prev : []
+          const filtered = list.filter((item) => item.id !== newEntry.id)
+          return [newEntry, ...filtered]
         })
-        if (newEntry) {
-          setLinkedLavorazioni((prev) => {
-            const list = Array.isArray(prev) ? prev : []
-            const filtered = list.filter((item) => item.id !== newEntry.id)
-            return [newEntry, ...filtered]
-          })
-        }
-        const successMessage = newCode
-          ? `Lavorazione ${newCode} generata correttamente.`
-          : 'Lavorazione generata correttamente.'
-        const activitySuffix = activitiesCreated > 0 ? ` Generate ${activitiesCreated} attivita.` : ''
-        setLavorazioneSuccess(successMessage + activitySuffix)
+      }
+      const successMessage = newCode
+        ? `Lavorazione ${newCode} generata correttamente.`
+        : 'Lavorazione generata correttamente.'
+      const activitySuffix = activitiesCreated > 0 ? ` Generate ${activitiesCreated} attivita.` : ''
+      setLavorazioneSuccess(successMessage + activitySuffix)
     } catch (err) {
       if (err?.name === 'AbortError') {
         return
@@ -2146,16 +2216,14 @@ const PreventiviDetail = () => {
       const numero = response?.ddt?.numero_documento
       const anno = response?.ddt?.anno
       const successMessage =
-        numero && anno
-          ? `DDT emesso con numero ${numero}/${anno}.`
-          : 'DDT emesso con successo.'
+        numero && anno ? `DDT emesso con numero ${numero}/${anno}.` : 'DDT emesso con successo.'
       setDdtSuccess(successMessage)
       setDdtResult(response?.ddt ?? null)
       setRefreshCounter((count) => count + 1)
       const docNumber =
         response?.ddt?.numero_documento && response?.ddt?.anno
           ? `${response.ddt.numero_documento}/${response.ddt.anno}`
-          : response?.ddt?.numero_documento ?? ''
+          : (response?.ddt?.numero_documento ?? '')
       logPreventivoEvent({
         token,
         id,
@@ -2164,7 +2232,7 @@ const PreventiviDetail = () => {
         context: { type: 'ddt', id_ddt: response?.ddt?.id_ddt ?? null },
         userId: currentUserId,
         userName: currentUserName,
-      }).catch(() => { })
+      }).catch(() => {})
     } catch (error) {
       if (error?.status === 401 && logout) {
         logout()
@@ -2182,7 +2250,8 @@ const PreventiviDetail = () => {
     setFatturaSuccess(null)
     setFatturaResult(null)
     setFatturaForm((prev) => ({
-      data_fattura: prev?.data_fattura && prev.data_fattura !== '' ? prev.data_fattura : getTodayIsoDate(),
+      data_fattura:
+        prev?.data_fattura && prev.data_fattura !== '' ? prev.data_fattura : getTodayIsoDate(),
       id_sezionale: clienteSezionaleId ? String(clienteSezionaleId) : (prev?.id_sezionale ?? ''),
       id_tipo_fatt: prev?.id_tipo_fatt ?? '',
       id_stato_fatt: prev?.id_stato_fatt ?? '',
@@ -2235,7 +2304,7 @@ const PreventiviDetail = () => {
       const effectiveTypeId =
         isAcquisto && Number.isFinite(preferredTypeId) && preferredTypeId > 0
           ? preferredTypeId
-          : (fatturaForm?.id_tipo_fatt || undefined)
+          : fatturaForm?.id_tipo_fatt || undefined
       const response = await emitPreventivoFattura({
         token,
         id,
@@ -2243,7 +2312,10 @@ const PreventiviDetail = () => {
         id_sezionale: effectiveSezionale || undefined,
         id_tipo_fatt: effectiveTypeId,
         id_stato_fatt: fatturaForm?.id_stato_fatt || undefined,
-        note: fatturaForm?.note && fatturaForm.note.trim() !== '' ? fatturaForm.note.trim() : defaultFatturaNote,
+        note:
+          fatturaForm?.note && fatturaForm.note.trim() !== ''
+            ? fatturaForm.note.trim()
+            : defaultFatturaNote,
         righe_ids: selectedIds,
         is_acquisto: isAcquisto,
       })
@@ -2259,7 +2331,7 @@ const PreventiviDetail = () => {
       const docNumber =
         response?.fattura?.numero_documento && response?.fattura?.anno
           ? `${response.fattura.numero_documento}/${response.fattura.anno}`
-          : response?.fattura?.numero_documento ?? ''
+          : (response?.fattura?.numero_documento ?? '')
       logPreventivoEvent({
         token,
         id,
@@ -2268,7 +2340,7 @@ const PreventiviDetail = () => {
         context: { type: 'fattura', id_fattura: response?.fattura?.id_fattura ?? null },
         userId: currentUserId,
         userName: currentUserName,
-      }).catch(() => { })
+      }).catch(() => {})
     } catch (error) {
       if (error?.status === 401 && logout) {
         logout()
@@ -2278,8 +2350,19 @@ const PreventiviDetail = () => {
     } finally {
       setFatturaSubmitting(false)
     }
-  }, [token, id, preventivoHasRighe, fatturaSelectedIds, fatturaForm, fatturaConfig.tipi, defaultFatturaNote, logout, isAcquisto, currentUserId, currentUserName])
-
+  }, [
+    token,
+    id,
+    preventivoHasRighe,
+    fatturaSelectedIds,
+    fatturaForm,
+    fatturaConfig.tipi,
+    defaultFatturaNote,
+    logout,
+    isAcquisto,
+    currentUserId,
+    currentUserName,
+  ])
 
   // Apre la stampa PDF del preventivo.
   const handleOpenPrintPDF = useCallback(() => {
@@ -2299,7 +2382,9 @@ const PreventiviDetail = () => {
     setEmailSuccess(null)
     setEmailModalVisible(true)
     setEmailTo((prev) => (prev && prev.trim() !== '' ? prev : defaultEmailToValue))
-    setEmailSubject((prev) => (prev && prev.trim() !== '' ? prev : defaultEmailSubject || `Preventivo ${id}`))
+    setEmailSubject((prev) =>
+      prev && prev.trim() !== '' ? prev : defaultEmailSubject || `Preventivo ${id}`,
+    )
     setEmailBody((prev) => (prev && prev.trim() !== '' ? prev : defaultEmailBody))
   }, [defaultEmailToValue, defaultEmailSubject, defaultEmailBody, id])
 
@@ -2463,7 +2548,7 @@ const PreventiviDetail = () => {
   // Archivia il preventivo corrente.
   const handleArchivePreventivo = useCallback(async () => {
     if (!token || !id) return
-    const confirmed = window.confirm('Confermi l\'archiviazione di questo preventivo?')
+    const confirmed = window.confirm("Confermi l'archiviazione di questo preventivo?")
     if (!confirmed) return
     setArchiveError(null)
     setArchiveLoading(true)
@@ -2508,7 +2593,7 @@ const PreventiviDetail = () => {
       })
       const newId = getPreventivoIdFromResponse(result)
       if (!newId) {
-        throw new Error('Non è stato possibile recuperare l\'ID del preventivo duplicato.')
+        throw new Error("Non è stato possibile recuperare l'ID del preventivo duplicato.")
       }
       navigate(`${basePath}/dettagli?id=${newId}`)
     } catch (err) {
@@ -2548,25 +2633,48 @@ const PreventiviDetail = () => {
     })
   }, [statusOptions])
 
-  const accountType = String(user?.accountType || user?.account_type || '').toLowerCase().trim()
+  const accountType = String(user?.accountType || user?.account_type || '')
+    .toLowerCase()
+    .trim()
   const isCustomerAccount = accountType === 'cliente'
   const uiDisabled = !editable || anagraficaDisabled || isCustomerAccount
-  const isBozzaStatus = useCallback((value) => String(value || '').trim().toLowerCase() === 'bozza', [])
+  const isBozzaStatus = useCallback(
+    (value) =>
+      String(value || '')
+        .trim()
+        .toLowerCase() === 'bozza',
+    [],
+  )
   const visibleLinkedLavorazioni = useMemo(
-    () => (Array.isArray(linkedLavorazioni) ? linkedLavorazioni.filter((item) => !isBozzaStatus(item?.stato)) : []),
+    () =>
+      Array.isArray(linkedLavorazioni)
+        ? linkedLavorazioni.filter((item) => !isBozzaStatus(item?.stato))
+        : [],
     [linkedLavorazioni, isBozzaStatus],
   )
   const visibleLinkedDdt = useMemo(
-    () => (Array.isArray(linkedDdt) ? linkedDdt.filter((item) => !isBozzaStatus(item?.stato_label || item?.stato_code || item?.stato)) : []),
+    () =>
+      Array.isArray(linkedDdt)
+        ? linkedDdt.filter(
+            (item) => !isBozzaStatus(item?.stato_label || item?.stato_code || item?.stato),
+          )
+        : [],
     [linkedDdt, isBozzaStatus],
   )
   const visibleLinkedFatture = useMemo(
-    () => (Array.isArray(linkedFatture) ? linkedFatture.filter((item) => !isBozzaStatus(item?.stato_label || item?.stato_code || item?.stato)) : []),
+    () =>
+      Array.isArray(linkedFatture)
+        ? linkedFatture.filter(
+            (item) => !isBozzaStatus(item?.stato_label || item?.stato_code || item?.stato),
+          )
+        : [],
     [linkedFatture, isBozzaStatus],
   )
   const latestRevisionLabel = revisions.length > 0 ? revisions[0].label : null
   const revisionModalDetail = revisionModalData?.payload?.detail ?? null
-  const revisionModalLines = Array.isArray(revisionModalDetail?.righe) ? revisionModalDetail.righe : []
+  const revisionModalLines = Array.isArray(revisionModalDetail?.righe)
+    ? revisionModalDetail.righe
+    : []
 
   const handleBreadcrumbSave = useCallback(() => {
     if (uiDisabled || submitting || pendingOggettoCreate) {
@@ -2582,6 +2690,58 @@ const PreventiviDetail = () => {
       setStatusTab('documenti')
     }
   }, [isCustomerAccount, statusTab])
+
+  useEffect(() => {
+    if (!acceptanceExists && statusTab === 'accettazione') {
+      setStatusTab('documenti')
+    }
+  }, [acceptanceExists, statusTab])
+
+  useEffect(() => {
+    const canLoad =
+      !createMode &&
+      Number(id) > 0 &&
+      token &&
+      statusTab === 'accettazione' &&
+      !isCustomerAccount &&
+      acceptanceExists
+    if (!canLoad) return
+    const controller = new AbortController()
+    let pdfObjectUrl = null
+    const run = async () => {
+      setAcceptanceLoading(true)
+      setAcceptanceError(null)
+      try {
+        const result = await fetchPreventivoAcceptanceArtifacts({
+          token,
+          id,
+          signal: controller.signal,
+        })
+        setAcceptanceItems(Array.isArray(result?.items) ? result.items : [])
+        pdfObjectUrl = await fetchPreventivoAcceptancePdfObjectUrl({
+          token,
+          id,
+          signal: controller.signal,
+          signedOnly: true,
+        })
+        setAcceptancePdfUrl(pdfObjectUrl)
+      } catch (error) {
+        if (controller.signal.aborted) return
+        setAcceptanceError(error)
+      } finally {
+        if (!controller.signal.aborted) {
+          setAcceptanceLoading(false)
+        }
+      }
+    }
+    run()
+    return () => {
+      controller.abort()
+      if (pdfObjectUrl) {
+        URL.revokeObjectURL(pdfObjectUrl)
+      }
+    }
+  }, [createMode, id, token, statusTab, isCustomerAccount, acceptanceExists])
 
   useEffect(() => {
     if (!id && !createMode) {
@@ -2702,7 +2862,11 @@ const PreventiviDetail = () => {
                 disabled={loading || archiveLoading || duplicateLoading || !token}
               >
                 <CIcon icon={cilCopy} className="me-2" />
-                {duplicateLoading ? 'Duplicazione...' : (isAcquisto ? 'Duplica' : 'Duplica per nuove attività')}
+                {duplicateLoading
+                  ? 'Duplicazione...'
+                  : isAcquisto
+                    ? 'Duplica'
+                    : 'Duplica per nuove attività'}
               </CButton>
             )}
             {isConfirmed && (
@@ -2720,7 +2884,8 @@ const PreventiviDetail = () => {
                     Apri Lavorazione
                   </CButton>
                 ) : (
-                  !isAcquisto && canGenerateLavorazione && (
+                  !isAcquisto &&
+                  canGenerateLavorazione && (
                     <CButton
                       color="warning"
                       variant="outline"
@@ -2770,23 +2935,32 @@ const PreventiviDetail = () => {
         )}
 
         {!loading && loadError && (
-          <CAlert color="danger">{loadError.message || 'Impossibile caricare il dettaglio.'}</CAlert>
+          <CAlert color="danger">
+            {loadError.message || 'Impossibile caricare il dettaglio.'}
+          </CAlert>
         )}
 
         {!loading && !loadError && (
           <CForm>
             {archiveError && (
               <CAlert color="danger" className="mb-3">
-                {archiveError?.payload?.message || archiveError.message || 'Impossibile archiviare il preventivo.'}
+                {archiveError?.payload?.message ||
+                  archiveError.message ||
+                  'Impossibile archiviare il preventivo.'}
               </CAlert>
             )}
             {!isAcquisto && lavorazioneError && (
               <CAlert color="danger" className="mb-3">
-                {lavorazioneError?.payload?.message || lavorazioneError.message || 'Impossibile generare la lavorazione.'}
+                {lavorazioneError?.payload?.message ||
+                  lavorazioneError.message ||
+                  'Impossibile generare la lavorazione.'}
               </CAlert>
             )}
             {!isAcquisto && lavorazioneSuccess && (
-              <CAlert color="success" className="mb-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
+              <CAlert
+                color="success"
+                className="mb-3 d-flex justify-content-between align-items-center flex-wrap gap-2"
+              >
                 <span>{lavorazioneSuccess}</span>
               </CAlert>
             )}
@@ -2798,25 +2972,33 @@ const PreventiviDetail = () => {
             {stockAlerts.length > 0 && (
               <CAlert color="warning" className="mb-3">
                 <strong>Alert magazzino:</strong>{' '}
-                {stockAlerts.map((item) => {
-                  const code = item?.prodotto_codice ? `${item.prodotto_codice} - ` : ''
-                  const name = item?.prodotto_nome || 'Prodotto'
-                  const level = item?.severity === 'out_of_stock' ? 'esaurito' : 'scorta bassa'
-                  return `${code}${name} (${level})`
-                }).join(' | ')}
+                {stockAlerts
+                  .map((item) => {
+                    const code = item?.prodotto_codice ? `${item.prodotto_codice} - ` : ''
+                    const name = item?.prodotto_nome || 'Prodotto'
+                    const level = item?.severity === 'out_of_stock' ? 'esaurito' : 'scorta bassa'
+                    return `${code}${name} (${level})`
+                  })
+                  .join(' | ')}
               </CAlert>
             )}
             {submitError && (
               <CAlert color="danger" className="mb-3">
-                {submitError?.payload?.message || submitError.message || 'Errore durante il salvataggio.'}
+                {submitError?.payload?.message ||
+                  submitError.message ||
+                  'Errore durante il salvataggio.'}
               </CAlert>
             )}
             {submitSuccess && (
-              <CAlert color="success" className="mb-3">{submitSuccess}</CAlert>
+              <CAlert color="success" className="mb-3">
+                {submitSuccess}
+              </CAlert>
             )}
             {duplicateError && (
               <CAlert color="danger" className="mb-3">
-                {duplicateError?.payload?.message || duplicateError.message || 'Impossibile duplicare il preventivo.'}
+                {duplicateError?.payload?.message ||
+                  duplicateError.message ||
+                  'Impossibile duplicare il preventivo.'}
               </CAlert>
             )}
 
@@ -2830,190 +3012,320 @@ const PreventiviDetail = () => {
               <CNav variant="tabs" role="tablist" className="mb-3">
                 {!isCustomerAccount && (
                   <CNavItem>
-                    <CNavLink active={statusTab === 'timeline'} role="tab" aria-selected={statusTab === 'timeline'} onClick={() => setStatusTab('timeline')}>
+                    <CNavLink
+                      active={statusTab === 'timeline'}
+                      role="tab"
+                      aria-selected={statusTab === 'timeline'}
+                      onClick={() => setStatusTab('timeline')}
+                    >
                       Timeline
                     </CNavLink>
                   </CNavItem>
                 )}
                 {!isCustomerAccount && (
                   <CNavItem>
-                    <CNavLink active={statusTab === 'storico'} role="tab" aria-selected={statusTab === 'storico'} onClick={() => setStatusTab('storico')}>
+                    <CNavLink
+                      active={statusTab === 'storico'}
+                      role="tab"
+                      aria-selected={statusTab === 'storico'}
+                      onClick={() => setStatusTab('storico')}
+                    >
                       Storico
                     </CNavLink>
                   </CNavItem>
                 )}
                 {!isCustomerAccount && (
                   <CNavItem>
-                    <CNavLink active={statusTab === 'revisioni'} role="tab" aria-selected={statusTab === 'revisioni'} onClick={() => setStatusTab('revisioni')}>
+                    <CNavLink
+                      active={statusTab === 'revisioni'}
+                      role="tab"
+                      aria-selected={statusTab === 'revisioni'}
+                      onClick={() => setStatusTab('revisioni')}
+                    >
                       Revisioni
                     </CNavLink>
                   </CNavItem>
                 )}
                 <CNavItem>
-                  <CNavLink active={statusTab === 'documenti'} role="tab" aria-selected={statusTab === 'documenti'} onClick={() => setStatusTab('documenti')}>
+                  <CNavLink
+                    active={statusTab === 'documenti'}
+                    role="tab"
+                    aria-selected={statusTab === 'documenti'}
+                    onClick={() => setStatusTab('documenti')}
+                  >
                     Documenti correlati
                   </CNavLink>
                 </CNavItem>
+                {!isCustomerAccount && acceptanceExists && (
+                  <CNavItem>
+                    <CNavLink
+                      active={statusTab === 'accettazione'}
+                      role="tab"
+                      aria-selected={statusTab === 'accettazione'}
+                      onClick={() => setStatusTab('accettazione')}
+                    >
+                      Accettazione
+                    </CNavLink>
+                  </CNavItem>
+                )}
               </CNav>
               <CTabContent>
-                {!isCustomerAccount && <CTabPane visible={statusTab === 'timeline'} role="tabpanel">
-                  {visualStatusSteps.length > 0 && (
-                    <>
-                      {statusError && (
-                        <CAlert color="danger" className="mb-3">
-                          {statusError?.payload?.message || statusError.message || "Errore durante l'aggiornamento dello stato."}
-                        </CAlert>
-                      )}
-                      {statusSuccess && (
-                        <CAlert color="success" className="mb-3">{statusSuccess}</CAlert>
-                      )}
-                      <div className="px-2 px-lg-3 py-3 border rounded bg-body-tertiary">
-                        <div className="d-flex flex-column flex-lg-row align-items-center justify-content-between gap-3">
-                          <div className="flex-grow-1 w-100">
-                            <CStepper
-                              className="w-100"
-                              activeStepNumber={activeVisualStatusStep}
-                              steps={visualStatusSteps}
-                              linear={false}
-                              validation={false}
-                              onStepChange={(n) => {
-                                const step = Number(n)
-                                // Evita loop: non reagire se già su quello step o durante update
-                                if (statusUpdating) return
-                                if (step === activeVisualStatusStep) return
-                                // Mappa step -> codice stato e salta se già coerente
-                                let nextCode = null
-                                if (step === 1) nextCode = 'bozza'
-                                if (step === 2) nextCode = 'inviato'
-                                if (!nextCode) return
-                                const currCode = String(currentStatus?.code || '').toLowerCase()
-                                if (currCode === nextCode) return
-                                handleStatusChange(nextCode)
-                              }}
-                            />
-                          </div>
-                          <div className="w-100 w-lg-auto align-self-center" style={{ minWidth: '220px', maxWidth: '320px' }}>
-                            <CInputGroup size="sm">
-                              <CInputGroupText>Stato finale</CInputGroupText>
-                              <CFormSelect
-                                size="sm"
-                                value={isFinalCode(currentStatus?.code) ? currentStatus.code : ''}
-                                onChange={(e) => {
-                                  const next = e.target.value
-                                  if (!next) return
-                                  handleStatusChange(next)
+                {!isCustomerAccount && (
+                  <CTabPane visible={statusTab === 'timeline'} role="tabpanel">
+                    {visualStatusSteps.length > 0 && (
+                      <>
+                        {statusError && (
+                          <CAlert color="danger" className="mb-3">
+                            {statusError?.payload?.message ||
+                              statusError.message ||
+                              "Errore durante l'aggiornamento dello stato."}
+                          </CAlert>
+                        )}
+                        {statusSuccess && (
+                          <CAlert color="success" className="mb-3">
+                            {statusSuccess}
+                          </CAlert>
+                        )}
+                        <div className="px-2 px-lg-3 py-3 border rounded bg-body-tertiary">
+                          <div className="d-flex flex-column flex-lg-row align-items-center justify-content-between gap-3">
+                            <div className="flex-grow-1 w-100">
+                              <CStepper
+                                className="w-100"
+                                activeStepNumber={activeVisualStatusStep}
+                                steps={visualStatusSteps}
+                                linear={false}
+                                validation={false}
+                                onStepChange={(n) => {
+                                  const step = Number(n)
+                                  // Evita loop: non reagire se già su quello step o durante update
+                                  if (statusUpdating) return
+                                  if (step === activeVisualStatusStep) return
+                                  // Mappa step -> codice stato e salta se già coerente
+                                  let nextCode = null
+                                  if (step === 1) nextCode = 'bozza'
+                                  if (step === 2) nextCode = 'inviato'
+                                  if (!nextCode) return
+                                  const currCode = String(currentStatus?.code || '').toLowerCase()
+                                  if (currCode === nextCode) return
+                                  handleStatusChange(nextCode)
                                 }}
-                                disabled={statusUpdating || finalStatusOptions.length === 0}
-                              >
-                                <option value="">Seleziona...</option>
-                                {finalStatusOptions.map((opt) => (
-                                  <option key={opt.code} value={opt.code}>{opt.label ?? opt.code}</option>
-                                ))}
-                              </CFormSelect>
-                            </CInputGroup>
+                              />
+                            </div>
+                            <div
+                              className="w-100 w-lg-auto align-self-center"
+                              style={{ minWidth: '220px', maxWidth: '320px' }}
+                            >
+                              <CInputGroup size="sm">
+                                <CInputGroupText>Stato finale</CInputGroupText>
+                                <CFormSelect
+                                  size="sm"
+                                  value={isFinalCode(currentStatus?.code) ? currentStatus.code : ''}
+                                  onChange={(e) => {
+                                    const next = e.target.value
+                                    if (!next) return
+                                    handleStatusChange(next)
+                                  }}
+                                  disabled={statusUpdating || finalStatusOptions.length === 0}
+                                >
+                                  <option value="">Seleziona...</option>
+                                  {finalStatusOptions.map((opt) => (
+                                    <option key={opt.code} value={opt.code}>
+                                      {opt.label ?? opt.code}
+                                    </option>
+                                  ))}
+                                </CFormSelect>
+                              </CInputGroup>
+                            </div>
+                          </div>
+                          <div className="mt-3 d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-2">
+                            <div>
+                              <small className="text-body-secondary">
+                                Stato attuale:{' '}
+                                <span className="fw-semibold">{currentStatusLabel || 'N.D.'}</span>
+                              </small>
+                            </div>
+                            <div className="d-flex align-items-center gap-2">
+                              {statusUpdating && <CSpinner size="sm" />}
+                              <small className="text-body-secondary">
+                                Seleziona uno step per aggiornare manualmente lo stato.
+                              </small>
+                            </div>
                           </div>
                         </div>
-                        <div className="mt-3 d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-2">
-                          <div>
-                            <small className="text-body-secondary">
-                              Stato attuale: <span className="fw-semibold">{currentStatusLabel || 'N.D.'}</span>
-                            </small>
-                          </div>
-                          <div className="d-flex align-items-center gap-2">
-                            {statusUpdating && <CSpinner size="sm" />}
-                            <small className="text-body-secondary">Seleziona uno step per aggiornare manualmente lo stato.</small>
-                          </div>
-                        </div>
+                      </>
+                    )}
+                  </CTabPane>
+                )}
+                {!isCustomerAccount && (
+                  <CTabPane visible={statusTab === 'storico'} role="tabpanel">
+                    {statusLogLoading && (
+                      <div className="d-flex align-items-center gap-2">
+                        <CSpinner size="sm" />
+                        <small className="text-body-secondary">Caricamento storico...</small>
                       </div>
-                    </>
-                  )}
-                </CTabPane>}
-                {!isCustomerAccount && <CTabPane visible={statusTab === 'storico'} role="tabpanel">
-                  {statusLogLoading && (
-                    <div className="d-flex align-items-center gap-2">
-                      <CSpinner size="sm" />
-                      <small className="text-body-secondary">Caricamento storico...</small>
-                    </div>
-                  )}
-                  {!statusLogLoading && statusLogError && (
-                    <CAlert color="danger" className="mb-0">Impossibile caricare lo storico dei cambi di stato.</CAlert>
-                  )}
-                  {!statusLogLoading && !statusLogError && (
-                    statusLog.length === 0 ? (
-                      <small className="text-body-secondary">Nessun evento di stato.</small>
+                    )}
+                    {!statusLogLoading && statusLogError && (
+                      <CAlert color="danger" className="mb-0">
+                        Impossibile caricare lo storico dei cambi di stato.
+                      </CAlert>
+                    )}
+                    {!statusLogLoading &&
+                      !statusLogError &&
+                      (statusLog.length === 0 ? (
+                        <small className="text-body-secondary">Nessun evento di stato.</small>
+                      ) : (
+                        <CTable data-testid="table" small responsive className="mb-0">
+                          <CTableHead className="mp-table-head">
+                            <CTableRow>
+                              <CTableHeaderCell>Data</CTableHeaderCell>
+                              <CTableHeaderCell>Utente</CTableHeaderCell>
+                              <CTableHeaderCell>Transizione</CTableHeaderCell>
+                              <CTableHeaderCell>Nota</CTableHeaderCell>
+                            </CTableRow>
+                          </CTableHead>
+                          <CTableBody>
+                            {statusLog.map((e, idx) => (
+                              <CTableRow key={idx}>
+                                <CTableDataCell>
+                                  {formatDateTime(e.at || e.created_at || e.timestamp)}
+                                </CTableDataCell>
+                                <CTableDataCell>
+                                  {e.user_name || e.username || e.user || e.operatore || '-'}
+                                </CTableDataCell>
+                                <CTableDataCell>
+                                  {e.from_status || e.from || e.da
+                                    ? `${e.from_status || e.from || e.da} → ${e.to_status || e.to || e.a || e.status || ''}`
+                                    : e.to_status || e.to || e.a || e.status || ''}
+                                </CTableDataCell>
+                                <CTableDataCell>{e.note || e.message || ''}</CTableDataCell>
+                              </CTableRow>
+                            ))}
+                          </CTableBody>
+                        </CTable>
+                      ))}
+                  </CTabPane>
+                )}
+                {!isCustomerAccount && (
+                  <CTabPane visible={statusTab === 'revisioni'} role="tabpanel">
+                    {revisions.length === 0 ? (
+                      <small className="text-body-secondary">Nessuna revisione registrata.</small>
                     ) : (
                       <CTable data-testid="table" small responsive className="mb-0">
                         <CTableHead className="mp-table-head">
                           <CTableRow>
+                            <CTableHeaderCell>Revisione</CTableHeaderCell>
                             <CTableHeaderCell>Data</CTableHeaderCell>
-                            <CTableHeaderCell>Utente</CTableHeaderCell>
-                            <CTableHeaderCell>Transizione</CTableHeaderCell>
+                            <CTableHeaderCell>Operatore</CTableHeaderCell>
                             <CTableHeaderCell>Nota</CTableHeaderCell>
+                            <CTableHeaderCell className="text-center">Azioni</CTableHeaderCell>
                           </CTableRow>
                         </CTableHead>
                         <CTableBody>
-                          {statusLog.map((e, idx) => (
-                            <CTableRow key={idx}>
-                              <CTableDataCell>{formatDateTime(e.at || e.created_at || e.timestamp)}</CTableDataCell>
-                              <CTableDataCell>{e.user_name || e.username || e.user || e.operatore || '-'}</CTableDataCell>
+                          {revisions.map((rev) => (
+                            <CTableRow key={rev.id_revisione}>
                               <CTableDataCell>
-                                {(e.from_status || e.from || e.da)
-                                  ? `${e.from_status || e.from || e.da} → ${e.to_status || e.to || e.a || e.status || ''}`
-                                  : (e.to_status || e.to || e.a || e.status || '')}
+                                {rev.label || `Rev.${rev.numero_revision}`}
                               </CTableDataCell>
-                              <CTableDataCell>{e.note || e.message || ''}</CTableDataCell>
+                              <CTableDataCell>{formatDateTime(rev.created_at)}</CTableDataCell>
+                              <CTableDataCell>{rev.operatore || '-'}</CTableDataCell>
+                              <CTableDataCell>{rev.note || '-'}</CTableDataCell>
+                              <CTableDataCell className="text-center">
+                                <CButton
+                                  color="link"
+                                  size="sm"
+                                  className="p-0"
+                                  onClick={() => handleOpenRevisionDetail(rev.id_revisione)}
+                                  title="Apri dettaglio revisione"
+                                  aria-label="Apri dettaglio revisione"
+                                >
+                                  <CIcon icon={cilZoom} />
+                                </CButton>
+                              </CTableDataCell>
                             </CTableRow>
                           ))}
                         </CTableBody>
                       </CTable>
-                    )
-                  )}
-                </CTabPane>}
-                {!isCustomerAccount && <CTabPane visible={statusTab === 'revisioni'} role="tabpanel">
-                  {revisions.length === 0 ? (
-                    <small className="text-body-secondary">Nessuna revisione registrata.</small>
-                  ) : (
-                    <CTable data-testid="table" small responsive className="mb-0">
-                      <CTableHead className="mp-table-head">
-                        <CTableRow>
-                          <CTableHeaderCell>Revisione</CTableHeaderCell>
-                          <CTableHeaderCell>Data</CTableHeaderCell>
-                          <CTableHeaderCell>Operatore</CTableHeaderCell>
-                          <CTableHeaderCell>Nota</CTableHeaderCell>
-                          <CTableHeaderCell className="text-center">Azioni</CTableHeaderCell>
-                        </CTableRow>
-                      </CTableHead>
-                      <CTableBody>
-                        {revisions.map((rev) => (
-                          <CTableRow key={rev.id_revisione}>
-                            <CTableDataCell>{rev.label || `Rev.${rev.numero_revision}`}</CTableDataCell>
-                            <CTableDataCell>{formatDateTime(rev.created_at)}</CTableDataCell>
-                            <CTableDataCell>{rev.operatore || '-'}</CTableDataCell>
-                            <CTableDataCell>{rev.note || '-'}</CTableDataCell>
-                            <CTableDataCell className="text-center">
-                              <CButton
-                                color="link"
-                                size="sm"
-                                className="p-0"
-                                onClick={() => handleOpenRevisionDetail(rev.id_revisione)}
-                                title="Apri dettaglio revisione"
-                                aria-label="Apri dettaglio revisione"
-                              >
-                                <CIcon icon={cilZoom} />
-                              </CButton>
-                            </CTableDataCell>
-                          </CTableRow>
-                        ))}
-                      </CTableBody>
-                    </CTable>
-                  )}
-                </CTabPane>}
+                    )}
+                  </CTabPane>
+                )}
+                {!isCustomerAccount && acceptanceExists && (
+                  <CTabPane visible={statusTab === 'accettazione'} role="tabpanel">
+                    {acceptanceLoading ? (
+                      <div className="d-flex justify-content-center py-4">
+                        <CSpinner />
+                      </div>
+                    ) : acceptanceError ? (
+                      <CAlert color="danger" className="mb-0">
+                        {acceptanceError?.payload?.message ||
+                          acceptanceError?.message ||
+                          'Impossibile caricare i dati di accettazione.'}
+                      </CAlert>
+                    ) : (
+                      <>
+                      {acceptancePdfUrl ? (
+                        <CAccordion className="mb-3" alwaysOpen>
+                          <CAccordionItem itemKey={1}>
+                            <CAccordionHeader>PDF salvato e firmato</CAccordionHeader>
+                            <CAccordionBody>
+                              <iframe
+                                title="PDF accettazione preventivo signed"
+                                src={acceptancePdfUrl}
+                                style={{ width: '100%', height: '70vh', border: '1px solid #ddd' }}
+                              />
+                            </CAccordionBody>
+                          </CAccordionItem>
+                        </CAccordion>
+                      ) : (
+                        <CAlert color="warning" className="mb-3">
+                          PDF firmato (_signed) non disponibile.
+                        </CAlert>
+                      )}
+
+                        {acceptanceItems.length === 0 ? (
+                          <CAlert color="info" className="mb-0">
+                            Nessuna accettazione OTP registrata per questo preventivo.
+                          </CAlert>
+                        ) : (
+                          <CTable data-testid="table" small responsive className="mb-0">
+                            <CTableHead className="mp-table-head">
+                              <CTableRow>
+                                <CTableHeaderCell>Data accettazione</CTableHeaderCell>
+                                <CTableHeaderCell>Firmatario</CTableHeaderCell>
+                                <CTableHeaderCell>Email</CTableHeaderCell>
+                                <CTableHeaderCell>CF/P.IVA</CTableHeaderCell>
+                                <CTableHeaderCell>Canale OTP</CTableHeaderCell>
+                              </CTableRow>
+                            </CTableHead>
+                            <CTableBody>
+                              {acceptanceItems.slice(0, 1).map((item, idx) => (
+                                <CTableRow key={`acc-${item?.id_receipt || idx}`}>
+                                  <CTableDataCell>
+                                    {formatDateTime(item?.accepted_at)}
+                                  </CTableDataCell>
+                                  <CTableDataCell>
+                                    {`${item?.signer_nome || ''} ${item?.signer_cognome || ''}`.trim() ||
+                                      '-'}
+                                  </CTableDataCell>
+                                  <CTableDataCell>{item?.signer_email || '-'}</CTableDataCell>
+                                  <CTableDataCell>{item?.signer_cf_piva || '-'}</CTableDataCell>
+                                  <CTableDataCell>{item?.otp_channel || '-'}</CTableDataCell>
+                                </CTableRow>
+                              ))}
+                            </CTableBody>
+                          </CTable>
+                        )}
+                      </>
+                    )}
+                  </CTabPane>
+                )}
                 <CTabPane visible={statusTab === 'documenti'} role="tabpanel">
                   {!isAcquisto && (
                     <>
                       <h6 className="text-body-secondary mb-3">Lavorazioni collegate</h6>
                       {visibleLinkedLavorazioni.length === 0 ? (
-                        <CAlert color="info" className="mb-4">Nessuna lavorazione collegata al preventivo.</CAlert>
+                        <CAlert color="info" className="mb-4">
+                          Nessuna lavorazione collegata al preventivo.
+                        </CAlert>
                       ) : (
                         <CTable data-testid="table" small responsive className="mb-4">
                           <CTableHead className="mp-table-head">
@@ -3022,16 +3334,22 @@ const PreventiviDetail = () => {
                               <CTableHeaderCell>Titolo</CTableHeaderCell>
                               <CTableHeaderCell>Stato</CTableHeaderCell>
                               <CTableHeaderCell>Creata il</CTableHeaderCell>
-                              {!isCustomerAccount && <CTableHeaderCell className="text-center">Azioni</CTableHeaderCell>}
+                              {!isCustomerAccount && (
+                                <CTableHeaderCell className="text-center">Azioni</CTableHeaderCell>
+                              )}
                             </CTableRow>
                           </CTableHead>
                           <CTableBody>
                             {visibleLinkedLavorazioni.map((lavorazione) => (
                               <CTableRow key={lavorazione.id}>
-                                <CTableDataCell>{lavorazione.codice || `ID ${lavorazione.id}`}</CTableDataCell>
+                                <CTableDataCell>
+                                  {lavorazione.codice || `ID ${lavorazione.id}`}
+                                </CTableDataCell>
                                 <CTableDataCell>{lavorazione.titolo || '-'}</CTableDataCell>
                                 <CTableDataCell>{lavorazione.stato || '-'}</CTableDataCell>
-                                <CTableDataCell>{formatDateTime(lavorazione.created_at)}</CTableDataCell>
+                                <CTableDataCell>
+                                  {formatDateTime(lavorazione.created_at)}
+                                </CTableDataCell>
                                 {!isCustomerAccount && (
                                   <CTableDataCell className="text-center">
                                     <CButton
@@ -3055,7 +3373,9 @@ const PreventiviDetail = () => {
                     <CCol md={6}>
                       <h6 className="text-body-secondary mb-3">DDT collegati</h6>
                       {visibleLinkedDdt.length === 0 ? (
-                        <CAlert color="info" className="mb-0">Nessun DDT collegato al preventivo.</CAlert>
+                        <CAlert color="info" className="mb-0">
+                          Nessun DDT collegato al preventivo.
+                        </CAlert>
                       ) : (
                         <CTable data-testid="table" small responsive>
                           <CTableHead className="mp-table-head">
@@ -3065,7 +3385,9 @@ const PreventiviDetail = () => {
                               <CTableHeaderCell>Causale</CTableHeaderCell>
                               <CTableHeaderCell className="text-end">Pezzi</CTableHeaderCell>
                               <CTableHeaderCell className="text-end">Peso (kg)</CTableHeaderCell>
-                              {!isCustomerAccount && <CTableHeaderCell className="text-center">Azioni</CTableHeaderCell>}
+                              {!isCustomerAccount && (
+                                <CTableHeaderCell className="text-center">Azioni</CTableHeaderCell>
+                              )}
                             </CTableRow>
                           </CTableHead>
                           <CTableBody>
@@ -3103,7 +3425,9 @@ const PreventiviDetail = () => {
                     <CCol md={6}>
                       <h6 className="text-body-secondary mb-3">Fatture collegate</h6>
                       {visibleLinkedFatture.length === 0 ? (
-                        <CAlert color="info" className="mb-0">Nessuna fattura collegata al preventivo.</CAlert>
+                        <CAlert color="info" className="mb-0">
+                          Nessuna fattura collegata al preventivo.
+                        </CAlert>
                       ) : (
                         <CTable data-testid="table" small responsive>
                           <CTableHead className="mp-table-head">
@@ -3113,7 +3437,9 @@ const PreventiviDetail = () => {
                               <CTableHeaderCell className="text-end">Totale</CTableHeaderCell>
                               <CTableHeaderCell className="text-end">Saldo</CTableHeaderCell>
                               <CTableHeaderCell>Stato</CTableHeaderCell>
-                              {!isCustomerAccount && <CTableHeaderCell className="text-center">Azioni</CTableHeaderCell>}
+                              {!isCustomerAccount && (
+                                <CTableHeaderCell className="text-center">Azioni</CTableHeaderCell>
+                              )}
                             </CTableRow>
                           </CTableHead>
                           <CTableBody>
@@ -3123,8 +3449,12 @@ const PreventiviDetail = () => {
                                   {doc.anno ?? '-'}/{doc.numero_documento ?? '-'}
                                 </CTableDataCell>
                                 <CTableDataCell>{formatDate(doc.data_fattura)}</CTableDataCell>
-                                <CTableDataCell className="text-end">{formatCurrency(doc.totale)}</CTableDataCell>
-                                <CTableDataCell className="text-end">{formatCurrency(doc.saldo)}</CTableDataCell>
+                                <CTableDataCell className="text-end">
+                                  {formatCurrency(doc.totale)}
+                                </CTableDataCell>
+                                <CTableDataCell className="text-end">
+                                  {formatCurrency(doc.saldo)}
+                                </CTableDataCell>
                                 <CTableDataCell>
                                   {doc.stato_label ? (
                                     <CBadge color="secondary">{doc.stato_label}</CBadge>
@@ -3138,7 +3468,9 @@ const PreventiviDetail = () => {
                                       color="link"
                                       size="sm"
                                       className="p-0"
-                                      onClick={() => navigate(`/fatture/dettagli?id=${doc.id_fattura}`)}
+                                      onClick={() =>
+                                        navigate(`/fatture/dettagli?id=${doc.id_fattura}`)
+                                      }
                                     >
                                       Dettagli
                                     </CButton>
@@ -3161,11 +3493,7 @@ const PreventiviDetail = () => {
                 <CCol md={6}>
                   <CFormLabel>{clienteLabel}</CFormLabel>
                   {isCustomerAccount ? (
-                    <CFormInput
-                      value={clienteDisplay?.label || ''}
-                      readOnly
-                      disabled
-                    />
+                    <CFormInput value={clienteDisplay?.label || ''} readOnly disabled />
                   ) : (
                     <AnagraficaAutocomplete
                       items={clientiOptions}
@@ -3174,14 +3502,19 @@ const PreventiviDetail = () => {
                       onChangeCliente={(cliente) => {
                         // Evita aggiornamenti ridondanti del display cliente
                         if (cliente) {
-                          const nextId = Number(cliente.id_anagrafica ?? cliente.id ?? idAnagrafica ?? 0) || null
+                          const nextId =
+                            Number(cliente.id_anagrafica ?? cliente.id ?? idAnagrafica ?? 0) || null
                           const nextLabel = String(
-                            cliente.ragione_sociale ?? cliente.ragioneSociale ?? cliente.cliente_ragione_sociale ?? ''
+                            cliente.ragione_sociale ??
+                              cliente.ragioneSociale ??
+                              cliente.cliente_ragione_sociale ??
+                              '',
                           )
                           const nextCodice = cliente.codice_cliente ?? null
                           const nextPiva = cliente.piva ?? null
                           const nextCf = cliente.codice_fiscale ?? null
-                          const nextEmail = cliente.email ?? cliente.cliente_email ?? cliente.mail ?? null
+                          const nextEmail =
+                            cliente.email ?? cliente.cliente_email ?? cliente.mail ?? null
                           setClienteDisplay((prev) => {
                             if (
                               prev.id === nextId &&
@@ -3235,49 +3568,89 @@ const PreventiviDetail = () => {
                   )}
                 </CCol>
                 {!isAcquisto && (
-                <CCol md={6}>
-                  <CFormLabel>CIG</CFormLabel>
-                  <CTable data-testid="table" small bordered responsive>
-                    <CTableHead>
-                      <CTableRow>
-                        <CTableHeaderCell style={{ width: '25%' }}>CIG</CTableHeaderCell>
-                        <CTableHeaderCell style={{ width: '20%' }}>Data</CTableHeaderCell>
-                        <CTableHeaderCell>Motivazione</CTableHeaderCell>
-                        {!isCustomerAccount && <CTableHeaderCell style={{ width: '10%' }} className="text-center">Azioni</CTableHeaderCell>}
-                      </CTableRow>
-                    </CTableHead>
-                    <CTableBody>
-                      {!isCustomerAccount && <CTableRow>
-                        <CTableDataCell>
-                          <CFormInput placeholder="CIG" value={newCig.cig} onChange={(e) => setNewCig((s) => ({ ...s, cig: e.target.value }))} disabled={uiDisabled} />
-                        </CTableDataCell>
-                        <CTableDataCell>
-                          <CFormInput type="date" value={newCig.data_cig} onChange={(e) => setNewCig((s) => ({ ...s, data_cig: e.target.value }))} disabled={uiDisabled} />
-                        </CTableDataCell>
-                        <CTableDataCell>
-                          <CFormInput placeholder="Motivazione" value={newCig.motivazione} onChange={(e) => setNewCig((s) => ({ ...s, motivazione: e.target.value }))} disabled={uiDisabled} />
-                        </CTableDataCell>
-                        <CTableDataCell className="text-center">
-                          <CButton size="sm" color="primary" variant="outline" type="button" onClick={addCig} disabled={uiDisabled || !String(newCig.cig || '').trim()}>
-                            Aggiungi
-                          </CButton>
-                        </CTableDataCell>
-                      </CTableRow>}
-                      {cigList.map((c, idx) => (
-                        <CTableRow key={idx}>
-                          <CTableDataCell>{c.cig}</CTableDataCell>
-                          <CTableDataCell>{c.data_cig || '-'}</CTableDataCell>
-                          <CTableDataCell>{c.motivazione || ''}</CTableDataCell>
+                  <CCol md={6}>
+                    <CFormLabel>CIG</CFormLabel>
+                    <CTable data-testid="table" small bordered responsive>
+                      <CTableHead>
+                        <CTableRow>
+                          <CTableHeaderCell style={{ width: '25%' }}>CIG</CTableHeaderCell>
+                          <CTableHeaderCell style={{ width: '20%' }}>Data</CTableHeaderCell>
+                          <CTableHeaderCell>Motivazione</CTableHeaderCell>
                           {!isCustomerAccount && (
-                            <CTableDataCell className="text-center">
-                              <CButton size="sm" color="link" type="button" onClick={() => removeCig(idx)} disabled={uiDisabled}>Rimuovi</CButton>
-                            </CTableDataCell>
+                            <CTableHeaderCell style={{ width: '10%' }} className="text-center">
+                              Azioni
+                            </CTableHeaderCell>
                           )}
                         </CTableRow>
-                      ))}
-                    </CTableBody>
-                  </CTable>
-                </CCol>
+                      </CTableHead>
+                      <CTableBody>
+                        {!isCustomerAccount && (
+                          <CTableRow>
+                            <CTableDataCell>
+                              <CFormInput
+                                placeholder="CIG"
+                                value={newCig.cig}
+                                onChange={(e) => setNewCig((s) => ({ ...s, cig: e.target.value }))}
+                                disabled={uiDisabled}
+                              />
+                            </CTableDataCell>
+                            <CTableDataCell>
+                              <CFormInput
+                                type="date"
+                                value={newCig.data_cig}
+                                onChange={(e) =>
+                                  setNewCig((s) => ({ ...s, data_cig: e.target.value }))
+                                }
+                                disabled={uiDisabled}
+                              />
+                            </CTableDataCell>
+                            <CTableDataCell>
+                              <CFormInput
+                                placeholder="Motivazione"
+                                value={newCig.motivazione}
+                                onChange={(e) =>
+                                  setNewCig((s) => ({ ...s, motivazione: e.target.value }))
+                                }
+                                disabled={uiDisabled}
+                              />
+                            </CTableDataCell>
+                            <CTableDataCell className="text-center">
+                              <CButton
+                                size="sm"
+                                color="primary"
+                                variant="outline"
+                                type="button"
+                                onClick={addCig}
+                                disabled={uiDisabled || !String(newCig.cig || '').trim()}
+                              >
+                                Aggiungi
+                              </CButton>
+                            </CTableDataCell>
+                          </CTableRow>
+                        )}
+                        {cigList.map((c, idx) => (
+                          <CTableRow key={idx}>
+                            <CTableDataCell>{c.cig}</CTableDataCell>
+                            <CTableDataCell>{c.data_cig || '-'}</CTableDataCell>
+                            <CTableDataCell>{c.motivazione || ''}</CTableDataCell>
+                            {!isCustomerAccount && (
+                              <CTableDataCell className="text-center">
+                                <CButton
+                                  size="sm"
+                                  color="link"
+                                  type="button"
+                                  onClick={() => removeCig(idx)}
+                                  disabled={uiDisabled}
+                                >
+                                  Rimuovi
+                                </CButton>
+                              </CTableDataCell>
+                            )}
+                          </CTableRow>
+                        ))}
+                      </CTableBody>
+                    </CTable>
+                  </CCol>
                 )}
                 <CCol md={3}>
                   <CFormLabel>Data preventivo</CFormLabel>
@@ -3297,49 +3670,93 @@ const PreventiviDetail = () => {
                   />
                 </CCol>
                 {!isAcquisto && (
-                <CCol md={6}>
-                  <CFormLabel>Determina</CFormLabel>
-                  <CTable data-testid="table" small bordered responsive>
-                    <CTableHead>
-                      <CTableRow>
-                        <CTableHeaderCell style={{ width: '25%' }}>Determina</CTableHeaderCell>
-                        <CTableHeaderCell style={{ width: '20%' }}>Data</CTableHeaderCell>
-                        <CTableHeaderCell>Motivazione</CTableHeaderCell>
-                        {!isCustomerAccount && <CTableHeaderCell style={{ width: '10%' }} className="text-center">Azioni</CTableHeaderCell>}
-                      </CTableRow>
-                    </CTableHead>
-                    <CTableBody>
-                      {!isCustomerAccount && <CTableRow>
-                        <CTableDataCell>
-                          <CFormInput placeholder="Num./Codice" value={newDetermina.determina} onChange={(e) => setNewDetermina((s) => ({ ...s, determina: e.target.value }))} disabled={uiDisabled} />
-                        </CTableDataCell>
-                        <CTableDataCell>
-                          <CFormInput type="date" value={newDetermina.data_determina} onChange={(e) => setNewDetermina((s) => ({ ...s, data_determina: e.target.value }))} disabled={uiDisabled} />
-                        </CTableDataCell>
-                        <CTableDataCell>
-                          <CFormInput placeholder="Motivazione" value={newDetermina.motivazione} onChange={(e) => setNewDetermina((s) => ({ ...s, motivazione: e.target.value }))} disabled={uiDisabled} />
-                        </CTableDataCell>
-                        <CTableDataCell className="text-center">
-                          <CButton size="sm" color="primary" variant="outline" type="button" onClick={addDetermina} disabled={uiDisabled || !String(newDetermina.determina || '').trim()}>
-                            Aggiungi
-                          </CButton>
-                        </CTableDataCell>
-                      </CTableRow>}
-                      {determineList.map((d, idx) => (
-                        <CTableRow key={idx}>
-                          <CTableDataCell>{d.determina}</CTableDataCell>
-                          <CTableDataCell>{d.data_determina || '-'}</CTableDataCell>
-                          <CTableDataCell>{d.motivazione || ''}</CTableDataCell>
+                  <CCol md={6}>
+                    <CFormLabel>Determina</CFormLabel>
+                    <CTable data-testid="table" small bordered responsive>
+                      <CTableHead>
+                        <CTableRow>
+                          <CTableHeaderCell style={{ width: '25%' }}>Determina</CTableHeaderCell>
+                          <CTableHeaderCell style={{ width: '20%' }}>Data</CTableHeaderCell>
+                          <CTableHeaderCell>Motivazione</CTableHeaderCell>
                           {!isCustomerAccount && (
-                            <CTableDataCell className="text-center">
-                              <CButton size="sm" color="link" type="button" onClick={() => removeDetermina(idx)} disabled={uiDisabled}>Rimuovi</CButton>
-                            </CTableDataCell>
+                            <CTableHeaderCell style={{ width: '10%' }} className="text-center">
+                              Azioni
+                            </CTableHeaderCell>
                           )}
                         </CTableRow>
-                      ))}
-                    </CTableBody>
-                  </CTable>
-                </CCol>
+                      </CTableHead>
+                      <CTableBody>
+                        {!isCustomerAccount && (
+                          <CTableRow>
+                            <CTableDataCell>
+                              <CFormInput
+                                placeholder="Num./Codice"
+                                value={newDetermina.determina}
+                                onChange={(e) =>
+                                  setNewDetermina((s) => ({ ...s, determina: e.target.value }))
+                                }
+                                disabled={uiDisabled}
+                              />
+                            </CTableDataCell>
+                            <CTableDataCell>
+                              <CFormInput
+                                type="date"
+                                value={newDetermina.data_determina}
+                                onChange={(e) =>
+                                  setNewDetermina((s) => ({ ...s, data_determina: e.target.value }))
+                                }
+                                disabled={uiDisabled}
+                              />
+                            </CTableDataCell>
+                            <CTableDataCell>
+                              <CFormInput
+                                placeholder="Motivazione"
+                                value={newDetermina.motivazione}
+                                onChange={(e) =>
+                                  setNewDetermina((s) => ({ ...s, motivazione: e.target.value }))
+                                }
+                                disabled={uiDisabled}
+                              />
+                            </CTableDataCell>
+                            <CTableDataCell className="text-center">
+                              <CButton
+                                size="sm"
+                                color="primary"
+                                variant="outline"
+                                type="button"
+                                onClick={addDetermina}
+                                disabled={
+                                  uiDisabled || !String(newDetermina.determina || '').trim()
+                                }
+                              >
+                                Aggiungi
+                              </CButton>
+                            </CTableDataCell>
+                          </CTableRow>
+                        )}
+                        {determineList.map((d, idx) => (
+                          <CTableRow key={idx}>
+                            <CTableDataCell>{d.determina}</CTableDataCell>
+                            <CTableDataCell>{d.data_determina || '-'}</CTableDataCell>
+                            <CTableDataCell>{d.motivazione || ''}</CTableDataCell>
+                            {!isCustomerAccount && (
+                              <CTableDataCell className="text-center">
+                                <CButton
+                                  size="sm"
+                                  color="link"
+                                  type="button"
+                                  onClick={() => removeDetermina(idx)}
+                                  disabled={uiDisabled}
+                                >
+                                  Rimuovi
+                                </CButton>
+                              </CTableDataCell>
+                            )}
+                          </CTableRow>
+                        ))}
+                      </CTableBody>
+                    </CTable>
+                  </CCol>
                 )}
                 <CCol md={6}>
                   <CFormLabel>Attività lavorative</CFormLabel>
@@ -3347,7 +3764,9 @@ const PreventiviDetail = () => {
                     <CFormInput
                       value={selectedOggetti
                         .map((id) => {
-                          const found = (oggettiOptions || []).find((opt) => Number(opt?.id ?? opt?.id_oggetto ?? 0) === Number(id))
+                          const found = (oggettiOptions || []).find(
+                            (opt) => Number(opt?.id ?? opt?.id_oggetto ?? 0) === Number(id),
+                          )
                           return found?.label || null
                         })
                         .filter(Boolean)
@@ -3357,99 +3776,102 @@ const PreventiviDetail = () => {
                     />
                   ) : (
                     <CMultiSelect
-                    options={oggettiOptions}
-                    selectionType="tags"
-                    placeholder="Seleziona o crea opzioni"
-                    value={selectedOggetti.map((id) => String(id))}
-                    allowCreateOptions
-                    disabled={uiDisabled || pendingOggettoCreate}
-                    onChange={(vals) => {
-                      void handleOggettiChange(vals)
-                    }}
-                    onCreateOption={async (label) => {
-                      const cleanLabel = String(label || '').trim()
-                      if (cleanLabel === '') {
-                        return null
-                      }
-
-                      const existing = (Array.isArray(oggettiOptions) ? oggettiOptions : []).find(
-                        (opt) => String(opt.label ?? '').toLowerCase() === cleanLabel.toLowerCase(),
-                      )
-                      if (existing) {
-                        const numericExisting = Number(existing.id ?? existing.id_oggetto ?? existing.value ?? 0)
-                        if (Number.isFinite(numericExisting) && numericExisting > 0) {
-                          setSelectedOggetti((prev) => {
-                            const next = new Set(prev ?? [])
-                            next.add(numericExisting)
-                            return Array.from(next)
-                          })
-                          return {
-                            id: existing.id ?? existing.id_oggetto ?? numericExisting,
-                            value: existing.value ?? String(numericExisting),
-                            label: existing.label ?? cleanLabel,
-                          }
+                      options={oggettiOptions}
+                      selectionType="tags"
+                      placeholder="Seleziona o crea opzioni"
+                      value={selectedOggetti.map((id) => String(id))}
+                      allowCreateOptions
+                      disabled={uiDisabled || pendingOggettoCreate}
+                      onChange={(vals) => {
+                        void handleOggettiChange(vals)
+                      }}
+                      onCreateOption={async (label) => {
+                        const cleanLabel = String(label || '').trim()
+                        if (cleanLabel === '') {
+                          return null
                         }
-                      }
 
-                      try {
-                        const normalized = await createOggettoOptionForLabel(cleanLabel)
-                        if (normalized) {
-                          const numericId = Number(normalized.id)
-                          if (Number.isFinite(numericId) && numericId > 0) {
+                        const existing = (Array.isArray(oggettiOptions) ? oggettiOptions : []).find(
+                          (opt) =>
+                            String(opt.label ?? '').toLowerCase() === cleanLabel.toLowerCase(),
+                        )
+                        if (existing) {
+                          const numericExisting = Number(
+                            existing.id ?? existing.id_oggetto ?? existing.value ?? 0,
+                          )
+                          if (Number.isFinite(numericExisting) && numericExisting > 0) {
                             setSelectedOggetti((prev) => {
                               const next = new Set(prev ?? [])
-                              next.add(numericId)
+                              next.add(numericExisting)
                               return Array.from(next)
                             })
-                          }
-                          return {
-                            id: normalized.id,
-                            value: normalized.value,
-                            label: normalized.label,
+                            return {
+                              id: existing.id ?? existing.id_oggetto ?? numericExisting,
+                              value: existing.value ?? String(numericExisting),
+                              label: existing.label ?? cleanLabel,
+                            }
                           }
                         }
-                      } catch (error) {
-                        console.error('Creazione opzione oggetto fallita (dettaglio)', error)
-                      }
-                      return null
-                    }}
-                  />
+
+                        try {
+                          const normalized = await createOggettoOptionForLabel(cleanLabel)
+                          if (normalized) {
+                            const numericId = Number(normalized.id)
+                            if (Number.isFinite(numericId) && numericId > 0) {
+                              setSelectedOggetti((prev) => {
+                                const next = new Set(prev ?? [])
+                                next.add(numericId)
+                                return Array.from(next)
+                              })
+                            }
+                            return {
+                              id: normalized.id,
+                              value: normalized.value,
+                              label: normalized.label,
+                            }
+                          }
+                        } catch (error) {
+                          console.error('Creazione opzione oggetto fallita (dettaglio)', error)
+                        }
+                        return null
+                      }}
+                    />
                   )}
                 </CCol>
               </CRow>
             </section>
 
             {!isAcquisto && !isCustomerAccount && (
-            <section className="mb-4">
-              <div className="d-flex align-items-start justify-content-between mb-2">
-                <h6 className="mb-0 text-body-secondary">Mittente spedizione</h6>
-                <small className="text-body-secondary">
-                  Puoi spedire dal cliente indicato o selezionare un altro mittente.
-                </small>
-              </div>
-              <CRow className="g-3">
-                <CCol md={12}>
-                  <div className="d-flex flex-wrap gap-3">
-                    <CFormCheck
-                      type="radio"
-                      id="mittente-mode-cliente"
-                      name="mittente-mode"
-                      label="Usa l'anagrafica del preventivo"
-                      checked={mittenteMode === 'cliente'}
-                      onChange={() => setMittenteMode('cliente')}
-                      disabled={uiDisabled}
-                    />
-                    <CFormCheck
-                      type="radio"
-                      id="mittente-mode-altro"
-                      name="mittente-mode"
-                      label="Seleziona un mittente alternativo"
-                      checked={mittenteMode === 'altro'}
-                      onChange={() => setMittenteMode('altro')}
-                      disabled={uiDisabled}
-                    />
-                  </div>
-                </CCol>
+              <section className="mb-4">
+                <div className="d-flex align-items-start justify-content-between mb-2">
+                  <h6 className="mb-0 text-body-secondary">Mittente spedizione</h6>
+                  <small className="text-body-secondary">
+                    Puoi spedire dal cliente indicato o selezionare un altro mittente.
+                  </small>
+                </div>
+                <CRow className="g-3">
+                  <CCol md={12}>
+                    <div className="d-flex flex-wrap gap-3">
+                      <CFormCheck
+                        type="radio"
+                        id="mittente-mode-cliente"
+                        name="mittente-mode"
+                        label="Usa l'anagrafica del preventivo"
+                        checked={mittenteMode === 'cliente'}
+                        onChange={() => setMittenteMode('cliente')}
+                        disabled={uiDisabled}
+                      />
+                      <CFormCheck
+                        type="radio"
+                        id="mittente-mode-altro"
+                        name="mittente-mode"
+                        label="Seleziona un mittente alternativo"
+                        checked={mittenteMode === 'altro'}
+                        onChange={() => setMittenteMode('altro')}
+                        disabled={uiDisabled}
+                      />
+                    </div>
+                  </CCol>
                   {mittenteMode === 'altro' && (
                     <CCol md={6}>
                       <CFormLabel>Mittente alternativo</CFormLabel>
@@ -3483,38 +3905,34 @@ const PreventiviDetail = () => {
                       </div>
                     </CCol>
                   )}
-                <CCol md={12}>
-                  <div className="border rounded-3 p-3 bg-body">
-                    <div className="text-body-secondary small mb-1">Mittente attivo</div>
-                    <div className="fw-semibold mb-2">
-                      {mittenteInfo.label || 'Mittente non definito'}
+                  <CCol md={12}>
+                    <div className="border rounded-3 p-3 bg-body">
+                      <div className="text-body-secondary small mb-1">Mittente attivo</div>
+                      <div className="fw-semibold mb-2">
+                        {mittenteInfo.label || 'Mittente non definito'}
+                      </div>
+                      <CRow className="gy-2">
+                        <CCol xs={6} sm={4} md={3}>
+                          <div className="text-body-secondary small">P.IVA</div>
+                          <div className="fw-semibold">{mittenteInfo.piva || '-'}</div>
+                        </CCol>
+                        <CCol xs={6} sm={4} md={3}>
+                          <div className="text-body-secondary small">Codice fiscale</div>
+                          <div className="fw-semibold">{mittenteInfo.codiceFiscale || '-'}</div>
+                        </CCol>
+                        <CCol xs={6} sm={4} md={3}>
+                          <div className="text-body-secondary small">Codice cliente</div>
+                          <div className="fw-semibold">{mittenteInfo.codiceCliente || '-'}</div>
+                        </CCol>
+                        <CCol xs={6} sm={4} md={3}>
+                          <div className="text-body-secondary small">Email</div>
+                          <div className="fw-semibold">{mittenteInfo.email || '-'}</div>
+                        </CCol>
+                      </CRow>
                     </div>
-                    <CRow className="gy-2">
-                      <CCol xs={6} sm={4} md={3}>
-                        <div className="text-body-secondary small">P.IVA</div>
-                        <div className="fw-semibold">{mittenteInfo.piva || '-'}</div>
-                      </CCol>
-                      <CCol xs={6} sm={4} md={3}>
-                        <div className="text-body-secondary small">Codice fiscale</div>
-                        <div className="fw-semibold">
-                          {mittenteInfo.codiceFiscale || '-'}
-                        </div>
-                      </CCol>
-                      <CCol xs={6} sm={4} md={3}>
-                        <div className="text-body-secondary small">Codice cliente</div>
-                        <div className="fw-semibold">
-                          {mittenteInfo.codiceCliente || '-'}
-                        </div>
-                      </CCol>
-                      <CCol xs={6} sm={4} md={3}>
-                        <div className="text-body-secondary small">Email</div>
-                        <div className="fw-semibold">{mittenteInfo.email || '-'}</div>
-                      </CCol>
-                    </CRow>
-                  </div>
-                </CCol>
-              </CRow>
-            </section>
+                  </CCol>
+                </CRow>
+              </section>
             )}
 
             <section className="mb-4">
@@ -3533,19 +3951,52 @@ const PreventiviDetail = () => {
               <div className="d-flex align-items-center justify-content-between">
                 <h6 className="mb-0 text-body-secondary">Righe preventivo</h6>
                 <div className="d-flex gap-2">
-                  <CButton color="primary" variant="outline" size="sm" onClick={() => { resetProductModal(); setStepperOpen(true) }} disabled={uiDisabled}>
+                  <CButton
+                    color="primary"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      resetProductModal()
+                      setStepperOpen(true)
+                    }}
+                    disabled={uiDisabled}
+                  >
                     Selettore prodotti
                   </CButton>
-                  <CButton color="primary" variant="outline" size="sm" type="button" onClick={() => { resetContrattoModal(); setContrattoOpen(true) }} disabled={uiDisabled || !Number(idAnagrafica)}>
+                  <CButton
+                    color="primary"
+                    variant="outline"
+                    size="sm"
+                    type="button"
+                    onClick={() => {
+                      resetContrattoModal()
+                      setContrattoOpen(true)
+                    }}
+                    disabled={uiDisabled || !Number(idAnagrafica)}
+                  >
                     Importa da contratto
                   </CButton>
-                  <CButton color="primary" size="sm" type="button" onClick={() => { resetPkgModal(); setPkgOpen(true) }} disabled={uiDisabled}>
+                  <CButton
+                    color="primary"
+                    size="sm"
+                    type="button"
+                    onClick={() => {
+                      resetPkgModal()
+                      setPkgOpen(true)
+                    }}
+                    disabled={uiDisabled}
+                  >
                     Inserisci pacchetto
                   </CButton>
                 </div>
               </div>
               {/* Modal selezione contratto */}
-              <CModal visible={contrattoOpen} onClose={() => setContrattoOpen(false)} size="lg" backdrop="static">
+              <CModal
+                visible={contrattoOpen}
+                onClose={() => setContrattoOpen(false)}
+                size="lg"
+                backdrop="static"
+              >
                 <CModalHeader>
                   <CModalTitle>Importa righe da contratto</CModalTitle>
                 </CModalHeader>
@@ -3592,9 +4043,13 @@ const PreventiviDetail = () => {
                           {contrattoPreview.map((r, idx) => (
                             <CTableRow key={idx}>
                               <CTableDataCell>{r.descrizione || '-'}</CTableDataCell>
-                              <CTableDataCell className="text-end">{(Number(r.prezzo_unitario) || 0).toFixed(2)}</CTableDataCell>
+                              <CTableDataCell className="text-end">
+                                {(Number(r.prezzo_unitario) || 0).toFixed(2)}
+                              </CTableDataCell>
                               <CTableDataCell className="text-end">{r.iva ?? '-'}</CTableDataCell>
-                              <CTableDataCell className="text-end">{r.sconto_base ?? 0}</CTableDataCell>
+                              <CTableDataCell className="text-end">
+                                {r.sconto_base ?? 0}
+                              </CTableDataCell>
                             </CTableRow>
                           ))}
                         </CTableBody>
@@ -3605,7 +4060,9 @@ const PreventiviDetail = () => {
                 <CModalFooter className="d-flex justify-content-between">
                   <div />
                   <div className="d-flex gap-2">
-                    <CButton color="link" onClick={() => setContrattoOpen(false)}>Annulla</CButton>
+                    <CButton color="link" onClick={() => setContrattoOpen(false)}>
+                      Annulla
+                    </CButton>
                     <CButton
                       color="primary"
                       disabled={!selContratto || contrattoPreview.length === 0 || uiDisabled}
@@ -3632,7 +4089,12 @@ const PreventiviDetail = () => {
                 </CModalFooter>
               </CModal>
               {/* Modal selezione pacchetto */}
-              <CModal visible={pkgOpen} onClose={() => setPkgOpen(false)} size="lg" backdrop="static">
+              <CModal
+                visible={pkgOpen}
+                onClose={() => setPkgOpen(false)}
+                size="lg"
+                backdrop="static"
+              >
                 <CModalHeader>
                   <CModalTitle>Seleziona pacchetto</CModalTitle>
                 </CModalHeader>
@@ -3640,11 +4102,20 @@ const PreventiviDetail = () => {
                   <CRow className="g-3 mb-3 align-items-end">
                     <CCol md={7}>
                       <CFormLabel>Ricerca</CFormLabel>
-                      <CFormInput placeholder="Nome o codice pacchetto" value={pkgSearch} onChange={(e) => setPkgSearch(e.target.value)} disabled={uiDisabled} />
+                      <CFormInput
+                        placeholder="Nome o codice pacchetto"
+                        value={pkgSearch}
+                        onChange={(e) => setPkgSearch(e.target.value)}
+                        disabled={uiDisabled}
+                      />
                     </CCol>
                     <CCol md={5}>
                       <CFormLabel>Pacchetto</CFormLabel>
-                      <CFormSelect value={selPacchetto} onChange={(e) => setSelPacchetto(e.target.value)} disabled={uiDisabled}>
+                      <CFormSelect
+                        value={selPacchetto}
+                        onChange={(e) => setSelPacchetto(e.target.value)}
+                        disabled={uiDisabled}
+                      >
                         <option value="">Seleziona…</option>
                         {pkgOptions.map((p) => (
                           <option key={p.id_pacchetto} value={p.id_pacchetto}>
@@ -3655,8 +4126,16 @@ const PreventiviDetail = () => {
                     </CCol>
                     <CCol md={12}>
                       <div className="form-check mt-2">
-                        <input id="pkgOnlyActive" type="checkbox" className="form-check-input" checked={pkgOnlyActive} onChange={(e) => setPkgOnlyActive(e.target.checked)} />
-                        <label htmlFor="pkgOnlyActive" className="form-check-label">Solo attivi</label>
+                        <input
+                          id="pkgOnlyActive"
+                          type="checkbox"
+                          className="form-check-input"
+                          checked={pkgOnlyActive}
+                          onChange={(e) => setPkgOnlyActive(e.target.checked)}
+                        />
+                        <label htmlFor="pkgOnlyActive" className="form-check-label">
+                          Solo attivi
+                        </label>
                       </div>
                     </CCol>
                   </CRow>
@@ -3681,8 +4160,12 @@ const PreventiviDetail = () => {
                                   {r.descrizione}
                                 </span>
                               </CTableDataCell>
-                              <CTableDataCell className="text-end">{Number(r.quantita) || 1}</CTableDataCell>
-                              <CTableDataCell className="text-end">{(Number(r.prezzo_unitario) || 0).toFixed(2)}</CTableDataCell>
+                              <CTableDataCell className="text-end">
+                                {Number(r.quantita) || 1}
+                              </CTableDataCell>
+                              <CTableDataCell className="text-end">
+                                {(Number(r.prezzo_unitario) || 0).toFixed(2)}
+                              </CTableDataCell>
                               <CTableDataCell className="text-end">{r.iva ?? '-'}</CTableDataCell>
                               <CTableDataCell className="text-end">{r.sconto ?? 0}</CTableDataCell>
                             </CTableRow>
@@ -3695,7 +4178,9 @@ const PreventiviDetail = () => {
                 <CModalFooter className="d-flex justify-content-between">
                   <div />
                   <div className="d-flex gap-2">
-                    <CButton color="link" onClick={() => setPkgOpen(false)}>Annulla</CButton>
+                    <CButton color="link" onClick={() => setPkgOpen(false)}>
+                      Annulla
+                    </CButton>
                     <CButton
                       color="primary"
                       disabled={!selPacchetto || pkgPreview.length === 0 || uiDisabled}
@@ -3743,7 +4228,8 @@ const PreventiviDetail = () => {
                         })
                         setRighe((rows) => rows.concat(newLines))
                         setPkgOpen(false)
-                      }}>
+                      }}
+                    >
                       Inserisci in preventivo
                     </CButton>
                   </div>
@@ -3754,10 +4240,16 @@ const PreventiviDetail = () => {
                   <CRow className="g-3 align-items-end">
                     <CCol md={3}>
                       <CFormLabel>Categoria</CFormLabel>
-                      <CFormSelect value={selCat} onChange={(e) => setSelCat(e.target.value)} disabled={uiDisabled}>
+                      <CFormSelect
+                        value={selCat}
+                        onChange={(e) => setSelCat(e.target.value)}
+                        disabled={uiDisabled}
+                      >
                         <option value="">Tutte</option>
                         {catOptions.map((c) => (
-                          <option key={c.id_categoria} value={c.id_categoria}>{c.nome}</option>
+                          <option key={c.id_categoria} value={c.id_categoria}>
+                            {c.nome}
+                          </option>
                         ))}
                       </CFormSelect>
                     </CCol>
@@ -3768,10 +4260,14 @@ const PreventiviDetail = () => {
                         onChange={(e) => {
                           const pid = e.target.value
                           setSelProd(pid)
-                          const prod = prodOptions.find((p) => String(p.id_prodotto) === String(pid))
-                          if (prod && prod.iva_percento != null) setSelIva(String(prod.iva_percento))
+                          const prod = prodOptions.find(
+                            (p) => String(p.id_prodotto) === String(pid),
+                          )
+                          if (prod && prod.iva_percento != null)
+                            setSelIva(String(prod.iva_percento))
                         }}
-                        disabled={uiDisabled}>
+                        disabled={uiDisabled}
+                      >
                         <option value="">Seleziona...</option>
                         {prodOptions.map((p) => (
                           <option key={p.id_prodotto} value={p.id_prodotto}>
@@ -3782,7 +4278,15 @@ const PreventiviDetail = () => {
                     </CCol>
                     <CCol md={2}>
                       <CFormLabel>IVA %</CFormLabel>
-                      <CFormInput type="number" min="0" max="100" step="1" value={selIva} onChange={(e) => setSelIva(e.target.value)} disabled={uiDisabled} />
+                      <CFormInput
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="1"
+                        value={selIva}
+                        onChange={(e) => setSelIva(e.target.value)}
+                        disabled={uiDisabled}
+                      />
                     </CCol>
                     {/* Rimosso: selettore manuale variazioni. Si usano direttamente le combinazioni */}
                     {prodComboList.length > 0 && (
@@ -3798,7 +4302,9 @@ const PreventiviDetail = () => {
                             return key
                           })()}
                           onChange={(e) => {
-                            const opt = prodComboList.find((r) => String(r.combo_key) === String(e.target.value))
+                            const opt = prodComboList.find(
+                              (r) => String(r.combo_key) === String(e.target.value),
+                            )
                             if (!opt) return
                             const ids = Array.isArray(opt.var_ids) ? opt.var_ids.map(Number) : []
                             setSelectedVarIds(ids)
@@ -3806,14 +4312,21 @@ const PreventiviDetail = () => {
                             const prezzoInput = document.getElementById('step-prezzo')
                             if (prezzoInput) prezzoInput.value = String(prezzo)
                           }}
-                          disabled={uiDisabled || prodComboList.length === 0}>
+                          disabled={uiDisabled || prodComboList.length === 0}
+                        >
                           <option value="">--</option>
                           {prodComboList.map((r, idx) => {
                             const labels = Array.isArray(r.var_ids)
                               ? r.var_ids.map((idv) => {
-                                const vv = prodVarOptions.find((x) => Number(x.id_variazione) === Number(idv))
-                                return vv ? (vv.categoria ? `${vv.categoria} - ${vv.nome}` : vv.nome) : String(idv)
-                              })
+                                  const vv = prodVarOptions.find(
+                                    (x) => Number(x.id_variazione) === Number(idv),
+                                  )
+                                  return vv
+                                    ? vv.categoria
+                                      ? `${vv.categoria} - ${vv.nome}`
+                                      : vv.nome
+                                    : String(idv)
+                                })
                               : []
                             return (
                               <option key={r.combo_key || idx} value={r.combo_key}>
@@ -3823,7 +4336,15 @@ const PreventiviDetail = () => {
                           })}
                         </CFormSelect>
                         <div className="mt-2">
-                          <CButton color="secondary" variant="outline" size="sm" onClick={() => setSelectedVarIds([])} disabled={uiDisabled || selectedVarIds.length === 0}>Annulla selezione</CButton>
+                          <CButton
+                            color="secondary"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setSelectedVarIds([])}
+                            disabled={uiDisabled || selectedVarIds.length === 0}
+                          >
+                            Annulla selezione
+                          </CButton>
                         </div>
                       </CCol>
                     )}
@@ -3831,43 +4352,89 @@ const PreventiviDetail = () => {
                   <CRow className="g-3 mt-2 align-items-end">
                     <CCol md={3}>
                       <CFormLabel>Ricerca prodotto</CFormLabel>
-                      <CFormInput placeholder="Cerca per nome o codice" value={prodSearch} onChange={(e) => setProdSearch(e.target.value)} disabled={uiDisabled} />
+                      <CFormInput
+                        placeholder="Cerca per nome o codice"
+                        value={prodSearch}
+                        onChange={(e) => setProdSearch(e.target.value)}
+                        disabled={uiDisabled}
+                      />
                     </CCol>
                     <CCol md={3}>
                       <CFormLabel>Quantità</CFormLabel>
-                      <CFormInput id="step-qta" type="number" min="1" step="1" defaultValue={1} disabled={uiDisabled} />
+                      <CFormInput
+                        id="step-qta"
+                        type="number"
+                        min="1"
+                        step="1"
+                        defaultValue={1}
+                        disabled={uiDisabled}
+                      />
                     </CCol>
                     <CCol md={3}>
                       <CFormLabel>Prezzo</CFormLabel>
-                      <CFormInput id="step-prezzo" type="number" min="0" step="0.01" defaultValue={(() => {
-                        const prod = prodOptions.find((p) => String(p.id_prodotto) === String(selProd))
-                        return prod?.prezzo_listino ?? 0
-                      })()} disabled={uiDisabled} />
+                      <CFormInput
+                        id="step-prezzo"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        defaultValue={(() => {
+                          const prod = prodOptions.find(
+                            (p) => String(p.id_prodotto) === String(selProd),
+                          )
+                          return prod?.prezzo_listino ?? 0
+                        })()}
+                        disabled={uiDisabled}
+                      />
                     </CCol>
                     <CCol md={3} className="d-flex gap-2">
-                      <CButton color="primary" type="button" disabled={uiDisabled}
+                      <CButton
+                        color="primary"
+                        type="button"
+                        disabled={uiDisabled}
                         onClick={() => {
-                          const prod = prodOptions.find((p) => String(p.id_prodotto) === String(selProd))
+                          const prod = prodOptions.find(
+                            (p) => String(p.id_prodotto) === String(selProd),
+                          )
                           if (!prod) return
                           const q = Number(document.getElementById('step-qta')?.value || 1)
-                          const prezzoBase = Number(document.getElementById('step-prezzo')?.value || prod.prezzo_listino || 0)
+                          const prezzoBase = Number(
+                            document.getElementById('step-prezzo')?.value ||
+                              prod.prezzo_listino ||
+                              0,
+                          )
                           const ivaPerc = Number(selIva || prod.iva_percento || 22)
-                            const selectedVars = prodVarOptions.filter((v) => selectedVarIds.includes(v.id_variazione))
-                            const comboKey = selectedVars
-                              .map((v) => Number(v.id_variazione) || 0)
-                              .filter((n) => n > 0)
-                              .sort((a, b) => a - b)
-                              .join('+')
-                            const comboPrice = comboKey && prodComboMap[comboKey] != null ? Number(prodComboMap[comboKey]) : null
-                          const descr = selectedVars.length > 0
-                            ? `${prod.nome} - ${selectedVars.map((v) => `${v.nome}${v.codice ? ' [' + v.codice + ']' : ''}`).join(', ')}`
-                            : prod.nome
-                            const prezzoFinale = comboPrice != null ? comboPrice : prezzoBase
-                          const riga = { descrizione: descr, quantita: q, prezzo: prezzoFinale, iva: ivaPerc, sconto: 0, id_prodotto: prod.id_prodotto, combo_key: comboKey || null }
+                          const selectedVars = prodVarOptions.filter((v) =>
+                            selectedVarIds.includes(v.id_variazione),
+                          )
+                          const comboKey = selectedVars
+                            .map((v) => Number(v.id_variazione) || 0)
+                            .filter((n) => n > 0)
+                            .sort((a, b) => a - b)
+                            .join('+')
+                          const comboPrice =
+                            comboKey && prodComboMap[comboKey] != null
+                              ? Number(prodComboMap[comboKey])
+                              : null
+                          const descr =
+                            selectedVars.length > 0
+                              ? `${prod.nome} - ${selectedVars.map((v) => `${v.nome}${v.codice ? ' [' + v.codice + ']' : ''}`).join(', ')}`
+                              : prod.nome
+                          const prezzoFinale = comboPrice != null ? comboPrice : prezzoBase
+                          const riga = {
+                            descrizione: descr,
+                            quantita: q,
+                            prezzo: prezzoFinale,
+                            iva: ivaPerc,
+                            sconto: 0,
+                            id_prodotto: prod.id_prodotto,
+                            combo_key: comboKey || null,
+                          }
                           // Aggiungi categoria del prodotto alla riga per raggruppamento immediato
                           if (prod.id_categoria != null) {
                             riga.id_categoria = Number(prod.id_categoria)
-                            const c = (catOptions || []).find((x) => Number(x.id_categoria) === Number(prod.id_categoria))
+                            const c = (catOptions || []).find(
+                              (x) => Number(x.id_categoria) === Number(prod.id_categoria),
+                            )
                             if (c && c.nome) riga.categoria_nome = String(c.nome)
                           }
                           if (ivaPerc === 0) {
@@ -3881,7 +4448,8 @@ const PreventiviDetail = () => {
                           }
                           setRighe((rows) => rows.concat(riga))
                           setSelectedVarIds([])
-                        }}>
+                        }}
+                      >
                         Inserisci riga
                       </CButton>
                       <CButton color="link" type="button" onClick={() => setStepperOpen(false)}>
@@ -3892,7 +4460,12 @@ const PreventiviDetail = () => {
                 </div>
               )}
 
-              <CModal visible={stepperOpen} onClose={() => setStepperOpen(false)} size="lg" backdrop="static">
+              <CModal
+                visible={stepperOpen}
+                onClose={() => setStepperOpen(false)}
+                size="lg"
+                backdrop="static"
+              >
                 <CModalHeader>
                   <CModalTitle>Selettore prodotti</CModalTitle>
                 </CModalHeader>
@@ -3935,10 +4508,16 @@ const PreventiviDetail = () => {
                     <CRow className="g-3">
                       <CCol md={12}>
                         <CFormLabel>Categoria prodotto</CFormLabel>
-                        <CFormSelect value={selCat} onChange={(e) => setSelCat(e.target.value)} disabled={uiDisabled}>
+                        <CFormSelect
+                          value={selCat}
+                          onChange={(e) => setSelCat(e.target.value)}
+                          disabled={uiDisabled}
+                        >
                           <option value="">Tutte</option>
                           {catOptions.map((c) => (
-                            <option key={c.id_categoria} value={c.id_categoria}>{c.nome}</option>
+                            <option key={c.id_categoria} value={c.id_categoria}>
+                              {c.nome}
+                            </option>
                           ))}
                         </CFormSelect>
                       </CCol>
@@ -3953,10 +4532,14 @@ const PreventiviDetail = () => {
                           onChange={(e) => {
                             const pid = e.target.value
                             setSelProd(pid)
-                            const prod = prodOptions.find((p) => String(p.id_prodotto) === String(pid))
-                            if (prod && prod.iva_percento != null) setSelIva(String(prod.iva_percento))
+                            const prod = prodOptions.find(
+                              (p) => String(p.id_prodotto) === String(pid),
+                            )
+                            if (prod && prod.iva_percento != null)
+                              setSelIva(String(prod.iva_percento))
                           }}
-                          disabled={uiDisabled}>
+                          disabled={uiDisabled}
+                        >
                           <option value="">Seleziona...</option>
                           {prodOptions.map((p) => (
                             <option key={p.id_prodotto} value={p.id_prodotto}>
@@ -3967,7 +4550,12 @@ const PreventiviDetail = () => {
                       </CCol>
                       <CCol md={6}>
                         <CFormLabel>Ricerca</CFormLabel>
-                        <CFormInput placeholder="Cerca per nome o codice" value={prodSearch} onChange={(e) => setProdSearch(e.target.value)} disabled={uiDisabled} />
+                        <CFormInput
+                          placeholder="Cerca per nome o codice"
+                          value={prodSearch}
+                          onChange={(e) => setProdSearch(e.target.value)}
+                          disabled={uiDisabled}
+                        />
                       </CCol>
                     </CRow>
                   )}
@@ -3989,24 +4577,38 @@ const PreventiviDetail = () => {
                               const key = e.target.value
                               setSelectedComboKey(key)
                               setComboSelectionError(null)
-                              const opt = prodComboList.find((r) => String(r.combo_key) === String(key))
-                              if (!opt) { setSelectedVarIds([]); return }
+                              const opt = prodComboList.find(
+                                (r) => String(r.combo_key) === String(key),
+                              )
+                              if (!opt) {
+                                setSelectedVarIds([])
+                                return
+                              }
                               const ids = Array.isArray(opt.var_ids) ? opt.var_ids.map(Number) : []
                               setSelectedVarIds(ids)
                             }}
-                            disabled={uiDisabled || prodComboList.length === 0}>
+                            disabled={uiDisabled || prodComboList.length === 0}
+                          >
                             <option value="">Seleziona una combinazione…</option>
                             {prodComboList.map((r, idx) => {
-                              const ids = Array.isArray(r.var_ids) ? r.var_ids : String(r.combo_key).split('+').map((x) => Number(x) || 0)
+                              const ids = Array.isArray(r.var_ids)
+                                ? r.var_ids
+                                : String(r.combo_key)
+                                    .split('+')
+                                    .map((x) => Number(x) || 0)
                               const groups = {}
                               ids.forEach((idv) => {
-                                const vv = prodVarOptions.find((x) => Number(x.id_variazione) === Number(idv))
-                                const cat = (vv && vv.categoria) ? String(vv.categoria) : 'Altro'
+                                const vv = prodVarOptions.find(
+                                  (x) => Number(x.id_variazione) === Number(idv),
+                                )
+                                const cat = vv && vv.categoria ? String(vv.categoria) : 'Altro'
                                 const nm = vv ? String(vv.nome) : String(idv)
                                 if (!groups[cat]) groups[cat] = []
                                 groups[cat].push(nm)
                               })
-                              const label = Object.entries(groups).map(([cat, names]) => `${cat}: ${names.join(', ')}`).join(' ; ')
+                              const label = Object.entries(groups)
+                                .map(([cat, names]) => `${cat}: ${names.join(', ')}`)
+                                .join(' ; ')
                               return (
                                 <option key={r.combo_key || idx} value={r.combo_key}>
                                   {label || r.combo_key}
@@ -4017,7 +4619,9 @@ const PreventiviDetail = () => {
                         </CCol>
                       ) : (
                         <CCol md={12}>
-                          <CAlert color="info" className="mb-0">Nessuna variazione combinata definita per il prodotto selezionato.</CAlert>
+                          <CAlert color="info" className="mb-0">
+                            Nessuna variazione combinata definita per il prodotto selezionato.
+                          </CAlert>
                         </CCol>
                       )}
                     </CRow>
@@ -4032,40 +4636,83 @@ const PreventiviDetail = () => {
                         </CCol>
                       )}
                       <CCol md={12}>
-                        <div className="mb-2"><strong>Prodotto:</strong> {(() => { const p = prodOptions.find((x) => String(x.id_prodotto) === String(selProd)); return p ? (p.codice ? `${p.codice} - ${p.nome}` : p.nome) : '-' })()}</div>
+                        <div className="mb-2">
+                          <strong>Prodotto:</strong>{' '}
+                          {(() => {
+                            const p = prodOptions.find(
+                              (x) => String(x.id_prodotto) === String(selProd),
+                            )
+                            return p ? (p.codice ? `${p.codice} - ${p.nome}` : p.nome) : '-'
+                          })()}
+                        </div>
                         {(() => {
                           const ids = selectedComboKey
-                            ? selectedComboKey.split('+').map((x) => Number(x) || 0).filter((n) => n > 0)
+                            ? selectedComboKey
+                                .split('+')
+                                .map((x) => Number(x) || 0)
+                                .filter((n) => n > 0)
                             : selectedVarIds
                           if (!ids || ids.length === 0) return null
                           const groups = {}
                           ids.forEach((idv) => {
-                            const vv = prodVarOptions.find((x) => Number(x.id_variazione) === Number(idv))
-                            const cat = (vv && vv.categoria) ? String(vv.categoria) : 'Altro'
+                            const vv = prodVarOptions.find(
+                              (x) => Number(x.id_variazione) === Number(idv),
+                            )
+                            const cat = vv && vv.categoria ? String(vv.categoria) : 'Altro'
                             const nm = vv ? String(vv.nome) : String(idv)
                             if (!groups[cat]) groups[cat] = []
                             groups[cat].push(nm)
                           })
-                          const label = Object.entries(groups).map(([cat, names]) => `${cat}: ${names.join(', ')}`).join(' ; ')
-                          return (<div className="mb-2"><strong>Variazioni:</strong> {label}</div>)
+                          const label = Object.entries(groups)
+                            .map(([cat, names]) => `${cat}: ${names.join(', ')}`)
+                            .join(' ; ')
+                          return (
+                            <div className="mb-2">
+                              <strong>Variazioni:</strong> {label}
+                            </div>
+                          )
                         })()}
                       </CCol>
                       <CCol md={4}>
                         <CFormLabel>Quantità</CFormLabel>
-                        <CFormInput type="number" min="1" step="1" value={modalQty} onChange={(e) => setModalQty(Number(e.target.value) || 1)} disabled={uiDisabled} />
+                        <CFormInput
+                          type="number"
+                          min="1"
+                          step="1"
+                          value={modalQty}
+                          onChange={(e) => setModalQty(Number(e.target.value) || 1)}
+                          disabled={uiDisabled}
+                        />
                       </CCol>
                       <CCol md={4}>
                         <CFormLabel>Prezzo</CFormLabel>
-                        <CFormInput type="number" min="0" step="0.01" value={modalPrice} onChange={(e) => setModalPrice(Number(e.target.value) || 0)} disabled={uiDisabled} />
+                        <CFormInput
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={modalPrice}
+                          onChange={(e) => setModalPrice(Number(e.target.value) || 0)}
+                          disabled={uiDisabled}
+                        />
                       </CCol>
                       <CCol md={4}>
                         <CFormLabel>IVA %</CFormLabel>
-                        <CFormInput type="number" min="0" max="100" step="1" value={selIva} onChange={(e) => setSelIva(e.target.value)} disabled={uiDisabled} />
+                        <CFormInput
+                          type="number"
+                          min="0"
+                          max="100"
+                          step="1"
+                          value={selIva}
+                          onChange={(e) => setSelIva(e.target.value)}
+                          disabled={uiDisabled}
+                        />
                       </CCol>
                       <CCol md={6}>
                         <CFormLabel>Natura IVA</CFormLabel>
-                        <CFormSelect value={(() => '')()} onChange={() => { }} disabled={true}>
-                          <option value="">Selezione natura disponibile nella riga dopo inserimento</option>
+                        <CFormSelect value={(() => '')()} onChange={() => {}} disabled={true}>
+                          <option value="">
+                            Selezione natura disponibile nella riga dopo inserimento
+                          </option>
                         </CFormSelect>
                       </CCol>
                     </CRow>
@@ -4074,24 +4721,44 @@ const PreventiviDetail = () => {
                 <CModalFooter className="d-flex justify-content-between">
                   <div>
                     {prodStep > 1 && (
-                      <CButton color="secondary" variant="outline" onClick={() => setProdStep((s) => Math.max(1, s - 1))} disabled={uiDisabled}>Indietro</CButton>
+                      <CButton
+                        color="secondary"
+                        variant="outline"
+                        onClick={() => setProdStep((s) => Math.max(1, s - 1))}
+                        disabled={uiDisabled}
+                      >
+                        Indietro
+                      </CButton>
                     )}
                   </div>
                   <div className="d-flex gap-2">
-                    <CButton color="link" onClick={() => setStepperOpen(false)}>Annulla</CButton>
+                    <CButton color="link" onClick={() => setStepperOpen(false)}>
+                      Annulla
+                    </CButton>
                     {prodStep < 4 && (
                       <CButton
                         color="primary"
                         onClick={() => {
-                          if (prodStep === 1) { setProdStep(2); return }
+                          if (prodStep === 1) {
+                            setProdStep(2)
+                            return
+                          }
                           if (prodStep === 2) {
                             if (!selProd) return
-                            if (prodComboList.length === 0) { setProdStep(4); return }
-                            setProdStep(3); return
+                            if (prodComboList.length === 0) {
+                              setProdStep(4)
+                              return
+                            }
+                            setProdStep(3)
+                            return
                           }
-                          if (prodStep === 3) { setProdStep(4); return }
+                          if (prodStep === 3) {
+                            setProdStep(4)
+                            return
+                          }
                         }}
-                        disabled={(prodStep === 2 && !selProd) || uiDisabled}>
+                        disabled={(prodStep === 2 && !selProd) || uiDisabled}
+                      >
                         Avanti
                       </CButton>
                     )}
@@ -4099,37 +4766,63 @@ const PreventiviDetail = () => {
                       <CButton
                         color="primary"
                         onClick={() => {
-                          const prod = prodOptions.find((p) => String(p.id_prodotto) === String(selProd))
+                          const prod = prodOptions.find(
+                            (p) => String(p.id_prodotto) === String(selProd),
+                          )
                           if (!prod) return
                           if (prodComboList.length > 0 && !selectedComboKey) {
-                            setComboSelectionError('Seleziona una combinazione prima di inserire la riga.')
+                            setComboSelectionError(
+                              'Seleziona una combinazione prima di inserire la riga.',
+                            )
                             return
                           }
                           const ivaPerc = Number(selIva || prod.iva_percento || 22)
                           const comboIds = selectedComboKey
-                            ? selectedComboKey.split('+').map((x) => Number(x) || 0).filter((n) => n > 0)
+                            ? selectedComboKey
+                                .split('+')
+                                .map((x) => Number(x) || 0)
+                                .filter((n) => n > 0)
                             : selectedVarIds
-                          const comboKey = Array.isArray(comboIds) && comboIds.length > 0
-                            ? comboIds.map((idv) => Number(idv) || 0).filter((n) => n > 0).sort((a, b) => a - b).join('+')
-                            : ''
+                          const comboKey =
+                            Array.isArray(comboIds) && comboIds.length > 0
+                              ? comboIds
+                                  .map((idv) => Number(idv) || 0)
+                                  .filter((n) => n > 0)
+                                  .sort((a, b) => a - b)
+                                  .join('+')
+                              : ''
                           let descr = prod.nome
                           if (comboIds && comboIds.length > 0) {
                             const groups = {}
                             comboIds.forEach((idv) => {
-                              const vv = prodVarOptions.find((x) => Number(x.id_variazione) === Number(idv))
-                              const cat = (vv && vv.categoria) ? String(vv.categoria) : 'Altro'
+                              const vv = prodVarOptions.find(
+                                (x) => Number(x.id_variazione) === Number(idv),
+                              )
+                              const cat = vv && vv.categoria ? String(vv.categoria) : 'Altro'
                               const nm = vv ? String(vv.nome) : String(idv)
                               if (!groups[cat]) groups[cat] = []
                               groups[cat].push(nm)
                             })
-                            const label = Object.entries(groups).map(([cat, names]) => `${cat}: ${names.join(', ')}`).join(' ; ')
+                            const label = Object.entries(groups)
+                              .map(([cat, names]) => `${cat}: ${names.join(', ')}`)
+                              .join(' ; ')
                             descr = `${prod.nome} - ${label}`
                           }
-                          const riga = { descrizione: descr, quantita: modalQty, prezzo: modalPrice, iva: ivaPerc, sconto: 0, id_prodotto: prod.id_prodotto, combo_key: comboKey || null }
+                          const riga = {
+                            descrizione: descr,
+                            quantita: modalQty,
+                            prezzo: modalPrice,
+                            iva: ivaPerc,
+                            sconto: 0,
+                            id_prodotto: prod.id_prodotto,
+                            combo_key: comboKey || null,
+                          }
                           // Aggiungi categoria del prodotto alla riga per raggruppamento immediato
                           if (prod.id_categoria != null) {
                             riga.id_categoria = Number(prod.id_categoria)
-                            const c = (catOptions || []).find((x) => Number(x.id_categoria) === Number(prod.id_categoria))
+                            const c = (catOptions || []).find(
+                              (x) => Number(x.id_categoria) === Number(prod.id_categoria),
+                            )
                             if (c && c.nome) riga.categoria_nome = String(c.nome)
                           }
                           if (ivaPerc === 0) {
@@ -4138,7 +4831,8 @@ const PreventiviDetail = () => {
                           setRighe((rows) => rows.concat(riga))
                           setStepperOpen(false)
                         }}
-                        disabled={uiDisabled}>
+                        disabled={uiDisabled}
+                      >
                         Inserisci riga
                       </CButton>
                     )}
@@ -4169,9 +4863,7 @@ const PreventiviDetail = () => {
                     <CTableHeaderCell className="text-end">IVA</CTableHeaderCell>
                     <CTableHeaderCell className="text-end">Totale</CTableHeaderCell>
                     {!isCustomerAccount && (
-                      <CTableHeaderCell className="text-center">
-                        Azioni
-                      </CTableHeaderCell>
+                      <CTableHeaderCell className="text-center">Azioni</CTableHeaderCell>
                     )}
                   </CTableRow>
                 </CTableHead>
@@ -4185,7 +4877,9 @@ const PreventiviDetail = () => {
                       if (r && r.categoria_nome) return String(r.categoria_nome)
                       // Poi: id_categoria presente in riga -> lookup
                       if (r && r.id_categoria) {
-                        const c = (catOptions || []).find((x) => String(x.id_categoria) === String(r.id_categoria))
+                        const c = (catOptions || []).find(
+                          (x) => String(x.id_categoria) === String(r.id_categoria),
+                        )
                         if (c && c.nome) return String(c.nome)
                       }
                       // Poi: mappa risolta da id_prodotto
@@ -4199,12 +4893,17 @@ const PreventiviDetail = () => {
                       if (!groupMap.has(cat)) groupMap.set(cat, [])
                       groupMap.get(cat).push([r, i])
                     })
-                    const groups = Array.from(groupMap.entries()).sort((a, b) => String(a[0]).localeCompare(String(b[0])))
+                    const groups = Array.from(groupMap.entries()).sort((a, b) =>
+                      String(a[0]).localeCompare(String(b[0])),
+                    )
                     const out = []
                     for (const [cat, arr] of groups) {
                       out.push(
                         <CTableRow key={`grp-${cat}`}>
-                          <CTableDataCell colSpan={isCustomerAccount ? 9 : 10} className="bg-body-secondary fw-semibold">
+                          <CTableDataCell
+                            colSpan={isCustomerAccount ? 9 : 10}
+                            className="bg-body-secondary fw-semibold"
+                          >
                             Categoria: {cat}
                           </CTableDataCell>
                         </CTableRow>,
@@ -4250,7 +4949,7 @@ const PreventiviDetail = () => {
                                   value={riga.descrizione}
                                   onChange={(e) => updateRiga(idx, { descrizione: e.target.value })}
                                   disabled={uiDisabled}
-                                  style={{ fontSize: "10pt", width: "400px" }}
+                                  style={{ fontSize: '10pt', width: '400px' }}
                                 />
                                 {inFattura && (
                                   <CBadge color="warning" className="mt-1">
@@ -4277,7 +4976,6 @@ const PreventiviDetail = () => {
                                 value={riga.prezzo}
                                 onChange={(e) => updateRiga(idx, { prezzo: e.target.value })}
                                 disabled={uiDisabled}
-
                               />
                             </CTableDataCell>
                             <CTableDataCell className="text-end">
@@ -4313,14 +5011,22 @@ const PreventiviDetail = () => {
                               {isCustomerAccount ? (
                                 <span>
                                   {(() => {
-                                    const selected = naturaOptions.find((n) => Number(n.id_natura) === Number(riga.id_sdi_natura_iva))
+                                    const selected = naturaOptions.find(
+                                      (n) => Number(n.id_natura) === Number(riga.id_sdi_natura_iva),
+                                    )
                                     return selected ? `${selected.code} - ${selected.label}` : '--'
                                   })()}
                                 </span>
                               ) : (
                                 <CFormSelect
                                   value={riga.id_sdi_natura_iva ?? ''}
-                                  onChange={(e) => updateRiga(idx, { id_sdi_natura_iva: e.target.value ? Number(e.target.value) : null })}
+                                  onChange={(e) =>
+                                    updateRiga(idx, {
+                                      id_sdi_natura_iva: e.target.value
+                                        ? Number(e.target.value)
+                                        : null,
+                                    })
+                                  }
                                   disabled={uiDisabled || Number(riga.iva) !== 0}
                                   style={SELECT_OPTION_WRAP_STYLE}
                                 >
@@ -4328,19 +5034,35 @@ const PreventiviDetail = () => {
                                     --
                                   </option>
                                   {naturaOptions.map((n) => (
-                                    <option key={n.id_natura} value={n.id_natura} style={SELECT_OPTION_WRAP_STYLE}>
+                                    <option
+                                      key={n.id_natura}
+                                      value={n.id_natura}
+                                      style={SELECT_OPTION_WRAP_STYLE}
+                                    >
                                       {n.code} - {n.label}
                                     </option>
                                   ))}
                                 </CFormSelect>
                               )}
                             </CTableDataCell>
-                            <CTableDataCell className="text-end">{formatCurrency(impon)}</CTableDataCell>
-                            <CTableDataCell className="text-end">{formatCurrency(ivaVal)}</CTableDataCell>
-                            <CTableDataCell className="text-end">{formatCurrency(tot)}</CTableDataCell>
+                            <CTableDataCell className="text-end">
+                              {formatCurrency(impon)}
+                            </CTableDataCell>
+                            <CTableDataCell className="text-end">
+                              {formatCurrency(ivaVal)}
+                            </CTableDataCell>
+                            <CTableDataCell className="text-end">
+                              {formatCurrency(tot)}
+                            </CTableDataCell>
                             {!isCustomerAccount && (
                               <CTableDataCell className="text-center">
-                                <CButton color="link" size="sm" className="p-0" onClick={() => handleRemoveRiga(idx)} disabled={uiDisabled}>
+                                <CButton
+                                  color="link"
+                                  size="sm"
+                                  className="p-0"
+                                  onClick={() => handleRemoveRiga(idx)}
+                                  disabled={uiDisabled}
+                                >
                                   <CIcon icon={cilX} />
                                 </CButton>
                               </CTableDataCell>
@@ -4398,7 +5120,13 @@ const PreventiviDetail = () => {
 
             <div className="d-flex gap-2">
               {!isCustomerAccount && (
-                <CButton color="secondary" variant="outline" type="button" onClick={handleSalvaBozza} disabled={uiDisabled || submitting || pendingOggettoCreate}>
+                <CButton
+                  color="secondary"
+                  variant="outline"
+                  type="button"
+                  onClick={handleSalvaBozza}
+                  disabled={uiDisabled || submitting || pendingOggettoCreate}
+                >
                   <CIcon icon={cilSave} className="me-2" /> Aggiorna bozza
                 </CButton>
               )}
@@ -4488,7 +5216,9 @@ const PreventiviDetail = () => {
                             {row.descrizione}
                           </span>
                         </CTableDataCell>
-                        <CTableDataCell className="text-end">{Number(row.quantita) || 0}</CTableDataCell>
+                        <CTableDataCell className="text-end">
+                          {Number(row.quantita) || 0}
+                        </CTableDataCell>
                       </CTableRow>
                     ))}
                   </CTableBody>
@@ -4522,9 +5252,15 @@ const PreventiviDetail = () => {
                       {ddtResult.anno ? `/${ddtResult.anno}` : ''}
                     </strong>
                   </div>
-                  <div>Data: <strong>{ddtResult.data_ddt ?? '-'}</strong></div>
-                  <div>Pezzi: <strong>{ddtResult.totale_pezzi ?? 0}</strong></div>
-                  <div>Peso kg: <strong>{ddtResult.totale_peso_kg ?? 0}</strong></div>
+                  <div>
+                    Data: <strong>{ddtResult.data_ddt ?? '-'}</strong>
+                  </div>
+                  <div>
+                    Pezzi: <strong>{ddtResult.totale_pezzi ?? 0}</strong>
+                  </div>
+                  <div>
+                    Peso kg: <strong>{ddtResult.totale_peso_kg ?? 0}</strong>
+                  </div>
                 </div>
               </div>
             )}
@@ -4547,13 +5283,20 @@ const PreventiviDetail = () => {
             </div>
           </CModalFooter>
         </CModal>
-        <CModal visible={fatturaModalVisible} onClose={handleCloseFatturaModal} size="xl" backdrop="static">
+        <CModal
+          visible={fatturaModalVisible}
+          onClose={handleCloseFatturaModal}
+          size="xl"
+          backdrop="static"
+        >
           <CModalHeader>
             <CModalTitle>Emetti fattura</CModalTitle>
           </CModalHeader>
           <CModalBody>
             {fatturaError && (
-              <CAlert color="danger">{fatturaError?.message || 'Impossibile emettere la fattura.'}</CAlert>
+              <CAlert color="danger">
+                {fatturaError?.message || 'Impossibile emettere la fattura.'}
+              </CAlert>
             )}
             {fatturaSuccess && <CAlert color="success">{fatturaSuccess}</CAlert>}
             <CRow className="g-3 mb-3">
@@ -4635,13 +5378,15 @@ const PreventiviDetail = () => {
               <h6 className="mb-2 text-body-secondary">Righe incluse</h6>
               <div className="d-flex flex-wrap align-items-center gap-3 mb-2">
                 <div className="small text-body-secondary">
-                  Selezionate {fatturaSelectionSummary.countSelected} di {fatturaSelectionSummary.countEligible} righe
+                  Selezionate {fatturaSelectionSummary.countSelected} di{' '}
+                  {fatturaSelectionSummary.countEligible} righe
                 </div>
                 <CBadge color="info">
                   Fatturazione {formatNumberValue(fatturaSelectionSummary.percent, 1)}%
                 </CBadge>
                 <div className="small">
-                  Totale selezionato: <strong>{formatCurrency(fatturaSelectionSummary.totalSelected)}</strong>
+                  Totale selezionato:{' '}
+                  <strong>{formatCurrency(fatturaSelectionSummary.totalSelected)}</strong>
                 </div>
               </div>
               {preventivoHasRighe ? (
@@ -4657,64 +5402,66 @@ const PreventiviDetail = () => {
                     </CTableRow>
                   </CTableHead>
                   <CTableBody>
-                  {fatturaRigheGrouped.map((group) => (
-                    <React.Fragment key={`cat-${group.label}`}>
-                      <CTableRow className="table-secondary">
-                        <CTableDataCell colSpan={6} className="fw-semibold">
-                          {group.label}
-                        </CTableDataCell>
-                      </CTableRow>
-                      {group.rows.map(({ row, idx }) => {
-                        const qty = Number(row.quantita) || 0
-                        const rawPrice = Number(row.prezzo ?? row.prezzo_unitario ?? 0)
-                        const price = Number.isFinite(rawPrice) ? rawPrice : 0
-                        const totals = calcRigaTotale(row)
-                        const meta = fatturaRigheMeta[idx]
-                        const inFattura = meta?.inFattura
-                        const display = meta?.display
-                        const label = display ? `In fattura #${display}` : 'In fattura'
-                        const isSelected = meta?.id && fatturaSelectedIds.includes(meta.id)
-                        return (
-                          <CTableRow key={row.id_riga ?? idx}>
-                            <CTableDataCell>
-                              <CFormSwitch
-                                checked={Boolean(isSelected)}
-                                onChange={(e) => {
-                                  if (!meta?.id || inFattura) return
-                                  const checked = e.target.checked
-                                  setFatturaSelectedIds((prev) => {
-                                    const next = new Set(
-                                      (Array.isArray(prev) ? prev : [])
-                                        .map((v) => Number(v))
-                                        .filter((v) => Number.isFinite(v) && v > 0),
-                                    )
-                                    if (checked) next.add(meta.id)
-                                    else next.delete(meta.id)
-                                    return Array.from(next)
-                                  })
-                                }}
-                                disabled={fatturaSubmitting || !meta?.id || inFattura}
-                              />
-                            </CTableDataCell>
-                            <CTableDataCell>
-                              <span className="d-inline-flex align-items-center gap-2">
-                                {row.descrizione}
-                                {inFattura && (
-                                  <CBadge color="warning">{label}</CBadge>
-                                )}
-                              </span>
-                            </CTableDataCell>
-                            <CTableDataCell className="text-end">{qty}</CTableDataCell>
-                            <CTableDataCell className="text-end">{formatCurrency(price)}</CTableDataCell>
-                            <CTableDataCell className="text-end">
-                              {row.iva != null ? `${row.iva}%` : '-'}
-                            </CTableDataCell>
-                            <CTableDataCell className="text-end">{formatCurrency(totals.totale)}</CTableDataCell>
-                          </CTableRow>
-                        )
-                      })}
-                    </React.Fragment>
-                  ))}
+                    {fatturaRigheGrouped.map((group) => (
+                      <React.Fragment key={`cat-${group.label}`}>
+                        <CTableRow className="table-secondary">
+                          <CTableDataCell colSpan={6} className="fw-semibold">
+                            {group.label}
+                          </CTableDataCell>
+                        </CTableRow>
+                        {group.rows.map(({ row, idx }) => {
+                          const qty = Number(row.quantita) || 0
+                          const rawPrice = Number(row.prezzo ?? row.prezzo_unitario ?? 0)
+                          const price = Number.isFinite(rawPrice) ? rawPrice : 0
+                          const totals = calcRigaTotale(row)
+                          const meta = fatturaRigheMeta[idx]
+                          const inFattura = meta?.inFattura
+                          const display = meta?.display
+                          const label = display ? `In fattura #${display}` : 'In fattura'
+                          const isSelected = meta?.id && fatturaSelectedIds.includes(meta.id)
+                          return (
+                            <CTableRow key={row.id_riga ?? idx}>
+                              <CTableDataCell>
+                                <CFormSwitch
+                                  checked={Boolean(isSelected)}
+                                  onChange={(e) => {
+                                    if (!meta?.id || inFattura) return
+                                    const checked = e.target.checked
+                                    setFatturaSelectedIds((prev) => {
+                                      const next = new Set(
+                                        (Array.isArray(prev) ? prev : [])
+                                          .map((v) => Number(v))
+                                          .filter((v) => Number.isFinite(v) && v > 0),
+                                      )
+                                      if (checked) next.add(meta.id)
+                                      else next.delete(meta.id)
+                                      return Array.from(next)
+                                    })
+                                  }}
+                                  disabled={fatturaSubmitting || !meta?.id || inFattura}
+                                />
+                              </CTableDataCell>
+                              <CTableDataCell>
+                                <span className="d-inline-flex align-items-center gap-2">
+                                  {row.descrizione}
+                                  {inFattura && <CBadge color="warning">{label}</CBadge>}
+                                </span>
+                              </CTableDataCell>
+                              <CTableDataCell className="text-end">{qty}</CTableDataCell>
+                              <CTableDataCell className="text-end">
+                                {formatCurrency(price)}
+                              </CTableDataCell>
+                              <CTableDataCell className="text-end">
+                                {row.iva != null ? `${row.iva}%` : '-'}
+                              </CTableDataCell>
+                              <CTableDataCell className="text-end">
+                                {formatCurrency(totals.totale)}
+                              </CTableDataCell>
+                            </CTableRow>
+                          )
+                        })}
+                      </React.Fragment>
+                    ))}
                   </CTableBody>
                 </CTable>
               ) : (
@@ -4747,9 +5494,15 @@ const PreventiviDetail = () => {
                       {fatturaResult.anno ? `/${fatturaResult.anno}` : ''}
                     </strong>
                   </div>
-                  <div>Data: <strong>{fatturaResult.data_fattura ?? '-'}</strong></div>
-                  <div>Totale: <strong>{formatCurrency(fatturaResult.totale)}</strong></div>
-                  <div>Saldo: <strong>{formatCurrency(fatturaResult.saldo)}</strong></div>
+                  <div>
+                    Data: <strong>{fatturaResult.data_fattura ?? '-'}</strong>
+                  </div>
+                  <div>
+                    Totale: <strong>{formatCurrency(fatturaResult.totale)}</strong>
+                  </div>
+                  <div>
+                    Saldo: <strong>{formatCurrency(fatturaResult.saldo)}</strong>
+                  </div>
                 </div>
               </div>
             )}
@@ -4765,14 +5518,23 @@ const PreventiviDetail = () => {
               <CButton
                 color="primary"
                 onClick={handleEmitFattura}
-                disabled={fatturaSubmitting || !preventivoHasRighe || fatturaSelectionSummary.countSelected === 0}
+                disabled={
+                  fatturaSubmitting ||
+                  !preventivoHasRighe ||
+                  fatturaSelectionSummary.countSelected === 0
+                }
               >
                 {fatturaSubmitting ? 'Emissione...' : 'Emetti fattura'}
               </CButton>
             </div>
           </CModalFooter>
         </CModal>
-        <CModal visible={emailModalVisible} onClose={handleCloseEmailModal} size="lg" backdrop="static">
+        <CModal
+          visible={emailModalVisible}
+          onClose={handleCloseEmailModal}
+          size="lg"
+          backdrop="static"
+        >
           <CModalHeader>
             <CModalTitle>Invia preventivo via email</CModalTitle>
           </CModalHeader>
@@ -4819,11 +5581,18 @@ const PreventiviDetail = () => {
                 placeholder="Scrivi il testo dell'email..."
                 minHeight={260}
               />
-              <div className="form-text">Il testo verra' inviato come corpo HTML del messaggio.</div>
+              <div className="form-text">
+                Il testo verra' inviato come corpo HTML del messaggio.
+              </div>
             </div>
           </CModalBody>
           <CModalFooter>
-            <CButton color="secondary" variant="outline" onClick={handleCloseEmailModal} disabled={emailSending}>
+            <CButton
+              color="secondary"
+              variant="outline"
+              onClick={handleCloseEmailModal}
+              disabled={emailSending}
+            >
               Annulla
             </CButton>
             <CButton color="primary" onClick={handleSendPreventivoEmail} disabled={emailSending}>
@@ -4838,10 +5607,14 @@ const PreventiviDetail = () => {
                 </>
               )}
             </CButton>
-
           </CModalFooter>
         </CModal>
-        <CModal visible={revisionModalVisible} onClose={() => setRevisionModalVisible(false)} size="lg" backdrop="static">
+        <CModal
+          visible={revisionModalVisible}
+          onClose={() => setRevisionModalVisible(false)}
+          size="lg"
+          backdrop="static"
+        >
           <CModalHeader>
             <CModalTitle>Dettaglio revisione</CModalTitle>
           </CModalHeader>
@@ -4853,7 +5626,8 @@ const PreventiviDetail = () => {
             )}
             {!revisionModalLoading && revisionModalError && (
               <CAlert color="danger" className="mb-0">
-                {revisionModalError?.message || 'Impossibile caricare il dettaglio della revisione.'}
+                {revisionModalError?.message ||
+                  'Impossibile caricare il dettaglio della revisione.'}
               </CAlert>
             )}
             {!revisionModalLoading && !revisionModalError && (
@@ -4861,7 +5635,9 @@ const PreventiviDetail = () => {
                 <div className="mb-3">
                   <div className="d-flex flex-wrap justify-content-between align-items-baseline gap-2">
                     <h6 className="mb-0">
-                      Revisione {revisionModalData?.label || `Rev.${revisionModalData?.numero_revision ?? '-'}`}
+                      Revisione{' '}
+                      {revisionModalData?.label ||
+                        `Rev.${revisionModalData?.numero_revision ?? '-'}`}
                     </h6>
                     <small className="text-body-secondary">
                       {formatDateTime(revisionModalData?.created_at)}
@@ -4870,9 +5646,7 @@ const PreventiviDetail = () => {
                   <div className="small text-body-secondary">
                     Operatore: {revisionModalData?.operatore || '-'}
                   </div>
-                  <p className="mb-0">
-                    Nota: {revisionModalData?.note || '-'}
-                  </p>
+                  <p className="mb-0">Nota: {revisionModalData?.note || '-'}</p>
                 </div>
                 {revisionModalDetail?.data ? (
                   <div className="border rounded p-3 mb-3">
@@ -4881,12 +5655,16 @@ const PreventiviDetail = () => {
                         <small className="text-body-secondary">Numero</small>
                         <div className="fw-semibold">
                           {revisionModalDetail.data.numero_documento ?? '-'}
-                          {revisionModalDetail.data.anno_preventivo ? `/${revisionModalDetail.data.anno_preventivo}` : ''}
+                          {revisionModalDetail.data.anno_preventivo
+                            ? `/${revisionModalDetail.data.anno_preventivo}`
+                            : ''}
                         </div>
                       </div>
                       <div className="col-6 col-md-3">
                         <small className="text-body-secondary">{clienteLabel}</small>
-                        <div className="fw-semibold">{revisionModalDetail.data.ragione_sociale ?? '-'}</div>
+                        <div className="fw-semibold">
+                          {revisionModalDetail.data.ragione_sociale ?? '-'}
+                        </div>
                       </div>
                       <div className="col-6 col-md-3">
                         <small className="text-body-secondary">Data preventivo</small>
@@ -4894,7 +5672,9 @@ const PreventiviDetail = () => {
                       </div>
                       <div className="col-6 col-md-3">
                         <small className="text-body-secondary">Totale</small>
-                        <div className="fw-semibold">{formatCurrency(revisionModalDetail.data.totale)}</div>
+                        <div className="fw-semibold">
+                          {formatCurrency(revisionModalDetail.data.totale)}
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -4919,23 +5699,39 @@ const PreventiviDetail = () => {
                       {revisionModalLines.map((line, idx) => (
                         <CTableRow key={`${line.id_riga ?? idx}-${idx}`}>
                           <CTableDataCell>{line.descrizione || '-'}</CTableDataCell>
-                          <CTableDataCell className="text-end">{formatNumberValue(line.quantita ?? 0, 2)}</CTableDataCell>
-                          <CTableDataCell className="text-end">{formatCurrency(line.prezzo_unitario ?? line.prezzo ?? 0)}</CTableDataCell>
-                          <CTableDataCell className="text-end">{formatNumberValue(line.sconto ?? 0, 2)}</CTableDataCell>
-                          <CTableDataCell className="text-end">{formatNumberValue(line.iva ?? 0, 2)}</CTableDataCell>
-                          <CTableDataCell className="text-end">{formatCurrency(line.totale ?? line.importo_scontato ?? 0)}</CTableDataCell>
+                          <CTableDataCell className="text-end">
+                            {formatNumberValue(line.quantita ?? 0, 2)}
+                          </CTableDataCell>
+                          <CTableDataCell className="text-end">
+                            {formatCurrency(line.prezzo_unitario ?? line.prezzo ?? 0)}
+                          </CTableDataCell>
+                          <CTableDataCell className="text-end">
+                            {formatNumberValue(line.sconto ?? 0, 2)}
+                          </CTableDataCell>
+                          <CTableDataCell className="text-end">
+                            {formatNumberValue(line.iva ?? 0, 2)}
+                          </CTableDataCell>
+                          <CTableDataCell className="text-end">
+                            {formatCurrency(line.totale ?? line.importo_scontato ?? 0)}
+                          </CTableDataCell>
                         </CTableRow>
                       ))}
                     </CTableBody>
                   </CTable>
                 ) : (
-                  <small className="text-body-secondary">Non sono presenti righe nella revisione.</small>
+                  <small className="text-body-secondary">
+                    Non sono presenti righe nella revisione.
+                  </small>
                 )}
               </>
             )}
           </CModalBody>
           <CModalFooter className="justify-content-end">
-            <CButton color="secondary" variant="outline" onClick={() => setRevisionModalVisible(false)}>
+            <CButton
+              color="secondary"
+              variant="outline"
+              onClick={() => setRevisionModalVisible(false)}
+            >
               Chiudi
             </CButton>
           </CModalFooter>
@@ -4946,6 +5742,3 @@ const PreventiviDetail = () => {
 }
 
 export default PreventiviDetail
-
-
-

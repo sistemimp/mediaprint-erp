@@ -31,6 +31,11 @@ final class SmtpMailer
         $this->timeout = $timeout ?? (int) (getenv('SMTP_TIMEOUT') ?: 30);
         $this->ehloDomain = $ehloDomain ?? (getenv('SMTP_EHLO_DOMAIN') ?: (gethostname() ?: 'localhost'));
         $this->allowSelfSigned = $allowSelfSigned ?? (getenv('SMTP_ALLOW_SELF_SIGNED') === '1');
+
+        // Compatibilità provider: porta 465 richiede implicit SSL/TLS (SMTPS), non STARTTLS esplicito.
+        if ($this->port === 465 && $this->encryption === 'tls') {
+            $this->encryption = 'ssl';
+        }
     }
 
     /**

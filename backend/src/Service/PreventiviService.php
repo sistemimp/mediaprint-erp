@@ -246,6 +246,453 @@ final class PreventiviService
         return number_format($value, 2, ',', '.') . ' €';
     }
 
+    private function ensureAcceptanceSchema(): void
+    {
+        $pdo = $this->repository->getConnection();
+        $pdo->exec(<<<'SQL'
+            CREATE TABLE IF NOT EXISTS tb_preventivi_acceptance_links (
+                id_link INT UNSIGNED NOT NULL AUTO_INCREMENT,
+                id_preventivo INT NOT NULL,
+                token_hash CHAR(64) NOT NULL,
+                expires_at DATETIME NOT NULL,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                used_at DATETIME NULL,
+                PRIMARY KEY (id_link),
+                UNIQUE KEY uq_token_hash (token_hash),
+                KEY idx_prev (id_preventivo),
+                CONSTRAINT fk_prev_acc_link_prev FOREIGN KEY (id_preventivo)
+                    REFERENCES tb_preventivi (id_preventivo) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        SQL);
+        $pdo->exec(<<<'SQL'
+            CREATE TABLE IF NOT EXISTS tb_preventivi_acceptance_otp (
+                id_otp INT UNSIGNED NOT NULL AUTO_INCREMENT,
+                id_link INT UNSIGNED NOT NULL,
+                channel VARCHAR(16) NOT NULL DEFAULT 'email',
+                destination VARCHAR(255) NOT NULL,
+                otp_hash CHAR(64) NOT NULL,
+                attempts INT NOT NULL DEFAULT 0,
+                expires_at DATETIME NOT NULL,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                verified_at DATETIME NULL,
+                request_ip VARCHAR(64) NULL,
+                user_agent VARCHAR(255) NULL,
+                PRIMARY KEY (id_otp),
+                KEY idx_link_created (id_link, created_at),
+                CONSTRAINT fk_prev_acc_otp_link FOREIGN KEY (id_link)
+                    REFERENCES tb_preventivi_acceptance_links (id_link) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        SQL);
+        $pdo->exec(<<<'SQL'
+            CREATE TABLE IF NOT EXISTS tb_preventivi_acceptance_receipts (
+                id_receipt INT UNSIGNED NOT NULL AUTO_INCREMENT,
+                id_preventivo INT NOT NULL,
+                id_link INT UNSIGNED NOT NULL,
+                signer_nome VARCHAR(255) NOT NULL,
+                signer_cognome VARCHAR(255) NOT NULL,
+                signer_email VARCHAR(255) NOT NULL,
+                signer_cf_piva VARCHAR(32) NULL,
+                otp_channel VARCHAR(16) NOT NULL,
+                otp_destination VARCHAR(255) NOT NULL,
+                accepted_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                ip_address VARCHAR(64) NULL,
+                user_agent VARCHAR(255) NULL,
+                evidence_json JSON NULL,
+                PRIMARY KEY (id_receipt),
+                KEY idx_prev (id_preventivo),
+                CONSTRAINT fk_prev_acc_receipt_prev FOREIGN KEY (id_preventivo)
+                    REFERENCES tb_preventivi (id_preventivo) ON DELETE CASCADE,
+                CONSTRAINT fk_prev_acc_receipt_link FOREIGN KEY (id_link)
+                    REFERENCES tb_preventivi_acceptance_links (id_link) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        SQL);
+    }
+
+    private function createAcceptanceLink(int $idPreventivo): string
+    {
+        $this->ensureAcceptanceSchema();
+        $token = rtrim(strtr(base64_encode(random_bytes(32)), '+/', '-_'), '=');
+        $hash = hash('sha256', $token);
+        $expiresAt = (new \DateTimeImmutable('+30 days'))->format('Y-m-d H:i:s');
+        $stmt = $this->repository->getConnection()->prepare(
+            'INSERT INTO tb_preventivi_acceptance_links (id_preventivo, token_hash, expires_at) VALUES (:id, :hash, :expires_at)'
+        );
+        $stmt->bindValue(':id', $idPreventivo, \PDO::PARAM_INT);
+        $stmt->bindValue(':hash', $hash, \PDO::PARAM_STR);
+        $stmt->bindValue(':expires_at', $expiresAt, \PDO::PARAM_STR);
+        $stmt->execute();
+        return $token;
+    }
+
+    /**
+     * @return array{id_link:int,id_preventivo:int,expires_at:string,used_at:?string}
+     */
+    private function getAcceptanceLinkByToken(string $token): array
+    {
+        $this->ensureAcceptanceSchema();
+        $hash = hash('sha256', $token);
+        $stmt = $this->repository->getConnection()->prepare(
+            'SELECT id_link, id_preventivo, expires_at, used_at FROM tb_preventivi_acceptance_links WHERE token_hash = :hash LIMIT 1'
+        );
+        $stmt->bindValue(':hash', $hash, \PDO::PARAM_STR);
+        $stmt->execute();
+        $link = $stmt->fetch(\PDO::FETCH_ASSOC) ?: null;
+        if ($link === null) {
+            throw new \RuntimeException('Link non valido.', 404);
+        }
+        if (!empty($link['used_at'])) {
+            throw new \RuntimeException('Questo link è già stato utilizzato.', 410);
+        }
+        if (strtotime((string) $link['expires_at']) < time()) {
+            throw new \RuntimeException('Link scaduto.', 410);
+        }
+        return [
+            'id_link' => (int) $link['id_link'],
+            'id_preventivo' => (int) $link['id_preventivo'],
+            'expires_at' => (string) $link['expires_at'],
+            'used_at' => isset($link['used_at']) ? (string) $link['used_at'] : null,
+        ];
+    }
+
+    private function fetchPreventivoPdfFromJasper(int $idPreventivo): string
+    {
+        $remoteUrl = sprintf(
+            'https://jaspersoft.mediaprint.it/jasperserver/rest_v2/reports/Mediaprint/GestionaleMP/Preventivi.pdf?id_preventivo=%d&j_username=gestionaleMp&j_password=gestionaleMp',
+            $idPreventivo
+        );
+
+        $content = null;
+        $sslVerify = getenv('JASPER_SSL_VERIFY');
+        $verifySsl = !($sslVerify !== false && in_array(strtolower(trim((string) $sslVerify)), ['0', 'false', 'off', 'no'], true));
+        $context = stream_context_create([
+            'http' => [
+                'method' => 'GET',
+                'timeout' => 30,
+                'ignore_errors' => true,
+                'header' => "Accept: application/pdf\r\nUser-Agent: MediaPrint-ERP/1.0\r\n",
+            ],
+            'ssl' => [
+                'verify_peer' => $verifySsl,
+                'verify_peer_name' => $verifySsl,
+            ],
+        ]);
+        $raw = @file_get_contents($remoteUrl, false, $context);
+        if (is_string($raw) && $raw !== '') {
+            $content = $raw;
+        } elseif (function_exists('curl_init')) {
+            $ch = curl_init($remoteUrl);
+            curl_setopt_array($ch, [
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_FOLLOWLOCATION => true,
+                CURLOPT_CONNECTTIMEOUT => 10,
+                CURLOPT_TIMEOUT => 30,
+                CURLOPT_SSL_VERIFYPEER => $verifySsl,
+                CURLOPT_SSL_VERIFYHOST => $verifySsl ? 2 : 0,
+                CURLOPT_HTTPHEADER => [
+                    'Accept: application/pdf',
+                    'User-Agent: MediaPrint-ERP/1.0',
+                ],
+            ]);
+            $curlRaw = curl_exec($ch);
+            $status = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $contentType = (string) curl_getinfo($ch, CURLINFO_CONTENT_TYPE);
+            curl_close($ch);
+            if ($status >= 200 && $status < 300 && is_string($curlRaw) && $curlRaw !== '') {
+                $content = $curlRaw;
+            } elseif (is_string($curlRaw) && $curlRaw !== '') {
+                $this->storeJasperDebugResponse($idPreventivo, $status, $contentType, $curlRaw);
+            }
+        }
+
+        if (!is_string($content) || $content === '') {
+            throw new \RuntimeException('Impossibile recuperare il PDF da Jasper.', 502);
+        }
+        if (strpos($content, '%PDF') !== 0) {
+            $this->storeJasperDebugResponse($idPreventivo, 200, 'unknown', $content);
+            throw new \RuntimeException('Risposta Jasper non valida: PDF non riconosciuto.', 502);
+        }
+        return $content;
+    }
+
+    private function storeJasperDebugResponse(int $idPreventivo, int $status, string $contentType, string $body): void
+    {
+        try {
+            $baseDir = $this->getPreventiviPdfStorageDir();
+            if (!is_dir($baseDir) && !mkdir($baseDir, 0775, true) && !is_dir($baseDir)) {
+                return;
+            }
+            $snippet = substr($body, 0, 4000);
+            $payload = "status={$status}\ncontent_type={$contentType}\n\n{$snippet}";
+            @file_put_contents($baseDir . '/jasper_debug_' . $idPreventivo . '.txt', $payload, LOCK_EX);
+        } catch (\Throwable $ignored) {
+            // no-op
+        }
+    }
+
+    private function getPreventivoPdfLocalPath(int $idPreventivo, bool $forceRefresh = false): string
+    {
+        $baseDir = $this->getPreventiviPdfStorageDir();
+        if (!is_dir($baseDir) && !mkdir($baseDir, 0775, true) && !is_dir($baseDir)) {
+            throw new \RuntimeException('Impossibile creare la cartella PDF preventivi.', 500);
+        }
+        $targetPath = $baseDir . '/preventivo_' . $idPreventivo . '.pdf';
+
+        // Cache semplice: rigenera solo se non esiste o file troppo piccolo.
+        $needsRefresh = $forceRefresh || !is_readable($targetPath) || (filesize($targetPath) !== false && (int) filesize($targetPath) < 500);
+        if (!$needsRefresh) {
+            return $targetPath;
+        }
+        $content = $this->fetchPreventivoPdfFromJasper($idPreventivo);
+        if (@file_put_contents($targetPath, $content, LOCK_EX) === false) {
+            throw new \RuntimeException('Impossibile salvare il PDF locale del preventivo.', 500);
+        }
+        return $targetPath;
+    }
+
+    private function getPublicApiBaseUrl(): string
+    {
+        $configured = getenv('PUBLIC_API_BASE_URL');
+        if (is_string($configured) && trim($configured) !== '') {
+            return rtrim(trim($configured), '/');
+        }
+        return 'https://gestionale.mediaprint.it/pubblica';
+    }
+
+    private function getPreventiviPdfStorageDir(): string
+    {
+        $configured = getenv('PREVENTIVI_PDF_DIR');
+        if (is_string($configured) && trim($configured) !== '') {
+            return rtrim(trim($configured), '/');
+        }
+        return dirname(__DIR__, 2) . '/d0cum3nt1/preventivi';
+    }
+
+    private function deleteAcceptancePdfArtifacts(int $idPreventivo): void
+    {
+        $baseDir = $this->getPreventiviPdfStorageDir();
+        $candidates = [
+            $baseDir . '/preventivo_' . $idPreventivo . '.pdf',
+            $baseDir . '/preventivo_' . $idPreventivo . '_signed.pdf',
+            $baseDir . '/preventivo_' . $idPreventivo . '_pdfa_tmp.pdf',
+            $baseDir . '/jasper_debug_' . $idPreventivo . '.txt',
+        ];
+        foreach ($candidates as $path) {
+            if (is_file($path)) {
+                @unlink($path);
+            }
+        }
+    }
+
+    private function resetAcceptanceForPreventivo(int $idPreventivo): void
+    {
+        if ($idPreventivo <= 0) {
+            return;
+        }
+        $this->deleteAcceptancePdfArtifacts($idPreventivo);
+        $this->ensureAcceptanceSchema();
+        $pdo = $this->repository->getConnection();
+        $started = false;
+        if (!$pdo->inTransaction()) {
+            $pdo->beginTransaction();
+            $started = true;
+        }
+        try {
+            $linkIdsStmt = $pdo->prepare('SELECT id_link FROM tb_preventivi_acceptance_links WHERE id_preventivo = :id');
+            $linkIdsStmt->bindValue(':id', $idPreventivo, \PDO::PARAM_INT);
+            $linkIdsStmt->execute();
+            $ids = $linkIdsStmt->fetchAll(\PDO::FETCH_COLUMN) ?: [];
+            if (!empty($ids)) {
+                $placeholders = [];
+                foreach ($ids as $idx => $idLink) {
+                    $placeholders[] = ':l' . $idx;
+                }
+                $delOtp = $pdo->prepare('DELETE FROM tb_preventivi_acceptance_otp WHERE id_link IN (' . implode(',', $placeholders) . ')');
+                $delReceipt = $pdo->prepare('DELETE FROM tb_preventivi_acceptance_receipts WHERE id_link IN (' . implode(',', $placeholders) . ')');
+                foreach ($ids as $idx => $idLink) {
+                    $delOtp->bindValue(':l' . $idx, (int) $idLink, \PDO::PARAM_INT);
+                    $delReceipt->bindValue(':l' . $idx, (int) $idLink, \PDO::PARAM_INT);
+                }
+                $delOtp->execute();
+                $delReceipt->execute();
+            }
+            $resetLinks = $pdo->prepare(
+                'UPDATE tb_preventivi_acceptance_links
+                 SET used_at = NULL,
+                     expires_at = :expires_at
+                 WHERE id_preventivo = :id'
+            );
+            $resetLinks->bindValue(':id', $idPreventivo, \PDO::PARAM_INT);
+            $resetLinks->bindValue(':expires_at', (new \DateTimeImmutable('+30 days'))->format('Y-m-d H:i:s'), \PDO::PARAM_STR);
+            $resetLinks->execute();
+
+            if ($started && $pdo->inTransaction()) {
+                $pdo->commit();
+            }
+
+            // Best effort: traccia l'invalidazione firma in revisione/storico.
+            try {
+                $snapshot = $this->detail(['id' => $idPreventivo]);
+                $this->repository->createRevision(
+                    $idPreventivo,
+                    'Accettazione invalidata per modifica documento.',
+                    null,
+                    [
+                        'event' => 'acceptance_reset_on_edit',
+                        'detail' => $snapshot,
+                    ]
+                );
+            } catch (\Throwable $ignored) {
+                // Non bloccare il flusso operativo se il log fallisce.
+            }
+        } catch (\Throwable $e) {
+            if ($started && $pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            throw $e;
+        }
+    }
+
+    private function getGhostscriptBinary(): string
+    {
+        $bin = getenv('GS_BIN');
+        return (is_string($bin) && trim($bin) !== '') ? trim($bin) : 'gs';
+    }
+
+    private function getQpdfBinary(): string
+    {
+        $bin = getenv('QPDF_BIN');
+        return (is_string($bin) && trim($bin) !== '') ? trim($bin) : 'qpdf';
+    }
+
+    private function commandExists(string $command): bool
+    {
+        $checkCmd = stripos(PHP_OS_FAMILY, 'Windows') === 0
+            ? 'where ' . escapeshellarg($command)
+            : 'command -v ' . escapeshellarg($command) . ' >/dev/null 2>&1';
+        $output = [];
+        $code = 1;
+        @exec($checkCmd, $output, $code);
+        return $code === 0;
+    }
+
+    /**
+     * @param array<string,mixed> $receipt
+     */
+    private function buildSignatureWatermark(array $receipt): string
+    {
+        $fullName = trim(((string) ($receipt['nome'] ?? '')) . ' ' . ((string) ($receipt['cognome'] ?? '')));
+        $email = (string) ($receipt['email'] ?? '');
+        $acceptedAt = (string) ($receipt['accepted_at'] ?? '');
+        $idReceipt = (string) ($receipt['id_receipt'] ?? '');
+        $parts = array_values(array_filter([
+            $fullName !== '' ? $fullName : null,
+            $email !== '' ? $email : null,
+            $acceptedAt !== '' ? $acceptedAt : null,
+            $idReceipt !== '' ? ('ID ' . $idReceipt) : null,
+        ]));
+        return 'Accettato OTP - ' . implode(' | ', $parts);
+    }
+
+    /**
+     * @param array<string,mixed> $receipt
+     */
+    private function buildSignatureFooter(array $receipt): string
+    {
+        $fullName = trim(((string) ($receipt['nome'] ?? '')) . ' ' . ((string) ($receipt['cognome'] ?? '')));
+        $email = (string) ($receipt['email'] ?? '');
+        $acceptedAt = (string) ($receipt['accepted_at'] ?? '');
+        $idReceipt = (string) ($receipt['id_receipt'] ?? '');
+        return trim(sprintf(
+            'Firma elettronica semplice OTP - %s - %s - %s - ricevuta #%s',
+            $fullName !== '' ? $fullName : 'N/D',
+            $email !== '' ? $email : 'N/D',
+            $acceptedAt !== '' ? $acceptedAt : 'N/D',
+            $idReceipt !== '' ? $idReceipt : 'N/D'
+        ));
+    }
+
+    /**
+     * Converte PDF in PDF/A e applica filigrana firma OTP.
+     * Ritorna path del file firmato se disponibile.
+     *
+     * @param array<string,mixed> $receipt
+     */
+    private function generateSignedAcceptancePdf(int $idPreventivo, array $receipt): ?string
+    {
+        $inputPath = $this->getPreventivoPdfLocalPath($idPreventivo, true);
+        if (!is_readable($inputPath)) {
+            return null;
+        }
+
+        $baseDir = $this->getPreventiviPdfStorageDir();
+        $signedPath = $baseDir . '/preventivo_' . $idPreventivo . '_signed.pdf';
+        $tmpPdfaPath = $baseDir . '/preventivo_' . $idPreventivo . '_pdfa_tmp.pdf';
+
+        $gs = $this->getGhostscriptBinary();
+        if (!$this->commandExists($gs)) {
+            return null;
+        }
+
+        $watermark = $this->buildSignatureWatermark($receipt);
+        $footer = $this->buildSignatureFooter($receipt);
+        $watermarkSafe = str_replace(['\\', '(', ')'], ['\\\\', '\\(', '\\)'], $watermark);
+        $footerSafe = str_replace(['\\', '(', ')'], ['\\\\', '\\(', '\\)'], $footer);
+        $beginPageScript = "<< /BeginPage {" .
+            "2 dict begin " .
+            "/Helvetica-Bold findfont 42 scalefont setfont " .
+            "0.88 setgray " .
+            "306 430 moveto 35 rotate (" . $watermarkSafe . ") show -35 rotate " .
+            "/Helvetica findfont 9 scalefont setfont " .
+            "0.35 setgray " .
+            // Footer firma: ancorato dal primo pixel utile in basso a sinistra.
+            "0 10 moveto (" . $footerSafe . ") show " .
+            "end" .
+            "} >> setpagedevice";
+        $gsCmd = sprintf(
+            '%s -dBATCH -dNOPAUSE -dSAFER -sDEVICE=pdfwrite -dCompatibilityLevel=1.7 -dPDFA=2 -dPDFACompatibilityPolicy=1 -sOutputFile=%s -c %s -f %s',
+            escapeshellcmd($gs),
+            escapeshellarg($tmpPdfaPath),
+            escapeshellarg($beginPageScript),
+            escapeshellarg($inputPath)
+        );
+        $out = [];
+        $code = 1;
+        @exec($gsCmd . ' 2>&1', $out, $code);
+        if ($code !== 0 || !is_readable($tmpPdfaPath)) {
+            return null;
+        }
+
+        $qpdf = $this->getQpdfBinary();
+        if ($this->commandExists($qpdf)) {
+            $ownerPwd = bin2hex(random_bytes(16));
+            $qpdfCmd = sprintf(
+                '%s --encrypt %s %s 256 --modify=none --annotate=n --extract=n --print=full -- %s %s',
+                escapeshellcmd($qpdf),
+                escapeshellarg(''),
+                escapeshellarg($ownerPwd),
+                escapeshellarg($tmpPdfaPath),
+                escapeshellarg($signedPath)
+            );
+            $qOut = [];
+            $qCode = 1;
+            @exec($qpdfCmd . ' 2>&1', $qOut, $qCode);
+            if ($qCode === 0 && is_readable($signedPath)) {
+                @unlink($tmpPdfaPath);
+                if ($inputPath !== $signedPath && is_readable($inputPath)) {
+                    @unlink($inputPath);
+                }
+                return $signedPath;
+            }
+        }
+
+        // Fallback: se qpdf non disponibile, tieni almeno PDF/A con watermark.
+        @rename($tmpPdfaPath, $signedPath);
+        if (is_readable($signedPath) && $inputPath !== $signedPath && is_readable($inputPath)) {
+            @unlink($inputPath);
+        }
+        return is_readable($signedPath) ? $signedPath : null;
+    }
+
     /**
      * @return array<string, mixed>
      */
@@ -329,6 +776,17 @@ final class PreventiviService
             'label' => $row['stato_label'] ?? ($row['stato_code'] ?? null),
         ];
         $revisions = $this->repository->listRevisions($id);
+        $acceptanceExists = false;
+        try {
+            $stmtAcc = $this->repository->getConnection()->prepare(
+                'SELECT 1 FROM tb_preventivi_acceptance_receipts WHERE id_preventivo = :id LIMIT 1'
+            );
+            $stmtAcc->bindValue(':id', $id, \PDO::PARAM_INT);
+            $stmtAcc->execute();
+            $acceptanceExists = $stmtAcc->fetchColumn() !== false;
+        } catch (\Throwable $ignored) {
+            $acceptanceExists = false;
+        }
         return [
             'data' => $row,
             'righe' => $righe,
@@ -344,6 +802,7 @@ final class PreventiviService
                 'statuses' => $statuses,
                 'current_status' => $currentStatus,
                 'revisions' => $revisions,
+                'acceptance_exists' => $acceptanceExists,
             ],
         ];
     }
@@ -695,6 +1154,10 @@ final class PreventiviService
                 }
             }
 
+            // Il documento è stato modificato: invalida firma/accettazione precedente
+            // e riapre il flusso OTP per una nuova sottoscrizione.
+            $this->resetAcceptanceForPreventivo($idPrev);
+
             $updated = $this->repository->updateDraft($idPrev, [
                 'id_anagrafica' => $idAnagrafica ?: null,
                 'id_mittente' => $mittenteId > 0 ? $mittenteId : null,
@@ -866,6 +1329,11 @@ final class PreventiviService
             $detail['oggetto'] ?? 'la lavorazione richiesta',
             $totale
         );
+        $acceptToken = $this->createAcceptanceLink($id);
+        $publicBase = getenv('PUBLIC_APP_BASE_URL') ?: 'https://gestionale.mediaprint.it';
+        $publicBase = rtrim((string) $publicBase, '/');
+        $acceptanceUrl = $publicBase . '/#/preventivi/accetta?token=' . rawurlencode($acceptToken);
+
         $messageHtml = $this->renderPreventivoEmailTemplate([
             'cliente' => $cliente,
             'numero' => $numero,
@@ -877,6 +1345,11 @@ final class PreventiviService
             'totale_imponibile' => $detail['totale_imponibile'] ?? null,
             'totale_iva' => $detail['totale_iva'] ?? null,
         ], $introHtml);
+        $messageHtml .= sprintf(
+            '<p><a href="%s" style="display:inline-block;padding:10px 14px;background:#0d6efd;color:#ffffff;text-decoration:none;border-radius:6px;">Accetta online il preventivo</a></p><p style="font-size:12px;color:#6c757d;">Se il pulsante non funziona, copia e incolla questo link: %s</p>',
+            htmlspecialchars($acceptanceUrl, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
+            htmlspecialchars($acceptanceUrl, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8')
+        );
 
         $fromAddress = isset($input['from']) && filter_var($input['from'], FILTER_VALIDATE_EMAIL)
             ? $input['from']
@@ -929,9 +1402,311 @@ final class PreventiviService
                 'message' => $messageHtml,
                 'sent' => $sent,
                 'error' => $smtpError,
+                'acceptance_url' => $acceptanceUrl,
             ],
             'status' => $sent ? 'inviato' : 'errore',
             'preventivo' => $updatedDetail,
+        ];
+    }
+
+    public function publicAcceptanceDetail(array $input): array
+    {
+        $token = trim((string) ($input['token'] ?? ''));
+        if ($token === '') {
+            throw new \RuntimeException('Token mancante.', 422);
+        }
+        $link = $this->getAcceptanceLinkByToken($token);
+        $detail = $this->repository->fetchDetail((int) $link['id_preventivo']);
+        if ($detail === null) {
+            throw new \RuntimeException('Preventivo non trovato.', 404);
+        }
+        $idPreventivo = (int) $link['id_preventivo'];
+        $pdfUrl = $this->getPublicApiBaseUrl() . '/preventiviPublicPdf.php?token=' . rawurlencode($token) . '&refresh=1';
+        $jasperUrl = sprintf(
+            'https://jaspersoft.mediaprint.it/jasperserver/rest_v2/reports/Mediaprint/GestionaleMP/Preventivi.pdf?id_preventivo=%d&j_username=gestionaleMp&j_password=gestionaleMp',
+            $idPreventivo
+        );
+        return [
+            'data' => $detail,
+            'pdf_url' => $pdfUrl,
+            'jasper_url' => $jasperUrl,
+            'meta' => [
+                'id_link' => (int) $link['id_link'],
+                'expires_at' => $link['expires_at'],
+            ],
+        ];
+    }
+
+    public function streamPublicAcceptancePdf(array $input): array
+    {
+        $token = trim((string) ($input['token'] ?? ''));
+        if ($token === '') {
+            throw new \RuntimeException('Token mancante.', 422);
+        }
+        $link = $this->getAcceptanceLinkByToken($token);
+        $forceRefresh = !empty($input['refresh']) || !empty($input['force']);
+        $path = $this->getPreventivoPdfLocalPath((int) $link['id_preventivo'], $forceRefresh);
+        if (!is_readable($path)) {
+            throw new \RuntimeException('PDF non disponibile.', 404);
+        }
+        return [
+            'path' => $path,
+            'filename' => basename($path),
+            'id_preventivo' => (int) $link['id_preventivo'],
+        ];
+    }
+
+    /**
+     * @return array{
+     *   items:list<array<string,mixed>>,
+     *   pdf_url:string
+     * }
+     */
+    public function acceptanceArtifacts(array $input): array
+    {
+        $id = isset($input['id']) ? (int) $input['id'] : (isset($input['id_preventivo']) ? (int) $input['id_preventivo'] : 0);
+        if ($id <= 0) {
+            throw new \RuntimeException('ID preventivo mancante o non valido.', 422);
+        }
+        $row = $this->repository->fetchDetail($id);
+        if ($row === null) {
+            throw new \RuntimeException('Preventivo non trovato.', 404);
+        }
+
+        try {
+            $stmt = $this->repository->getConnection()->prepare(
+                'SELECT id_receipt, id_preventivo, signer_nome, signer_cognome, signer_email, signer_cf_piva, otp_channel, otp_destination, accepted_at, ip_address, user_agent, evidence_json
+                 FROM tb_preventivi_acceptance_receipts
+                 WHERE id_preventivo = :id
+                 ORDER BY accepted_at DESC, id_receipt DESC'
+            );
+            $stmt->bindValue(':id', $id, \PDO::PARAM_INT);
+            $stmt->execute();
+            $rows = $stmt->fetchAll(\PDO::FETCH_ASSOC) ?: [];
+        } catch (\Throwable $ignored) {
+            $rows = [];
+        }
+        $items = [];
+        foreach ($rows as $r) {
+            $evidence = null;
+            if (isset($r['evidence_json']) && is_string($r['evidence_json']) && trim($r['evidence_json']) !== '') {
+                $decoded = json_decode($r['evidence_json'], true);
+                if (is_array($decoded)) {
+                    $evidence = $decoded;
+                }
+            }
+            $items[] = [
+                'id_receipt' => (int) ($r['id_receipt'] ?? 0),
+                'id_preventivo' => (int) ($r['id_preventivo'] ?? 0),
+                'signer_nome' => (string) ($r['signer_nome'] ?? ''),
+                'signer_cognome' => (string) ($r['signer_cognome'] ?? ''),
+                'signer_email' => (string) ($r['signer_email'] ?? ''),
+                'signer_cf_piva' => isset($r['signer_cf_piva']) ? (string) $r['signer_cf_piva'] : null,
+                'otp_channel' => (string) ($r['otp_channel'] ?? ''),
+                'otp_destination' => (string) ($r['otp_destination'] ?? ''),
+                'accepted_at' => isset($r['accepted_at']) ? (string) $r['accepted_at'] : null,
+                'ip_address' => isset($r['ip_address']) ? (string) $r['ip_address'] : null,
+                'user_agent' => isset($r['user_agent']) ? (string) $r['user_agent'] : null,
+                'evidence' => $evidence,
+            ];
+        }
+
+        return [
+            'items' => $items,
+            'pdf_url' => $this->getPublicApiBaseUrl() . '/preventiviAcceptancePdf.php?id=' . $id,
+        ];
+    }
+
+    /**
+     * @return array{path:string,filename:string,id_preventivo:int}
+     */
+    public function streamAcceptancePdfByPreventivo(array $input): array
+    {
+        $id = isset($input['id']) ? (int) $input['id'] : (isset($input['id_preventivo']) ? (int) $input['id_preventivo'] : 0);
+        if ($id <= 0) {
+            throw new \RuntimeException('ID preventivo mancante o non valido.', 422);
+        }
+        $signedOnly = !empty($input['signed']) || !empty($input['only_signed']);
+        $forceRefresh = !empty($input['refresh']) || !empty($input['force']);
+        $signedPath = $this->getPreventiviPdfStorageDir() . '/preventivo_' . $id . '_signed.pdf';
+        if ($signedOnly) {
+            $path = $signedPath;
+        } elseif ($forceRefresh || !is_readable($signedPath)) {
+            $path = $this->getPreventivoPdfLocalPath($id, $forceRefresh);
+        } else {
+            $path = $signedPath;
+        }
+        if (!is_readable($path)) {
+            throw new \RuntimeException('PDF non disponibile.', 404);
+        }
+        return [
+            'path' => $path,
+            'filename' => basename($path),
+            'id_preventivo' => $id,
+        ];
+    }
+
+    public function sendAcceptanceOtp(array $input): array
+    {
+        $token = trim((string) ($input['token'] ?? ''));
+        $nome = trim((string) ($input['nome'] ?? ''));
+        $cognome = trim((string) ($input['cognome'] ?? ''));
+        $email = strtolower(trim((string) ($input['email'] ?? '')));
+        $cfPiva = trim((string) ($input['cf_piva'] ?? ''));
+        $consenso = !empty($input['consenso']);
+        if (!$consenso) {
+            throw new \RuntimeException('Devi accettare la dichiarazione per procedere.', 422);
+        }
+        if ($nome === '' || $cognome === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            throw new \RuntimeException('Compila nome, cognome ed email validi.', 422);
+        }
+        $detail = $this->publicAcceptanceDetail(['token' => $token]);
+        $idLink = (int) ($detail['meta']['id_link'] ?? 0);
+        if ($idLink <= 0) {
+            throw new \RuntimeException('Link non valido.', 404);
+        }
+        $otp = (string) random_int(100000, 999999);
+        $otpHash = hash('sha256', $otp);
+        $expiresAt = (new \DateTimeImmutable('+10 minutes'))->format('Y-m-d H:i:s');
+        $ip = substr((string) ($_SERVER['REMOTE_ADDR'] ?? ''), 0, 64);
+        $ua = substr((string) ($_SERVER['HTTP_USER_AGENT'] ?? ''), 0, 255);
+        $pdo = $this->repository->getConnection();
+        $stmt = $pdo->prepare(
+            'INSERT INTO tb_preventivi_acceptance_otp (id_link, channel, destination, otp_hash, expires_at, request_ip, user_agent) VALUES (:id_link, :channel, :destination, :otp_hash, :expires_at, :ip, :ua)'
+        );
+        $stmt->bindValue(':id_link', $idLink, \PDO::PARAM_INT);
+        $stmt->bindValue(':channel', 'email', \PDO::PARAM_STR);
+        $stmt->bindValue(':destination', $email, \PDO::PARAM_STR);
+        $stmt->bindValue(':otp_hash', $otpHash, \PDO::PARAM_STR);
+        $stmt->bindValue(':expires_at', $expiresAt, \PDO::PARAM_STR);
+        $stmt->bindValue(':ip', $ip !== '' ? $ip : null, $ip !== '' ? \PDO::PARAM_STR : \PDO::PARAM_NULL);
+        $stmt->bindValue(':ua', $ua !== '' ? $ua : null, $ua !== '' ? \PDO::PARAM_STR : \PDO::PARAM_NULL);
+        $stmt->execute();
+
+        $subject = 'Codice OTP accettazione preventivo';
+        $body = sprintf('<p>Codice OTP: <strong>%s</strong></p><p>Scade tra 10 minuti.</p>', htmlspecialchars($otp, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'));
+        $mailer = new SmtpMailer();
+        $sent = $mailer->send([$email], [], $subject, $body, getenv('SMTP_FROM_ADDRESS') ?: 'no-reply-mail@mediaprint.it', 'MediaPrint ERP');
+        if (!$sent) {
+            throw new \RuntimeException('Invio OTP non riuscito.', 502);
+        }
+
+        return [
+            'ok' => true,
+            'channel' => 'email',
+            'destination_masked' => preg_replace('/(^.).*(@.*$)/', '$1***$2', $email),
+            'expires_at' => $expiresAt,
+            'draft' => [
+                'nome' => $nome,
+                'cognome' => $cognome,
+                'email' => $email,
+                'cf_piva' => $cfPiva !== '' ? $cfPiva : null,
+            ],
+        ];
+    }
+
+    public function verifyAcceptanceOtp(array $input): array
+    {
+        $token = trim((string) ($input['token'] ?? ''));
+        $otp = trim((string) ($input['otp'] ?? ''));
+        $nome = trim((string) ($input['nome'] ?? ''));
+        $cognome = trim((string) ($input['cognome'] ?? ''));
+        $email = strtolower(trim((string) ($input['email'] ?? '')));
+        $cfPiva = trim((string) ($input['cf_piva'] ?? ''));
+        if ($otp === '' || $nome === '' || $cognome === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            throw new \RuntimeException('Dati mancanti o non validi.', 422);
+        }
+        $detail = $this->publicAcceptanceDetail(['token' => $token]);
+        $idLink = (int) ($detail['meta']['id_link'] ?? 0);
+        $idPreventivo = (int) ($detail['data']['id_preventivo'] ?? 0);
+        $pdo = $this->repository->getConnection();
+        $stmt = $pdo->prepare(
+            'SELECT id_otp, otp_hash, attempts, expires_at FROM tb_preventivi_acceptance_otp WHERE id_link = :id_link AND destination = :destination AND verified_at IS NULL ORDER BY id_otp DESC LIMIT 1'
+        );
+        $stmt->bindValue(':id_link', $idLink, \PDO::PARAM_INT);
+        $stmt->bindValue(':destination', $email, \PDO::PARAM_STR);
+        $stmt->execute();
+        $row = $stmt->fetch(\PDO::FETCH_ASSOC) ?: null;
+        if ($row === null) {
+            throw new \RuntimeException('OTP non trovato. Richiedi un nuovo codice.', 404);
+        }
+        if ((int) ($row['attempts'] ?? 0) >= 5) {
+            throw new \RuntimeException('Troppi tentativi OTP.', 429);
+        }
+        if (strtotime((string) $row['expires_at']) < time()) {
+            throw new \RuntimeException('OTP scaduto. Richiedi un nuovo codice.', 410);
+        }
+        if (!hash_equals((string) $row['otp_hash'], hash('sha256', $otp))) {
+            $up = $pdo->prepare('UPDATE tb_preventivi_acceptance_otp SET attempts = attempts + 1 WHERE id_otp = :id_otp');
+            $up->bindValue(':id_otp', (int) $row['id_otp'], \PDO::PARAM_INT);
+            $up->execute();
+            throw new \RuntimeException('OTP non valido.', 422);
+        }
+        $startedTransaction = false;
+        if (!$pdo->inTransaction()) {
+            $pdo->beginTransaction();
+            $startedTransaction = true;
+        }
+        try {
+            $okOtp = $pdo->prepare('UPDATE tb_preventivi_acceptance_otp SET verified_at = NOW() WHERE id_otp = :id_otp');
+            $okOtp->bindValue(':id_otp', (int) $row['id_otp'], \PDO::PARAM_INT);
+            $okOtp->execute();
+            $useLink = $pdo->prepare('UPDATE tb_preventivi_acceptance_links SET used_at = NOW() WHERE id_link = :id_link');
+            $useLink->bindValue(':id_link', $idLink, \PDO::PARAM_INT);
+            $useLink->execute();
+            $evidence = json_encode(['otp_id' => (int) $row['id_otp'], 'verified_at' => (new \DateTimeImmutable('now'))->format(DATE_ATOM)], JSON_UNESCAPED_UNICODE);
+            $insReceipt = $pdo->prepare(
+                'INSERT INTO tb_preventivi_acceptance_receipts (id_preventivo, id_link, signer_nome, signer_cognome, signer_email, signer_cf_piva, otp_channel, otp_destination, ip_address, user_agent, evidence_json) VALUES (:id_preventivo, :id_link, :nome, :cognome, :email, :cf_piva, :channel, :destination, :ip, :ua, :evidence)'
+            );
+            $insReceipt->bindValue(':id_preventivo', $idPreventivo, \PDO::PARAM_INT);
+            $insReceipt->bindValue(':id_link', $idLink, \PDO::PARAM_INT);
+            $insReceipt->bindValue(':nome', $nome, \PDO::PARAM_STR);
+            $insReceipt->bindValue(':cognome', $cognome, \PDO::PARAM_STR);
+            $insReceipt->bindValue(':email', $email, \PDO::PARAM_STR);
+            $insReceipt->bindValue(':cf_piva', $cfPiva !== '' ? $cfPiva : null, $cfPiva !== '' ? \PDO::PARAM_STR : \PDO::PARAM_NULL);
+            $insReceipt->bindValue(':channel', 'email', \PDO::PARAM_STR);
+            $insReceipt->bindValue(':destination', $email, \PDO::PARAM_STR);
+            $insReceipt->bindValue(':ip', substr((string) ($_SERVER['REMOTE_ADDR'] ?? ''), 0, 64) ?: null, \PDO::PARAM_STR);
+            $insReceipt->bindValue(':ua', substr((string) ($_SERVER['HTTP_USER_AGENT'] ?? ''), 0, 255) ?: null, \PDO::PARAM_STR);
+            $insReceipt->bindValue(':evidence', $evidence, \PDO::PARAM_STR);
+            $insReceipt->execute();
+            $receiptId = (int) $pdo->lastInsertId();
+
+            $status = $this->repository->findStatusByCode('confermato');
+            if ($status !== null) {
+                $this->repository->updateStatus($idPreventivo, (int) $status['id_stato']);
+                $this->repository->reserveStockForPreventivo($idPreventivo);
+            }
+            if ($startedTransaction && $pdo->inTransaction()) {
+                $pdo->commit();
+            }
+
+            // Post-process non bloccante: genera PDF/A firmato con filigrana OTP.
+            $this->generateSignedAcceptancePdf($idPreventivo, [
+                'id_receipt' => $receiptId,
+                'nome' => $nome,
+                'cognome' => $cognome,
+                'email' => $email,
+                'accepted_at' => (new \DateTimeImmutable('now'))->format('Y-m-d H:i:s'),
+            ]);
+        } catch (\Throwable $e) {
+            if ($startedTransaction && $pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            throw $e;
+        }
+
+        return [
+            'ok' => true,
+            'receipt' => [
+                'id_receipt' => $receiptId,
+                'id_preventivo' => $idPreventivo,
+                'accepted_at' => (new \DateTimeImmutable('now'))->format('Y-m-d H:i:s'),
+                'nome' => $nome,
+                'cognome' => $cognome,
+                'email' => $email,
+                'cf_piva' => $cfPiva !== '' ? $cfPiva : null,
+            ],
         ];
     }
 
@@ -1034,6 +1809,7 @@ final class PreventiviService
                 $this->repository->updateStatus($idPreventivo, (int) $cedStatus['id_stato']);
             }
             $this->syncPostaliRowsForPreventivo($idPreventivo);
+            $this->resetAcceptanceForPreventivo($idPreventivo);
 
             if ($startedTransaction && $connection->inTransaction()) {
                 $connection->commit();
@@ -1101,6 +1877,7 @@ final class PreventiviService
                 $this->repository->updateStatus($idPreventivo, (int) $cedStatus['id_stato']);
             }
             $this->syncPostaliRowsForPreventivo($idPreventivo);
+            $this->resetAcceptanceForPreventivo($idPreventivo);
 
             if ($startedTransaction && $connection->inTransaction()) {
                 $connection->commit();
