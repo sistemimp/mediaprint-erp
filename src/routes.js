@@ -44,6 +44,7 @@ const PagamentiDashboard = React.lazy(() => import('./views/pagamenti/PagamentiD
 const PagamentiList = React.lazy(() => import('./views/pagamenti/PagamentiList'))
 const PagamentiDetail = React.lazy(() => import('./views/pagamenti/PagamentiDetail'))
 const PagamentiImport = React.lazy(() => import('./views/pagamenti/PagamentiImport'))
+const PagamentiFondi = React.lazy(() => import('./views/pagamenti/PagamentiFondi'))
 const LavorazioniList = React.lazy(() => import('./views/lavorazioni/LavorazioniList'))
 const LavorazioneDetail = React.lazy(() => import('./views/lavorazioni/LavorazioneDetail'))
 const LavorazioniTemplates = React.lazy(() => import('./views/lavorazioni/LavorazioniTemplates'))
@@ -148,6 +149,7 @@ const routes = [
   { path: '/pagamenti/lista', name: 'Pagamenti - Situazione', element: PagamentiList },
   { path: '/pagamenti/dettaglio', name: 'Pagamenti - Dettaglio', element: PagamentiDetail },
   { path: '/pagamenti/import', name: 'Pagamenti - Import', element: PagamentiImport },
+  { path: '/pagamenti/fondi', name: 'Pagamenti - Fondi cliente', element: PagamentiFondi },
   { path: '/lavorazioni/lista', name: 'Lavorazioni - Lista', element: LavorazioniList },
   { path: '/lavorazioni/dettaglio', name: 'Lavorazioni - Dettaglio', element: LavorazioneDetail },
   {

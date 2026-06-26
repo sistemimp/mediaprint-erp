@@ -2367,10 +2367,12 @@ const FattureDetail = () => {
                       </CTableRow>
                     </CTableHead>
                     <CTableBody>
-                      {payments.map((payment) => (
+                      {payments.map((payment) => {
+                        const isFondoPayment = String(payment?.tipo_fonte || '').toLowerCase() === 'fondo'
+                        return (
                         <CTableRow key={payment.id_pagamento}>
                           <CTableDataCell className="text-nowrap">
-                            {payment.id_pagamento ? (
+                            {payment.id_pagamento && !isFondoPayment ? (
                               <CButton
                                 color="link"
                                 size="sm"
@@ -2380,7 +2382,9 @@ const FattureDetail = () => {
                                 #{payment.id_pagamento}
                               </CButton>
                             ) : (
-                              <span className="text-body-secondary">-</span>
+                              <span className="text-body-secondary">
+                                {isFondoPayment ? 'Fondo cliente' : '-'}
+                              </span>
                             )}
                           </CTableDataCell>
                           <CTableDataCell>{formatDate(payment.data_pagamento)}</CTableDataCell>
@@ -2390,6 +2394,11 @@ const FattureDetail = () => {
                                 <div className="fw-semibold">{payment.metodo_label}</div>
                                 {payment.metodo_code && (
                                   <small className="text-body-secondary">{payment.metodo_code}</small>
+                                )}
+                                {isFondoPayment && (
+                                  <div>
+                                    <CBadge color="info" className="mt-1">Pagata con fondo</CBadge>
+                                  </div>
                                 )}
                               </>
                             ) : (
@@ -2420,7 +2429,7 @@ const FattureDetail = () => {
                               size="sm"
                               className="p-0 me-2"
                               onClick={() => openPaymentModal(payment)}
-                              disabled={formDisabled}
+                              disabled={formDisabled || isFondoPayment}
                             >
                               <CIcon icon={cilPencil} />
                             </CButton>
@@ -2432,13 +2441,13 @@ const FattureDetail = () => {
                                 setPaymentDeleteError(null)
                                 setPaymentDeleteTarget(payment)
                               }}
-                              disabled={formDisabled}
+                              disabled={formDisabled || isFondoPayment}
                             >
                               <CIcon icon={cilTrash} />
                             </CButton>
                           </CTableDataCell>
                         </CTableRow>
-                      ))}
+                      )})}
                     </CTableBody>
                   </CTable>
                 )}

@@ -119,7 +119,7 @@ final class FatturaXmlImporter
         if ($this->containsPaIdentifier($numeroDocumento) || $this->containsPaIdentifier($numeroDocumentoNormalized)) {
             $sezionaleId = 2;
         }
-        $statusId = $this->getStateIdByCode('pagata') ?? $this->getImportStateId() ?? 2;
+        $statusId = $this->getImportStateId() ?? $this->getStateIdByCode('emessa') ?? 2;
         $payload = [
             'id_anagrafica' => $anagraficaId,
             'id_sezionale' => $sezionaleId,
@@ -138,14 +138,38 @@ final class FatturaXmlImporter
             'totale' => $importoTotale,
             'totale_imponibile' => $this->sumImponibile($lines),
             'totale_iva' => $this->sumIva($lines),
-            'saldo' => 0.0,
+            // Lasciato NULL per allineare il saldo al totale calcolato lato DB (trigger/procedura).
+            'saldo' => null,
             'created_at' => $dataDocumento,
             'updated_at' => $dataDocumento,
         ];
 
-        // 11. Creo la fattura tramite repository e registro il log di importazione.
-        $result = $this->fattureRepository->createFromPreventivo($payload, $lines);
-        $this->recordImportLog($result['id_fattura'] ?? null, $numeroDocumentoNormalized, $codiceDestinatarioKey, $annoDocumento, $progressivoInvio);
+        // 11. Creo la fattura e il log in una sola transazione per evitare doppie importazioni concorrenti.
+        $manageTransaction = !$this->pdo->inTransaction();
+        if ($manageTransaction) {
+            $this->pdo->beginTransaction();
+        }
+        try {
+            $result = $this->fattureRepository->createFromPreventivo($payload, $lines);
+            $this->recordImportLog($result['id_fattura'] ?? null, $numeroDocumentoNormalized, $codiceDestinatarioKey, $annoDocumento, $progressivoInvio);
+            if ($manageTransaction && $this->pdo->inTransaction()) {
+                $this->pdo->commit();
+            }
+        } catch (\PDOException $exception) {
+            if ($manageTransaction && $this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            if ($this->isDuplicateEntryException($exception, 'uq_fatt_import')) {
+                throw new RuntimeException(sprintf('Fattura già importata (%s / %s).', $annoDocumento, $numeroDocumentoNormalized), 422);
+            }
+            throw $exception;
+        } catch (\Throwable $exception) {
+            if ($manageTransaction && $this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            throw $exception;
+        }
+
         $logEntry = $this->fetchImportLogEntry($numeroDocumentoNormalized, $codiceDestinatarioKey, $annoDocumento);
 
         return [
@@ -799,6 +823,21 @@ final class FatturaXmlImporter
     private function getImportStateId(): ?int
     {
         return $this->getStateIdByCode('importate');
+    }
+
+    private function isDuplicateEntryException(\PDOException $exception, string $needle = ''): bool
+    {
+        $info = $exception->errorInfo;
+        if (!is_array($info)) {
+            return false;
+        }
+        if (($info[0] ?? '') !== '23000' || ($info[1] ?? 0) !== 1062) {
+            return false;
+        }
+        if ($needle === '') {
+            return true;
+        }
+        return str_contains((string) ($info[2] ?? ''), $needle);
     }
 
     // Crea la tabella di log se non esiste (caching tramite static per non ricrearla ogni volta).

@@ -318,6 +318,12 @@ const _nav = [
         name: 'Dettaglio',
         to: '/pagamenti/dettaglio',
       },
+      {
+        component: CNavItem,
+        name: 'Fondi cliente',
+        to: '/pagamenti/fondi',
+        permission: 'pay.read',
+      },
     ],
   },
   {

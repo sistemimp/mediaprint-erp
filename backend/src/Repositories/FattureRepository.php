@@ -1455,8 +1455,9 @@ final class FattureRepository
                 if (!$isCreditNote) {
                     $imponibile = max(0.0, $imponibile);
                 }
-                $iva = $aliquota !== null ? $imponibile * ($aliquota / 100) : 0.0;
-                $totLine = $imponibile + $iva;
+                $imponibile = $this->roundMoney($imponibile);
+                $iva = $aliquota !== null ? $this->roundMoney($imponibile * ($aliquota / 100)) : 0.0;
+                $totLine = $this->roundMoney($imponibile + $iva);
 
                 $linesStmt->bindValue(':id_fattura', $idFattura, PDO::PARAM_INT);
                 $linesStmt->bindValue(':id_prodotto', $idProdotto, $idProdotto ? PDO::PARAM_INT : PDO::PARAM_NULL);
@@ -1537,6 +1538,11 @@ final class FattureRepository
         $existing = $this->fetchDetail($id);
         if ($existing === null) {
             throw new RuntimeException('Fattura non trovata.', 404);
+        }
+        $existingStatus = isset($existing['stato_code']) ? (string) $existing['stato_code'] : null;
+        $isFiscalLocked = $this->isFiscalLockedStatus($existingStatus);
+        if ($isFiscalLocked) {
+            $this->guardLockedFiscalUpdate($data);
         }
 
         $previousStatusId = isset($existing['id_stato_fatt']) ? (int) $existing['id_stato_fatt'] : null;
@@ -1882,8 +1888,9 @@ final class FattureRepository
             if (!$isCreditNote) {
                 $imponibile = max(0.0, $imponibile);
             }
-            $iva = $aliquota !== null ? $imponibile * ($aliquota / 100) : 0.0;
-            $totale = $imponibile + $iva;
+            $imponibile = $this->roundMoney($imponibile);
+            $iva = $aliquota !== null ? $this->roundMoney($imponibile * ($aliquota / 100)) : 0.0;
+            $totale = $this->roundMoney($imponibile + $iva);
 
             $normalized[] = [
                 'id_prodotto' => $idProdotto,
@@ -2095,6 +2102,48 @@ final class FattureRepository
                 $totalePagato += (float) $mapped['importo'];
             }
         }
+        if ($this->tableExists('tb_fatture_incassi_allocazioni')) {
+            $fondoStmt = $this->pdo->prepare(
+                'SELECT
+                    a.id_allocazione,
+                    a.id_fattura,
+                    a.importo,
+                    a.data_allocazione,
+                    a.note,
+                    a.id_movimento_fondo,
+                    fm.id_fondo
+                 FROM tb_fatture_incassi_allocazioni a
+                 LEFT JOIN tb_cliente_fondi_movimenti fm ON fm.id_movimento = a.id_movimento_fondo
+                 WHERE a.id_fattura = :id AND a.tipo_fonte = \'fondo\'
+                 ORDER BY COALESCE(a.data_allocazione, a.created_at) DESC, a.id_allocazione DESC'
+            );
+            $fondoStmt->bindValue(':id', $idFattura, PDO::PARAM_INT);
+            $fondoStmt->execute();
+            $fondoRows = $fondoStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+            foreach ($fondoRows as $row) {
+                $importo = isset($row['importo']) ? (float) $row['importo'] : 0.0;
+                $items[] = [
+                    'id_pagamento' => 'fondo-' . (int) $row['id_allocazione'],
+                    'id_fattura' => (int) $row['id_fattura'],
+                    'id_metodo' => null,
+                    'metodo_code' => 'FONDO',
+                    'metodo_label' => 'Fondo cliente',
+                    'id_mp' => null,
+                    'mp_code' => null,
+                    'mp_label' => null,
+                    'data_pagamento' => $row['data_allocazione'] ?? null,
+                    'importo' => $importo,
+                    'importo_documento' => null,
+                    'import_uid' => null,
+                    'residuo_pagamento' => null,
+                    'note' => $row['note'] ?? null,
+                    'tipo_fonte' => 'fondo',
+                    'id_fondo' => isset($row['id_fondo']) ? (int) $row['id_fondo'] : null,
+                    'id_movimento_fondo' => isset($row['id_movimento_fondo']) ? (int) $row['id_movimento_fondo'] : null,
+                ];
+                $totalePagato += $importo;
+            }
+        }
 
         $rifiutataStatusId = $this->getStatoIdByCode('rifiutata');
         $currentStatusId = isset($invoice['id_stato_fatt']) ? (int) $invoice['id_stato_fatt'] : null;
@@ -2175,44 +2224,68 @@ final class FattureRepository
         if ($importUid === '') {
             $importUid = null;
         }
-
-        $pendingPayment = null;
-        $pendingPaymentId = null;
-        if ($idPagamento > 0) {
-            $pendingPayment = $this->fetchPendingPaymentById($idPagamento);
-        }
-
-        if ($pendingPayment !== null) {
-            $pendingPaymentId = (int) $pendingPayment['id_pagamento'];
-            $availableResiduo = round(((float) $pendingPayment['importo_totale']) - ((float) $pendingPayment['importo_allocato']), 2);
-            if ($importo - $availableResiduo > 0.009) {
-                throw new RuntimeException('L\'importo supera il residuo disponibile per questo pagamento.', 422);
-            }
-            $idMetodo = isset($pendingPayment['id_metodo']) ? (int) $pendingPayment['id_metodo'] : null;
-            $idModalita = (int) $pendingPayment['id_mp'];
-            $dateValue = $pendingPayment['data_pagamento'] ?? $dateValue;
-            $note = $pendingPayment['note'] ?? $note;
-            $importUid = $pendingPayment['import_uid'] ?? $importUid;
-            $importoDocumento = (float) $pendingPayment['importo_totale'];
-            $hasImportoDocumento = true;
-            $idPagamento = 0;
-        }
+        $idFondoSource = isset($data['id_fondo']) ? (int) $data['id_fondo'] : 0;
 
         $this->ensureRecalcProcedureExists();
-        $existingPagamento = null;
-        if ($idPagamento > 0) {
-            $existingPagamento = $this->fetchPagamento($idFattura, $idPagamento);
-            if ($existingPagamento === null) {
-                $fallbackPending = $this->fetchPendingPaymentByImportUid($importUid);
-                if ($fallbackPending !== null) {
-                    $pendingPaymentId = (int) $fallbackPending['id_pagamento'];
-                    $idPagamento = 0;
-                } else {
-                    throw new RuntimeException('Pagamento non trovato per questa fattura.', 404);
+        $manageTransaction = !$this->pdo->inTransaction();
+        if ($manageTransaction) {
+            $this->pdo->beginTransaction();
+        }
+        try {
+            $pendingPayment = null;
+            $pendingPaymentId = null;
+            if ($idPagamento > 0) {
+                $pendingPayment = $this->fetchPendingPaymentById($idPagamento, true);
+            }
+
+            if ($pendingPayment !== null) {
+                $pendingPaymentId = (int) $pendingPayment['id_pagamento'];
+                $availableResiduo = round(((float) $pendingPayment['importo_totale']) - ((float) $pendingPayment['importo_allocato']), 2);
+                if ($importo - $availableResiduo > 0.009) {
+                    throw new RuntimeException('L\'importo supera il residuo disponibile per questo pagamento.', 422);
+                }
+                $idMetodo = isset($pendingPayment['id_metodo']) ? (int) $pendingPayment['id_metodo'] : null;
+                $idModalita = (int) $pendingPayment['id_mp'];
+                $dateValue = $pendingPayment['data_pagamento'] ?? $dateValue;
+                $note = $pendingPayment['note'] ?? $note;
+                $importUid = $pendingPayment['import_uid'] ?? $importUid;
+                $importoDocumento = (float) $pendingPayment['importo_totale'];
+                $hasImportoDocumento = true;
+                $idPagamento = 0;
+            }
+
+            $fondoMovementId = null;
+            if ($idFondoSource > 0) {
+                $this->ensureFondiTablesAvailable();
+                $fondiRepo = new ClienteFondiRepository($this->pdo);
+                $mov = $fondiRepo->addUscita(
+                    $idFondoSource,
+                    $importo,
+                    [
+                        'id_fattura' => $idFattura,
+                        'id_pagamento' => null,
+                        'riferimento_tipo' => 'fattura',
+                        'riferimento_id' => $idFattura,
+                        'note' => $note,
+                    ]
+                );
+                $fondoMovementId = isset($mov['id_movimento']) ? (int) $mov['id_movimento'] : null;
+            }
+
+            $existingPagamento = null;
+            if ($idPagamento > 0) {
+                $existingPagamento = $this->fetchPagamento($idFattura, $idPagamento);
+                if ($existingPagamento === null) {
+                    $fallbackPending = $this->fetchPendingPaymentByImportUid($importUid);
+                    if ($fallbackPending !== null) {
+                        $pendingPaymentId = (int) $fallbackPending['id_pagamento'];
+                        $idPagamento = 0;
+                    } else {
+                        throw new RuntimeException('Pagamento non trovato per questa fattura.', 404);
+                    }
                 }
             }
-        }
-        if ($existingPagamento !== null) {
+            if ($existingPagamento !== null) {
             if (!$hasImportoDocumento && isset($existingPagamento['importo_documento'])) {
                 $importoDocumento = (float) $existingPagamento['importo_documento'];
             }
@@ -2232,12 +2305,12 @@ final class FattureRepository
                  LIMIT 1'
             );
             $stmt->bindValue(':id_pagamento', $idPagamento, PDO::PARAM_INT);
-        } else {
-            $stmt = $this->pdo->prepare(
-                'INSERT INTO appoggio_pagamenti_fattura (id_fattura, id_metodo, data_pagamento, importo, importo_documento, import_uid, id_mp, note, id_pagamento)
-                 VALUES (:id_fattura, :id_metodo, :data_pagamento, :importo, :importo_documento, :import_uid, :id_mp, :note, :id_pagamento_master)'
-            );
-        }
+            } else {
+                $stmt = $this->pdo->prepare(
+                    'INSERT INTO appoggio_pagamenti_fattura (id_fattura, id_metodo, data_pagamento, importo, importo_documento, import_uid, id_mp, note, id_pagamento)
+                     VALUES (:id_fattura, :id_metodo, :data_pagamento, :importo, :importo_documento, :import_uid, :id_mp, :note, :id_pagamento_master)'
+                );
+            }
 
         if ($importoDocumento === null) {
             $importoDocumento = $importo;
@@ -2274,21 +2347,91 @@ final class FattureRepository
         }
         $stmt->execute();
 
-        if ($idPagamento <= 0) {
-            $idPagamento = (int) $this->pdo->lastInsertId();
-        }
+            if ($idPagamento <= 0) {
+                $idPagamento = (int) $this->pdo->lastInsertId();
+            }
 
-        if ($pendingPaymentId !== null) {
-            $this->linkPendingPayment($pendingPaymentId, $idFattura, $idPagamento, $importo);
-        }
+            if ($pendingPaymentId !== null) {
+                $this->linkPendingPayment($pendingPaymentId, $idFattura, $idPagamento, $importo);
+            }
+            $this->insertIncassoAllocazione(
+                $idFattura,
+                $importo,
+                $dateValue,
+                $idFondoSource > 0 ? 'fondo' : 'pagamento',
+                $idFondoSource > 0 ? null : $pendingPaymentId,
+                $idFondoSource > 0 ? ($fondoMovementId ?: null) : null,
+                $note
+            );
 
-        $this->updateSaldoFromPayments($idFattura);
-        $payment = $this->fetchPagamento($idFattura, $idPagamento);
-        if ($payment === null) {
-            throw new RuntimeException('Impossibile ricaricare il pagamento appena registrato.', 500);
-        }
+            $this->updateSaldoFromPayments($idFattura);
+            $payment = $this->fetchPagamento($idFattura, $idPagamento);
+            if ($payment === null) {
+                throw new RuntimeException('Impossibile ricaricare il pagamento appena registrato.', 500);
+            }
 
-        return $payment;
+            if ($manageTransaction && $this->pdo->inTransaction()) {
+                $this->pdo->commit();
+            }
+
+            return $payment;
+        } catch (\Throwable $exception) {
+            if ($manageTransaction && $this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            throw $exception;
+        }
+    }
+
+    private function insertIncassoAllocazione(
+        int $idFattura,
+        float $importo,
+        string $dataAllocazione,
+        string $tipoFonte,
+        ?int $idPagamento,
+        ?int $idMovimentoFondo,
+        ?string $note
+    ): void {
+        if (!$this->tableExists('tb_fatture_incassi_allocazioni')) {
+            return;
+        }
+        $stmt = $this->pdo->prepare(
+            'INSERT INTO tb_fatture_incassi_allocazioni
+             (id_fattura, id_pagamento, id_movimento_fondo, tipo_fonte, importo, data_allocazione, note)
+             VALUES
+             (:id_fattura, :id_pagamento, :id_movimento_fondo, :tipo_fonte, :importo, :data_allocazione, :note)'
+        );
+        $stmt->bindValue(':id_fattura', $idFattura, PDO::PARAM_INT);
+        $stmt->bindValue(':id_pagamento', $idPagamento, $idPagamento !== null ? PDO::PARAM_INT : PDO::PARAM_NULL);
+        $stmt->bindValue(':id_movimento_fondo', $idMovimentoFondo, $idMovimentoFondo !== null ? PDO::PARAM_INT : PDO::PARAM_NULL);
+        $stmt->bindValue(':tipo_fonte', $tipoFonte, PDO::PARAM_STR);
+        $stmt->bindValue(':importo', number_format($this->roundMoney($importo), 2, '.', ''), PDO::PARAM_STR);
+        $stmt->bindValue(':data_allocazione', $dataAllocazione, PDO::PARAM_STR);
+        $stmt->bindValue(':note', $note, $note !== null ? PDO::PARAM_STR : PDO::PARAM_NULL);
+        $stmt->execute();
+    }
+
+    private function ensureFondiTablesAvailable(): void
+    {
+        if (!$this->tableExists('tb_cliente_fondi') || !$this->tableExists('tb_cliente_fondi_movimenti')) {
+            throw new RuntimeException('Tabelle fondi cliente non disponibili: applicare prima la migrazione fiscale.', 422);
+        }
+    }
+
+    private function tableExists(string $table): bool
+    {
+        static $cache = [];
+        if (array_key_exists($table, $cache)) {
+            return $cache[$table];
+        }
+        $stmt = $this->pdo->prepare(
+            'SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :table'
+        );
+        $stmt->bindValue(':table', $table, PDO::PARAM_STR);
+        $stmt->execute();
+        $exists = ((int) $stmt->fetchColumn()) > 0;
+        $cache[$table] = $exists;
+        return $exists;
     }
 
     private function linkPendingPayment(int $idPagamento, int $idFattura, ?int $idAppoggio, float $importo): void
@@ -2311,14 +2454,13 @@ final class FattureRepository
     /**
      * @return array<string,mixed>|null
      */
-    private function fetchPendingPaymentById(int $id): ?array
+    private function fetchPendingPaymentById(int $id, bool $forUpdate = false): ?array
     {
         if ($id <= 0) {
             return null;
         }
 
-        $stmt = $this->pdo->prepare(
-            'SELECT
+        $sql = 'SELECT
                 id_pagamento,
                 import_uid,
                 data_pagamento,
@@ -2329,7 +2471,12 @@ final class FattureRepository
                 note
              FROM tb_pagamenti
              WHERE id_pagamento = :id
-             LIMIT 1'
+             LIMIT 1';
+        if ($forUpdate) {
+            $sql .= ' FOR UPDATE';
+        }
+        $stmt = $this->pdo->prepare(
+            $sql
         );
         $stmt->bindValue(':id', $id, PDO::PARAM_INT);
         $stmt->execute();
@@ -2547,8 +2694,20 @@ final class FattureRepository
         $paidStmt->execute();
         $totalePagatoRaw = $paidStmt->fetchColumn();
         $totalePagato = $totalePagatoRaw !== false ? (float) $totalePagatoRaw : 0.0;
+        if ($this->tableExists('tb_fatture_incassi_allocazioni')) {
+            $fondoPaidStmt = $this->pdo->prepare(
+                'SELECT COALESCE(SUM(importo), 0) AS totale_pagato_fondo
+                 FROM tb_fatture_incassi_allocazioni
+                 WHERE id_fattura = :id AND tipo_fonte = \'fondo\''
+            );
+            $fondoPaidStmt->bindValue(':id', $idFattura, PDO::PARAM_INT);
+            $fondoPaidStmt->execute();
+            $fondoTotaleRaw = $fondoPaidStmt->fetchColumn();
+            $fondoTotale = $fondoTotaleRaw !== false ? (float) $fondoTotaleRaw : 0.0;
+            $totalePagato += $fondoTotale;
+        }
 
-        $saldo = round(max(0.0, $totale - $totalePagato), 2);
+        $saldo = $this->roundMoney(max(0.0, $totale - $totalePagato));
         $newStatusId = null;
         if ($totale > 0) {
             $isFullyUnpaid = abs($saldo - $totale) < 0.009;
@@ -2578,6 +2737,51 @@ final class FattureRepository
         $stmt->execute();
         if ($newStatusId !== null && $newStatusId !== $currentStatusId) {
             $this->logStatusHistory($idFattura, $currentStatusId, $newStatusId, 'Sistema pagamenti');
+        }
+    }
+
+    private function roundMoney(float $value): float
+    {
+        return round($value, 2);
+    }
+
+    private function isFiscalLockedStatus(?string $statusCode): bool
+    {
+        if ($statusCode === null || $statusCode === '') {
+            return false;
+        }
+        $code = strtolower(trim($statusCode));
+        return in_array($code, ['emessa', 'inviata', 'pagata', 'scaduta', 'rifiutata', 'pagataparziale'], true);
+    }
+
+    /**
+     * Impedisce modifiche strutturali su documenti fiscalmente consolidati.
+     * Consentite: note, ricalcola_saldi e transizioni stato.
+     *
+     * @param array<string,mixed> $data
+     */
+    private function guardLockedFiscalUpdate(array $data): void
+    {
+        $blockedKeys = [
+            'data_fattura',
+            'id_sezionale',
+            'saldo',
+            'righe',
+            'cliente_pec',
+            'cliente_codice_sdi',
+            'cliente_iban',
+            'cliente_banca',
+            'cliente_modalita_pagamento',
+            'cliente_id_cond_pagamento',
+            'cliente_giorni_pagamento',
+        ];
+        foreach ($blockedKeys as $key) {
+            if (array_key_exists($key, $data)) {
+                throw new RuntimeException(
+                    sprintf('La fattura è fiscalmente consolidata: modifica campo "%s" non consentita.', $key),
+                    422
+                );
+            }
         }
     }
 
@@ -2641,6 +2845,7 @@ final class FattureRepository
                 ? round(((float) $row['importo_documento']) - (float) $row['importo'], 2)
                 : null,
             'note' => $row['note'] ?? null,
+            'tipo_fonte' => 'pagamento',
         ];
     }
 

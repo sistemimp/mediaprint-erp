@@ -284,6 +284,7 @@ export const saveFatturaPagamento = async ({
   token,
   id_fattura,
   id_pagamento,
+  id_fondo,
   data_pagamento,
   importo,
   id_metodo,
@@ -296,6 +297,7 @@ export const saveFatturaPagamento = async ({
   const payload = {
     id_fattura: Number(id_fattura) || undefined,
     id_pagamento: Number(id_pagamento) || undefined,
+    id_fondo: Number(id_fondo) || undefined,
     data_pagamento: data_pagamento || undefined,
     id_metodo: Number(id_metodo) || undefined,
     id_mp: Number(id_mp) || undefined,

@@ -1809,7 +1809,7 @@ final class PreventiviService
                 $this->repository->updateStatus($idPreventivo, (int) $cedStatus['id_stato']);
             }
             $this->syncPostaliRowsForPreventivo($idPreventivo);
-            $this->resetAcceptanceForPreventivo($idPreventivo);
+            // Mantieni la precedente accettazione anche quando il CED riporta lo stato a revisionato.
 
             if ($startedTransaction && $connection->inTransaction()) {
                 $connection->commit();
@@ -1877,7 +1877,7 @@ final class PreventiviService
                 $this->repository->updateStatus($idPreventivo, (int) $cedStatus['id_stato']);
             }
             $this->syncPostaliRowsForPreventivo($idPreventivo);
-            $this->resetAcceptanceForPreventivo($idPreventivo);
+            // Mantieni la precedente accettazione anche quando il CED riporta lo stato a revisionato.
 
             if ($startedTransaction && $connection->inTransaction()) {
                 $connection->commit();

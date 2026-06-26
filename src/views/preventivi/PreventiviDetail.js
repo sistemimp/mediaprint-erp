@@ -2749,6 +2749,7 @@ const PreventiviDetail = () => {
       return
     }
     const actions = []
+    const isRevisionatoCed = String(currentStatus?.code || '').toLowerCase() === 'revisionato_ced'
     if (id) {
       actions.push({
         id: 'preventivo-refresh',
@@ -2765,6 +2766,16 @@ const PreventiviDetail = () => {
         onClick: handleBreadcrumbSave,
         disabled: uiDisabled || submitting || pendingOggettoCreate,
       })
+      if (isRevisionatoCed) {
+        actions.push({
+          id: 'preventivo-confirm',
+          icon: cilCheckCircle,
+          color: 'success',
+          label: statusUpdating ? 'Conferma in corso...' : 'Conferma preventivo',
+          onClick: () => handleStatusChange('confermato'),
+          disabled: uiDisabled || submitting || pendingOggettoCreate || statusUpdating,
+        })
+      }
     }
     setBreadcrumbActions(actions)
     return () => clearBreadcrumbActions()
@@ -2776,9 +2787,12 @@ const PreventiviDetail = () => {
     id,
     loadError,
     loading,
+    currentStatus,
+    handleStatusChange,
     isCustomerAccount,
     pendingOggettoCreate,
     setBreadcrumbActions,
+    statusUpdating,
     submitting,
     uiDisabled,
   ])
